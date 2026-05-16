@@ -14,12 +14,14 @@ from app.domain import tickets
 from app.domain.reviewer.agent_crud import (
     AgentNotFoundError,
     ReviewerAgent,
+    ensure_builtin_agents,
     list_agents,
     reset_agent_prompt,
     update_agent_prompt,
 )
 from app.domain.reviewer.queue import (
     ReviewJob,
+    cancel_pending,
     list_review_jobs_for_pr,
     metrics_summary,
     schedule_review,
@@ -78,6 +80,17 @@ async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
     return {"scheduled_count": len(ids), "review_job_ids": [str(i) for i in ids]}
 
 
+@router.post("/cancel")
+async def cancel_jobs(ticket_id: UUID) -> dict[str, int]:
+    """Cancel queued/running review jobs for a ticket. Wraps `cancel_pending`."""
+    try:
+        await tickets.get(ticket_id, org_id=M01_ORG_ID)
+    except tickets.TicketNotFoundError:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    n = await cancel_pending(ticket_id, actor=Actor.system(), org_id=M01_ORG_ID, reason="ui_cancel")
+    return {"cancelled_count": n}
+
+
 @router.get("/jobs/by-ticket/{ticket_id}")
 async def jobs_by_ticket(ticket_id: UUID) -> list[ReviewJob]:
     try:
@@ -94,4 +107,18 @@ async def metrics() -> dict[str, Any]:
     return await metrics_summary(org_id=M01_ORG_ID)
 
 
-register_routes(RouteSpec(module_name="reviewer", router=router, on_startup=[startup_recovery]))
+async def _seed_builtin_agents() -> None:
+    """Idempotent — ensures the three built-in reviewer agents exist on every boot.
+    Runs alongside `startup_recovery`. Without this, schedule_review() silently
+    no-ops with `reviewer.schedule_unknown_agent` warnings and no jobs ever
+    spawn."""
+    await ensure_builtin_agents(org_id=M01_ORG_ID)
+
+
+register_routes(
+    RouteSpec(
+        module_name="reviewer",
+        router=router,
+        on_startup=[startup_recovery, _seed_builtin_agents],
+    )
+)

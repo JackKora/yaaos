@@ -134,7 +134,7 @@ A peer app under `apps/fake-github/` fakes every GitHub endpoint yaaof's plugin 
 
 ## Open for next pass
 
-Per-module + cross-cutting deep dives live in [internals/](internals/). See [internals/README.md](internals/README.md) for the full reading order — 15 docs total (13 backend modules + 1 frontend module + `testing.md`). 14 are written; `tickets-frontend.md` is the one outstanding (the implementer composes the ticket-detail FE from `frontend.md` + the design files in `plan/design/` + the SSE event taxonomy named in `architecture.md`). Simpler modules (`repos`, `settings`, `dashboard`) get their internals documented in `docs/<module>.md` alongside the code when they ship.
+Per-module + cross-cutting deep dives live in [internals/](internals/). See [internals/README.md](internals/README.md) for the full reading order — 15 docs total (13 backend modules + 1 frontend module + `testing.md`). All written. Simpler modules (`settings`, `dashboard`) get their internals documented in `docs/<module>.md` alongside the code when they ship.
 
 ## Decisions
 
@@ -219,3 +219,20 @@ Migration `003_drop_repos_table` backfills `repo_external_id` strings into the t
 
 For the "what repos can yaaof see?" visibility the user used to get from the Repos page, a new `GET /api/github/repositories` endpoint calls GitHub's `/installation/repositories` live (using the install token) and returns the list. The Settings GitHub card renders it as a read-only section in the installed state; the only way to change access is via GitHub's install settings (the "Configure on GitHub" button takes you there).
 **Why:** the allowlist was double-gating — every webhook already passes GitHub's own access check before reaching yaaof. Removing it eliminates ~150 LOC, two DB tables' worth of cross-FK plumbing (counting `repos` and its FKs), one FE page, one nav item, one onboarding step, and a class of "I added the repo on GitHub but yaaof doesn't see it" bugs. Live-from-GitHub visibility beats a local cache: never drifts, always reflects what GitHub actually permits.
+
+### 2026-05-16 — Built-in reviewer agents seeded on every reviewer startup
+`ensure_builtin_agents(M01_ORG_ID)` is wired into `reviewer`'s `RouteSpec.on_startup` alongside `startup_recovery`. Idempotent (skips names that already exist; preserves any edits the operator has made to prompts).
+**Why:** previous shape only seeded these via a test-only fixture script. In production, the `reviewer_agents` table started empty, so `schedule_review(agent_names="all")` silently no-op'd with `reviewer.schedule_unknown_agent` warnings and no review job ever spawned. The original plan called for an Alembic data migration to do this — the /goal run parked the seeding in the test script and missed wiring it for prod. A startup hook is functionally equivalent to a one-shot data migration but survives DB resets without manual intervention; the idempotency check protects edited prompts.
+
+### 2026-05-16 — Ticket payload enriched with `pr_number`, `author_login`, `is_draft`; `Ticket` filter switches to `repo_external_ids`
+`tickets.get` and `tickets.list_tickets` join `pull_requests` on read and attach `pr_number`, `author_login`, `is_draft` to the response. `TicketFilter` lost `repo_ids` (the FK that no longer exists) and gained `repo_external_ids` (string list). `list_tickets` batch-loads the matching PRs in one query — no N+1.
+**Why:** the new ticket UI's filter dropdowns (`repo`, `author`) and header chips (`#N`, draft status, author byline) all need data that lives on the PR row, not the ticket row. Adding it at read-time avoids a schema change and keeps tickets unconstrained for non-PR future sources.
+
+### 2026-05-16 — Reviewer pipeline gaps closed (secrets pre-flight, force-push detection, frozen-snapshot audit, step-progress SSE, catch-up poller)
+Five spec-named pieces that had been deferred or stubbed are now wired through the pipeline:
+1. **`_detect_secrets`** in `reviewer/queue.py` — high-confidence regex over added `+` lines; on match the job posts a refuse-to-review comment and transitions `skipped(skip_reason="secrets_detected")`. Required by `requirements.md` edge cases.
+2. **Force-push detection** in `plugins/github` — `GitHubPlugin.detect_force_push(repo, before, after)` calls `/compare/{before}...{after}`; `status=="diverged"` ⇒ true. Webhook handler `model_copy`s `PullRequestSynchronized` events before dispatch.
+3. **`review_job.prompt_sent` frozen snapshot** — payload upgraded from `{agent_name, prompt_hash, lessons_count, checkout_sha}` to a full `_AgentSnapshot` plus `lessons_applied[]` and `language_hint`. Audit entries are now immutable snapshots.
+4. **`review_job.step_progress` SSE events** — new `ReviewJobStepProgress` event class; `_set_step()` helper publishes on each phase boundary (`fetching_diff` → `provisioning_workspace` → `invoking_agent` → `posting_review`). FE invalidates `["reviewer", "jobs", ticket_id]` on receipt. Not audit-logged (per the 2026-05-16 heartbeat-noise decision in M01-DELTAS).
+5. **Catch-up poller** — `run_catchup_loop()` spawned from github's `RouteSpec.on_startup`. Sleeps `yaaof_catchup_delay_seconds` then refreshes open-PR metadata across each install's visible repos via `intake.refresh_pr_metadata`. Does NOT replay missed reviews.
+**Why:** these were explicitly speced in the M01 internals docs but had been deferred during the original /goal pass. Each is small individually but collectively closes the "what was supposed to ship but didn't" punch list from the 2026-05-16 audit.

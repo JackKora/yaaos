@@ -65,6 +65,12 @@ COPY --from=web-builder /build/apps/web/dist ./apps/web/dist
 # Install the backend project itself
 RUN uv sync --frozen --package yaaof-backend 2>/dev/null || uv sync --package yaaof-backend
 
+# Drop root: the Claude Code CLI refuses --dangerously-skip-permissions when
+# uid is 0, and the reviewer needs that flag to run unattended.
+RUN useradd --create-home --uid 1000 --shell /bin/bash yaaof \
+ && chown -R yaaof:yaaof /app
+USER yaaof
+
 # Runtime
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \

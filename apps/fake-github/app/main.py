@@ -12,7 +12,12 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from app.seeds import default_seeded_diffs, default_seeded_files, default_seeded_prs
+from app.seeds import (
+    default_installation_repositories,
+    default_seeded_diffs,
+    default_seeded_files,
+    default_seeded_prs,
+)
 from app.state import state
 from app.test_secrets import APP_ID, WEBHOOK_SECRET
 
@@ -28,6 +33,8 @@ async def _seed() -> None:
     state.seeded_prs.update(default_seeded_prs())
     state.seeded_diffs.update(default_seeded_diffs())
     state.seeded_files.update(default_seeded_files())
+    if not state.installation_repositories:
+        state.installation_repositories.extend(default_installation_repositories())
 
 
 # ── GitHub-compatible endpoints ────────────────────────────────────────────────
@@ -203,12 +210,38 @@ async def post_issue_comment(
     return {"id": cid}
 
 
+@app.get("/installation/repositories")
+async def installation_repositories(
+    authorization: str | None = Header(default=None),
+    per_page: int = 100,
+) -> dict[str, Any]:
+    """List repos visible to the installation. yaaof's catch-up poller and
+    the Settings GitHub-card use this. The default seed returns acme/web +
+    acme/api; specs can override by mutating `state.installation_repositories`
+    via `/__test/reset` + seed primitives if they need a different set.
+    """
+    _check_bearer(authorization)
+    repos = state.installation_repositories[:per_page]
+    return {"total_count": len(state.installation_repositories), "repositories": repos}
+
+
 @app.get("/repos/{owner}/{repo}/compare/{base_to_head:path}")
 async def compare(
     owner: str, repo: str, base_to_head: str, authorization: str | None = Header(default=None)
 ) -> dict[str, Any]:
     _check_bearer(authorization)
-    return {"status": "ahead"}  # never report force-push
+    # `base_to_head` arrives as `<before>...<after>`. Specs that want to
+    # exercise the force-push branch seed `state.compare_status[base_to_head]`.
+    return {"status": state.compare_status.get(base_to_head, "ahead")}
+
+
+@app.post("/__test/seed_compare_status")
+async def test_seed_compare_status(body: dict[str, Any]) -> dict[str, str]:
+    """Body: `{ "base_to_head": "<before>...<after>", "status": "diverged" }`.
+    Used by the force-push spec.
+    """
+    state.compare_status[body["base_to_head"]] = body.get("status", "diverged")
+    return {"status": "seeded"}
 
 
 # ── Test control endpoints ──────────────────────────────────────────────────
@@ -220,6 +253,7 @@ async def test_reset() -> dict[str, str]:
     state.seeded_prs.update(default_seeded_prs())
     state.seeded_diffs.update(default_seeded_diffs())
     state.seeded_files.update(default_seeded_files())
+    state.installation_repositories.extend(default_installation_repositories())
     return {"status": "reset"}
 
 

@@ -55,9 +55,12 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+    # No seed script in CMD — e2e specs drive their own preconditions via
+    # `/api/testing/*` (see app/testing/e2e_setup). Migrations + built-in
+    # reviewer-agent seeding run from FastAPI's lifespan hook.
     command:
       [
         "sh",
         "-c",
-        "python apps/backend/bin/seed_test_data && uvicorn app.main:app --host 0.0.0.0 --port 8080 --app-dir apps/backend",
+        "uvicorn app.main:app --host 0.0.0.0 --port 8080 --app-dir apps/backend",
       ]

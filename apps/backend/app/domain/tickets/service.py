@@ -29,6 +29,11 @@ class Ticket(BaseModel):
     plugin_id: str
     repo_external_id: str
     pr_id: UUID | None
+    # Enriched fields (denormalized at read-time from the linked PR; nullable
+    # because a ticket can briefly exist without its PR row in the create flow).
+    pr_number: int | None = None
+    author_login: str | None = None
+    is_draft: bool | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -145,13 +150,24 @@ async def create_for_pr(
 
 
 async def get(ticket_id: UUID, *, org_id: UUID) -> Ticket:
+    from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+
     async with db_session() as s:
         row = (
             await s.execute(select(TicketRow).where(TicketRow.id == ticket_id, TicketRow.org_id == org_id))
         ).scalar_one_or_none()
-    if row is None:
-        raise TicketNotFoundError(str(ticket_id))
-    return Ticket.from_row(row)
+        if row is None:
+            raise TicketNotFoundError(str(ticket_id))
+        t = Ticket.from_row(row)
+        if row.pr_id is not None:
+            pr = (
+                await s.execute(select(PullRequestRow).where(PullRequestRow.id == row.pr_id))
+            ).scalar_one_or_none()
+            if pr is not None:
+                t.pr_number = pr.number
+                t.author_login = pr.author_login
+                t.is_draft = pr.is_draft
+    return t
 
 
 async def get_by_pr(pr_id: UUID, *, org_id: UUID) -> Ticket | None:
@@ -168,6 +184,8 @@ async def list_tickets(
     org_id: UUID,
     limit: int = 50,
 ) -> list[Ticket]:
+    from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+
     async with db_session() as s:
         stmt = (
             select(TicketRow)
@@ -184,7 +202,24 @@ async def list_tickets(
         if filter.created_before is not None:
             stmt = stmt.where(TicketRow.created_at < filter.created_before)
         rows = (await s.execute(stmt)).scalars().all()
-        return [Ticket.from_row(r) for r in rows]
+        # Batch-enrich with PR data (one query, not N+1).
+        pr_ids = [r.pr_id for r in rows if r.pr_id is not None]
+        prs_by_id: dict[UUID, PullRequestRow] = {}
+        if pr_ids:
+            pr_rows = (
+                (await s.execute(select(PullRequestRow).where(PullRequestRow.id.in_(pr_ids)))).scalars().all()
+            )
+            prs_by_id = {p.id: p for p in pr_rows}
+        out: list[Ticket] = []
+        for r in rows:
+            t = Ticket.from_row(r)
+            if r.pr_id and r.pr_id in prs_by_id:
+                pr = prs_by_id[r.pr_id]
+                t.pr_number = pr.number
+                t.author_login = pr.author_login
+                t.is_draft = pr.is_draft
+            out.append(t)
+        return out
 
 
 async def complete(ticket_id: UUID, *, org_id: UUID) -> None:

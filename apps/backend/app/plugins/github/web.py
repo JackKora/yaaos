@@ -29,6 +29,7 @@ from app.plugins.github.service import (
     mark_installation_inactive,
     mark_webhook_processed,
     record_webhook_event,
+    run_catchup_loop,
     set_github_credentials,
     upsert_installation,
     verify_webhook_signature,
@@ -112,6 +113,26 @@ async def webhook(
             await mark_installation_inactive(install_external_id=str(install_id), status="suspended")
 
     events = parse_webhook(x_github_event, x_github_delivery or str(row_id), payload)
+    # Force-push enrichment: `pull_request.synchronize` events arrive with
+    # `force_push=False`; the authoritative answer requires a `/compare` call
+    # against GitHub. Do it here so the parsed event carries the true flag.
+    if events and x_github_event == "pull_request" and payload.get("action") == "synchronize":
+        from app.domain.vcs import PullRequestSynchronized  # noqa: PLC0415
+        from app.plugins.github.service import get_plugin as _get_plugin  # noqa: PLC0415
+
+        before_sha = payload.get("before") or ""
+        after_sha = payload.get("after") or (payload.get("pull_request") or {}).get("head", {}).get("sha", "")
+        repo_full = (payload.get("repository") or {}).get("full_name", "")
+        try:
+            is_force = await _get_plugin().detect_force_push(repo_full, before_sha, after_sha)
+        except Exception:
+            log.exception("github.webhook.force_push_detect_failed", delivery=x_github_delivery)
+            is_force = False
+        events = [
+            e.model_copy(update={"force_push": is_force}) if isinstance(e, PullRequestSynchronized) else e
+            for e in events
+        ]
+
     if events:
         from app.domain.intake import handle_vcs_events  # noqa: PLC0415
 
@@ -349,4 +370,15 @@ async def health() -> dict[str, object]:
     return {"healthy": True, "message": "ok", "checked_at": now}
 
 
-register_routes(RouteSpec(module_name="github", router=router))
+async def _start_catchup() -> None:
+    """Spawn the catch-up poller as a background task. We do NOT await it from
+    the startup hook — the hook must return promptly so FastAPI can finish
+    initializing. The poller sleeps for `yaaof_catchup_delay_seconds` first
+    and then refreshes open-PR metadata across each install's visible repos.
+    """
+    from app.core.primitives import spawn  # noqa: PLC0415
+
+    spawn("github.catchup", run_catchup_loop())
+
+
+register_routes(RouteSpec(module_name="github", router=router, on_startup=[_start_catchup]))

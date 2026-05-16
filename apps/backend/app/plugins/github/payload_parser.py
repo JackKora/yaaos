@@ -95,7 +95,9 @@ def parse_webhook(event_type: str, source_event_id: str, payload: dict[str, Any]
                     repo_external_id=repo_external_id,
                     pr_external_id=pr_external_id,
                     new_head_sha=pr.get("head", {}).get("sha", ""),
-                    force_push=False,  # detection deferred; harmless in M01
+                    # Default false; the webhook handler enriches via the
+                    # github `/compare` API before dispatching to intake.
+                    force_push=False,
                 )
             ]
         if action == "closed":

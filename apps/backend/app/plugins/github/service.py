@@ -49,6 +49,19 @@ def _split_external(external_id: str) -> tuple[str, str, int]:
     return owner, repo, int(num_s)
 
 
+# GitHub's POST /pulls/{n}/reviews `event` field takes action verbs, not the
+# state values it returns on read. Sending APPROVED / CHANGES_REQUESTED yields 422.
+_REVIEW_EVENT_BY_STATE = {
+    "APPROVED": "APPROVE",
+    "CHANGES_REQUESTED": "REQUEST_CHANGES",
+    "COMMENT": "COMMENT",
+}
+
+
+def _review_event_for_state(state: str) -> str:
+    return _REVIEW_EVENT_BY_STATE[state]
+
+
 def verify_webhook_signature(body: bytes, header: str | None, secret: bytes) -> bool:
     """Constant-time HMAC verification of `X-Hub-Signature-256`."""
     if not header or not header.startswith("sha256="):
@@ -267,6 +280,30 @@ class GitHubPlugin:
             return []
         return [self._json_to_pr(p, owner, repo) for p in resp.json()]
 
+    async def detect_force_push(self, repo_external_id: str, before_sha: str, after_sha: str) -> bool:
+        """Use GitHub's compare API: a force-push diverges history.
+
+        `status == "diverged"` means the new head is not a fast-forward from
+        the old one — i.e. someone rewrote the branch. Any other status (ahead,
+        behind, identical) is a normal push.
+        """
+        if not before_sha or not after_sha or before_sha == after_sha:
+            return False
+        owner, repo = repo_external_id.split("/", 1)
+        org_id = await self._resolve_org_id()
+        try:
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=10) as client:
+                resp = await client.get(
+                    f"/repos/{owner}/{repo}/compare/{before_sha}...{after_sha}",
+                    headers=await self._api_headers(org_id),
+                )
+        except Exception as e:
+            log.warning("github.force_push_detect_failed", repo=repo_external_id, error=str(e))
+            return False
+        if resp.status_code != 200:
+            return False
+        return resp.json().get("status") == "diverged"
+
     async def is_repo_accessible(self, repo_external_id: str) -> bool:
         owner, repo = repo_external_id.split("/", 1)
         org_id = await self._resolve_org_id()
@@ -303,7 +340,7 @@ class GitHubPlugin:
                 body_lines.append(f"- **{f.severity}**: {f.title}\n  {f.body}")
         review_payload = {
             "body": "\n\n".join(body_lines),
-            "event": review.state,
+            "event": _review_event_for_state(review.state),
             "comments": comments_payload,
         }
         async with httpx.AsyncClient(base_url=self.base_url, timeout=30) as client:
@@ -408,6 +445,148 @@ async def set_github_credentials(
             row.encrypted_private_key = enc_key
             row.encrypted_webhook_secret = enc_secret
         await s.commit()
+
+
+async def _run_catchup(org_id: UUID) -> None:
+    """One-shot catch-up: refresh open-PR metadata across every repo the App
+    can see. Called from the plugin's `on_startup` hook after a short delay
+    (the delay is in `run_catchup_loop`).
+
+    Behavior:
+      1. List repos visible to this installation (`/installation/repositories`).
+      2. For each repo, list open PRs.
+      3. For each PR, run `refresh_pr_metadata` — the same upsert path the
+         webhook receiver uses. New PRs get tickets; existing ones get title /
+         body / sha updates. Reviews are NOT replayed in M01 (see
+         `plugins-github.md` 2026-05-14 decision).
+      4. Bump `github_poller_state.last_polled_at` for the repo.
+
+    On exception, log + leave the poller_state cursor unchanged so the next
+    startup retries the same repo.
+    """
+    async with db_session() as s:
+        install = (
+            await s.execute(
+                select(GitHubAppInstallationRow).where(
+                    GitHubAppInstallationRow.org_id == org_id,
+                    GitHubAppInstallationRow.status == "active",
+                )
+            )
+        ).scalar_one_or_none()
+    if install is None:
+        log.info("github.catchup.skipped_no_install", org_id=str(org_id))
+        return
+
+    try:
+        token = await _plugin.get_installation_token(org_id)
+    except Exception:
+        log.exception("github.catchup.token_failed", org_id=str(org_id))
+        return
+
+    base_url = _plugin.base_url
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=15) as client:
+            repos_resp = await client.get(
+                "/installation/repositories",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                },
+                params={"per_page": 100},
+            )
+    except Exception:
+        log.exception("github.catchup.repos_list_failed", org_id=str(org_id))
+        return
+    if repos_resp.status_code != 200:
+        log.warning("github.catchup.repos_list_status", status=repos_resp.status_code)
+        return
+
+    repos = repos_resp.json().get("repositories", [])
+    from app.domain.intake import refresh_pr_metadata  # noqa: PLC0415
+
+    for r in repos:
+        repo_full = r.get("full_name")
+        if not repo_full:
+            continue
+        try:
+            open_prs = await _plugin.list_open_prs_since(repo_full, _utcnow())
+        except Exception:
+            log.exception("github.catchup.list_open_prs_failed", repo=repo_full)
+            continue
+        for pr in open_prs:
+            try:
+                await refresh_pr_metadata(repo_full, pr, org_id=org_id)
+            except Exception:
+                log.exception(
+                    "github.catchup.refresh_failed",
+                    repo=repo_full,
+                    pr=pr.external_id,
+                )
+        # Advance the cursor regardless of per-PR failures — the next iteration
+        # will see the upserted state and skip already-known PRs.
+        await _upsert_poller_state(org_id, repo_full)
+    log.info("github.catchup.done", repo_count=len(repos))
+
+
+async def _upsert_poller_state(org_id: UUID, repo_external_id: str) -> None:
+    from app.plugins.github.models import GitHubPollerStateRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        row = (
+            await s.execute(
+                select(GitHubPollerStateRow).where(
+                    GitHubPollerStateRow.org_id == org_id,
+                    GitHubPollerStateRow.repo_external_id == repo_external_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            s.add(
+                GitHubPollerStateRow(
+                    id=uuid4(),
+                    org_id=org_id,
+                    repo_external_id=repo_external_id,
+                    last_polled_at=_utcnow(),
+                )
+            )
+        else:
+            row.last_polled_at = _utcnow()
+        await s.commit()
+
+
+async def run_catchup_loop() -> None:
+    """Top-level catch-up entry point: sleep the configured delay (lets the rest
+    of the app finish initialization), then run `_run_catchup` once across every
+    active install.
+
+    Wired into the github plugin's `on_startup` hook in `web.py`.
+    """
+    import asyncio  # noqa: PLC0415
+
+    delay = get_settings().yaaof_catchup_delay_seconds
+    if delay > 0:
+        await asyncio.sleep(delay)
+    async with db_session() as s:
+        installs = (
+            (
+                await s.execute(
+                    select(GitHubAppInstallationRow).where(
+                        GitHubAppInstallationRow.status == "active",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    seen_orgs: set[UUID] = set()
+    for row in installs:
+        if row.org_id in seen_orgs:
+            continue
+        seen_orgs.add(row.org_id)
+        try:
+            await _run_catchup(row.org_id)
+        except Exception:
+            log.exception("github.catchup.org_failed", org_id=str(row.org_id))
 
 
 async def upsert_installation(

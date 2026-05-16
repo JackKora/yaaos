@@ -51,5 +51,14 @@ if os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}
     wrap_all_registered_plugins()
     wrap_all_registered_workspace_providers()
 
+# 8b. Test-only HTTP surface (`/api/testing/*`) — reset + seed endpoints used by
+# the e2e Playwright suite (and ad-hoc local seeding). Mounted only in dev/test
+# builds; prod wheels exclude the testing/ tree, so this import would fail loud
+# if it ever ran with the layer stripped.
+from app.core.config import get_settings  # noqa: E402
+
+if get_settings().yaaof_env == "dev":
+    from app.testing import e2e_setup  # noqa: F401
+
 # 9. Build the FastAPI app.
 app = webserver.create_app()

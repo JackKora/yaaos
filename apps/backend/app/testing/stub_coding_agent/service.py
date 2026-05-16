@@ -30,6 +30,7 @@ from app.domain.coding_agent import (
     ReviewResult,
     ValidationResult,
 )
+from app.domain.vcs import Finding
 
 log = structlog.get_logger("testing.stub_coding_agent")
 
@@ -58,10 +59,29 @@ class StubCodingAgentPlugin:
 
     async def review(self, workspace: Workspace, context: ReviewContext) -> ReviewResult:
         del workspace
+        # Emit one synthetic finding so UI flows that depend on findings
+        # (Teach-yaaof entry-point, expandable rows) have something to act
+        # against. The verdict stays APPROVED — this is decoration, not a
+        # real "must-fix". Tests that need a specific shape can layer over
+        # this by injecting their own stub.
+        finding = Finding(
+            file="src/example.ts",
+            line_start=1,
+            line_end=1,
+            severity="suggestion",
+            title=f"[stub] {context.agent_name} sample suggestion",
+            body=(
+                f"Stub finding from `{context.agent_name}`. Used by e2e specs that "
+                "exercise the finding-expansion + Teach-yaaof flow."
+            ),
+            rationale=None,
+            snippet=None,
+            applied_lesson_ids=[],
+        )
         return ReviewResult(
             status=InvocationStatus.SUCCESS,
-            findings=[],
-            state="APPROVED",
+            findings=[finding],
+            state="COMMENT",
             summary_body=f"[stub] {context.agent_name} review",
             lesson_ids_consulted=[lesson.id for lesson in context.lessons],
             telemetry=_STUB_TELEMETRY,

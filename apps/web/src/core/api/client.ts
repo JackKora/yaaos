@@ -29,6 +29,11 @@ export type Ticket = {
   plugin_id: string;
   repo_external_id: string;
   pr_id: string | null;
+  // Enriched from the linked PR at read-time. Null for the brief moment
+  // between ticket creation and PR row insertion.
+  pr_number: number | null;
+  author_login: string | null;
+  is_draft: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -43,6 +48,25 @@ export type Lesson = {
   source_pr_url: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** Per-finding snippet line — agent emits these to render a structured diff under the body. */
+export type FindingSnippetLine = {
+  line_number: number;
+  kind: "context" | "add" | "del";
+  text: string;
+};
+
+export type Finding = {
+  file: string | null;
+  line_start: number | null;
+  line_end: number | null;
+  severity: "must-fix" | "nit" | "suggestion" | "info";
+  title: string;
+  body: string;
+  rationale: string | null;
+  snippet: FindingSnippetLine[] | null;
+  applied_lesson_ids: string[];
 };
 
 export type ReviewerAgent = {
@@ -64,14 +88,17 @@ export type ReviewJob = {
   scheduled_at: string;
   started_at: string | null;
   completed_at: string | null;
+  last_heartbeat_at: string | null;
+  current_step: string | null;
   prompt_hash: string | null;
   lessons_applied: string[] | null;
   tokens_in: number | null;
   tokens_out: number | null;
   cost_usd: number | null;
+  error_message: string | null;
   duration_s: number | null;
   review_external_id: string | null;
-  findings: unknown[] | null;
+  findings: Finding[] | null;
 };
 
 export type AuditEntry = {

@@ -432,7 +432,16 @@ def _key_fingerprint(key: str) -> str:
 
 
 async def _probe_anthropic_auth(api_key: str) -> tuple[bool, str]:
-    """Return (healthy, message). Cached for `_AUTH_TTL` per key fingerprint."""
+    """Return (healthy, message). Cached for `_AUTH_TTL` per key fingerprint.
+
+    In stub mode (`YAAOF_CODING_AGENT_STUB`), the e2e test stack has no
+    outbound connectivity to `api.anthropic.com` — and shouldn't need it,
+    since the stub agent never calls Anthropic anyway. Treat any non-empty
+    key as authenticating cleanly so onboarding and `/api/claude_code/health`
+    behave consistently with the rest of the stubbed pipeline.
+    """
+    if os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
+        return (True, "ok (stub)")
     fp = _key_fingerprint(api_key)
     now = _utcnow()
     cached = _AUTH_CACHE.get(fp)

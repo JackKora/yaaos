@@ -10,6 +10,14 @@ class FakeGitHubState:
         self.seeded_prs: dict[str, dict[str, Any]] = {}  # f"{owner}/{repo}#{num}" -> json
         self.seeded_diffs: dict[str, str] = {}
         self.seeded_files: dict[str, list[dict[str, Any]]] = {}
+        # `installation_repositories`: repos the App can see, per the
+        # `/installation/repositories` endpoint. Drives yaaof's catch-up poller
+        # and the Settings GitHub-card live repo list.
+        self.installation_repositories: list[dict[str, Any]] = []
+        # `compare_status`: per (repo, "before...after") string → GitHub
+        # `/compare` status field. Default "ahead" (normal push); specs that
+        # want to assert force-push handling can seed "diverged".
+        self.compare_status: dict[str, str] = {}
         self.posted_reviews: list[dict[str, Any]] = []
         self.posted_comments: list[dict[str, Any]] = []
         self._next_review_id = 1000
@@ -19,6 +27,8 @@ class FakeGitHubState:
         self.seeded_prs.clear()
         self.seeded_diffs.clear()
         self.seeded_files.clear()
+        self.installation_repositories.clear()
+        self.compare_status.clear()
         self.posted_reviews.clear()
         self.posted_comments.clear()
         self._next_review_id = 1000

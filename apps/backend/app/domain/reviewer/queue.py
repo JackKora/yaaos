@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -31,7 +32,7 @@ from app.domain.coding_agent import (
 )
 from app.domain.reviewer.agent_crud import get_agent_by_id, get_agent_by_name
 from app.domain.reviewer.models import PostedCommentRow, ReviewJobRow
-from app.domain.vcs import Review
+from app.domain.vcs import Diff, Review
 from app.domain.vcs import (
     get_plugin as get_vcs_plugin,
 )
@@ -54,6 +55,19 @@ class ReviewJobStatusChanged(Event):
     status: str
 
 
+class ReviewJobStepProgress(Event):
+    """In-place row update — not an audit entry. Drives the running-state UI
+    so operators can see which phase a long-running review is in.
+    """
+
+    kind: Literal["review_job_step_progress"] = "review_job_step_progress"
+    source_module: Literal["reviewer"] = "reviewer"
+    pr_id: UUID
+    agent_id: UUID
+    review_job_id: UUID
+    current_step: str
+
+
 # Audit payloads
 
 
@@ -67,11 +81,28 @@ class _CancelledPayload(BaseModel):
     reason: str
 
 
+class _AgentSnapshot(BaseModel):
+    id: UUID
+    name: str
+    prompt_text: str
+    coding_agent_plugin_id: str
+    agent_config: dict[str, Any]
+
+
 class _PromptSentPayload(BaseModel):
-    agent_name: str
+    """Frozen snapshot of everything that influenced this review.
+
+    Captures the agent definition (so prompt-text rewrites later can't
+    silently change what older audit entries refer to) alongside the
+    content-derived hash and lesson context.
+    """
+
+    agent: _AgentSnapshot
     prompt_hash: str
     lessons_count: int
+    lessons_applied: list[UUID]
     checkout_sha: str
+    language_hint: str | None = None
 
 
 class _PostedPayload(BaseModel):
@@ -510,6 +541,15 @@ async def _run_review_job(input: ReviewJobInput) -> None:
             return
         pr = await pull_requests.get(ticket.pr_id, org_id=org_id)
         agent = await get_agent_by_id(input.agent_id, org_id=org_id)
+
+        await _set_step(
+            job_id,
+            "fetching_diff",
+            ticket_id=input.ticket_id,
+            pr_id=pr.id,
+            agent_id=agent.id,
+        )
+
         lessons = await memory.list_for_repo(pr.repo_external_id, org_id=org_id, plugin_id=pr.plugin_id)
 
         vcs_plugin = get_vcs_plugin(pr.plugin_id)
@@ -530,6 +570,19 @@ async def _run_review_job(input: ReviewJobInput) -> None:
         total_lines = sum(f.additions + f.deletions for f in diff.files)
         if total_lines > 5000:
             await _transition_skipped(job_id, "too_large", org_id=org_id)
+            return
+
+        # Pre-flight: refuse to review if the diff appears to leak a secret.
+        # Per requirements.md edge cases — post a single warning then skip the
+        # rest of the pipeline. In M01 each of the three agents runs this
+        # independently; they may each post a warning. POC tolerance.
+        secret_rule = _detect_secrets(diff)
+        if secret_rule is not None:
+            try:
+                await vcs_plugin.post_review(pr.external_id, _secrets_warning_review(agent.name, secret_rule))
+            except Exception:
+                log.exception("review_job.secrets_warning_post_failed", review_job_id=str(job_id))
+            await _transition_skipped(job_id, "secrets_detected", org_id=org_id)
             return
 
         # Language autodetected per review (was previously cached on repos.language_hint
@@ -562,7 +615,6 @@ async def _run_review_job(input: ReviewJobInput) -> None:
                 .values(
                     prompt_hash=prompt_hash,
                     lessons_applied=lesson_ids,
-                    current_step="invoking_agent",
                 )
             )
             await s.commit()
@@ -571,13 +623,29 @@ async def _run_review_job(input: ReviewJobInput) -> None:
             job_id,
             "review_job.prompt_sent",
             _PromptSentPayload(
-                agent_name=agent.name,
+                agent=_AgentSnapshot(
+                    id=agent.id,
+                    name=agent.name,
+                    prompt_text=agent.prompt_text,
+                    coding_agent_plugin_id=agent.coding_agent_plugin_id,
+                    agent_config=agent.agent_config,
+                ),
                 prompt_hash=prompt_hash,
                 lessons_count=len(lessons),
+                lessons_applied=lesson_ids,
                 checkout_sha=pr.head_sha,
+                language_hint=language,
             ),
             actor=Actor.system(),
             org_id=org_id,
+        )
+
+        await _set_step(
+            job_id,
+            "provisioning_workspace",
+            ticket_id=input.ticket_id,
+            pr_id=pr.id,
+            agent_id=agent.id,
         )
 
         async with with_workspace(
@@ -600,6 +668,14 @@ async def _run_review_job(input: ReviewJobInput) -> None:
             if row is None or row.status != "running":
                 return
 
+            await _set_step(
+                job_id,
+                "invoking_agent",
+                ticket_id=input.ticket_id,
+                pr_id=pr.id,
+                agent_id=agent.id,
+            )
+
             result = await coding_agent.review(
                 plugin_id=agent.coding_agent_plugin_id,
                 workspace=ws,
@@ -607,6 +683,13 @@ async def _run_review_job(input: ReviewJobInput) -> None:
             )
 
         if result.status == InvocationStatus.SUCCESS:
+            await _set_step(
+                job_id,
+                "posting_review",
+                ticket_id=input.ticket_id,
+                pr_id=pr.id,
+                agent_id=agent.id,
+            )
             review_obj = Review(
                 agent_tag=agent.name,
                 state=result.state or "COMMENT",
@@ -833,6 +916,78 @@ def _is_skip_path(path: str) -> bool:
     from app.domain.intake.parsing import is_skippable_path  # noqa: PLC0415
 
     return is_skippable_path(path)
+
+
+# Patterns for the pre-flight secrets check. Only the high-confidence shapes —
+# anything entropy-only would false-positive at POC scale. Each match raises a
+# refuse-to-review on the PR; the audit log captures *which rule* matched, never
+# the secret itself.
+_SECRET_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("github_token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b")),
+    ("anthropic_key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}")),
+    ("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{32,}\b")),
+    ("private_key_pem", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+)
+
+
+def _detect_secrets(diff: Diff) -> str | None:
+    """Scan added lines in `diff.raw` for high-confidence secret shapes.
+
+    Returns the rule id that matched first, or None if nothing matched.
+    Only `+`-prefixed lines are scanned — `-` and context lines are pre-existing
+    content and are out of scope for the pre-flight refuse-to-review check.
+    """
+    for raw_line in (diff.raw or "").splitlines():
+        if not raw_line.startswith("+") or raw_line.startswith("+++"):
+            continue
+        for rule_id, pat in _SECRET_RULES:
+            if pat.search(raw_line):
+                return rule_id
+    return None
+
+
+def _secrets_warning_review(agent_name: str, rule_id: str) -> Review:
+    """One-shot review posted when the secrets pre-flight refuses to proceed."""
+    body = (
+        "yaaof refused to review this PR — the diff contains content that "
+        f"looks like a leaked secret (rule: `{rule_id}`). Remove the secret, "
+        "rotate it on the upstream provider, then push a fresh commit and the "
+        "review will run automatically."
+    )
+    return Review(agent_tag=agent_name, state="COMMENT", summary_body=body, findings=[])
+
+
+async def _set_step(
+    job_id: UUID,
+    step: str,
+    *,
+    ticket_id: UUID,
+    pr_id: UUID,
+    agent_id: UUID,
+) -> None:
+    """Update `current_step` + heartbeat and publish a step-progress event.
+
+    Step changes do NOT generate audit entries (M01 decision: heartbeat noise
+    isn't worth durable history). The SSE event drives the UI; the column
+    drives polling fallback.
+    """
+    async with db_session() as s:
+        await s.execute(
+            update(ReviewJobRow)
+            .where(ReviewJobRow.id == job_id)
+            .values(current_step=step, last_heartbeat_at=_utcnow())
+        )
+        await s.commit()
+    await publish(
+        ReviewJobStepProgress(
+            ticket_id=ticket_id,
+            pr_id=pr_id,
+            agent_id=agent_id,
+            review_job_id=job_id,
+            current_step=step,
+        )
+    )
 
 
 def _detect_language(diff: Any) -> str | None:

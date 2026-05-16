@@ -28,7 +28,7 @@ Tests run anywhere, offline, deterministically, with no external credentials and
 Three artifacts:
 
 - **`apps/fake-github/`** — peer Python service. Fakes every GitHub endpoint the plugin calls. Verifies the App JWT signed by a test PEM. HMAC-signs outbound webhooks with a shared test secret. In-memory state.
-- **`apps/backend/bin/seed_test_data`** — Python script using ORM models to populate the e2e Postgres.
+- **`app/testing/e2e_setup/`** — yaaof-side test-data control surface (`/api/testing/reset`, `/api/testing/seed/...`). Specs drive their own preconditions per-test rather than inheriting a batch-seeded state.
 - **`docker/docker-compose.test.yml`** — brings up Postgres + fake-github + yaaof with the right env wiring + secrets sharing.
 
 Plus two in-repo concerns:
@@ -105,41 +105,53 @@ apps/fake-github/
 
 ---
 
-## 2. `apps/backend/bin/seed_test_data` — e2e fixture seeding
+## 2. `app/testing/e2e_setup/` — programmatic test-data control surface
 
-### Invocation
+A yaaof-side testing-layer module that exposes three HTTP routes under
+`/api/testing/`. All routes return 404 unless `yaaof_env == "dev"`. Specs
+call these from `beforeEach` to drive yaaof into the precise state each
+journey requires — no inherited fixture, no batch seed script.
 
-A Python script that:
+### Routes
 
-1. Connects to Postgres using `DATABASE_URL`.
-2. Runs migrations (`core/database.migrate()`).
-3. Inserts the fixture rows using SQLAlchemy ORM (same `Base.metadata` as production).
-4. Encrypts the Anthropic API key fixture with the test `YAAOF_ENCRYPTION_KEY` before inserting (`claude_code_settings` row).
-5. Idempotent — checks for existing rows by natural key before inserting.
+| Method + path | Behavior |
+|---|---|
+| `POST /api/testing/reset` | `TRUNCATE` every table in `Base.metadata.sorted_tables` (reverse order, `RESTART IDENTITY CASCADE`), then re-run `ensure_builtin_agents` so the three built-in reviewer agents exist. |
+| `POST /api/testing/seed/credentials_and_install` | Body: `{ "org_login": "acme" }` (default). Inserts `github_settings` + an active `github_app_installations` row + `claude_code_settings` with placeholder encrypted blobs. |
+| `POST /api/testing/seed/lesson` | Body: `{ "repo_external_id", "title", "body" }`. Inserts a single `LessonRow`. |
 
-Invoked from `docker-compose.test.yml` as an init container that runs after Postgres is healthy and before yaaof starts.
+The route handlers delegate to pure async functions in `service.py` so backend
+integration tests can call them directly without going through HTTP.
 
-### Fixture content
+### Layout
 
-| Table | Rows | Detail |
-|---|---|---|
-| `github_app_installations` | 1 | `installation_id=fake-install-1`, `org=acme`, status=`active` |
-| `github_settings` | 1 | App id=fake-app-1, encrypted PEM + webhook secret (encrypted with test key) |
-| `claude_code_settings` | 1 | Provider=anthropic, encrypted key (placeholder; cache replaces real calls anyway) |
-| `repos` | 2 | `acme/web` (TypeScript), `acme/api` (Python). Both active. |
-| `reviewer_agents` | 3 | architecture / security / style. Same default prompts the production seed migration installs. |
-| `lessons` | 4 | 2 for `acme/web`, 2 for `acme/api`. Realistic-looking team lessons. |
-| `tickets` | 5 | Mix of `in_review` (with in-flight review_jobs) and `complete`. |
-| `pull_requests` | 5 | Mirror each ticket's source PR. |
-| `review_jobs` | ~12 | Realistic mix across statuses: `queued`, `running` (with heartbeat), `posted`, `failed`, `cancelled`. |
-| `posted_comments` | ~8 | Linked to the `posted` review_jobs. |
-| `audit_entries` | ~30 | The full chain for each ticket: created, scheduled, prompt_sent, posted/failed/cancelled. |
+```
+app/testing/e2e_setup/
+├── __init__.py        # imports web.py for side-effect registration
+├── module.py          # interface decl for bin/sync_modules
+├── service.py         # truncate_all_tables / reset / seed_* + is_dev_env gate
+├── web.py             # FastAPI router → RouteSpec(url_prefix="/api/testing")
+└── test/__init__.py
+```
 
-The fixture content lives in `apps/backend/bin/seed_test_data` as Python literals (constructor calls), not a YAML file — schema changes are caught by the type system.
+### Mounting
 
-### Why not the production seed migration
+`app/main.py` imports `app.testing.e2e_setup` only when `yaaof_env == "dev"`,
+mirroring the `YAAOF_CODING_AGENT_STUB` gate already in place for the stub
+plugins. Prod wheels exclude the `testing/` tree entirely (see
+`pyproject.toml`), so the import would fail loud if it ran against a stripped
+deployment.
 
-The production seed installs the 3 reviewer agent rows (via Alembic data migration; see `internals/reviewer.md § Seeding`). `seed_test_data` includes those PLUS the test-only fixtures (repos, tickets, etc.). Conceptually: prod-seed = a strict subset of test-seed. The script imports and reuses the prod-seed constants.
+### Why per-spec seeding instead of a batch seed script
+
+`bin/seed_test_data` (now deleted) ran once at container startup and gave
+every spec the same inherited state — which made the empty-DB onboarding
+spec impossible to write honestly. Per-spec seeding lets each journey
+declare its own preconditions in its `beforeEach`, and refactors that
+change seed shape touch one module (`e2e_setup`), not a script + compose
+file + several specs. Built-in reviewer agents are still seeded
+automatically (via `reset` and via the reviewer module's `RouteSpec.on_startup`
+hook in the running app); they're structural, not test data.
 
 ---
 
@@ -160,18 +172,6 @@ services:
       interval: 1s
       timeout: 2s
       retries: 30
-
-  seed:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    environment:
-      DATABASE_URL: postgresql+asyncpg://yaaof:yaaof@postgres:5432/yaaof
-      YAAOF_ENCRYPTION_KEY: ${TEST_ENCRYPTION_KEY}
-    depends_on:
-      postgres: { condition: service_healthy }
-    command: ["uv", "run", "python", "-m", "apps.backend.bin.seed_test_data"]
-    restart: "no"
 
   fake-github:
     build:
@@ -198,7 +198,6 @@ services:
       YAAOF_CATCHUP_DELAY_SECONDS: "0"
     depends_on:
       postgres: { condition: service_healthy }
-      seed: { condition: service_completed_successfully }
       fake-github: { condition: service_started }
     ports:
       - "8080:8080"
@@ -382,6 +381,10 @@ The cache lives outside of production code. A pytest fixture replaces the regist
 ### 2026-05-15 — `apps/fake-github` is a Python FastAPI peer service, not a yaaof module
 Lives in `apps/fake-github/` as a member of the uv workspace. Implements the union of GitHub endpoints yaaof's plugin calls plus `/__test/*` control endpoints. Test secrets (PEM, HMAC) committed in `apps/fake-github/app/test_secrets.py` and shared with yaaof via `docker-compose.test.yml` env wiring.
 **Why:** Python is the lowest-friction language (matches the rest of the backend; reuses uv workspace). FastAPI is what yaaof's plugin expects to talk to via the same `httpx` client.
+
+### 2026-05-16 — Per-spec seeding via `app/testing/e2e_setup`; `bin/seed_test_data` deleted
+The previous shape ran `bin/seed_test_data` once at container startup, baking a fixed fixture set into every spec. The replacement is a small HTTP surface in the testing layer (`POST /api/testing/reset` + `seed/credentials_and_install` + `seed/lesson`) that each spec calls in its `beforeEach`. Built-in reviewer agents are seeded by the reset endpoint (and independently by the reviewer module's `RouteSpec.on_startup` hook) — they're structural, not test data.
+**Why:** the batch seed made the empty-DB onboarding spec impossible to write honestly, and changes to seed shape touched a script + compose file + several specs. Per-spec seeding makes each journey's preconditions explicit and localises the seeders to one module.
 
 ### 2026-05-15 — Time-control env vars; defaults are production values; tests set short
 `YAAOF_REVIEW_DEBOUNCE_SECONDS`, `YAAOF_REAPER_INTERVAL_SECONDS`, `YAAOF_HEARTBEAT_INTERVAL_SECONDS`, `YAAOF_CATCHUP_DELAY_SECONDS`. Each code site that sleeps reads from `core/config.Settings`, never hardcodes. `docker-compose.test.yml` sets each to a fast value.

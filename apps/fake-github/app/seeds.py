@@ -41,6 +41,15 @@ def default_seeded_diffs() -> dict[str, str]:
     }
 
 
+def default_installation_repositories() -> list[dict[str, Any]]:
+    """Repos the seeded App-install can see — drives yaaof's catch-up poller
+    and the Settings GitHub-card live repo list."""
+    return [
+        {"full_name": "acme/web", "html_url": "https://github.com/acme/web", "private": False},
+        {"full_name": "acme/api", "html_url": "https://github.com/acme/api", "private": False},
+    ]
+
+
 def default_seeded_files() -> dict[str, list[dict[str, Any]]]:
     return {
         "acme/web#1": [

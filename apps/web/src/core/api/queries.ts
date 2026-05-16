@@ -81,6 +81,21 @@ export function useRereviewMutation() {
   });
 }
 
+export function useCancelReviewerJobs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticket_id: string) =>
+      apiFetch<{ cancelled_count: number }>(
+        `/api/reviewer/cancel?ticket_id=${encodeURIComponent(ticket_id)}`,
+        { method: "POST" },
+      ),
+    onSuccess: (_, ticket_id) => {
+      qc.invalidateQueries({ queryKey: ["reviewer", "jobs", ticket_id] });
+      qc.invalidateQueries({ queryKey: ["tickets", ticket_id, "audit"] });
+    },
+  });
+}
+
 export function useLessons(repo_external_id?: string) {
   return useQuery<Lesson[]>({
     queryKey: ["memory", repo_external_id ?? "all"],

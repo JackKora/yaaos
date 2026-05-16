@@ -539,6 +539,18 @@ Captured in `audit_entries(kind='review_job.prompt_sent')`. Full prompt text is 
 ### 2026-05-15 — `posted_comments` rows written by reviewer on every successful `post_review`
 One row per finding-that-became-a-comment. Used by `intake` for reply-agent lookup. Reviewer's responsibility (it's the writer).
 
+### 2026-05-16 — `_run_review_job` publishes `review_job.step_progress` SSE events at phase boundaries
+Phases emitted: `fetching_diff` → `provisioning_workspace` → `invoking_agent` → `posting_review`. The publisher is the small `_set_step` helper, which (a) updates `review_jobs.current_step` + bumps `last_heartbeat_at`, and (b) publishes `ReviewJobStepProgress(review_job_id, agent_id, pr_id, ticket_id, current_step)` via `core/events.publish`. The FE invalidates `["reviewer", "jobs", ticket_id]` on receipt — narrow scope, no metrics / list churn (only `current_step` moved).
+**Why:** the design's "running" AgentCard wants to show the live phase, but per the 2026-05-16 audit-kinds decision, step changes are not audit-worthy. SSE is the right channel: ephemeral, low-volume, drives in-place UI updates without polluting the timeline.
+
+### 2026-05-16 — Secrets pre-flight refuses the review with one PR comment per agent
+After the existing skip checks but before language detection, `_detect_secrets(diff)` scans added (`+`) lines for high-confidence shapes (AWS access key, GitHub token, Anthropic key, OpenAI key, PEM private key block). On match, the job posts a one-shot `Review(state="COMMENT", summary_body=<refusal>)` via the VCS plugin and transitions to `skipped(skip_reason="secrets_detected")`. The audit entry carries the rule id, never the matched bytes. Three agents run independently per PR, so up to three warnings may post — POC tolerance; deduping is M02+.
+**Why:** required by `requirements.md` edge cases. Refusing rather than letting the agent see the secret avoids forwarding it to a model provider.
+
+### 2026-05-16 — `review_job.prompt_sent` carries a full `_AgentSnapshot`
+Was `{agent_name, prompt_hash, lessons_count, checkout_sha}`. Now `{agent: {id, name, prompt_text, coding_agent_plugin_id, agent_config}, prompt_hash, lessons_count, lessons_applied[], checkout_sha, language_hint}`. Snapshot is immutable in the audit log — prompt-text edits via `/api/reviewer/agents/.../prompt` don't rewrite history.
+**Why:** the original payload couldn't answer "what exactly ran on this PR three weeks ago" if the agent's prompt has been edited since. The frozen snapshot makes audit entries self-contained.
+
 ### 2026-05-15 — In-flight tracking lives in `review_jobs`; no generic task layer
 `review_jobs` carries `started_at`, `last_heartbeat_at`, and `current_step`. A heartbeat coro bumps `last_heartbeat_at` every 10s while running. `list_in_flight()` returns `(queued, running)` rows; the admin/ops view reads from there. Cancellation is DB state flip + cooperative polling at safe points. Crashed-on-restart `running` rows are marked `failed`; `queued` rows are respawned.
 **Why:** the thing being tracked is a domain entity (a review attempt) with rich state, not an opaque task. A generic queue would force the domain to layer this state on top anyway.

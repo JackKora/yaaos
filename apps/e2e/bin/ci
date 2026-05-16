@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# e2e CI: brings up the test stack (Postgres pre-seeded + fake-github + yaaof),
-# runs the Playwright suite against it, tears down. No external credentials
-# required.
+# e2e CI: brings up the test stack (Postgres + fake-github + yaaof in mock
+# mode), runs the Playwright suite against it, tears down. No external
+# credentials required.
 #
-# The test stack is defined in docker/docker-compose.test.yml. It does NOT
-# exist yet in the skeleton — it lands when `plugins/github` + `apps/fake-github`
-# are built as part of M01. Until then this script reports the gap and exits 0.
+# Each spec drives its own preconditions via `/api/testing/reset` +
+# `/api/testing/seed/...` (see `app/testing/e2e_setup/`). There is no
+# batch-seeded fixture — the empty-DB onboarding spec depends on that.
 
 set -euo pipefail
 
@@ -13,12 +13,6 @@ cd "$(dirname "$0")/.."
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 COMPOSE_FILE="${REPO_ROOT}/docker/docker-compose.test.yml"
-
-if [ ! -f "${COMPOSE_FILE}" ]; then
-  echo "e2e test stack not yet built (docker-compose.test.yml missing) — skipping."
-  echo "  This is expected during the skeleton phase; lands with M01 GitHub plugin."
-  exit 0
-fi
 
 echo "==> docker compose up (test stack)"
 docker compose -f "${COMPOSE_FILE}" up -d --wait

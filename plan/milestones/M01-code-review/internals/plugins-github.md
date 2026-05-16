@@ -226,3 +226,11 @@ GitHub doesn't retry; we don't want GitHub to retry. Failures are surfaced via s
 
 ### 2026-05-14 — Use `httpx` directly; no `PyGithub` library
 ~9 endpoints; hand-rolled wrappers are smaller than a vendor SDK adapter. Keeps the dependency surface minimal.
+
+### 2026-05-16 — Catch-up poller spawned from the plugin's `RouteSpec.on_startup`
+`web.py` registers `_start_catchup` as an `on_startup` hook on the github `RouteSpec`. `_start_catchup` uses `core/primitives.spawn("github.catchup", run_catchup_loop())` so the startup hook returns immediately and the loop runs as a background task. `run_catchup_loop` sleeps `yaaof_catchup_delay_seconds` then runs `_run_catchup(org_id)` for each active install (one pass; no looping). `_run_catchup` discovers repos via `/installation/repositories` (no yaaof-side repos table), lists open PRs per repo, and calls `domain.intake.refresh_pr_metadata` for each. `github_poller_state.last_polled_at` is bumped per repo after iteration.
+**Why:** matches the "catch-up poller refreshes open PRs" decision above. The spawn-from-startup wiring is the minimal change that gives the loop a guaranteed-once-per-process trigger without coupling it to FastAPI's lifespan internals.
+
+### 2026-05-16 — Force-push detection runs in the webhook handler, not the parser
+`parse_webhook` stays synchronous and defaults `force_push=False`. After parsing, the webhook handler — only on `pull_request.synchronize` — calls `GitHubPlugin.detect_force_push(repo, before, after)` and `model_copy`s any `PullRequestSynchronized` events with the real flag before dispatching to intake.
+**Why:** the detection requires an async HTTP call (`/compare`); pushing it into the parser would force the parser to be async for one branch. The handler is already async and already does I/O; this keeps the parser pure.

@@ -376,8 +376,8 @@ This means tests run anywhere, offline, deterministically, with no rate-limit ex
 ### E2E tests
 
 - Live in `apps/e2e/` (pnpm workspace; TypeScript Playwright).
-- **Run against the test stack:** `docker compose -f docker/docker-compose.test.yml up` brings up Postgres (seeded) + fake-github + yaaof. Playwright drives the browser; assertions check the UI + DB + audit log.
-- **Pre-seeded DB.** The compose stack runs `apps/backend/bin/seed_test_data` after migrations: 2 repos, 5 tickets across states, 4 lessons, 3 reviewer agents (the built-ins), a "configured" GitHub App install row, a "configured" Anthropic API key, some audit entries. Seed data evolves with the schema via the ORM models — no SQL fixtures.
+- **Run against the test stack:** `docker compose -f docker/docker-compose.test.yml up` brings up Postgres (empty) + fake-github + yaaof. Playwright drives the browser; assertions check the UI + DB + audit log.
+- **Per-spec preconditions.** No batch-seeded fixture. Each spec calls `POST /api/testing/reset` in `beforeEach` (truncates everything, re-seeds the three built-in reviewer agents), then any combination of `POST /api/testing/seed/credentials_and_install` and `POST /api/testing/seed/lesson` it needs. Seeders live in `app/testing/e2e_setup` and use the ORM models so schema changes are caught by the type system.
 - **Triggering flows:** tests call `apps/fake-github`'s `POST /__test/dispatch_webhook` to simulate "a PR was opened on the configured repo." Fake-github signs the payload with the shared HMAC secret and POSTs to yaaof. The full real flow runs (intake → reviewer → coding-agent invocation via CLI cache → vcs.post_review → fake-github records the post).
 - Cover **golden-path user flows and critical regressions**, not exhaustive coverage. Each e2e test is cheap (no real LLM tokens, no real GitHub quota, seconds of wall time) but still slower than integration — keep the set small.
 - **Assertions are behavioral.** "A review was posted under the architecture identity." "Verdict is CHANGES_REQUESTED." "An audit-log entry exists for the review attempt." Avoid asserting on exact rendered text where templates may evolve.

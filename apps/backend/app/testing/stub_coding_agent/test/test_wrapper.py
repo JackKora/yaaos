@@ -86,8 +86,12 @@ async def test_review_returns_canned_success() -> None:
     )
     result = await stub.review(_FakeWorkspace(), ctx)
     assert result.status == InvocationStatus.SUCCESS
-    assert result.state == "APPROVED"
-    assert result.findings == []
+    assert result.state == "COMMENT"
+    # One synthetic finding lets UI specs exercise the finding-expansion
+    # and Teach-yaaof flow without needing a real LLM. See service.review.
+    assert len(result.findings) == 1
+    assert result.findings[0].file == "src/example.ts"
+    assert "architecture" in result.findings[0].title
     assert "architecture" in (result.summary_body or "")
     assert result.telemetry.tokens_in == 1000
 

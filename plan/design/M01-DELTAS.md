@@ -81,11 +81,32 @@ The design shows `acme` in headers ("acme · last 24h", "acme · N in review · 
 ### Logo — reserve space, no asset yet
 The design's logo is a placeholder "Y" with a `LOGO · PLACEHOLDER` mono caption. **Keep the placeholder slot** (don't restructure the sidebar header), but render a simple "yaaof" wordmark for now. A real logo lands later; the slot is sized for it.
 
+### Ticket UI shipped per design with SSE live updates (2026-05-16)
+The `tickets-frontend.md` doc had previously been parked as "implementer composes from frontend.md + design files" — and never built. Now built end-to-end:
+- **List**: status chips (All / Review / Done with counts), repo + kind + author dropdowns, group-by-status toggle, table layout matching the design (status badge, `#N · repo`, title, kind chip, verdict dots per agent, total cost, source icon, author avatar, total tokens, updated-ago).
+- **Detail**: header (`#N · repo`, title, status + kind + draft chips, author byline, **Cancel jobs** + **Re-review** buttons), **Review** / **Audit log** tabs, SummaryStrip (Findings / Total cost / Tokens / Latency / Lessons), three AgentCards with full state machine (no-run / queued / running with live latency + indeterminate bar + live tokens & cost / posted with finding list / skipped / failed / cancelled).
+- **Findings**: expandable rows with severity dot, file:line, body, italic rationale block, structured snippet diff (line-numbered +/− with color), applied-lesson chips linking to Memory, **Teach yaaof…** button opening a modal that pre-fills a new lesson with the finding's body + auto-tagged repo.
+- **Live updates**: real SSE wired (`/api/events` already existed; new `core/sse/SSESubscriber` mounted at app root translates each event into TanStack-Query cache invalidations — published events `ticket_status_changed` and `review_job_status_changed` both refresh the right keys). Polling intervals remain as a safety net.
+- **Filter dropdowns**: repo + kind + author are all live, even when there's only one option. Kind is hardcoded "feature" per § Tickets above. Repo options come from the union of live GitHub-installed repos (`/api/github/repositories`) + distinct `repo_external_id` seen on tickets. Author options derive from `Ticket.author_login` (enriched server-side from the linked PR).
+- **Cancel jobs** endpoint shipped: `POST /api/reviewer/cancel?ticket_id=...` wraps the existing `cancel_pending(ticket_id)`.
+
+**Why now:** the placeholder ticket UI (~150 LOC of "title + flat job list + raw audit") wasn't honoring the design and was the product's signature moment. Plus the realization that reviews weren't firing at all because the agents were never seeded outside the test fixture made it the right moment to do both at once.
+
 ### Dashboard activity feed deferred (2026-05-16)
 The design's right-hand "Activity" panel needs `GET /api/dashboard/activity`, which isn't built yet. The dashboard's populated state runs the "Live agents · in flight" panel full-width until the activity endpoint lands. Revisit when there's user pull for it.
 
 ### Dashboard sparklines + 24h deltas deferred (2026-05-16)
 Each metric tile in the design shows a sparkline (Reviews 24h) or a `+delta` indicator. `GET /api/reviewer/metrics` returns lifetime aggregates only — no 24h buckets, no hourly data. Tiles render headline value + subtitle ("all-time") until `GET /api/dashboard/metrics` (24h-windowed, bucketed) is defined. The user-visible difference is the absence of the line/delta widgets; the tile layout and hierarchy are unchanged.
+
+### Reviewer pipeline gaps closed (2026-05-16)
+The spec's review pipeline gained four pieces that were previously deferred or stubbed. All wired into `_run_review_job` (`apps/backend/app/domain/reviewer/queue.py`):
+1. **`_detect_secrets` pre-flight.** Scans added `+` lines in `diff.raw` for high-confidence secret shapes (AWS / GitHub / Anthropic / OpenAI / PEM private keys). On match, posts a single refuse-to-review comment and transitions the job to `skipped(skip_reason="secrets_detected")`. POC tolerance: three agents run independently per PR, so up to three warnings may post.
+2. **`review_job.prompt_sent` audit payload upgraded.** Was `{agent_name, prompt_hash, lessons_count, checkout_sha}` — now carries a full `_AgentSnapshot` (id / name / prompt_text / plugin / agent_config) plus `lessons_applied` UUIDs and `language_hint`. The audit entry is now an immutable snapshot of everything that influenced the review.
+3. **`review_job.step_progress` SSE event.** New event kind. Phase transitions (`fetching_diff` → `provisioning_workspace` → `invoking_agent` → `posting_review`) publish via `core/events.publish` and the FE invalidates `["reviewer", "jobs", ticket_id]` on receipt. No audit entries (per `M01-DELTAS.md` heartbeat rule).
+4. **Force-push detection.** `PullRequestSynchronized` events now carry the real `force_push` flag. The webhook handler calls `GitHubPlugin.detect_force_push()` (uses GitHub's `/compare` API; `status == "diverged"` ⇒ force-push) and `model_copy`s the event before dispatching to intake.
+
+### GitHub catch-up poller wired (2026-05-16)
+Spec § `plugins-github.md` "Catch-up poller" — the loop now runs. `run_catchup_loop()` is invoked from the github plugin's `RouteSpec.on_startup`, sleeps `yaaof_catchup_delay_seconds` (default 10s), then iterates each active install: list visible repos via `/installation/repositories`, list open PRs per repo, and run `refresh_pr_metadata` on each. Bumps `github_poller_state.last_polled_at` per repo. **Does NOT replay reviews** — only refreshes PR-metadata + ticket existence (per the 2026-05-14 decision in `plugins-github.md`).
 
 ### Settings — three independent cards, no gating (2026-05-16)
 A previous implementation showed an "Onboarding status" badge card + an Anthropic-key form, which read as if Anthropic gated everything else. The Settings page is now three peer cards (GitHub App, Model API key, Plugin health), each with its own status and actions. Each card is independently configurable — the user can save the Anthropic key whether or not the GitHub App is installed, and vice versa. The card-level layering smell that lived in the URL design (`/api/settings/anthropic_key`, `/api/settings/health` exposing GitHub plugin state under a settings namespace) was also fixed: plugin-owned routes now live under `/api/<plugin>/...`. See `plan/milestones/M01-code-review/backend.md` § 2026-05-16.
