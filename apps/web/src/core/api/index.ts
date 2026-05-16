@@ -1,2 +1,32 @@
-export { apiClient, type HealthResponse } from "./client";
-export { useHealth } from "./queries";
+export {
+  apiClient,
+  apiFetch,
+  type AuditEntry,
+  type HealthResponse,
+  type Lesson,
+  type OnboardingStatus,
+  type Repo,
+  type ReviewJob,
+  type ReviewerAgent,
+  type Ticket,
+} from "./client";
+export {
+  useAddRepo,
+  useCreateLesson,
+  useDeleteLesson,
+  useHealth,
+  useLessons,
+  useMetricsSummary,
+  useOnboarding,
+  useRemoveRepo,
+  useRereviewMutation,
+  useResetAgentPrompt,
+  useReviewJobsForTicket,
+  useReviewerAgents,
+  useRepos,
+  useSetAnthropicKey,
+  useTicket,
+  useTicketAudit,
+  useTickets,
+  useUpdateAgentPrompt,
+} from "./queries";

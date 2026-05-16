@@ -1,4 +1,4 @@
-"""core/database — async SQLAlchemy engine + session factory + migration bootstrap."""
+"""core/database — async SQLAlchemy engine + session factory + migration runner."""
 
 from app.core.database.service import (
     Base,
@@ -6,6 +6,7 @@ from app.core.database.service import (
     ensure_schema_migrations_table,
     get_engine,
     get_sessionmaker,
+    migrate,
     ping,
     session,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "ensure_schema_migrations_table",
     "get_engine",
     "get_sessionmaker",
+    "migrate",
     "ping",
     "session",
 ]

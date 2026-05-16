@@ -1,0 +1,194 @@
+"""Translate GitHub webhook payloads to domain/vcs VCSEvent instances."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+
+from app.domain.vcs import (
+    CommentCreated,
+    PullRequestClosed,
+    PullRequestReadyForReview,
+    PullRequestReopened,
+    PullRequestSynchronized,
+    ReactionAdded,
+    VCSEvent,
+    VCSPullRequest,
+)
+
+
+def _parse_pr(payload: dict[str, Any]) -> VCSPullRequest:
+    pr = payload["pull_request"]
+    repo = payload["repository"]
+    user = pr.get("user", {}) or {}
+    head = pr.get("head", {}) or {}
+    base = pr.get("base", {}) or {}
+    return VCSPullRequest(
+        plugin_id="github",
+        external_id=f"{repo['full_name']}#{pr['number']}",
+        repo_external_id=repo["full_name"],
+        number=pr["number"],
+        title=pr.get("title", ""),
+        body=pr.get("body"),
+        author_login=user.get("login", "unknown"),
+        author_type="bot" if user.get("type", "User").lower() == "bot" else "user",
+        base_branch=base.get("ref", ""),
+        head_branch=head.get("ref", ""),
+        base_sha=base.get("sha", ""),
+        head_sha=head.get("sha", ""),
+        is_draft=pr.get("draft", False),
+        is_fork=(head.get("repo", {}) or {}).get("fork", False),
+        state="merged" if pr.get("merged") else pr.get("state", "open"),
+        html_url=pr.get("html_url", ""),
+        created_at=_parse_iso(pr.get("created_at")),
+        updated_at=_parse_iso(pr.get("updated_at")),
+    )
+
+
+def _parse_iso(s: str | None) -> datetime:
+    if not s:
+        return datetime.now(UTC)
+    if s.endswith("Z"):
+        s = s.replace("Z", "+00:00")
+    return datetime.fromisoformat(s)
+
+
+def parse_webhook(event_type: str, source_event_id: str, payload: dict[str, Any]) -> list[VCSEvent]:
+    """Return zero or more VCSEvents from a verified, parsed webhook payload."""
+    now = datetime.now(UTC)
+    repo_external_id = (payload.get("repository") or {}).get("full_name", "")
+    pr = payload.get("pull_request") or {}
+    pr_external_id = f"{repo_external_id}#{pr['number']}" if pr and "number" in pr else None
+
+    if event_type == "pull_request":
+        action = payload.get("action")
+        if action == "opened":
+            if pr.get("draft", False):
+                return []
+            return [
+                PullRequestReadyForReview(
+                    plugin_id="github",
+                    source_event_id=source_event_id,
+                    received_at=now,
+                    repo_external_id=repo_external_id,
+                    pr_external_id=pr_external_id,
+                    pr=_parse_pr(payload),
+                )
+            ]
+        if action == "ready_for_review":
+            return [
+                PullRequestReadyForReview(
+                    plugin_id="github",
+                    source_event_id=source_event_id,
+                    received_at=now,
+                    repo_external_id=repo_external_id,
+                    pr_external_id=pr_external_id,
+                    pr=_parse_pr(payload),
+                )
+            ]
+        if action == "synchronize":
+            return [
+                PullRequestSynchronized(
+                    plugin_id="github",
+                    source_event_id=source_event_id,
+                    received_at=now,
+                    repo_external_id=repo_external_id,
+                    pr_external_id=pr_external_id,
+                    new_head_sha=pr.get("head", {}).get("sha", ""),
+                    force_push=False,  # detection deferred; harmless in M01
+                )
+            ]
+        if action == "closed":
+            return [
+                PullRequestClosed(
+                    plugin_id="github",
+                    source_event_id=source_event_id,
+                    received_at=now,
+                    repo_external_id=repo_external_id,
+                    pr_external_id=pr_external_id,
+                    merged=pr.get("merged", False),
+                )
+            ]
+        if action == "reopened":
+            return [
+                PullRequestReopened(
+                    plugin_id="github",
+                    source_event_id=source_event_id,
+                    received_at=now,
+                    repo_external_id=repo_external_id,
+                    pr_external_id=pr_external_id,
+                )
+            ]
+        return []
+
+    if event_type == "issue_comment":
+        if payload.get("action") != "created":
+            return []
+        issue = payload.get("issue") or {}
+        if "pull_request" not in issue:
+            return []  # plain issue comment, not PR
+        comment = payload.get("comment") or {}
+        user = comment.get("user", {}) or {}
+        pr_num = issue.get("number")
+        return [
+            CommentCreated(
+                plugin_id="github",
+                source_event_id=source_event_id,
+                received_at=now,
+                repo_external_id=repo_external_id,
+                pr_external_id=f"{repo_external_id}#{pr_num}" if pr_num else None,
+                comment_external_id=str(comment.get("id", "")),
+                comment_kind="top_level",
+                body=comment.get("body", ""),
+                author_login=user.get("login", ""),
+                author_type="bot" if user.get("type", "User").lower() == "bot" else "user",
+                in_reply_to_comment_external_id=None,
+            )
+        ]
+
+    if event_type == "pull_request_review_comment":
+        if payload.get("action") != "created":
+            return []
+        comment = payload.get("comment") or {}
+        user = comment.get("user", {}) or {}
+        return [
+            CommentCreated(
+                plugin_id="github",
+                source_event_id=source_event_id,
+                received_at=now,
+                repo_external_id=repo_external_id,
+                pr_external_id=pr_external_id,
+                comment_external_id=str(comment.get("id", "")),
+                comment_kind="inline",
+                body=comment.get("body", ""),
+                author_login=user.get("login", ""),
+                author_type="bot" if user.get("type", "User").lower() == "bot" else "user",
+                in_reply_to_comment_external_id=(
+                    str(comment.get("in_reply_to_id")) if comment.get("in_reply_to_id") else None
+                ),
+            )
+        ]
+
+    if event_type == "reaction":
+        if payload.get("action") != "created":
+            return []
+        reaction = payload.get("reaction") or {}
+        content = reaction.get("content")
+        mapped = {"+1": "thumbs_up", "-1": "thumbs_down"}.get(content)
+        if mapped is None:
+            return []
+        target = (payload.get("comment") or {}).get("id")
+        return [
+            ReactionAdded(
+                plugin_id="github",
+                source_event_id=source_event_id,
+                received_at=now,
+                repo_external_id=repo_external_id,
+                pr_external_id=pr_external_id,
+                target_comment_external_id=str(target) if target else "",
+                reaction=mapped,
+                actor_login=reaction.get("user", {}).get("login", ""),
+            )
+        ]
+
+    return []

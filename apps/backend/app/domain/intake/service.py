@@ -1,0 +1,423 @@
+"""Inbound VCS-event router."""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+import structlog
+from pydantic import BaseModel
+from sqlalchemy import select
+
+from app.core.audit_log import audit_for_ticket, audit_for_webhook_event
+from app.core.database import session as db_session
+from app.core.primitives import Actor
+from app.domain import pull_requests, repos, tickets, vcs
+from app.domain.intake.parsing import parse_rereview
+from app.domain.vcs import (
+    CommentCreated,
+    PullRequestClosed,
+    PullRequestReadyForReview,
+    PullRequestReopened,
+    PullRequestSynchronized,
+    ReactionAdded,
+    VCSEvent,
+    VCSPullRequest,
+)
+
+log = structlog.get_logger("intake")
+
+YAAOF_BOT_LOGIN = "yaaof[bot]"
+
+
+class IntakeError(Exception):
+    pass
+
+
+# Audit payloads
+
+
+class _WebhookFilteredPayload(BaseModel):
+    reason: str
+    event_kind: str
+    source_event_id: str
+
+
+class _RereviewRequestedPayload(BaseModel):
+    agent_name_or_all: str
+    comment_external_id: str
+
+
+class _ReplyReceivedPayload(BaseModel):
+    agent_id: UUID
+    parent_comment_external_id: str
+    new_comment_external_id: str
+
+
+class _ReactionReceivedPayload(BaseModel):
+    agent_id: UUID
+    reaction: str
+    target_comment_external_id: str
+
+
+class _WebhookFailedPayload(BaseModel):
+    event_kind: str
+    source_event_id: str
+    exception_type: str
+    message: str
+
+
+# ── Entry points ─────────────────────────────────────────────────────────────
+
+
+async def handle_vcs_events(events: list[VCSEvent], *, org_id: UUID) -> None:
+    for event in events:
+        try:
+            await _dispatch_one(event, org_id=org_id)
+        except Exception as e:
+            log.exception(
+                "intake.event_failed",
+                event_kind=event.kind,
+                source_event_id=event.source_event_id,
+            )
+            await _audit_event_failed(event, e, org_id=org_id)
+
+
+async def _audit_event_failed(event: VCSEvent, e: Exception, *, org_id: UUID) -> None:
+    # We don't have the webhook row id at this layer — use a synthetic UUID.
+    from uuid import uuid4  # noqa: PLC0415
+
+    await audit_for_webhook_event(
+        uuid4(),
+        "webhook_event.failed",
+        _WebhookFailedPayload(
+            event_kind=event.kind,
+            source_event_id=event.source_event_id,
+            exception_type=type(e).__name__,
+            message=str(e),
+        ),
+        actor=Actor.system(),
+        org_id=org_id,
+    )
+
+
+async def _dispatch_one(event: VCSEvent, *, org_id: UUID) -> None:
+    if isinstance(event, PullRequestReadyForReview):
+        await _handle_pr_ready_for_review(event, org_id=org_id)
+    elif isinstance(event, PullRequestSynchronized):
+        await _handle_pr_synchronized(event, org_id=org_id)
+    elif isinstance(event, PullRequestClosed):
+        await _handle_pr_closed(event, org_id=org_id)
+    elif isinstance(event, PullRequestReopened):
+        await _handle_pr_reopened(event, org_id=org_id)
+    elif isinstance(event, CommentCreated):
+        await _handle_comment_created(event, org_id=org_id)
+    elif isinstance(event, ReactionAdded):
+        await _handle_reaction_added(event, org_id=org_id)
+
+
+# ── Handlers ─────────────────────────────────────────────────────────────────
+
+
+async def _filter_audit(event: VCSEvent, reason: str, *, org_id: UUID) -> None:
+    from uuid import uuid4  # noqa: PLC0415
+
+    await audit_for_webhook_event(
+        uuid4(),
+        "webhook_event.filtered",
+        _WebhookFilteredPayload(
+            reason=reason,
+            event_kind=event.kind,
+            source_event_id=event.source_event_id,
+        ),
+        actor=Actor.system(),
+        org_id=org_id,
+    )
+
+
+async def _handle_pr_ready_for_review(event: PullRequestReadyForReview, *, org_id: UUID) -> None:
+    repo = await repos.get_by_external(event.plugin_id, event.repo_external_id, org_id=org_id)
+    if repo is None or repo.status != "active":
+        await _filter_audit(event, "not_allowlisted", org_id=org_id)
+        return
+    if event.pr.is_fork:
+        await _filter_audit(event, "fork", org_id=org_id)
+        return
+    if event.pr.author_type == "bot":
+        await _filter_audit(event, "bot_author", org_id=org_id)
+        return
+    pr = await refresh_pr_metadata(repo.id, event.pr, org_id=org_id)
+    # Schedule a review for this PR's ticket.
+    from app.domain import reviewer  # noqa: PLC0415
+
+    ticket = await tickets.get_by_pr(pr.id, org_id=org_id)
+    if ticket is None:
+        return
+    await reviewer.schedule_review(
+        ticket_id=ticket.id,
+        agent_names="all",
+        trigger_reason="pr_ready",
+        actor=Actor.system(),
+        org_id=org_id,
+    )
+
+
+async def _handle_pr_synchronized(event: PullRequestSynchronized, *, org_id: UUID) -> None:
+    if event.pr_external_id is None:
+        return
+    pr = await pull_requests.get_by_external(event.plugin_id, event.pr_external_id, org_id=org_id)
+    if pr is None:
+        log.warning(
+            "intake.pr_synchronized_unknown_pr",
+            pr_external_id=event.pr_external_id,
+        )
+        return
+    fresh = await refresh_pr_metadata_by_id(pr.repo_id, event.pr_external_id, org_id=org_id)
+    from app.domain import reviewer  # noqa: PLC0415
+
+    ticket = await tickets.get_by_pr(fresh.id, org_id=org_id)
+    if ticket is None:
+        return
+    await reviewer.schedule_review(
+        ticket_id=ticket.id,
+        agent_names="all",
+        trigger_reason="pr_synchronized",
+        actor=Actor.system(),
+        org_id=org_id,
+    )
+
+
+async def _handle_pr_closed(event: PullRequestClosed, *, org_id: UUID) -> None:
+    if event.pr_external_id is None:
+        return
+    pr = await pull_requests.get_by_external(event.plugin_id, event.pr_external_id, org_id=org_id)
+    if pr is None:
+        return
+    new_state = "merged" if event.merged else "closed"
+    await pull_requests.update_state(pr.id, new_state, org_id=org_id)  # type: ignore[arg-type]
+    ticket = await tickets.get_by_pr(pr.id, org_id=org_id)
+    if ticket and ticket.status == "in_review":
+        await tickets.complete(ticket.id, org_id=org_id)
+        from app.domain import reviewer  # noqa: PLC0415
+
+        await reviewer.cancel_pending(ticket.id, actor=Actor.system(), org_id=org_id)
+
+
+async def _handle_pr_reopened(event: PullRequestReopened, *, org_id: UUID) -> None:
+    if event.pr_external_id is None:
+        return
+    pr = await pull_requests.get_by_external(event.plugin_id, event.pr_external_id, org_id=org_id)
+    if pr is None:
+        return
+    await pull_requests.update_state(pr.id, "open", org_id=org_id)
+
+
+async def _handle_comment_created(event: CommentCreated, *, org_id: UUID) -> None:
+    if event.author_login == YAAOF_BOT_LOGIN or event.author_type == "bot":
+        return
+    if event.pr_external_id is None:
+        return
+    pr = await pull_requests.get_by_external(event.plugin_id, event.pr_external_id, org_id=org_id)
+    if pr is None:
+        return
+    ticket = await tickets.get_by_pr(pr.id, org_id=org_id)
+    if ticket is None:
+        return
+
+    matched, agent = parse_rereview(event.body)
+    if matched:
+        await audit_for_ticket(
+            ticket.id,
+            "ticket.rereview_requested",
+            _RereviewRequestedPayload(
+                agent_name_or_all=agent or "all",
+                comment_external_id=event.comment_external_id,
+            ),
+            actor=Actor.github_user(event.author_login),
+            org_id=org_id,
+        )
+        from app.domain import reviewer  # noqa: PLC0415
+
+        agents = "all" if agent is None else [agent]
+        await reviewer.schedule_review(
+            ticket_id=ticket.id,
+            agent_names=agents,
+            trigger_reason="rereview_command",
+            actor=Actor.github_user(event.author_login),
+            org_id=org_id,
+        )
+        return
+
+    # Inline reply to a yaaof comment?
+    if event.comment_kind == "inline" and event.in_reply_to_comment_external_id:
+        from app.domain.reviewer.models import PostedCommentRow  # noqa: PLC0415
+
+        async with db_session() as s:
+            posted = (
+                await s.execute(
+                    select(PostedCommentRow).where(
+                        PostedCommentRow.external_comment_id == event.in_reply_to_comment_external_id
+                    )
+                )
+            ).scalar_one_or_none()
+        if posted is None:
+            return
+        from app.domain import reviewer  # noqa: PLC0415
+
+        await audit_for_ticket(
+            ticket.id,
+            "ticket.reply_received",
+            _ReplyReceivedPayload(
+                agent_id=posted.agent_id,
+                parent_comment_external_id=event.in_reply_to_comment_external_id,
+                new_comment_external_id=event.comment_external_id,
+            ),
+            actor=Actor.github_user(event.author_login),
+            org_id=org_id,
+        )
+        await reviewer.schedule_reply(
+            ticket_id=ticket.id,
+            agent_id=posted.agent_id,
+            parent_comment_external_id=event.in_reply_to_comment_external_id,
+            reply_body=event.body,
+            actor=Actor.github_user(event.author_login),
+            org_id=org_id,
+        )
+
+
+async def _handle_reaction_added(event: ReactionAdded, *, org_id: UUID) -> None:
+    from app.domain.reviewer.models import PostedCommentRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        posted = (
+            await s.execute(
+                select(PostedCommentRow).where(
+                    PostedCommentRow.external_comment_id == event.target_comment_external_id
+                )
+            )
+        ).scalar_one_or_none()
+    if posted is None:
+        return
+    ticket = await tickets.get_by_pr(posted.pr_id, org_id=org_id)
+    if ticket is None:
+        return
+    await audit_for_ticket(
+        ticket.id,
+        "ticket.reaction_received",
+        _ReactionReceivedPayload(
+            agent_id=posted.agent_id,
+            reaction=event.reaction,
+            target_comment_external_id=event.target_comment_external_id,
+        ),
+        actor=Actor.github_user(event.actor_login),
+        org_id=org_id,
+    )
+
+
+# ── PR metadata sync helpers ─────────────────────────────────────────────────
+
+
+async def refresh_pr_metadata(
+    repo_id: UUID, pr: VCSPullRequest, *, org_id: UUID
+) -> pull_requests.PullRequest:
+    """Upsert pull_requests row + ensure a ticket exists. Returns the PR row.
+
+    Two-step: create the ticket lazily on first insert (we need pr.id to set FK on
+    ticket; we also need ticket.id to set FK on pr — chicken-and-egg). Approach:
+      1. Check if PR row exists. If yes, update it.
+      2. If not, create ticket FIRST with a placeholder source_external_id, then
+         insert the PR row pointing at the ticket, then set ticket.pr_id to the
+         new pr.id.
+    """
+    existing = await pull_requests.get_by_external(pr.plugin_id, pr.external_id, org_id=org_id)
+    if existing is not None:
+        # Update path
+        upserted = await pull_requests.upsert(pr, repo_id, org_id=org_id)
+        # Sync the ticket's title/description
+        ticket = await tickets.get(existing.ticket_id, org_id=org_id)
+        await _sync_ticket_titles(ticket.id, pr.title, pr.body, org_id=org_id)
+        return upserted
+
+    # Insert path: create ticket first (with a placeholder pr_id), insert PR, then
+    # link ticket → pr.
+    from uuid import uuid4  # noqa: PLC0415
+
+    # The PR FKs the ticket; so we must insert ticket first with pr_id=None, then
+    # the PR row, then link ticket → pr. `tickets.create_for_pr` requires pr_id,
+    # so we do an explicit insert here.
+    from app.domain.tickets.models import TicketRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        ticket_row = TicketRow(
+            id=uuid4(),
+            org_id=org_id,
+            source="github_pr",
+            source_external_id=pr.external_id,
+            title=pr.title,
+            description=pr.body,
+            status="in_review",
+            repo_id=repo_id,
+            pr_id=None,
+        )
+        s.add(ticket_row)
+        await s.commit()
+        await s.refresh(ticket_row)
+        ticket_id = ticket_row.id
+
+    upserted = await pull_requests.upsert(pr, repo_id, ticket_id=ticket_id, org_id=org_id)
+
+    async with db_session() as s:
+        from sqlalchemy import update as sql_update  # noqa: PLC0415
+
+        await s.execute(sql_update(TicketRow).where(TicketRow.id == ticket_id).values(pr_id=upserted.id))
+        await s.commit()
+
+    # Audit + event for the ticket creation.
+    await audit_for_ticket(
+        ticket_id,
+        "ticket.created",
+        _TicketCreatedAuditPayload(pr_id=upserted.id, repo_id=repo_id),
+        actor=Actor.system(),
+        org_id=org_id,
+    )
+    from app.core.events import publish  # noqa: PLC0415
+    from app.domain.tickets import TicketStatusChanged  # noqa: PLC0415
+
+    await publish(
+        TicketStatusChanged(
+            ticket_id=ticket_id,
+            repo_id=repo_id,
+            pr_id=upserted.id,
+            previous_status=None,
+            new_status="in_review",
+        )
+    )
+
+    return upserted
+
+
+async def refresh_pr_metadata_by_id(
+    repo_id: UUID, pr_external_id: str, *, org_id: UUID
+) -> pull_requests.PullRequest:
+    """Catch-up path: fetch fresh PR from VCS, then delegate."""
+    pr = await vcs.get_plugin("github").fetch_pr(pr_external_id)
+    return await refresh_pr_metadata(repo_id, pr, org_id=org_id)
+
+
+class _TicketCreatedAuditPayload(BaseModel):
+    pr_id: UUID
+    repo_id: UUID
+
+
+async def _sync_ticket_titles(ticket_id: UUID, title: str, body: str | None, *, org_id: UUID) -> None:
+    """Update ticket title/description in place (no audit — metadata sync, not a transition)."""
+    from sqlalchemy import update as sql_update  # noqa: PLC0415
+
+    from app.domain.tickets.models import TicketRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        await s.execute(
+            sql_update(TicketRow)
+            .where(TicketRow.id == ticket_id, TicketRow.org_id == org_id)
+            .values(title=title, description=body)
+        )
+        await s.commit()

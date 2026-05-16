@@ -1,0 +1,281 @@
+"""fake-github FastAPI service. Implements just enough GitHub endpoints to drive yaaof tests."""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import httpx
+from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
+
+from app.seeds import default_seeded_diffs, default_seeded_files, default_seeded_prs
+from app.state import state
+from app.test_secrets import APP_ID, WEBHOOK_SECRET
+
+# Webhook secret: env var override (matches docker-compose.test.yml) or compiled default.
+WEBHOOK_SECRET_BYTES = os.environ.get("GITHUB_WEBHOOK_SECRET", WEBHOOK_SECRET).encode()
+
+
+app = FastAPI(title="fake-github")
+
+
+@app.on_event("startup")
+async def _seed() -> None:
+    state.seeded_prs.update(default_seeded_prs())
+    state.seeded_diffs.update(default_seeded_diffs())
+    state.seeded_files.update(default_seeded_files())
+
+
+# ── GitHub-compatible endpoints ────────────────────────────────────────────────
+
+
+def _check_bearer(authorization: str | None, prefix: str = "Bearer ") -> str:
+    if not authorization or not authorization.startswith(prefix):
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    return authorization[len(prefix):]
+
+
+@app.get("/app")
+async def get_app(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _check_bearer(authorization)
+    return {"id": int(APP_ID), "slug": "yaaof-test"}
+
+
+@app.post("/app/installations/{installation_id}/access_tokens", status_code=201)
+async def get_installation_token(
+    installation_id: str, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
+    _check_bearer(authorization)
+    return {
+        "token": f"ghs_fake_{installation_id}_x",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    }
+
+
+@app.get("/repos/{owner}/{repo}/pulls/{number}")
+async def get_pull(
+    owner: str,
+    repo: str,
+    number: int,
+    accept: str = Header(default=""),
+    authorization: str | None = Header(default=None),
+) -> Response:
+    _check_bearer(authorization)
+    key = f"{owner}/{repo}#{number}"
+    pr = state.seeded_prs.get(key)
+    if pr is None:
+        raise HTTPException(status_code=404, detail="not found")
+    if "diff" in accept.lower():
+        return PlainTextResponse(state.seeded_diffs.get(key, ""))
+    return JSONResponse(pr)
+
+
+@app.get("/repos/{owner}/{repo}/pulls/{number}/files")
+async def get_pull_files(
+    owner: str, repo: str, number: int, authorization: str | None = Header(default=None)
+) -> list[dict[str, Any]]:
+    _check_bearer(authorization)
+    return state.seeded_files.get(f"{owner}/{repo}#{number}", [])
+
+
+@app.get("/repos/{owner}/{repo}/pulls")
+async def list_pulls(
+    owner: str, repo: str, state_: str = "", authorization: str | None = Header(default=None)
+) -> list[dict[str, Any]]:
+    _check_bearer(authorization)
+    prefix = f"{owner}/{repo}#"
+    return [pr for k, pr in state.seeded_prs.items() if k.startswith(prefix)]
+
+
+@app.get("/repos/{owner}/{repo}")
+async def get_repo(
+    owner: str, repo: str, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
+    _check_bearer(authorization)
+    return {"full_name": f"{owner}/{repo}", "default_branch": "main"}
+
+
+@app.post("/repos/{owner}/{repo}/pulls/{number}/reviews", status_code=200)
+async def post_review(
+    owner: str,
+    repo: str,
+    number: int,
+    body: dict[str, Any],
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _check_bearer(authorization)
+    review_id = state.next_review_id()
+    comment_external_ids: list[str] = []
+    for c in body.get("comments", []) or []:
+        cid = state.next_comment_id()
+        comment_external_ids.append(str(cid))
+        state.posted_comments.append(
+            {
+                "id": cid,
+                "review_id": review_id,
+                "owner": owner,
+                "repo": repo,
+                "number": number,
+                "path": c.get("path"),
+                "line": c.get("line"),
+                "body": c.get("body", ""),
+            }
+        )
+    state.posted_reviews.append(
+        {
+            "id": review_id,
+            "owner": owner,
+            "repo": repo,
+            "number": number,
+            "body": body.get("body", ""),
+            "event": body.get("event", "COMMENT"),
+            "comment_external_ids": comment_external_ids,
+        }
+    )
+    return {
+        "id": review_id,
+        "html_url": f"https://github.com/{owner}/{repo}/pull/{number}#review-{review_id}",
+        "node_id": f"REVIEW_{review_id}",
+        "comment_external_ids": comment_external_ids,
+    }
+
+
+@app.get("/repos/{owner}/{repo}/pulls/{number}/comments")
+async def list_inline_comments(
+    owner: str, repo: str, number: int, authorization: str | None = Header(default=None)
+) -> list[dict[str, Any]]:
+    _check_bearer(authorization)
+    return [
+        c for c in state.posted_comments
+        if c.get("owner") == owner and c.get("repo") == repo and c.get("number") == number
+    ]
+
+
+@app.get("/repos/{owner}/{repo}/issues/{number}/comments")
+async def list_issue_comments(
+    owner: str, repo: str, number: int, authorization: str | None = Header(default=None)
+) -> list[dict[str, Any]]:
+    _check_bearer(authorization)
+    return []
+
+
+@app.post("/repos/{owner}/{repo}/pulls/{number}/comments/{parent_id}/replies", status_code=201)
+async def post_inline_reply(
+    owner: str,
+    repo: str,
+    number: int,
+    parent_id: str,
+    body: dict[str, Any],
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _check_bearer(authorization)
+    cid = state.next_comment_id()
+    state.posted_comments.append(
+        {
+            "id": cid,
+            "owner": owner,
+            "repo": repo,
+            "number": number,
+            "body": body.get("body", ""),
+            "in_reply_to_id": parent_id,
+        }
+    )
+    return {"id": cid}
+
+
+@app.post("/repos/{owner}/{repo}/issues/{number}/comments", status_code=201)
+async def post_issue_comment(
+    owner: str,
+    repo: str,
+    number: int,
+    body: dict[str, Any],
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _check_bearer(authorization)
+    cid = state.next_comment_id()
+    state.posted_comments.append(
+        {"id": cid, "owner": owner, "repo": repo, "number": number, "body": body.get("body", "")}
+    )
+    return {"id": cid}
+
+
+@app.get("/repos/{owner}/{repo}/compare/{base_to_head:path}")
+async def compare(
+    owner: str, repo: str, base_to_head: str, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
+    _check_bearer(authorization)
+    return {"status": "ahead"}  # never report force-push
+
+
+# ── Test control endpoints ──────────────────────────────────────────────────
+
+
+@app.post("/__test/reset")
+async def test_reset() -> dict[str, str]:
+    state.reset()
+    state.seeded_prs.update(default_seeded_prs())
+    state.seeded_diffs.update(default_seeded_diffs())
+    state.seeded_files.update(default_seeded_files())
+    return {"status": "reset"}
+
+
+@app.post("/__test/seed_pr")
+async def test_seed_pr(body: dict[str, Any]) -> dict[str, str]:
+    owner = body["owner"]
+    repo = body["repo"]
+    number = body["number"]
+    state.seeded_prs[f"{owner}/{repo}#{number}"] = body["pr"]
+    return {"status": "seeded"}
+
+
+@app.post("/__test/seed_diff")
+async def test_seed_diff(body: dict[str, Any]) -> dict[str, str]:
+    owner = body["owner"]
+    repo = body["repo"]
+    number = body["number"]
+    state.seeded_diffs[f"{owner}/{repo}#{number}"] = body.get("diff", "")
+    state.seeded_files[f"{owner}/{repo}#{number}"] = body.get("files", [])
+    return {"status": "seeded"}
+
+
+@app.post("/__test/dispatch_webhook")
+async def test_dispatch_webhook(body: dict[str, Any]) -> dict[str, Any]:
+    """HMAC-sign + POST a payload to yaaof's webhook endpoint."""
+    event = body.get("event", "pull_request")
+    payload = body.get("payload") or {}
+    target_url = body.get("target_url")
+    if not target_url:
+        raise HTTPException(status_code=400, detail="target_url required")
+
+    import json  # noqa: PLC0415
+
+    body_bytes = json.dumps(payload, sort_keys=True).encode()
+    sig = "sha256=" + hmac.new(WEBHOOK_SECRET_BYTES, body_bytes, hashlib.sha256).hexdigest()
+    delivery_id = body.get("delivery_id", f"delivery-{state.next_review_id()}")
+    headers = {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": event,
+        "X-GitHub-Delivery": delivery_id,
+        "X-Hub-Signature-256": sig,
+    }
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(target_url, content=body_bytes, headers=headers)
+    return {
+        "status_code": resp.status_code,
+        "delivery_id": delivery_id,
+        "body": resp.text,
+    }
+
+
+@app.get("/__test/posted_reviews")
+async def test_posted_reviews() -> list[dict[str, Any]]:
+    return state.posted_reviews
+
+
+@app.get("/__test/posted_comments")
+async def test_posted_comments() -> list[dict[str, Any]]:
+    return state.posted_comments

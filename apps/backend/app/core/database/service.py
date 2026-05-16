@@ -32,11 +32,16 @@ def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
-        _engine = create_async_engine(
-            settings.database_url,
-            pool_pre_ping=True,
-            future=True,
-        )
+        kwargs: dict[str, object] = {"pool_pre_ping": True, "future": True}
+        # In dev/test we use NullPool — avoids cross-event-loop contamination
+        # in TestClient-driven integration tests where each test brings up a
+        # fresh loop. Prod uses the default pool.
+        if settings.yaaof_env == "dev":
+            from sqlalchemy.pool import NullPool  # noqa: PLC0415
+
+            kwargs["poolclass"] = NullPool
+            kwargs.pop("pool_pre_ping", None)
+        _engine = create_async_engine(settings.database_url, **kwargs)  # type: ignore[arg-type]
     return _engine
 
 
@@ -73,12 +78,7 @@ async def ping() -> bool:
 
 
 async def ensure_schema_migrations_table() -> None:
-    """Idempotently create the `schema_migrations` tracking table.
-
-    Run once at boot (from main.py). The custom per-migration runner reads
-    from this table to decide which migration files in `alembic/versions/`
-    still need to be applied. Stock `alembic upgrade` is not used.
-    """
+    """Idempotently create the `schema_migrations` tracking table."""
     async with get_engine().begin() as conn:
         await conn.execute(
             text(
@@ -90,6 +90,49 @@ async def ensure_schema_migrations_table() -> None:
                 """
             )
         )
+
+
+# M01 ships a single named migration ("001_create_all_m01"). Subsequent schema
+# changes add new versions and the runner skips already-applied ones. The
+# create_all approach is idempotent (CREATE TABLE IF NOT EXISTS underneath) so
+# re-running is safe.
+_M01_MIGRATIONS: tuple[tuple[str, str], ...] = (("001_create_all_m01", "create_all"),)
+
+
+async def _apply_create_all(conn) -> None:  # type: ignore[no-untyped-def]
+    import importlib  # noqa: PLC0415
+
+    for mod in (
+        "app.core.audit_log.models",
+        "app.core.workspace.models",
+        "app.plugins.claude_code.models",
+        "app.plugins.github.models",
+        "app.domain.repos.models",
+        "app.domain.pull_requests.models",
+        "app.domain.tickets.models",
+        "app.domain.memory.models",
+        "app.domain.reviewer.models",
+    ):
+        importlib.import_module(mod)
+    await conn.run_sync(Base.metadata.create_all)
+
+
+async def migrate() -> None:
+    """Apply any un-applied migrations. Idempotent."""
+    await ensure_schema_migrations_table()
+    async with get_engine().begin() as conn:
+        result = await conn.execute(text("SELECT version FROM schema_migrations"))
+        applied = {row[0] for row in result}
+    for version, kind in _M01_MIGRATIONS:
+        if version in applied:
+            continue
+        async with get_engine().begin() as conn:
+            if kind == "create_all":
+                await _apply_create_all(conn)
+            await conn.execute(
+                text("INSERT INTO schema_migrations (version) VALUES (:v)"),
+                {"v": version},
+            )
 
 
 async def dispose() -> None:

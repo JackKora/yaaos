@@ -4,7 +4,7 @@ import { MemoryPage } from "@domain/memory";
 import { PromptsPage } from "@domain/prompts";
 import { ReposPage } from "@domain/repos";
 import { SettingsPage } from "@domain/settings";
-import { TicketsPage } from "@domain/tickets";
+import { TicketDetailPage, TicketsPage } from "@domain/tickets";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 
 const rootRoute = createRootRoute({ component: AppShell });
@@ -27,6 +27,12 @@ const ticketsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tickets",
   component: TicketsPage,
+});
+
+const ticketDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tickets/$ticketId",
+  component: TicketDetailPage,
 });
 
 const memoryRoute = createRoute({
@@ -57,6 +63,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   dashboardRoute,
   ticketsRoute,
+  ticketDetailRoute,
   memoryRoute,
   promptsRoute,
   reposRoute,

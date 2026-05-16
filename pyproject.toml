@@ -22,7 +22,12 @@ select = [
     "RUF", # ruff-specific
     "PLC", # pylint conventions (PLC0415 used as escape hatch)
 ]
-ignore = ["E501"]  # line length handled by formatter
+ignore = [
+    "E501",  # line length — handled by formatter
+    "B008",  # FastAPI uses `Query(default=...)` etc. as parameter defaults idiomatically
+    "B904",  # POC: many `except → raise HTTPException` translations don't carry the cause
+    "E741",  # POC: short single-letter names (e.g., `l` for lesson) used in tight comprehensions
+]
 
 [tool.ruff.format]
 quote-style = "double"

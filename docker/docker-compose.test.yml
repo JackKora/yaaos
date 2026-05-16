@@ -1,0 +1,63 @@
+name: yaaof-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: yaaof
+      POSTGRES_PASSWORD: yaaof
+      POSTGRES_DB: yaaof
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yaaof -d yaaof"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+    ports:
+      - "55432:5432"
+
+  fake-github:
+    build:
+      context: ..
+      dockerfile: apps/fake-github/Dockerfile
+    environment:
+      GITHUB_WEBHOOK_SECRET: "TEST-FAKE-NOT-FOR-PROD-aaaaaaaaaaaaaaaa"
+    ports:
+      - "58081:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/__test/posted_reviews').status == 200 else 1)\""]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  yaaof:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://yaaof:yaaof@postgres:5432/yaaof
+      YAAOF_ENCRYPTION_KEY: vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI=
+      YAAOF_ENV: dev
+      GITHUB_API_BASE_URL: http://fake-github:8080
+      YAAOF_CODING_AGENT_STUB: "1"
+      YAAOF_REVIEW_DEBOUNCE_SECONDS: "0"
+      YAAOF_REAPER_INTERVAL_SECONDS: "1"
+      YAAOF_HEARTBEAT_INTERVAL_SECONDS: "1"
+      YAAOF_CATCHUP_DELAY_SECONDS: "0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-github:
+        condition: service_started
+    ports:
+      - "58080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/api/health').status == 200 else 1)\""]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    command:
+      [
+        "sh",
+        "-c",
+        "python apps/backend/bin/seed_test_data && uvicorn app.main:app --host 0.0.0.0 --port 8080 --app-dir apps/backend",
+      ]

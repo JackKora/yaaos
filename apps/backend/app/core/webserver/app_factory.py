@@ -33,9 +33,8 @@ log = get_logger(__name__)
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
 
-    # 0. Ensure the schema_migrations bootstrap table exists. (Real migrations
-    # are run separately via bin/migrate; this is only the tracking table.)
-    await database.ensure_schema_migrations_table()
+    # 0. Apply pending migrations (idempotent).
+    await database.migrate()
 
     # 1. Mount routers registered by domain modules.
     for spec in get_specs().values():

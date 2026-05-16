@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Seed the e2e Postgres with fixture data.
+
+Idempotent — re-running is safe. Inserts:
+  - 1 active GitHub App installation
+  - github_settings with encrypted (fake) credentials
+  - claude_code_settings with an encrypted (fake) API key
+  - 2 repos (acme/web, acme/api)
+  - 3 reviewer agents (built-in defaults)
+  - A handful of starter lessons (per repo)
+
+Schemas + ORM mappings are created beforehand by core.database.migrate().
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from pathlib import Path
+from uuid import UUID, uuid4
+
+# Make `app.*` importable when this script is run as a CLI.
+HERE = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(HERE))
+
+# Test env defaults (only applied if not already set — docker compose sets them).
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://yaaof:yaaof@localhost:5432/yaaof_test",
+)
+os.environ.setdefault(
+    "YAAOF_ENCRYPTION_KEY", "vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI="
+)
+os.environ.setdefault("YAAOF_ENV", "dev")
+os.environ.setdefault("YAAOF_CODING_AGENT_STUB", "1")
+
+
+async def main() -> None:
+    from cryptography.fernet import Fernet  # noqa: PLC0415
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.core.config import get_settings  # noqa: PLC0415
+    from app.core.database import migrate, session as db_session  # noqa: PLC0415
+    from app.domain import repos as repos_mod  # noqa: PLC0415
+    from app.domain.memory.models import LessonRow  # noqa: PLC0415
+    from app.domain.reviewer.agent_crud import ensure_builtin_agents  # noqa: PLC0415
+    from app.plugins.claude_code.models import ClaudeCodeSettingsRow  # noqa: PLC0415
+    from app.plugins.github.models import (  # noqa: PLC0415
+        GitHubAppInstallationRow,
+        GitHubSettingsRow,
+    )
+
+    await migrate()
+
+    org_id = UUID("00000000-0000-0000-0000-000000000001")
+    fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+
+    async with db_session() as s:
+        # github_app_installations
+        existing_inst = (
+            await s.execute(
+                select(GitHubAppInstallationRow).where(
+                    GitHubAppInstallationRow.install_external_id == "fake-install-1"
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_inst is None:
+            s.add(
+                GitHubAppInstallationRow(
+                    id=uuid4(),
+                    org_id=org_id,
+                    install_external_id="fake-install-1",
+                    account_login="acme",
+                    status="active",
+                )
+            )
+
+        # github_settings
+        existing_gs = (
+            await s.execute(select(GitHubSettingsRow).where(GitHubSettingsRow.org_id == org_id))
+        ).scalar_one_or_none()
+        if existing_gs is None:
+            s.add(
+                GitHubSettingsRow(
+                    id=uuid4(),
+                    org_id=org_id,
+                    app_id="12345",
+                    encrypted_private_key=fernet.encrypt(
+                        b"TEST-FAKE-NOT-FOR-PROD-PEM"
+                    ),
+                    encrypted_webhook_secret=fernet.encrypt(
+                        b"TEST-FAKE-NOT-FOR-PROD-aaaaaaaaaaaaaaaa"
+                    ),
+                )
+            )
+
+        # claude_code_settings
+        existing_cc = (
+            await s.execute(
+                select(ClaudeCodeSettingsRow).where(ClaudeCodeSettingsRow.org_id == org_id)
+            )
+        ).scalar_one_or_none()
+        if existing_cc is None:
+            s.add(
+                ClaudeCodeSettingsRow(
+                    id=uuid4(),
+                    org_id=org_id,
+                    encrypted_anthropic_api_key=fernet.encrypt(
+                        b"TEST-FAKE-NOT-FOR-PROD-ANTHROPIC-KEY"
+                    ),
+                    default_timeout_seconds=600,
+                )
+            )
+        await s.commit()
+
+    # Repos (idempotent via the service)
+    from app.core.primitives import Actor  # noqa: PLC0415
+
+    web = await repos_mod.add_repo("github", "acme/web", actor=Actor.system(), org_id=org_id)
+    api = await repos_mod.add_repo("github", "acme/api", actor=Actor.system(), org_id=org_id)
+
+    # Built-in agents
+    await ensure_builtin_agents(org_id=org_id)
+
+    # Starter lessons
+    async with db_session() as s:
+        existing = (
+            await s.execute(
+                select(LessonRow).where(
+                    LessonRow.repo_id.in_([web.id, api.id])
+                )
+            )
+        ).scalars().all()
+        existing_titles = {l.title for l in existing}
+        starter_lessons = [
+            (web.id, "Prefer named exports", "Default exports make grep harder."),
+            (web.id, "Use async/await over .then", "It reads more like the synchronous logic it replaces."),
+            (api.id, "Validate at the boundary", "FastAPI handlers should accept Pydantic models, never raw dicts."),
+            (api.id, "Log identifiers, not content", "Audit + log size stay sane when bodies aren't replicated."),
+        ]
+        for repo_id, title, body in starter_lessons:
+            if title in existing_titles:
+                continue
+            s.add(
+                LessonRow(
+                    id=uuid4(), org_id=org_id, repo_id=repo_id, title=title, body=body
+                )
+            )
+        await s.commit()
+
+    print("seed_test_data: done")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
