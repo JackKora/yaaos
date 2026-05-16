@@ -268,8 +268,9 @@ Used for: HTTP routers (`core/webserver.register_routes`), SSE event types, plug
 4. **Import the webserver registry.** Import `core/webserver` *before any domain module*. The `_specs` dict must exist before `register_routes(RouteSpec(...))` calls fire.
 5. **Import domain modules.** All eight: `vcs`, `settings`, `repos`, `intake`, `tickets`, `pull_requests`, `memory`, `reviewer`. Each `__init__.py` runs its registration side effects (route specs, event subscribers, plugin Protocol registries).
 6. **Import plugin modules.** All three: `plugins/github`, `plugins/claude_code`, `plugins/in_process_workspace`. Each calls `register_vcs_plugin` / `register_coding_agent_plugin` / `register_workspace_provider`.
-7. **Construct the FastAPI app.** Call `core.webserver.create_app()`. The lifespan body mounts routers from `_specs`, then runs `on_startup` hooks, then yields.
-8. **Run the server.** `uvicorn` (or equivalent) takes over.
+7. **Optionally wrap with test scaffolding.** If `YAAOF_CODING_AGENT_STUB` (or any future testing-layer flag) is set, conditionally import the relevant `app.testing.*` module and call its wrap helper. This is the **only** import of `app.testing.*` from production bootstrap code; tach forbids `core/`, `domain/`, and `plugins/` from depending on `testing/`. In a stripped production wheel (no `app/testing/` present), the import fails loud rather than silently allowing test-mode behavior.
+8. **Construct the FastAPI app.** Call `core.webserver.create_app()`. The lifespan body mounts routers from `_specs`, then runs `on_startup` hooks, then yields.
+9. **Run the server.** `uvicorn` (or equivalent) takes over.
 
 Example `main.py` skeleton:
 
@@ -283,10 +284,16 @@ from app.core import events          # 3
 from app.core import webserver       # 4
 from app.domain import vcs, settings, repos, intake, tickets, pull_requests, memory, reviewer   # 5
 from app.plugins import github, claude_code, in_process_workspace                                # 6
+
+import os                                                                                        # 7
+if os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
+    from app.testing.stub_coding_agent import wrap_all_registered_plugins
+    wrap_all_registered_plugins()
+
 from app.core.webserver import create_app
 
-app = create_app()                   # 7
-# uvicorn entrypoint runs `app`     # 8
+app = create_app()                   # 8
+# uvicorn entrypoint runs `app`     # 9
 ```
 
 If you flip steps 3–4 with step 5, you'll mount a router before its domain module has registered itself, or subscribe to an event before the bus exists. The order is load-bearing.

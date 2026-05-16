@@ -1,10 +1,10 @@
 """Claude Code CLI wrapper. Implements core/coding_agent.CodingAgentPlugin.
 
-POC behavior: when env var `YAAOF_CODING_AGENT_STUB=1` is set, the plugin returns
-deterministic canned `FindingList`-shaped responses based on the agent name
-extracted from the prompt header. This keeps tests offline + CI-friendly without
-needing a pre-populated cache file. The real CLI invocation path is kept intact
-for production use.
+Vendor-only: this module talks to Anthropic's Claude Code CLI and nothing else.
+Test-mode (stub/replay) wrapping is handled by the `testing/` layer's
+`StubCodingAgentPlugin` — see `app.testing.stub_coding_agent`. The bootstrap
+in `app/main.py` swaps real plugins for stubs when `YAAOF_CODING_AGENT_STUB`
+is set; this file never branches on it.
 """
 
 from __future__ import annotations
@@ -40,103 +40,8 @@ from app.plugins.claude_code.models import ClaudeCodeSettingsRow
 log = structlog.get_logger("claude_code")
 
 
-def _is_stub_mode() -> bool:
-    return os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}
-
-
 def _utcnow() -> datetime:
     return datetime.now(UTC)
-
-
-def _agent_name_from_prompt(prompt: str) -> str:
-    """Extract `architecture` / `security` / `style` from the `# Agent: <name>` header.
-    Falls back to 'unknown' if unparseable.
-    """
-    for line in prompt.splitlines()[:5]:
-        line = line.strip()
-        if line.startswith("# Agent:"):
-            return line.split(":", 1)[1].strip()
-    return "unknown"
-
-
-# Canned stub findings per agent — deterministic but realistic-looking.
-_STUB_FINDINGS_BY_AGENT: dict[str, list[dict[str, Any]]] = {
-    "architecture": [
-        {
-            "file": None,
-            "line_start": None,
-            "line_end": None,
-            "severity": "suggestion",
-            "title": "Consider extracting shared logic",
-            "body": "The introduced helper could live in a shared module so other callers benefit.",
-            "rationale": "Reducing duplication makes future changes cheaper.",
-            "snippet": None,
-            "applied_lesson_ids": [],
-        }
-    ],
-    "security": [
-        {
-            "file": None,
-            "line_start": None,
-            "line_end": None,
-            "severity": "info",
-            "title": "No security-sensitive code paths detected",
-            "body": "Diff appears low-risk: no auth, secrets, or input-validation changes.",
-            "rationale": None,
-            "snippet": None,
-            "applied_lesson_ids": [],
-        }
-    ],
-    "style": [
-        {
-            "file": None,
-            "line_start": None,
-            "line_end": None,
-            "severity": "nit",
-            "title": "Comment phrasing could be tightened",
-            "body": "A few comments restate what the code already says — could remove them.",
-            "rationale": "Comments cost reader attention without adding signal.",
-            "snippet": None,
-            "applied_lesson_ids": [],
-        }
-    ],
-}
-
-
-def _stub_result(prompt: str, response_model: type[BaseModel]) -> AgentInvocationResult[Any]:
-    """Return a deterministic AgentInvocationResult matching the requested response_model."""
-    agent_name = _agent_name_from_prompt(prompt)
-    findings = _STUB_FINDINGS_BY_AGENT.get(agent_name, [])
-    # The reviewer's FindingList has shape { findings: [...] }; ReplyResponse has { body: str }.
-    payload: dict[str, Any]
-    fields = response_model.model_fields
-    if "findings" in fields:
-        payload = {"findings": findings}
-    elif "body" in fields:
-        payload = {"body": f"[{agent_name}] Thanks for the reply — taking another look."}
-    else:
-        payload = {}
-    raw = json.dumps(payload)
-    try:
-        parsed = response_model.model_validate(payload)
-    except ValidationError as e:
-        return AgentInvocationResult(
-            status=AgentInvocationStatus.PARSE_FAILURE,
-            raw_output=raw,
-            raw_stderr="",
-            error_message=f"stub response did not match {response_model.__name__}: {e}",
-            latency_ms=1,
-        )
-    return AgentInvocationResult(
-        status=AgentInvocationStatus.SUCCESS,
-        parsed=parsed,
-        raw_output=raw,
-        raw_stderr="",
-        tokens_in=1000,
-        tokens_out=200,
-        cost_usd=Decimal("0.0050"),
-        latency_ms=10,
-    )
 
 
 class ClaudeCodePlugin:
@@ -169,9 +74,6 @@ class ClaudeCodePlugin:
         agent_config: dict[str, Any],
         response_model: type[BaseModel],
     ) -> AgentInvocationResult[Any]:
-        if _is_stub_mode():
-            return _stub_result(prompt, response_model)
-
         api_key, cli_path_setting, default_timeout = await self._load_settings_for_invocation()
         if not api_key:
             return AgentInvocationResult(
@@ -320,8 +222,6 @@ class ClaudeCodePlugin:
         return ValidationResult(valid=not errors, errors=errors)
 
     async def health_check(self) -> HealthStatus:
-        if _is_stub_mode():
-            return HealthStatus(healthy=True, message="stub mode", checked_at=_utcnow())
         api_key, cli_path_setting, _ = await self._load_settings_for_invocation()
         if not api_key:
             return HealthStatus(healthy=False, message="anthropic api key not set", checked_at=_utcnow())

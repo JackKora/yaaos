@@ -6,7 +6,7 @@
 
 ## Module map
 
-20 modules total: 9 core · 8 domain · 3 plugins.
+21 modules total: 9 core · 8 domain · 3 plugins · 1 testing.
 
 Several domain modules have **naive M01 implementations** but their interfaces are defined now to avoid M02+ rearchitecture. Specifically: `tickets` has a trivial state machine; `reviewer` has 3 hardcoded agents (all using `claude_code` as their coding-agent plugin); `memory` is per-repo only. The `in_process_workspace` plugin uses tempdirs + subprocess (no real isolation) — fine for POC; real isolation comes with `plugins/docker_workspace` in M02+. The `claude_code` plugin shells out to the locally-installed Claude Code CLI; M02+ K8s will run agents in pods with the CLI pre-baked.
 
@@ -52,6 +52,14 @@ Vendor-specific implementations of `domain/` interfaces. The only place vendor S
 | `github` | Implements `domain/vcs`'s `VCSPlugin`. Owns GitHub App auth, HMAC webhook verification, GitHub REST API calls, translation between GitHub shapes and `domain/vcs` types. Owns its own settings (App install state). **Webhook idempotency:** on receipt, parse + verify signature, then `INSERT ... ON CONFLICT DO NOTHING` into `github_webhook_events` keyed by `source_event_id`; if the row already exists (no insert), skip dispatch. Otherwise dispatch and update `processed_at`. **Catch-up poller cursor** lives in a plugin-owned `github_poller_state` table (per-repo `last_polled_at`); on startup, query GitHub for events newer than the cursor and replay them through the normal webhook dispatch path. |
 | `claude_code` | Implements `core/coding_agent`'s `CodingAgentPlugin`. Wraps the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code). Invokes `claude --print --output-format=json "<prompt>"` in the workspace directory with `ANTHROPIC_API_KEY` from its own settings table. Parses Claude Code's structured output into our normalized `AgentInvocationResult` (findings + token-usage + cost when reported by the CLI). Owns `claude_code_settings` table (encrypted API key + CLI config). |
 | `in_process_workspace` | Implements `core/workspace`'s `WorkspaceProvider`. Provisions a workspace via `tempfile.mkdtemp` + `git clone --depth=1` of the repo at the requested sha. No real isolation — runs in yaaof's process. POC-only; M02+ adds `plugins/docker_workspace` for real sandboxing. |
+
+### Testing (1)
+
+Test-only scaffolding. Modules implement the same Protocols as the real plugins but exist purely to make tests offline + deterministic. Layered above `plugins/` — nothing in production code may import from here. Excluded from the production wheel build.
+
+| Module | Responsibility |
+|---|---|
+| `stub_coding_agent` | Wrapper plugin implementing `core/coding_agent.CodingAgentPlugin`. The bootstrap (when `YAAOF_CODING_AGENT_STUB` is set) calls `wrap_all_registered_plugins()` to replace every entry in the `_PLUGINS` registry with `StubCodingAgentPlugin(wrapped=existing)`. The stub's `invoke()` returns a deterministic, `response_model`-conforming `AgentInvocationResult`; `validate_config` and `health_check` pass through to the wrapped plugin. Adding a future coding-agent plugin (codex, aider) requires zero changes here — the wrapper is response-model-agnostic. |
 
 ## `core/primitives.spawn()` semantics
 

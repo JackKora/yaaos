@@ -318,7 +318,9 @@ def _swap_coding_agent_plugin(request):
     _PLUGINS["claude_code"] = real_plugin
 ```
 
-This is the only place that touches the registry dict directly — production code uses `register_coding_agent_plugin` + `get_plugin`. The fixture lives in `app/testing/` (a top-level test-only package, not a yaaof module — tach excludes it via its `test` exclude rule, plus `testing` is a sibling explicitly excluded).
+This is the only place that touches the registry dict directly — production code uses `register_coding_agent_plugin` + `get_plugin`. The fixture lives in `app/testing/` — the **fourth backend layer** (see `modularity.md` § Backend specifics). The layer is tach-tracked like any other; the layering rule `core < domain < plugins < testing` ensures nothing in production code can import from it. The wheel build excludes `app/testing/` so distribution artifacts physically cannot enable test-mode behavior.
+
+> **As built in M01:** the realized form is `app/testing/stub_coding_agent/` — a wrapper plugin that returns deterministic, `response_model`-conforming `AgentInvocationResult`s without a cache file. The `CachingCodingAgentPlugin` described above (record/replay against a real CLI) is the natural sibling for when that capability is needed; it would live at `app/testing/caching_coding_agent/` and follow the same wrap-via-registry pattern.
 
 ---
 

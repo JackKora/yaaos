@@ -35,5 +35,18 @@ from app.domain import settings  # noqa: F401, E402
 # 7. Plugins.
 from app.plugins import in_process_workspace, claude_code, github  # noqa: F401, E402
 
-# 8. Build the FastAPI app.
+# 8. Test-only: when YAAOF_CODING_AGENT_STUB is set, wrap every registered
+#    coding-agent plugin via the `testing/` layer. The testing layer sits above
+#    plugins (`core < domain < plugins < testing`) — nothing in production code
+#    depends on it. If the testing layer has been stripped from the deployment
+#    (per the wheel exclude in pyproject.toml), this import fails loud — stub
+#    mode cannot be silently enabled in a stripped production artifact.
+import os  # noqa: E402
+
+if os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
+    from app.testing.stub_coding_agent import wrap_all_registered_plugins
+
+    wrap_all_registered_plugins()
+
+# 9. Build the FastAPI app.
 app = webserver.create_app()

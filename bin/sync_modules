@@ -25,8 +25,10 @@ BACKEND = REPO / "apps" / "backend"
 APP = BACKEND / "app"
 TACH_TOML = BACKEND / "tach.toml"
 
-LAYERS = ("core", "domain", "plugins")
-# Layer ordinal: core=0, domain=1, plugins=2. Higher may depend on lower.
+LAYERS = ("core", "domain", "plugins", "testing")
+# Layer ordinal: core=0, domain=1, plugins=2, testing=3. Higher may depend on lower.
+# `testing/` is the test-scaffolding layer — stubs, recorders, fake plugins. Nothing
+# else may import from `testing/` (enforced by the same layering check below).
 LAYER_ORDER = {name: i for i, name in enumerate(LAYERS)}
 
 
