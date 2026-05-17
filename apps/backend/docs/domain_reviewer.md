@@ -66,7 +66,7 @@ Fire-and-forget coro spawned once per `schedule_review` call.
 9. **Build `ReviewContext`** — pr, diff, lessons, language_hint, prior_yaaos_comment_bodies. No persona, no agent_name — the parent reviewer's prompt and subagent definitions ship as files (see `plugins/claude_code`).
 10. **Hash + snapshot** — `prompt_hash = sha256(ctx.model_dump_json())`, denormalize, write `review_job.prompt_sent` audit (hash, lesson IDs, checkout SHA, language hint).
 11. **`invoking_agent` step.** `coding_agent.review(plugin_id="claude_code", workspace=ws, context=ctx)`.
-12. **`posting_review` step.** Build `vcs.Review(agent_tag="yaaos", state, summary_body, findings)` and `vcs_plugin.post_review`. The github plugin uses each finding's `source_agent` for per-comment prefixes; the top-level body uses the review tag.
+12. **`posting_review` step.** Build `vcs.Review(agent_tag="yaaos", state, summary_body, findings)` and `vcs_plugin.post_review`. The github plugin posts each finding as its own comment (inline if it has `file` + `line_start`, otherwise a top-level PR comment); there's no review wrapper or verdict. Each finding's `source_agent` becomes a small emoji-tagged attribution suffix. `state` is recorded internally but currently ignored on post — approve flow is deferred.
 13. **Persist** — one `PostedCommentRow` per finding-that-became-a-comment; update row with `status='posted'`, telemetry, JSON findings.
 14. **Audit + publish** — `review_job.posted` carries `findings_by_agent: {<source_agent>: count}`; `ReviewJobStatusChanged(status="posted")`.
 
@@ -90,7 +90,11 @@ Five regex rules catch high-confidence shapes: AWS access key, GitHub token, Ant
 
 ### Denormalized fields on `review_jobs`
 
-Beyond lifecycle: `prompt_hash`, `lessons_applied` (UUID[]), `tokens_in`, `tokens_out`, `cost_usd`, `duration_s`, `error_message`, `review_external_id`, JSON-dumped `findings` (each carrying its `source_agent`). Audit log remains historical truth.
+Beyond lifecycle: `prompt_hash`, `lessons_applied` (UUID[]), `tokens_in`, `tokens_out`, `duration_s`, `model` (alias requested → resolved on completion), `effort` (CLI reasoning level), `error_message`, `review_external_id`, JSON-dumped `findings` (each carrying its `source_agent`), `activity_log` (chronological pre-rendered stream events, capped at 5 MB per row). Audit log remains historical truth.
+
+### Activity log
+
+`activity_log` is a JSONB array of `ActivityEvent` records (`{ts, kind, message, detail}`) captured from the coding-agent stream. The reviewer buffers events in memory during a run and persists the buffer in the same UPDATE that flips status to a terminal state (`posted` / `failed` / `skipped` / `cancelled`). Mid-run crash loses the buffered tail — acceptable for POC; live view stays current via the per-event `ReviewJobActivity` SSE event regardless. Cap is enforced in app code: once 5 MB, a single `log_truncated` marker event is appended and further appends are skipped.
 
 ### Caller + destination columns
 
@@ -107,14 +111,24 @@ Beyond lifecycle: `prompt_hash`, `lessons_applied` (UUID[]), `tokens_in`, `token
 
 ### Metrics
 
-`metrics_summary` walks all rows once: `{review_jobs_by_status, total_reviews_posted, total_cost_usd, failure_count, failure_rate}`. Backs `GET /api/reviewer/metrics`.
+`metrics_summary` walks all rows once: `{review_jobs_by_status, total_reviews_posted, failure_count, failure_rate}`. Backs `GET /api/reviewer/metrics`.
 
 ## Data owned
 
-- `review_jobs` — one row per `(PR × review run)`. Indexed on `(pr_id, status, created_at)` and `(status, last_heartbeat_at)`.
+Generation 1 (today's `schedule_review` flow):
+
+- `review_jobs` — one row per `(PR x review run)`. Indexed on `(pr_id, status, created_at)` and `(status, last_heartbeat_at)`.
 - `posted_comments` — one row per VCS comment yaaos has posted; PK `external_comment_id`. Read by `intake` to resolve "which review_job owns this comment".
 
-Canonical schema in [core_database.md](core_database.md).
+Generation 2 (durable findings — plan/notes/full-pr-flow.md §4.1; populated by the aggregate as §13 steps 5-7 land):
+
+- `findings` — first-class finding. Durable per PR; identified across re-reviews by `(pr_id, fingerprint_hash)`. Carries `state` (`open` | `acknowledged` | `resolved_confirmed` | `resolved_unverified` | `stale`), sticky `severity`, max-over-observations `confidence`, the latest `current_anchor` JSONB, and `concrete_failure_scenario` (required per plan §10.1).
+- `finding_observations` — append-only `(finding, review)` sighting log. Each row carries the anchor at the time and the agent's raw body.
+- `comment_threads` — 1:1 with `findings`. Carries `external_thread_id` (GitHub review thread id) indexed for webhook resolution.
+- `comment_messages` — every yaaos- and human-authored message in every thread. Carries `external_comment_id` indexed, plus `classified_intent` + `classification_confidence` on human messages once the §6.4 classifier runs.
+- `acknowledgment_decisions` — persistent dev decisions (`intentional` | `wontfix`). Survives future reviews — re-observed fingerprints with an ack drop silently.
+
+`review_id` columns on generation-2 tables are unconstrained UUIDs; the `review_jobs → reviews` rename in §13 step 7 turns them into a real FK. Canonical schema in [core_database.md](core_database.md).
 
 ## How it's tested
 

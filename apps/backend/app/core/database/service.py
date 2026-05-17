@@ -102,6 +102,8 @@ _M01_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("003_drop_repos_table", "drop_repos_table"),
     ("004_review_jobs_triggered_by_destination", "add_review_jobs_triggered_by_destination"),
     ("005_drop_reviewer_agents", "drop_reviewer_agents"),
+    ("006_review_jobs_activity_log_model_effort", "add_review_jobs_activity_log_model_effort"),
+    ("007_create_durable_findings_tables", "create_durable_findings_tables"),
 )
 
 
@@ -195,6 +197,26 @@ async def _apply_add_review_jobs_triggered_by_destination(conn) -> None:  # type
         await conn.execute(text(stmt))
 
 
+async def _apply_add_review_jobs_activity_log_model_effort(conn) -> None:  # type: ignore[no-untyped-def]
+    """Add `activity_log` (JSONB), `model`, `effort` columns to `review_jobs`;
+    drop `cost_usd`. The activity log captures every Claude Code stream event
+    in chronological order (cap 5 MB per row, enforced in app code). `model`
+    + `effort` record what the CLI was asked to use (and what it reported on
+    completion). Cost tracking is removed — the data we'd persist isn't
+    authoritative pricing.
+
+    Idempotent.
+    """
+    statements: list[str] = [
+        "ALTER TABLE review_jobs ADD COLUMN IF NOT EXISTS activity_log JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "ALTER TABLE review_jobs ADD COLUMN IF NOT EXISTS model TEXT",
+        "ALTER TABLE review_jobs ADD COLUMN IF NOT EXISTS effort TEXT",
+        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS cost_usd",
+    ]
+    for stmt in statements:
+        await conn.execute(text(stmt))
+
+
 async def _apply_drop_reviewer_agents(conn) -> None:  # type: ignore[no-untyped-def]
     """Collapse the per-agent decomposition: one row per (PR x review run).
 
@@ -218,6 +240,31 @@ async def _apply_drop_reviewer_agents(conn) -> None:  # type: ignore[no-untyped-
         await conn.execute(text(stmt))
 
 
+async def _apply_create_durable_findings_tables(conn) -> None:  # type: ignore[no-untyped-def]
+    """Create the durable-findings tables (plan §4.1).
+
+    `findings`, `finding_observations`, `comment_threads`, `comment_messages`,
+    `acknowledgment_decisions`. `create_all` is idempotent (CREATE TABLE IF NOT
+    EXISTS) so fresh DBs that already ran 001 with these models in metadata
+    no-op here, and DBs created before this migration's models existed get the
+    tables added.
+    """
+    import importlib  # noqa: PLC0415
+
+    importlib.import_module("app.domain.reviewer.models")
+    new_tables = [
+        Base.metadata.tables[name]
+        for name in (
+            "findings",
+            "finding_observations",
+            "comment_threads",
+            "comment_messages",
+            "acknowledgment_decisions",
+        )
+    ]
+    await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
+
+
 async def migrate() -> None:
     """Apply any un-applied migrations. Idempotent."""
     await ensure_schema_migrations_table()
@@ -238,6 +285,10 @@ async def migrate() -> None:
                 await _apply_add_review_jobs_triggered_by_destination(conn)
             elif kind == "drop_reviewer_agents":
                 await _apply_drop_reviewer_agents(conn)
+            elif kind == "add_review_jobs_activity_log_model_effort":
+                await _apply_add_review_jobs_activity_log_model_effort(conn)
+            elif kind == "create_durable_findings_tables":
+                await _apply_create_durable_findings_tables(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},
