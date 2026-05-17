@@ -17,7 +17,6 @@ import json
 import os
 import shutil
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -32,12 +31,20 @@ from app.core.database import session as db_session
 from app.core.primitives import PluginMeta
 from app.core.workspace import Workspace, WorkspaceExecError
 from app.domain.coding_agent import (
+    ActivityEvent,
     HealthStatus,
+    IncrementalReviewContext,
+    IncrementalReviewResult,
     InvocationStatus,
     InvocationTelemetry,
+    OnActivity,
     ReviewContext,
     ReviewResult,
+    StaleCheckContext,
+    StaleCheckResult,
     ValidationResult,
+    VerifyFixContext,
+    VerifyFixResult,
     register_coding_agent_plugin,
 )
 from app.domain.vcs import Finding, FindingSnippetLine
@@ -51,6 +58,13 @@ log = structlog.get_logger("claude_code")
 # on first run; 20 min gives headroom. Per-call override available via
 # `ReviewContext.agent_config["timeout_seconds"]`.
 _DEFAULT_TIMEOUT_SECONDS = 1200
+
+# Hardcoded model + effort for M01. Future UI work moves these to a settings
+# row + per-job override. `--model opus` resolves to the latest Opus alias;
+# `--effort medium` is a Claude Code reasoning level (low / medium / high /
+# xhigh / max).
+_MODEL = "opus"
+_EFFORT = "medium"
 
 
 def _utcnow() -> datetime:
@@ -275,8 +289,122 @@ def _log_stream_event(event: dict[str, Any]) -> None:
             subtype=event.get("subtype"),
             duration_ms=event.get("duration_ms"),
             num_turns=event.get("num_turns"),
-            total_cost_usd=event.get("total_cost_usd"),
         )
+
+
+def _render_activity(event: dict[str, Any]) -> ActivityEvent | None:
+    """Convert one Claude Code stream event into a user-facing `ActivityEvent`.
+
+    Returns `None` for events with no useful render (e.g. unknown types, empty
+    assistant turns). The `message` is pre-rendered for direct UI display; raw
+    event data lands in `detail` for the expanded view.
+    """
+    et = event.get("type")
+    ts = _utcnow()
+    if et == "system" and event.get("subtype") == "init":
+        model = event.get("model") or "?"
+        return ActivityEvent(
+            ts=ts,
+            kind="session_start",
+            message=f"Session started · model {model}",
+            detail={"model": model, "session_id": event.get("session_id")},
+        )
+    if et == "assistant":
+        msg = event.get("message", {}) or {}
+        # An assistant turn may contain a mix of text + tool_use blocks. Render
+        # them in order — emit the first block we can, since one ActivityEvent
+        # per stream event keeps the feed cardinality 1:1 with stream lines.
+        for block in msg.get("content", []) or []:
+            btype = block.get("type")
+            if btype == "tool_use":
+                tool = block.get("name") or "?"
+                inp = block.get("input") if isinstance(block.get("input"), dict) else {}
+                if tool == "Task":
+                    subagent = inp.get("subagent_type") or "subagent"
+                    return ActivityEvent(
+                        ts=ts,
+                        kind="subagent_dispatched",
+                        message=f"Dispatching {subagent}",
+                        detail={
+                            "subagent": subagent,
+                            "tool_use_id": block.get("id"),
+                            "description": inp.get("description"),
+                        },
+                    )
+                # Other tool calls — Read, Bash, Grep, Glob, etc.
+                target = _summarize_tool_input(tool, inp)
+                return ActivityEvent(
+                    ts=ts,
+                    kind="tool_call_started",
+                    message=f"{tool}: {target}" if target else tool,
+                    detail={"tool": tool, "tool_use_id": block.get("id"), "input": inp},
+                )
+            if btype == "text":
+                text = (block.get("text") or "").strip()
+                if text:
+                    excerpt = text if len(text) < 200 else text[:197] + "…"
+                    return ActivityEvent(
+                        ts=ts,
+                        kind="assistant_message",
+                        message=excerpt,
+                        detail={},
+                    )
+        return None
+    if et == "user":
+        msg = event.get("message", {}) or {}
+        for block in msg.get("content", []) or []:
+            if block.get("type") != "tool_result":
+                continue
+            content = block.get("content")
+            if isinstance(content, list):
+                summary = " ".join(str(c.get("text", c)) if isinstance(c, dict) else str(c) for c in content)
+            else:
+                summary = str(content or "")
+            excerpt = summary.strip()
+            if len(excerpt) > 200:
+                excerpt = excerpt[:197] + "…"
+            return ActivityEvent(
+                ts=ts,
+                kind="tool_call_finished",
+                message=f"→ {excerpt}" if excerpt else "→ (empty result)",
+                detail={
+                    "tool_use_id": block.get("tool_use_id"),
+                    "is_error": block.get("is_error", False),
+                },
+            )
+        return None
+    if et == "result":
+        return ActivityEvent(
+            ts=ts,
+            kind="result",
+            message="Review complete",
+            detail={
+                "duration_ms": event.get("duration_ms"),
+                "num_turns": event.get("num_turns"),
+            },
+        )
+    return None
+
+
+def _summarize_tool_input(tool: str, inp: dict[str, Any]) -> str:
+    """One-line summary of a tool_use's input dict for the activity feed."""
+    if tool in ("Read", "Glob", "LS", "NotebookRead"):
+        return str(inp.get("file_path") or inp.get("path") or inp.get("pattern") or "")
+    if tool == "Bash":
+        cmd = str(inp.get("command") or "")
+        return cmd if len(cmd) < 120 else cmd[:117] + "…"
+    if tool == "Grep":
+        pat = str(inp.get("pattern") or "")
+        path = str(inp.get("path") or "")
+        return f"{pat!r} in {path}" if path else f"{pat!r}"
+    if tool == "WebFetch":
+        return str(inp.get("url") or "")
+    if tool == "WebSearch":
+        return str(inp.get("query") or "")
+    if tool == "TodoWrite":
+        todos = inp.get("todos") or []
+        return f"{len(todos)} todos" if isinstance(todos, list) else ""
+    return ""
 
 
 # ── Verdict ───────────────────────────────────────────────────────────────────
@@ -338,7 +466,12 @@ class ClaudeCodePlugin:
                 log.warning("claude_code.api_key_decrypt_failed")
         return api_key, row.cli_path
 
-    async def review(self, workspace: Workspace, context: ReviewContext) -> ReviewResult:
+    async def review(
+        self,
+        workspace: Workspace,
+        context: ReviewContext,
+        on_activity: OnActivity | None = None,
+    ) -> ReviewResult:
         prep = await self._prepare_invocation(context.agent_config)
         if isinstance(prep, ReviewResult):
             return prep
@@ -346,7 +479,7 @@ class ClaudeCodePlugin:
 
         full_prompt = _assemble_review_prompt(context) + _schema_appendix(_FindingList)
 
-        envelope = await self._run_and_parse_envelope(workspace, argv, env, full_prompt, timeout)
+        envelope = await self._run_and_parse_envelope(workspace, argv, env, full_prompt, timeout, on_activity)
         if isinstance(envelope, ReviewResult):
             return envelope
         agent_text, telemetry = envelope
@@ -397,13 +530,18 @@ class ClaudeCodePlugin:
             cli_path,
             "--print",
             # stream-json emits one JSON event per line as work progresses.
-            # We parse it post-hoc (after the subprocess returns / times out)
-            # to log per-event observability — which Task got dispatched, when
-            # each subagent returned, what tool calls each made. `--verbose`
-            # is required when streaming JSON.
+            # The workspace's streaming path forwards each line to a callback
+            # so we can publish ReviewJobActivity SSE events live + persist
+            # the full sequence on completion. `--verbose` is required when
+            # streaming JSON.
             "--output-format=stream-json",
             "--verbose",
             "--permission-mode=bypassPermissions",
+            # Model + effort hardcoded for M01 (future UI configures them).
+            "--model",
+            _MODEL,
+            "--effort",
+            _EFFORT,
             # Task is required so the parent reviewer can dispatch yaaos-* subagents.
             # Bash is restricted to read-only git commands so subagents can run
             # `git diff <base_sha>..HEAD` themselves instead of yaaos inlining
@@ -414,10 +552,6 @@ class ClaudeCodePlugin:
             "Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),"
             "Bash(git ls-files:*),Bash(git rev-parse:*),Bash(git status)",
         ]
-        if agent_config.get("model"):
-            argv += [f"--model={agent_config['model']}"]
-        if agent_config.get("max_turns"):
-            argv += [f"--max-turns={agent_config['max_turns']}"]
         return argv, env, timeout
 
     async def _run_and_parse_envelope(
@@ -427,18 +561,47 @@ class ClaudeCodePlugin:
         env: dict[str, str],
         full_prompt: str,
         timeout: int,
+        on_activity: OnActivity | None,
     ) -> tuple[str, InvocationTelemetry] | ReviewResult:
         """Run the CLI via the workspace; parse the wrapper envelope.
 
+        Streams stdout line-by-line: each line is parsed into a stream event,
+        logged, rendered to an `ActivityEvent`, and forwarded via `on_activity`
+        (if supplied). After the subprocess exits, the final `result` event
+        yields the agent text + tokens + resolved model.
+
         Returns (agent_text, telemetry) on success, or a `ReviewResult` carrying
-        the failure status. Reply path adapts the ReviewResult shape.
+        the failure status.
         """
+        events: list[dict[str, Any]] = []
+
+        async def _on_stream_line(line: bytes) -> None:
+            text = line.decode("utf-8", errors="replace").strip()
+            if not text:
+                return
+            try:
+                event = json.loads(text)
+            except json.JSONDecodeError:
+                return  # malformed line — skip; final agent_text comes from `result`
+            events.append(event)
+            _log_stream_event(event)
+            if on_activity is None:
+                return
+            activity = _render_activity(event)
+            if activity is None:
+                return
+            try:
+                await on_activity(activity)
+            except Exception:
+                log.exception("claude_code.on_activity_failed", kind=activity.kind)
+
         try:
             result = await workspace.run_coding_agent_cli(
                 argv=argv,
                 env=env,
                 stdin=full_prompt.encode("utf-8"),
                 timeout_seconds=timeout,
+                on_stream_line=_on_stream_line,
             )
         except WorkspaceExecError as e:
             return ReviewResult(
@@ -447,13 +610,6 @@ class ClaudeCodePlugin:
             )
 
         telemetry = InvocationTelemetry(latency_ms=result.duration_ms, raw_stderr=result.stderr)
-
-        # Parse stream-json events even on timeout / non-zero exit — they're
-        # the only diagnostic we have for "where did this get stuck?". Log
-        # every event so operators can read the trace in backend logs.
-        events = _parse_stream_events(result.stdout)
-        for ev in events:
-            _log_stream_event(ev)
         final_result_event = next((e for e in reversed(events) if e.get("type") == "result"), None)
 
         if result.timed_out:
@@ -484,13 +640,45 @@ class ClaudeCodePlugin:
         usage = final_result_event.get("usage", {}) or {}
         tokens_in = usage.get("input_tokens")
         tokens_out = usage.get("output_tokens")
-        cost = final_result_event.get("total_cost_usd")
-        cost_usd = Decimal(str(cost)) if cost is not None else None
+        # The CLI reports the resolved model in the final result event so an
+        # alias like `opus` becomes a versioned name on the row.
+        resolved_model = final_result_event.get("model") or _MODEL
 
         telemetry = telemetry.model_copy(
-            update={"tokens_in": tokens_in, "tokens_out": tokens_out, "cost_usd": cost_usd}
+            update={
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+                "model": resolved_model,
+            }
         )
         return agent_text, telemetry
+
+    async def incremental_review(
+        self,
+        workspace: Workspace,
+        context: IncrementalReviewContext,
+        on_activity: OnActivity | None = None,
+    ) -> IncrementalReviewResult:
+        # Wired when domain/reviewer ships the incremental-review flow. The
+        # prompt template + structured-output schema for this mode are owned
+        # by domain/reviewer per plan §5.5.
+        raise NotImplementedError("claude_code: incremental_review not wired yet")
+
+    async def verify_fix(
+        self,
+        workspace: Workspace,
+        context: VerifyFixContext,
+        on_activity: OnActivity | None = None,
+    ) -> VerifyFixResult:
+        raise NotImplementedError("claude_code: verify_fix not wired yet")
+
+    async def stale_check(
+        self,
+        workspace: Workspace,
+        context: StaleCheckContext,
+        on_activity: OnActivity | None = None,
+    ) -> StaleCheckResult:
+        raise NotImplementedError("claude_code: stale_check not wired yet")
 
     async def validate_config(self, agent_config: dict[str, Any]) -> ValidationResult:
         errors: list[str] = []
@@ -498,15 +686,7 @@ class ClaudeCodePlugin:
             v = agent_config["timeout_seconds"]
             if not isinstance(v, int) or v <= 0:
                 errors.append("timeout_seconds must be a positive int")
-        if "max_turns" in agent_config:
-            v = agent_config["max_turns"]
-            if not isinstance(v, int) or v <= 0:
-                errors.append("max_turns must be a positive int")
-        if "model" in agent_config:
-            v = agent_config["model"]
-            if not isinstance(v, str) or not v:
-                errors.append("model must be a non-empty string")
-        unknown = set(agent_config) - {"timeout_seconds", "max_turns", "model"}
+        unknown = set(agent_config) - {"timeout_seconds"}
         errors.extend(f"unknown config key: {k}" for k in unknown)
         return ValidationResult(valid=not errors, errors=errors)
 

@@ -16,12 +16,13 @@ related domain models. The plugin contract resolves through a registry.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from collections.abc import Awaitable, Callable
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.primitives import PluginMeta
 from app.core.workspace import HealthStatus, Workspace
@@ -39,10 +40,30 @@ class InvocationStatus(StrEnum):
 class InvocationTelemetry(BaseModel):
     tokens_in: int | None = None
     tokens_out: int | None = None
-    cost_usd: Decimal | None = None
     latency_ms: int = 0
     raw_output: str = ""
     raw_stderr: str = ""
+    # The actual model the CLI reports having used (e.g. an alias like
+    # `opus` resolves to a versioned name). Falls back to None when the
+    # plugin can't determine it.
+    model: str | None = None
+
+
+class ActivityEvent(BaseModel):
+    """One captured event from a coding-agent run.
+
+    Pre-rendered by the plugin so the FE doesn't have to interpret raw
+    Claude Code stream-json shapes — `message` is the user-facing string
+    shown in the UI; `detail` is the raw event data for the expanded view.
+    """
+
+    ts: datetime
+    kind: str
+    message: str
+    detail: dict[str, Any] = {}
+
+
+OnActivity = Callable[[ActivityEvent], Awaitable[None]]
 
 
 class ReviewContext(BaseModel):
@@ -75,10 +96,149 @@ class ValidationResult(BaseModel):
     errors: list[str] = []
 
 
+Severity = Literal["blocker", "major", "minor", "nit"]
+
+
+class FindingAnchor(BaseModel):
+    """Where in the code the finding applies. Plugin-side anchor shape.
+
+    `domain/reviewer` maps this onto its own `CodeAnchor` value object
+    (which adds the surrounding-content + commit-sha bits needed to
+    re-resolve under line drift).
+    """
+
+    file_path: str
+    line_start: int
+    line_end: int
+
+
+class FindingDraft(BaseModel):
+    """One raw finding produced by an agent task. Schema per plan §10.1.
+
+    The reviewer aggregate rejects any draft missing `concrete_failure_scenario`
+    or below the per-severity confidence threshold before storing it. Severity
+    is sticky once stored; the per-PR nit cap and per-review top-10 cap are
+    applied by the aggregate, not here.
+    """
+
+    severity: Severity
+    rule_id: str
+    title: str
+    body: str
+    concrete_failure_scenario: str
+    confidence: int = Field(ge=0, le=100)
+    rationale: str
+    anchor: FindingAnchor
+    duplicate_of_rule_ids: list[str] = []
+
+
+class IncrementalReviewContext(BaseModel):
+    """Inputs for a `incremental_review` task — review `prev_sha..head` only.
+
+    Prior findings + acknowledgments are passed so the agent can avoid
+    re-raising issues the developer already accepted.
+    """
+
+    pr: VCSPullRequest
+    diff: Diff
+    prev_sha: str
+    head_sha: str
+    lessons: list[Lesson] = []
+    language_hint: str | None = None
+    prior_open_finding_summaries: list[str] = []
+    prior_acknowledged_finding_summaries: list[str] = []
+    agent_config: dict[str, Any] = {}
+
+
+class IncrementalReviewResult(BaseModel):
+    status: InvocationStatus
+    findings: list[FindingDraft] = []
+    telemetry: InvocationTelemetry = InvocationTelemetry()
+    error_message: str | None = None
+
+
+class VerifyFixContext(BaseModel):
+    """Is a previously raised finding still present at HEAD?
+
+    The reviewer supplies original anchor code, current code at the resolved
+    anchor on HEAD, and the finding body. Agent reads only what's given;
+    no broader exploration unless the finding's nature requires it.
+    """
+
+    original_finding_title: str
+    original_finding_body: str
+    original_rule_id: str
+    original_code_snippet: str
+    current_code_snippet: str
+    current_anchor: FindingAnchor
+    agent_config: dict[str, Any] = {}
+
+
+class VerifyFixResult(BaseModel):
+    status: InvocationStatus
+    still_present: bool = False
+    confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    reasoning: str = ""
+    observed_line: int | None = None
+    telemetry: InvocationTelemetry = InvocationTelemetry()
+    error_message: str | None = None
+
+
+class StaleCheckContext(BaseModel):
+    """Does a previously raised finding still apply after the code changed?
+
+    Used when the original anchor moved or surrounding context changed
+    materially. Distinct from `verify_fix` — `verify_fix` asks \"is the bug
+    fixed?\"; `stale_check` asks \"is the bug still meaningful?\".
+    """
+
+    original_finding_title: str
+    original_finding_body: str
+    original_rule_id: str
+    current_code_snippet: str
+    diff_summary: str
+    agent_config: dict[str, Any] = {}
+
+
+class StaleCheckResult(BaseModel):
+    status: InvocationStatus
+    still_applies: bool = True
+    confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    reasoning: str = ""
+    telemetry: InvocationTelemetry = InvocationTelemetry()
+    error_message: str | None = None
+
+
 class CodingAgentPlugin(Protocol):
     meta: PluginMeta
 
-    async def review(self, workspace: Workspace, context: ReviewContext) -> ReviewResult: ...
+    async def review(
+        self,
+        workspace: Workspace,
+        context: ReviewContext,
+        on_activity: OnActivity | None = None,
+    ) -> ReviewResult: ...
+
+    async def incremental_review(
+        self,
+        workspace: Workspace,
+        context: IncrementalReviewContext,
+        on_activity: OnActivity | None = None,
+    ) -> IncrementalReviewResult: ...
+
+    async def verify_fix(
+        self,
+        workspace: Workspace,
+        context: VerifyFixContext,
+        on_activity: OnActivity | None = None,
+    ) -> VerifyFixResult: ...
+
+    async def stale_check(
+        self,
+        workspace: Workspace,
+        context: StaleCheckContext,
+        on_activity: OnActivity | None = None,
+    ) -> StaleCheckResult: ...
 
     async def validate_config(self, agent_config: dict[str, Any]) -> ValidationResult: ...
 

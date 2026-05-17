@@ -37,7 +37,7 @@ Populated alongside the code. System-wide concerns live at the repo root; per-ap
 - `apps/<app>/docs/README.md` — entry into that app: stack, top-level structure, where module docs live.
 - `apps/<app>/docs/modularity.md` — that app's module model + import rules.
 - `apps/<app>/docs/patterns.md` — conventions specific to that app.
-- `apps/<app>/docs/<layer>_<module>.md` — one file per module. Follows the fixed template: Purpose · Public interface · Module architecture · Data owned · How it's tested. **No decisions section; no historical log.** Never re-explains the app or the system.
+- `apps/<app>/docs/<layer>_<module>.md` — one file per module. Follows the fixed template: Purpose · Public interface · Module architecture · Data owned · How it's tested. The Module architecture section is itself structured (Entities · Key value objects · Core user flows · State machines) — see each app's `docs/patterns.md` for the full template. **No decisions section; no historical log.** Never re-explains the app or the system.
 
 ## Mode by location
 

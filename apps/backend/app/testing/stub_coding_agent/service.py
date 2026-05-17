@@ -14,19 +14,28 @@ through; `health_check` reports stub mode.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 import structlog
 
 from app.core.workspace import Workspace
 from app.domain.coding_agent import (
+    ActivityEvent,
+    FindingAnchor,
+    FindingDraft,
     HealthStatus,
+    IncrementalReviewContext,
+    IncrementalReviewResult,
     InvocationStatus,
     InvocationTelemetry,
+    OnActivity,
     ReviewContext,
     ReviewResult,
+    StaleCheckContext,
+    StaleCheckResult,
     ValidationResult,
+    VerifyFixContext,
+    VerifyFixResult,
 )
 from app.domain.vcs import Finding
 
@@ -36,11 +45,43 @@ log = structlog.get_logger("testing.stub_coding_agent")
 _STUB_TELEMETRY = InvocationTelemetry(
     tokens_in=1000,
     tokens_out=200,
-    cost_usd=Decimal("0.0050"),
     latency_ms=10,
     raw_output="",
     raw_stderr="",
+    model="opus",
 )
+
+
+def _canned_activity() -> list[ActivityEvent]:
+    """Default sequence emitted by the stub — enough events to exercise the
+    persisted activity log + SSE path without inventing realistic content."""
+    now = datetime.now(UTC)
+    return [
+        ActivityEvent(
+            ts=now,
+            kind="session_start",
+            message="Session started · model opus",
+            detail={"model": "opus", "session_id": "stub-session"},
+        ),
+        ActivityEvent(
+            ts=now,
+            kind="subagent_dispatched",
+            message="Dispatching yaaos-architecture",
+            detail={"subagent": "yaaos-architecture"},
+        ),
+        ActivityEvent(
+            ts=now,
+            kind="tool_call_started",
+            message="Read src/example.ts",
+            detail={"tool": "Read", "input": {"file_path": "src/example.ts"}},
+        ),
+        ActivityEvent(
+            ts=now,
+            kind="result",
+            message="Review complete",
+            detail={"num_turns": 1},
+        ),
+    ]
 
 
 class StubCodingAgentPlugin:
@@ -50,8 +91,21 @@ class StubCodingAgentPlugin:
         self._wrapped = wrapped
         self.meta = wrapped.meta
 
-    async def review(self, workspace: Workspace, context: ReviewContext) -> ReviewResult:
+    async def review(
+        self,
+        workspace: Workspace,
+        context: ReviewContext,
+        on_activity: OnActivity | None = None,
+    ) -> ReviewResult:
         del workspace
+        # Emit a canned event sequence so consumers exercise the activity-log
+        # path (persistence + SSE) the same way the real CLI would.
+        if on_activity is not None:
+            for event in _canned_activity():
+                try:
+                    await on_activity(event)
+                except Exception:
+                    log.exception("stub_coding_agent.on_activity_failed")
         # Emit one synthetic finding tagged with a subagent so e2e flows that
         # depend on findings have something to act against.
         finding = Finding(
@@ -72,6 +126,62 @@ class StubCodingAgentPlugin:
             state="COMMENT",
             summary_body="[stub] yaaos review",
             lesson_ids_consulted=[lesson.id for lesson in context.lessons],
+            telemetry=_STUB_TELEMETRY,
+        )
+
+    async def incremental_review(
+        self,
+        workspace: Workspace,
+        context: IncrementalReviewContext,
+        on_activity: OnActivity | None = None,
+    ) -> IncrementalReviewResult:
+        del workspace, context, on_activity
+        # One synthetic FindingDraft with `concrete_failure_scenario` populated
+        # so it survives the reviewer aggregate's schema check.
+        return IncrementalReviewResult(
+            status=InvocationStatus.SUCCESS,
+            findings=[
+                FindingDraft(
+                    severity="minor",
+                    rule_id="stub/incremental",
+                    title="[stub] incremental finding",
+                    body="Stub incremental finding for e2e flows.",
+                    concrete_failure_scenario="N/A — stub plugin output.",
+                    confidence=90,
+                    rationale="Stub plugin: emitted for e2e coverage.",
+                    anchor=FindingAnchor(file_path="src/example.ts", line_start=1, line_end=1),
+                )
+            ],
+            telemetry=_STUB_TELEMETRY,
+        )
+
+    async def verify_fix(
+        self,
+        workspace: Workspace,
+        context: VerifyFixContext,
+        on_activity: OnActivity | None = None,
+    ) -> VerifyFixResult:
+        del workspace, context, on_activity
+        return VerifyFixResult(
+            status=InvocationStatus.SUCCESS,
+            still_present=False,
+            confidence=0.95,
+            reasoning="Stub plugin: always reports the issue as fixed.",
+            telemetry=_STUB_TELEMETRY,
+        )
+
+    async def stale_check(
+        self,
+        workspace: Workspace,
+        context: StaleCheckContext,
+        on_activity: OnActivity | None = None,
+    ) -> StaleCheckResult:
+        del workspace, context, on_activity
+        return StaleCheckResult(
+            status=InvocationStatus.SUCCESS,
+            still_applies=True,
+            confidence=0.95,
+            reasoning="Stub plugin: always reports the finding as still applying.",
             telemetry=_STUB_TELEMETRY,
         )
 
