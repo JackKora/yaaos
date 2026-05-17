@@ -1,7 +1,7 @@
 [project]
-name = "yaaof-fake-github"
+name = "yaaos-fake-github"
 version = "0.0.1"
-description = "Test-only fake GitHub service for yaaof e2e/integration tests"
+description = "Test-only fake GitHub service for yaaos e2e/integration tests"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115",

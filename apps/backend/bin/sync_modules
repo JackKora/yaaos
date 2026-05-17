@@ -45,7 +45,7 @@ def discover_modules() -> list[tuple[str, str]]:
 
 
 def parse_module_deps(layer: str, name: str) -> list[str]:
-    """Return imports of other yaaof modules from this module's `__init__.py`."""
+    """Return imports of other yaaos modules from this module's `__init__.py`."""
     init = APP / layer / name / "__init__.py"
     if not init.exists():
         return []

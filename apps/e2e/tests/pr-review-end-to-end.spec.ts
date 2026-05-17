@@ -1,7 +1,7 @@
 /**
- * The headline journey: a PR arrives → yaaof reviews it → user sees findings.
+ * The headline journey: a PR arrives → yaaos reviews it → user sees findings.
  *
- * Boundary: fake-github dispatches a `pull_request.opened` webhook; yaaof
+ * Boundary: fake-github dispatches a `pull_request.opened` webhook; yaaos
  * creates a ticket, runs the three built-in agents through the stub
  * coding-agent, posts reviews back to fake-github, and the user sees the
  * results in the UI. No interaction with the test runner once dispatched.

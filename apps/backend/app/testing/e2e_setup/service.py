@@ -65,21 +65,21 @@ async def reset() -> None:
 
 
 async def seed_credentials_and_install(*, org_login: str = "acme") -> None:
-    """Populate yaaof with credentials and an active install pointing at the
+    """Populate yaaos with credentials and an active install pointing at the
     fake-github seeded org.
 
     The Fernet-encrypted blobs use placeholder bytes; fake-github accepts any
     bearer token, so the actual key material is never validated downstream.
-    The seeded slug matches fake-github's `/app` response (`yaaof-test`).
+    The seeded slug matches fake-github's `/app` response (`yaaos-test`).
     """
-    fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
     async with db_session() as s:
         s.add(
             GitHubSettingsRow(
                 id=uuid4(),
                 org_id=M01_ORG_ID,
                 app_id="12345",
-                slug="yaaof-test",
+                slug="yaaos-test",
                 encrypted_private_key=fernet.encrypt(b"TEST-FAKE-NOT-FOR-PROD-PEM"),
                 encrypted_webhook_secret=fernet.encrypt(b"TEST-FAKE-NOT-FOR-PROD-aaaaaaaaaaaaaaaa"),
             )
@@ -128,7 +128,7 @@ def is_dev_env() -> bool:
     """Gate used by every `/api/testing/*` route. Centralised so the rule
     `dev-only routes` lives in one place, not per-handler.
     """
-    return get_settings().yaaof_env == "dev"
+    return get_settings().yaaos_env == "dev"
 
 
 __all__ = [

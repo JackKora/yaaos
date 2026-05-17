@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Tailwind config — design tokens ported from plan/design/app/yaaof.css.
+ * Tailwind config — design tokens ported from plan/design/app/yaaos.css.
  * oklch values preserved; light + dark themes live as CSS variables, this
  * file maps them onto Tailwind utilities.
  */

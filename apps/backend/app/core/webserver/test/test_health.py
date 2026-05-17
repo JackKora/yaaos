@@ -18,18 +18,18 @@ def _required_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "DATABASE_URL",
         os.environ.get(
             "DATABASE_URL",
-            "postgresql+asyncpg://yaaof:yaaof@localhost:5432/yaaof",
+            "postgresql+asyncpg://yaaos:yaaos@localhost:5432/yaaos",
         ),
     )
     monkeypatch.setenv(
-        "YAAOF_ENCRYPTION_KEY",
+        "YAAOS_ENCRYPTION_KEY",
         os.environ.get(
-            "YAAOF_ENCRYPTION_KEY",
+            "YAAOS_ENCRYPTION_KEY",
             # Test-only Fernet key — generated for tests, not used in any other context.
             "VHJ5SW5nTm90VG9CcmVha1lvdXJTZWNyZXRzS2V5MTIzPQ==",
         ),
     )
-    monkeypatch.setenv("YAAOF_ENV", "dev")
+    monkeypatch.setenv("YAAOS_ENV", "dev")
     # Clear the cached singleton so the monkeypatched env wins.
     # lazy: imported after monkeypatch.setenv so the cache_clear sees fresh state
     from app.core.config.service import get_settings  # noqa: PLC0415

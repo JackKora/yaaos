@@ -17,7 +17,7 @@ import {
   prPayload,
   resetStack,
   seedCredentialsAndInstall,
-  YAAOF_URL,
+  YAAOS_URL,
 } from "./_helpers";
 
 test.beforeEach(async () => {
@@ -57,14 +57,14 @@ test("Cancel endpoint records review_job.cancelled in the audit log", async ({ r
     payload: prPayload({ repo: "acme/web", number: 12, title: "Tiny change" }),
   });
   // Find the ticket id.
-  const ticketsResp = await request.get(`${YAAOF_URL}/api/tickets`);
+  const ticketsResp = await request.get(`${YAAOS_URL}/api/tickets`);
   const tickets = (await ticketsResp.json()) as Array<{ id: string; title: string }>;
   const ticket = tickets.find((t) => t.title === "Tiny change");
   expect(ticket).toBeDefined();
 
   // Kick a re-review then cancel as fast as we can.
-  await request.post(`${YAAOF_URL}/api/reviewer/rereview?ticket_id=${ticket!.id}`);
-  await request.post(`${YAAOF_URL}/api/reviewer/cancel?ticket_id=${ticket!.id}`);
+  await request.post(`${YAAOS_URL}/api/reviewer/rereview?ticket_id=${ticket!.id}`);
+  await request.post(`${YAAOS_URL}/api/reviewer/cancel?ticket_id=${ticket!.id}`);
 
   // Poll the audit-log endpoint for at least one `review_job.cancelled`
   // entry. Even if all jobs from a particular batch beat the cancel, the
@@ -73,7 +73,7 @@ test("Cancel endpoint records review_job.cancelled in the audit log", async ({ r
   await expect
     .poll(
       async () => {
-        const r = await request.get(`${YAAOF_URL}/api/tickets/${ticket!.id}/audit`);
+        const r = await request.get(`${YAAOS_URL}/api/tickets/${ticket!.id}/audit`);
         const audit = (await r.json()) as Array<{ kind: string }>;
         return audit.filter((e) => e.kind === "review_job.cancelled").length;
       },

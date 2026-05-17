@@ -7,7 +7,7 @@ parsing the agent's response into vendor-neutral `vcs.Finding`s.
 
 Test-mode (stub/replay) wrapping is handled by the `testing/` layer's
 `StubCodingAgentPlugin` — see `app.testing.stub_coding_agent`. The bootstrap
-in `app/main.py` swaps real plugins for stubs when `YAAOF_CODING_AGENT_STUB`
+in `app/main.py` swaps real plugins for stubs when `YAAOS_CODING_AGENT_STUB`
 is set; this file never branches on it.
 """
 
@@ -124,7 +124,7 @@ def _assemble_review_prompt(ctx: ReviewContext) -> str:
         )
         for lesson in ctx.lessons:
             parts.append(f"### {lesson.title}\n_lesson_id: {lesson.id}_\n{lesson.body}")
-    if ctx.prior_yaaof_comment_bodies:
+    if ctx.prior_yaaos_comment_bodies:
         parts.extend(
             [
                 "",
@@ -133,7 +133,7 @@ def _assemble_review_prompt(ctx: ReviewContext) -> str:
                 "",
             ]
         )
-        for body in ctx.prior_yaaof_comment_bodies[:20]:
+        for body in ctx.prior_yaaos_comment_bodies[:20]:
             parts.append(f"- {body[:200]}")
     return "\n".join(parts)
 
@@ -208,7 +208,7 @@ class ClaudeCodePlugin:
         api_key: str | None = None
         if row.encrypted_anthropic_api_key:
             try:
-                fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+                fernet = Fernet(get_settings().yaaos_encryption_key.encode())
                 api_key = fernet.decrypt(row.encrypted_anthropic_api_key).decode()
             except InvalidToken:
                 log.warning("claude_code.api_key_decrypt_failed")
@@ -434,13 +434,13 @@ def _key_fingerprint(key: str) -> str:
 async def _probe_anthropic_auth(api_key: str) -> tuple[bool, str]:
     """Return (healthy, message). Cached for `_AUTH_TTL` per key fingerprint.
 
-    In stub mode (`YAAOF_CODING_AGENT_STUB`), the e2e test stack has no
+    In stub mode (`YAAOS_CODING_AGENT_STUB`), the e2e test stack has no
     outbound connectivity to `api.anthropic.com` — and shouldn't need it,
     since the stub agent never calls Anthropic anyway. Treat any non-empty
     key as authenticating cleanly so onboarding and `/api/claude_code/health`
     behave consistently with the rest of the stubbed pipeline.
     """
-    if os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
+    if os.environ.get("YAAOS_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
         return (True, "ok (stub)")
     fp = _key_fingerprint(api_key)
     now = _utcnow()
@@ -488,7 +488,7 @@ async def _onboarding_anthropic_key_set(org_id: UUID) -> bool:
     if row is None or row.encrypted_anthropic_api_key is None:
         return False
     try:
-        fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+        fernet = Fernet(get_settings().yaaos_encryption_key.encode())
         api_key = fernet.decrypt(row.encrypted_anthropic_api_key).decode()
     except InvalidToken:
         return False
@@ -500,7 +500,7 @@ async def _set_anthropic_key(org_id: UUID, raw_key: str) -> None:
     """Encrypt + upsert the Anthropic key on `claude_code_settings`."""
     from uuid import uuid4  # noqa: PLC0415
 
-    fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
     enc = fernet.encrypt(raw_key.encode())
     async with db_session() as s:
         row = (

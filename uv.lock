@@ -4,8 +4,8 @@ requires-python = "==3.13.*"
 
 [manifest]
 members = [
-    "yaaof",
-    "yaaof-backend",
+    "yaaos",
+    "yaaos-backend",
 ]
 
 [[package]]
@@ -1175,12 +1175,12 @@ wheels = [
 ]
 
 [[package]]
-name = "yaaof"
+name = "yaaos"
 version = "0.0.1"
 source = { virtual = "." }
 
 [[package]]
-name = "yaaof-backend"
+name = "yaaos-backend"
 version = "0.0.1"
 source = { editable = "apps/backend" }
 dependencies = [

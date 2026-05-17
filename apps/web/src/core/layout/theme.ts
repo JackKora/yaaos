@@ -2,8 +2,8 @@
 
 export type Theme = "light" | "dark";
 
-const THEME_KEY = "yaaof:theme";
-const SIDEBAR_KEY = "yaaof:sidebar-pinned";
+const THEME_KEY = "yaaos:theme";
+const SIDEBAR_KEY = "yaaos:sidebar-pinned";
 
 export function getStoredTheme(): Theme | null {
   const v = localStorage.getItem(THEME_KEY);

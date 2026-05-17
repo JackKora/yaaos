@@ -121,7 +121,7 @@ function RepositoriesList() {
         <div className="text-danger text-[12px]">{data.error}</div>
       ) : data && data.repositories.length === 0 ? (
         <div className="text-text-3 text-[12px]">
-          No repositories yet. Use <b>Configure on GitHub</b> to pick repos for yaaof to see.
+          No repositories yet. Use <b>Configure on GitHub</b> to pick repos for yaaos to see.
         </div>
       ) : (
         <ul
@@ -178,7 +178,7 @@ function NoAppBody() {
     <div className="flex flex-col gap-3">
       <GhManifestBanner />
       <p className="text-text-2 text-[12.5px]">
-        yaaof needs its own GitHub App. We'll create one on GitHub in one click — yaaof tells GitHub
+        yaaos needs its own GitHub App. We'll create one on GitHub in one click — yaaos tells GitHub
         the permissions and events it needs.
       </p>
       <ManifestForm />
@@ -201,7 +201,7 @@ function ManifestForm() {
     e.preventDefault();
     const origin = window.location.origin;
     const manifest = {
-      name: "yaaof",
+      name: "yaaos",
       url: origin,
       hook_attributes: { url: webhookUrl.trim(), active: true },
       redirect_url: `${origin}/api/github/manifest-callback`,
@@ -291,7 +291,7 @@ function CredentialsForm() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-text-2 text-[12.5px]">
-        yaaof needs its own GitHub App. Create one at{" "}
+        yaaos needs its own GitHub App. Create one at{" "}
         <a
           href="https://github.com/settings/apps/new"
           target="_blank"
@@ -309,7 +309,7 @@ function CredentialsForm() {
         </summary>
         <div className="mt-2 pl-2 border-l-2 border-border-soft flex flex-col gap-1.5">
           <div>
-            <b className="text-text-2">Webhook URL:</b> wherever yaaof is reachable +{" "}
+            <b className="text-text-2">Webhook URL:</b> wherever yaaos is reachable +{" "}
             <code className="mono bg-surface-2 px-1 py-0.5 rounded">/api/github/webhook</code> (for
             laptop dev, use your smee.io channel URL).
           </div>
@@ -331,7 +331,7 @@ function CredentialsForm() {
             (private — only you can install).
           </div>
           <div>
-            <b className="text-text-2">Setup URL (optional):</b> your yaaof URL +{" "}
+            <b className="text-text-2">Setup URL (optional):</b> your yaaos URL +{" "}
             <code className="mono bg-surface-2 px-1 py-0.5 rounded">/settings</code> for a nice
             post-install round-trip.
           </div>
@@ -352,14 +352,14 @@ function CredentialsForm() {
         </Field>
         <Field
           label="App slug"
-          hint="The URL-handle, e.g. yaaof-jack — visible at github.com/apps/<slug>"
+          hint="The URL-handle, e.g. yaaos-jack — visible at github.com/apps/<slug>"
         >
           <input
             data-testid="gh-slug"
             type="text"
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
-            placeholder="yaaof-yourname"
+            placeholder="yaaos-yourname"
             className="px-2 py-1.5 text-[12.5px] mono border border-border-soft rounded bg-bg"
             required
           />
@@ -457,7 +457,7 @@ function ApiKeyCard() {
           <p className="text-text-3 text-[12px]">
             {configured
               ? "Provider: Anthropic. Stored encrypted-at-rest. Re-enter to rotate."
-              : "Anthropic key required. yaaof uses the Claude Code CLI internally — your key is encrypted at rest."}
+              : "Anthropic key required. yaaos uses the Claude Code CLI internally — your key is encrypted at rest."}
           </p>
           <form
             className="flex gap-2"

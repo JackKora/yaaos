@@ -1,6 +1,6 @@
 """HTTP routes for the `e2e_setup` test surface.
 
-Every route is gated on `yaaof_env == "dev"`. In prod the routes still mount
+Every route is gated on `yaaos_env == "dev"`. In prod the routes still mount
 (because the testing tree is excluded from prod wheels, so prod never imports
 this module — see `apps/backend/pyproject.toml`), but defense-in-depth here
 ensures a stray dev-flagged build can't be probed for seed endpoints.

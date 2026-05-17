@@ -44,7 +44,7 @@ def main() -> int:
         # the cheapest reliable signal is the file path of any class that maps it.
         # When models exist, walk through the declarative registry to fill this in.
         # Skeleton: no mappers, so this loop is empty.
-        owning_module = getattr(table, "_yaaof_owning_module", None)
+        owning_module = getattr(table, "_yaaos_owning_module", None)
         if owning_module:
             table_to_module[table_name] = owning_module
 

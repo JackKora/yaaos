@@ -4,7 +4,7 @@
  *       table rows per the design (verdict dots, cost, source, actor, tokens, updated-ago).
  * Detail: header (status/kind/draft chips, Cancel/Re-review), Review/Audit tabs,
  *         SummaryStrip, AgentCards (queued/running/posted/skipped/failed states with
- *         finding expansion), Teach-yaaof modal.
+ *         finding expansion), Teach-yaaos modal.
  *
  * Live updates flow via `core/sse` (single EventSource at app root invalidates the
  * relevant Query keys; pages refetch). Polling is also enabled at lower frequency
@@ -36,7 +36,7 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@shared/components";
-import { ago } from "@shared/utils/ago";
+import { ago, formatTime } from "@shared/utils/ago";
 import { cn } from "@shared/utils/cn";
 import { Link, useParams } from "@tanstack/react-router";
 import { Github, RefreshCw, X } from "lucide-react";
@@ -128,7 +128,7 @@ export function TicketsPage() {
       {filtered.length === 0 && !isLoading && (
         <div className="text-text-3 text-[12.5px]" data-testid="tickets-empty">
           {(tickets ?? []).length === 0
-            ? "No tickets yet. Open a PR on a repo where yaaof's GitHub App is installed."
+            ? "No tickets yet. Open a PR on a repo where yaaos's GitHub App is installed."
             : "No tickets match the current filters."}
         </div>
       )}
@@ -801,7 +801,7 @@ function AgentCard({
         />
       </CardContent>
       {teachOpen && (
-        <TeachYaaofModal
+        <TeachYaaosModal
           finding={teachOpen.finding}
           repoExternalId={repoExternalId}
           onClose={() => setTeachOpen(null)}
@@ -1017,8 +1017,8 @@ function FindingRow({
           )}
           <LessonChips ids={finding.applied_lesson_ids ?? []} />
           <div>
-            <Button data-testid="teach-yaaof" onClick={onTeach}>
-              Teach yaaof…
+            <Button data-testid="teach-yaaos" onClick={onTeach}>
+              Teach yaaos…
             </Button>
           </div>
         </div>
@@ -1078,9 +1078,7 @@ function AuditTab({
             onClick={() => setOpen(open === e.id ? null : e.id)}
             className="w-full text-left px-3 py-2 hover:bg-hover flex items-center gap-3 text-[11.5px] mono"
           >
-            <span className="text-text-4">
-              {new Date(e.created_at).toISOString().slice(11, 19)}
-            </span>
+            <span className="text-text-4">{formatTime(e.created_at)}</span>
             <span className="text-text-2 flex-1">{e.kind}</span>
             <span className="text-text-4">
               [{e.actor.kind}
@@ -1098,7 +1096,7 @@ function AuditTab({
   );
 }
 
-function TeachYaaofModal({
+function TeachYaaosModal({
   finding,
   repoExternalId,
   onClose,
@@ -1125,13 +1123,13 @@ function TeachYaaofModal({
   return (
     <Dialog open={true} onClose={onClose} width="560px">
       <DialogHeader onClose={onClose}>
-        <h3 className="font-semibold text-[14px]">Teach yaaof</h3>
+        <h3 className="font-semibold text-[14px]">Teach yaaos</h3>
         <span className="text-text-4 text-[11px]">
           on <b className="text-text-2 mono">{repoExternalId}</b>
         </span>
       </DialogHeader>
       <DialogBody>
-        <form className="flex flex-col gap-3" onSubmit={submit} id="teach-yaaof-form">
+        <form className="flex flex-col gap-3" onSubmit={submit} id="teach-yaaos-form">
           <div className="flex flex-col gap-1">
             <span className="text-text-2 text-[11.5px] font-medium">Title</span>
             <input
@@ -1164,7 +1162,7 @@ function TeachYaaofModal({
         <Button
           variant="primary"
           type="submit"
-          form="teach-yaaof-form"
+          form="teach-yaaos-form"
           data-testid="teach-save"
           disabled={create.isPending}
         >

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# e2e CI: brings up the test stack (Postgres + fake-github + yaaof in mock
+# e2e CI: brings up the test stack (Postgres + fake-github + yaaos in mock
 # mode), runs the Playwright suite against it, tears down. No external
 # credentials required.
 #

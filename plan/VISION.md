@@ -1,10 +1,10 @@
 # Vision
 
-> Long-horizon view of yaaof. Two pages max (~700 words).
+> Long-horizon view of yaaos. Two pages max (~700 words).
 > Audience: me + future collaborators landing cold.
 > Update rarely — only when the answer to "what is this thing" changes.
 
-**yaaof turns Linear/Jira tickets, Slack threads, and operational alerts into reviewed, tested, ready-to-merge pull requests — a team-scale agent orchestration service for engineering teams of 2–100 who want Composio-style coding agents running as a shared, configurable team service rather than a per-developer CLI.**
+**yaaos turns Linear/Jira tickets, Slack threads, and operational alerts into reviewed, tested, ready-to-merge pull requests — a team-scale agent orchestration service for engineering teams of 2–100 who want Composio-style coding agents running as a shared, configurable team service rather than a per-developer CLI.**
 
 ## Problem & user
 
@@ -12,7 +12,7 @@ Teams of 2–100 developers are stuck between two bad options. The current wave 
 
 ## What it is
 
-yaaof is a self-hosted service that any team member can trigger from where they already work. Tickets in Linear/Jira, threads in Slack, or operational alerts dispatch a coding agent that opens a worktree, writes code, and runs tests in an ephemeral environment it spins up on demand. Configurable review agents — architecture, security, and any custom ones the team defines — gate the resulting PR; their feedback flows back to the coding agent until tests pass and reviews clear. Humans see one shared dashboard, get pinged in Slack when attention is needed, and approve the merge. Agents on both sides remember feedback so the team's preferences accumulate as institutional memory. Every step — intake source, agent roster, model choice, review policy, merge gate, notification routing — is configurable; sensible defaults let a team get started in an hour.
+yaaos is a self-hosted service that any team member can trigger from where they already work. Tickets in Linear/Jira, threads in Slack, or operational alerts dispatch a coding agent that opens a worktree, writes code, and runs tests in an ephemeral environment it spins up on demand. Configurable review agents — architecture, security, and any custom ones the team defines — gate the resulting PR; their feedback flows back to the coding agent until tests pass and reviews clear. Humans see one shared dashboard, get pinged in Slack when attention is needed, and approve the merge. Agents on both sides remember feedback so the team's preferences accumulate as institutional memory. Every step — intake source, agent roster, model choice, review policy, merge gate, notification routing — is configurable; sensible defaults let a team get started in an hour.
 
 ## Principles
 
@@ -46,4 +46,4 @@ yaaof is a self-hosted service that any team member can trigger from where they 
 - **Per-developer laptop CLI.** That's Composio's space; we're the team service.
 - **Hard-coded workflows.** If a team can't replace a step, we've built it wrong.
 - **Enterprise compliance certifications.** SSO/SAML, SOC2, FedRAMP, immutable audit logs — not the market.
-- **Owning the IDE.** Engineers keep their editor of choice. yaaof talks via tickets, Slack, and PRs.
+- **Owning the IDE.** Engineers keep their editor of choice. yaaos talks via tickets, Slack, and PRs.

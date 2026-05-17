@@ -38,9 +38,9 @@ log = structlog.get_logger("in_process_workspace")
 
 
 _ASKPASS_CONTENT = """#!/bin/sh
-# yaaof: emits $YAAOF_GIT_TOKEN for git to read. Created per-workspace,
+# yaaos: emits $YAAOS_GIT_TOKEN for git to read. Created per-workspace,
 # unlinked after the auth-needing git command completes.
-exec printf '%s\\n' "$YAAOF_GIT_TOKEN"
+exec printf '%s\\n' "$YAAOS_GIT_TOKEN"
 """
 
 
@@ -65,7 +65,7 @@ class InProcessWorkspaceProvider:
         """
         if spec.org_id is None:
             raise WorkspaceProvisionError("WorkspaceSpec.org_id required for git clone")
-        working_dir = tempfile.mkdtemp(prefix="yaaof-ws-")
+        working_dir = tempfile.mkdtemp(prefix="yaaos-ws-")
         askpass_path: str | None = None
         try:
             askpass_path = self._write_askpass()
@@ -98,7 +98,7 @@ class InProcessWorkspaceProvider:
 
             # Marker for debugging / human inspection.
             try:
-                with open(os.path.join(working_dir, ".yaaof-workspace"), "w", encoding="utf-8") as f:
+                with open(os.path.join(working_dir, ".yaaos-workspace"), "w", encoding="utf-8") as f:
                     f.write(
                         f"plugin_id={spec.repo.plugin_id}\nrepo={spec.repo.external_id}\nsha={spec.sha}\n"
                     )
@@ -227,7 +227,7 @@ class InProcessWorkspaceProvider:
         Lives outside any workspace working_dir so git clone (which requires
         an empty target) can't conflict with it.
         """
-        fd, path = tempfile.mkstemp(prefix="yaaof-askpass-", suffix=".sh")
+        fd, path = tempfile.mkstemp(prefix="yaaos-askpass-", suffix=".sh")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(_ASKPASS_CONTENT)
@@ -246,7 +246,7 @@ class InProcessWorkspaceProvider:
             **os.environ,
             "GIT_ASKPASS": askpass_path,
             "GIT_TERMINAL_PROMPT": "0",
-            "YAAOF_GIT_TOKEN": token,
+            "YAAOS_GIT_TOKEN": token,
         }
 
     @staticmethod

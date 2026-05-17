@@ -110,7 +110,7 @@ def spawn(name: str, coro: Coroutine[Any, Any, None]) -> asyncio.Task[Any]:
         try:
             await coro
         except Exception:
-            logging.getLogger("yaaof").exception("spawn.crashed", extra={"spawn_name": name})
+            logging.getLogger("yaaos").exception("spawn.crashed", extra={"spawn_name": name})
 
     task = asyncio.create_task(_wrapper(), name=f"spawn:{name}")
     _tasks.add(task)

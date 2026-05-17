@@ -1,4 +1,4 @@
-"""fake-github FastAPI service. Implements just enough GitHub endpoints to drive yaaof tests."""
+"""fake-github FastAPI service. Implements just enough GitHub endpoints to drive yaaos tests."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def _check_bearer(authorization: str | None, prefix: str = "Bearer ") -> str:
 @app.get("/app")
 async def get_app(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _check_bearer(authorization)
-    return {"id": int(APP_ID), "slug": "yaaof-test"}
+    return {"id": int(APP_ID), "slug": "yaaos-test"}
 
 
 @app.post("/app/installations/{installation_id}/access_tokens", status_code=201)
@@ -215,7 +215,7 @@ async def installation_repositories(
     authorization: str | None = Header(default=None),
     per_page: int = 100,
 ) -> dict[str, Any]:
-    """List repos visible to the installation. yaaof's catch-up poller and
+    """List repos visible to the installation. yaaos's catch-up poller and
     the Settings GitHub-card use this. The default seed returns acme/web +
     acme/api; specs can override by mutating `state.installation_repositories`
     via `/__test/reset` + seed primitives if they need a different set.
@@ -278,7 +278,7 @@ async def test_seed_diff(body: dict[str, Any]) -> dict[str, str]:
 
 @app.post("/__test/dispatch_webhook")
 async def test_dispatch_webhook(body: dict[str, Any]) -> dict[str, Any]:
-    """HMAC-sign + POST a payload to yaaof's webhook endpoint."""
+    """HMAC-sign + POST a payload to yaaos's webhook endpoint."""
     event = body.get("event", "pull_request")
     payload = body.get("payload") or {}
     target_url = body.get("target_url")

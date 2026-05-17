@@ -1,18 +1,18 @@
-name: yaaof
+name: yaaos
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: yaaof
-      POSTGRES_PASSWORD: yaaof
-      POSTGRES_DB: yaaof
+      POSTGRES_USER: yaaos
+      POSTGRES_PASSWORD: yaaos
+      POSTGRES_DB: yaaos
     ports:
       - "5432:5432"
     volumes:
-      - yaaof-pgdata:/var/lib/postgresql/data
+      - yaaos-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U yaaof -d yaaof"]
+      test: ["CMD-SHELL", "pg_isready -U yaaos -d yaaos"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -22,11 +22,11 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://yaaof:yaaof@postgres:5432/yaaof
-      YAAOF_ENCRYPTION_KEY: ${YAAOF_ENCRYPTION_KEY:?set YAAOF_ENCRYPTION_KEY in .env}
-      YAAOF_ENV: ${YAAOF_ENV:-prod}
-      YAAOF_PORT: "8080"
-      OTEL_SERVICE_NAME: yaaof
+      DATABASE_URL: postgresql+asyncpg://yaaos:yaaos@postgres:5432/yaaos
+      YAAOS_ENCRYPTION_KEY: ${YAAOS_ENCRYPTION_KEY:?set YAAOS_ENCRYPTION_KEY in .env}
+      YAAOS_ENV: ${YAAOS_ENV:-prod}
+      YAAOS_PORT: "8080"
+      OTEL_SERVICE_NAME: yaaos
       # OTEL_EXPORTER_OTLP_ENDPOINT is intentionally unset — OTel disabled silently
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
@@ -48,4 +48,4 @@ services:
   #     - "4318:4318"   # OTLP HTTP
 
 volumes:
-  yaaof-pgdata:
+  yaaos-pgdata:

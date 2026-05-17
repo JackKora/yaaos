@@ -11,7 +11,7 @@ class FakeGitHubState:
         self.seeded_diffs: dict[str, str] = {}
         self.seeded_files: dict[str, list[dict[str, Any]]] = {}
         # `installation_repositories`: repos the App can see, per the
-        # `/installation/repositories` endpoint. Drives yaaof's catch-up poller
+        # `/installation/repositories` endpoint. Drives yaaos's catch-up poller
         # and the Settings GitHub-card live repo list.
         self.installation_repositories: list[dict[str, Any]] = []
         # `compare_status`: per (repo, "before...after") string → GitHub

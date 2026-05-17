@@ -1,57 +1,32 @@
-# yaaof
+# yaaos
 
-Self-hosted, team-scale agent orchestration service. See [`plan/VISION.md`](plan/VISION.md) for the long-horizon view; [`plan/ROADMAP.md`](plan/ROADMAP.md) for the active milestone.
+**Yet Another Agent Orchestration Service.** Self-hosted, team-scale orchestrator that runs your coding agents against incoming work and posts the results back to the source.
 
-> **Status:** skeleton. The walking-skeleton scaffolds the foundation; M01 features (review agents, tickets, GitHub plugin, Claude Code plugin) are not yet implemented.
+## What yaaos is
 
-## Quick start (Docker)
+yaaos is the orchestration layer. It receives a piece of work (today: a GitHub pull request), provisions an isolated workspace, hands the work to a coding agent of your choice, and posts the agent's structured output back to the source.
 
-```bash
-# Generate a Fernet key once and persist it.
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+yaaos is **not** a coding agent. It does not review code. It does not write code. It does not call LLMs directly. Those jobs belong to the agent — yaaos provides the workflow around it.
 
-# Copy .env.sample → .env and paste the key into YAAOF_ENCRYPTION_KEY.
-cp .env.sample .env
-# (edit .env)
+## Principles
 
-# Build + run.
-docker compose -f docker/docker-compose.yml --env-file .env up --build
-```
+- **Orchestrator, not an agent.** Reviews, refactors, code writing — all delegated to a CLI agent (Claude Code today; Codex / Aider / others as plugins). yaaos's job is the workflow: webhook → ticket → workspace → agent → post-back. Zero LLM calls live in yaaos itself.
+- **Bring your favourite coding agent.** Each agent is a plugin behind a small Protocol. Add a new agent by implementing `review(workspace, context)` / `reply(workspace, context)` — yaaos doesn't care which model or framework runs inside.
+- **Configurable.** Agent personas (prompts), per-repo lessons, model API keys, webhook routing, time-control intervals, plugin selection — all editable at runtime via the UI or DB.
+- **Workspaces are separable from the service.** A workspace is provisioned through a `WorkspaceProvider` plugin. Today: in-process tempdir + git clone. Tomorrow: Docker containers, Fly machines, K8s pods. The service Protocol doesn't change.
+- **Every ticket gets its own fully isolated workspace.** Three agents reviewing the same PR get three workspaces. No cross-ticket state contamination. Wasteful at POC scale; lays the foundation for stronger isolation guarantees later.
+- **Security by default.** Credentials encrypted at rest (Fernet, key in env). API tokens never written to a workspace's filesystem. HMAC verification on every inbound webhook. No shell-string subprocess invocations. Secrets never logged or audited.
 
-Visit [http://localhost:8080](http://localhost:8080) — the page renders "Hello World" plus the live `/api/health` response.
+## How it fits together (at a glance)
 
-## Dev workflow (without Docker)
+GitHub webhook → yaaos backend (FastAPI) → ticket + per-agent review jobs → workspace per job → coding-agent CLI subprocess → structured findings → posted back as a GitHub review. The React SPA gets live updates via SSE.
 
-```bash
-# Backend (Python 3.13).
-cd apps/backend
-uv sync
-uv run uvicorn app.main:app --port 8080 --reload
+Full architecture: [`docs/system-architecture.md`](docs/system-architecture.md). Per-app + per-module docs: [`docs/README.md`](docs/README.md).
 
-# Frontend (Node 22 + pnpm). Separate terminal.
-cd apps/web
-pnpm install
-pnpm dev   # http://localhost:5173, proxies /api/* to :8080
-```
+## Get started
 
-You'll also need Postgres 16 running locally (matching `DATABASE_URL` in `.env`).
+See [`docs/setup.md`](docs/setup.md) — Docker stack, GitHub App creation, Anthropic key, local dev variant.
 
-## CI
+## Working in this repo
 
-```bash
-apps/backend/bin/ci   # ruff + tach + check_table_access + check_patch_usage + pytest
-apps/web/bin/ci       # biome + tsc + vitest + vite build
-apps/e2e/bin/ci       # brings up docker-compose.test.yml, runs Playwright, tears down. Skips until that stack exists.
-```
-
-## Repo layout
-
-- `apps/` — backend (FastAPI), web (React SPA), e2e (Playwright).
-- `bin/` — repo-wide tools: `sync_modules`, `check_table_access`, `check_patch_usage`.
-- `docker/` — `Dockerfile`, `docker-compose.yml`.
-- `docs/` — present-tense docs for shipped modules.
-- `plan/` — future-tense planning (vision, roadmap, M01 milestone).
-
-## Working with the assistant
-
-See [`CLAUDE.md`](CLAUDE.md) for conventions.
+[`CLAUDE.md`](CLAUDE.md) holds the working rules: layering, doc discipline, test conventions, where to find what.

@@ -63,7 +63,7 @@ async def test_stub_provision_creates_empty_tempdir() -> None:
         working_dir = state["working_dir"]
         assert os.path.isdir(working_dir)
         # Marker present, no .git directory (stub skips clone).
-        assert os.path.isfile(os.path.join(working_dir, ".yaaof-workspace"))
+        assert os.path.isfile(os.path.join(working_dir, ".yaaos-workspace"))
         assert not os.path.isdir(os.path.join(working_dir, ".git"))
     finally:
         await stub.destroy(state)

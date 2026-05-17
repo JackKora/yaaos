@@ -1,14 +1,14 @@
-name: yaaof-test
+name: yaaos-test
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: yaaof
-      POSTGRES_PASSWORD: yaaof
-      POSTGRES_DB: yaaof
+      POSTGRES_USER: yaaos
+      POSTGRES_PASSWORD: yaaos
+      POSTGRES_DB: yaaos
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U yaaof -d yaaof"]
+      test: ["CMD-SHELL", "pg_isready -U yaaos -d yaaos"]
       interval: 1s
       timeout: 2s
       retries: 30
@@ -29,20 +29,20 @@ services:
       timeout: 2s
       retries: 30
 
-  yaaof:
+  yaaos:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://yaaof:yaaof@postgres:5432/yaaof
-      YAAOF_ENCRYPTION_KEY: vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI=
-      YAAOF_ENV: dev
+      DATABASE_URL: postgresql+asyncpg://yaaos:yaaos@postgres:5432/yaaos
+      YAAOS_ENCRYPTION_KEY: vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI=
+      YAAOS_ENV: dev
       GITHUB_API_BASE_URL: http://fake-github:8080
-      YAAOF_CODING_AGENT_STUB: "1"
-      YAAOF_REVIEW_DEBOUNCE_SECONDS: "0"
-      YAAOF_REAPER_INTERVAL_SECONDS: "1"
-      YAAOF_HEARTBEAT_INTERVAL_SECONDS: "1"
-      YAAOF_CATCHUP_DELAY_SECONDS: "0"
+      YAAOS_CODING_AGENT_STUB: "1"
+      YAAOS_REVIEW_DEBOUNCE_SECONDS: "0"
+      YAAOS_REAPER_INTERVAL_SECONDS: "1"
+      YAAOS_HEARTBEAT_INTERVAL_SECONDS: "1"
+      YAAOS_CATCHUP_DELAY_SECONDS: "0"
     depends_on:
       postgres:
         condition: service_healthy

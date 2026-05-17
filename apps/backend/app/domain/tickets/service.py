@@ -1,4 +1,4 @@
-"""Ticket aggregate — yaaof's unit of work."""
+"""Ticket aggregate — yaaos's unit of work."""
 
 from __future__ import annotations
 

@@ -53,8 +53,8 @@ COPY apps/backend/pyproject.toml apps/backend/
 # Install backend deps into /app/.venv
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
-RUN uv sync --frozen --package yaaof-backend --no-install-project 2>/dev/null \
-    || uv sync --package yaaof-backend --no-install-project
+RUN uv sync --frozen --package yaaos-backend --no-install-project 2>/dev/null \
+    || uv sync --package yaaos-backend --no-install-project
 
 # Backend source
 COPY apps/backend ./apps/backend
@@ -63,18 +63,18 @@ COPY apps/backend ./apps/backend
 COPY --from=web-builder /build/apps/web/dist ./apps/web/dist
 
 # Install the backend project itself
-RUN uv sync --frozen --package yaaof-backend 2>/dev/null || uv sync --package yaaof-backend
+RUN uv sync --frozen --package yaaos-backend 2>/dev/null || uv sync --package yaaos-backend
 
 # Drop root: the Claude Code CLI refuses --dangerously-skip-permissions when
 # uid is 0, and the reviewer needs that flag to run unattended.
-RUN useradd --create-home --uid 1000 --shell /bin/bash yaaof \
- && chown -R yaaof:yaaof /app
-USER yaaof
+RUN useradd --create-home --uid 1000 --shell /bin/bash yaaos \
+ && chown -R yaaos:yaaos /app
+USER yaaos
 
 # Runtime
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
-    YAAOF_ENV=prod
+    YAAOS_ENV=prod
 
 EXPOSE 8080
 

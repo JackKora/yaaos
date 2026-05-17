@@ -13,7 +13,7 @@ import {
   resetStack,
   seedCredentialsAndInstall,
   seedLesson,
-  YAAOF_URL,
+  YAAOS_URL,
 } from "./_helpers";
 
 test.beforeEach(async () => {
@@ -49,7 +49,7 @@ test("a pre-existing lesson shows up in the prompt_sent audit payload", async ({
   expect(m).not.toBeNull();
   const ticketId = m![1];
 
-  const audit = (await (await fetch(`${YAAOF_URL}/api/tickets/${ticketId}/audit`)).json()) as Array<{
+  const audit = (await (await fetch(`${YAAOS_URL}/api/tickets/${ticketId}/audit`)).json()) as Array<{
     kind: string;
     payload: { lessons_count?: number };
   }>;

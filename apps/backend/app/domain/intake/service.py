@@ -26,7 +26,7 @@ from app.domain.vcs import (
 
 log = structlog.get_logger("intake")
 
-YAAOF_BOT_LOGIN = "yaaof[bot]"
+YAAOS_BOT_LOGIN = "yaaos[bot]"
 
 
 class IntakeError(Exception):
@@ -210,7 +210,7 @@ async def _handle_pr_reopened(event: PullRequestReopened, *, org_id: UUID) -> No
 
 
 async def _handle_comment_created(event: CommentCreated, *, org_id: UUID) -> None:
-    if event.author_login == YAAOF_BOT_LOGIN or event.author_type == "bot":
+    if event.author_login == YAAOS_BOT_LOGIN or event.author_type == "bot":
         return
     if event.pr_external_id is None:
         return
@@ -245,7 +245,7 @@ async def _handle_comment_created(event: CommentCreated, *, org_id: UUID) -> Non
         )
         return
 
-    # Inline reply to a yaaof comment?
+    # Inline reply to a yaaos comment?
     if event.comment_kind == "inline" and event.in_reply_to_comment_external_id:
         from app.domain.reviewer.models import PostedCommentRow  # noqa: PLC0415
 

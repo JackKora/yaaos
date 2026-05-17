@@ -217,7 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# yaaof
+# yaaos
 .env
 .env.local
 .env.dev.local

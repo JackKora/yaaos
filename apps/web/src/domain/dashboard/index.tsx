@@ -45,7 +45,7 @@ function DashboardOnboarding({ onboarding }: { onboarding: OnboardingStatus }) {
     {
       n: 1,
       title: "Install the GitHub App",
-      sub: "Grant yaaof access to the repos you want reviewed. (Pick repos on GitHub.)",
+      sub: "Grant yaaos access to the repos you want reviewed. (Pick repos on GitHub.)",
       cta: "Install",
       to: "/settings",
       done: onboarding.github_app_installed,
@@ -53,7 +53,7 @@ function DashboardOnboarding({ onboarding }: { onboarding: OnboardingStatus }) {
     {
       n: 2,
       title: "Add your model API key",
-      sub: "Anthropic key — yaaof uses Claude Code internally.",
+      sub: "Anthropic key — yaaos uses Claude Code internally.",
       cta: "Add key",
       to: "/settings",
       done: onboarding.anthropic_key_set,
@@ -65,7 +65,7 @@ function DashboardOnboarding({ onboarding }: { onboarding: OnboardingStatus }) {
     <div className="mx-auto max-w-[900px] flex flex-col gap-5" data-testid="dashboard-onboarding">
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <h1 className="text-[20px] font-semibold tracking-tight">Welcome to yaaof</h1>
+          <h1 className="text-[20px] font-semibold tracking-tight">Welcome to yaaos</h1>
           <p className="text-text-3 text-[12.5px] mt-1">Two steps to your first review.</p>
         </div>
         <Badge variant="soft" data-testid="onboarding-progress">
@@ -85,7 +85,7 @@ function DashboardOnboarding({ onboarding }: { onboarding: OnboardingStatus }) {
         </CardHeader>
         <CardContent>
           <p className="text-text-2 text-[12.5px] leading-relaxed">
-            Open a PR on an allowlisted repo. yaaof will create a ticket and the three review agents
+            Open a PR on an allowlisted repo. yaaos will create a ticket and the three review agents
             (architecture, security, style) will start working. You'll see them progress live on the
             ticket page, and three review comments will appear on the PR within a few minutes.
           </p>

@@ -1,7 +1,7 @@
 [project]
-name = "yaaof-backend"
+name = "yaaos-backend"
 version = "0.0.1"
-description = "yaaof backend — FastAPI + SQLAlchemy"
+description = "yaaos backend — FastAPI + SQLAlchemy"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115",

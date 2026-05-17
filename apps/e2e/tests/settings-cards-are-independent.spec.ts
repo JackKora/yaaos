@@ -26,7 +26,7 @@ test("Anthropic and GitHub cards save independently", async ({ page }) => {
   // GitHub card still works for credential entry — no gate.
   await page.getByText("Already have an App? Enter it manually").click();
   await page.getByTestId("gh-app-id").fill("12345");
-  await page.getByTestId("gh-slug").fill("yaaof-test");
+  await page.getByTestId("gh-slug").fill("yaaos-test");
   await page
     .getByTestId("gh-pem")
     .fill(

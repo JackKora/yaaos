@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /*
- * Design tokens — ported from plan/design/app/yaaof.css.
+ * Design tokens — ported from plan/design/app/yaaos.css.
  * oklch values preserved verbatim. Light + dark themes are swapped via
  * [data-theme="..."] on <html>.
  */

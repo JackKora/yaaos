@@ -53,7 +53,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # a separate port and proxies /api/* to FastAPI.
     _install_spa_serving(app)
 
-    log.info("yaaof.boot.complete", env=settings.yaaof_env, port=settings.yaaof_port)
+    log.info("yaaos.boot.complete", env=settings.yaaos_env, port=settings.yaaos_port)
     yield
 
     # 5. Per-module shutdown hooks.
@@ -110,12 +110,12 @@ def _install_middleware(app: FastAPI) -> None:
     # Unhandled-exception handler — log + return JSON 500.
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
-        logging.getLogger("yaaof").exception("http.unhandled_exception", exc_info=exc)
+        logging.getLogger("yaaos").exception("http.unhandled_exception", exc_info=exc)
         return JSONResponse(status_code=500, content={"error": "internal_server_error"})
 
 
 def create_app() -> FastAPI:
     """FastAPI app factory. Called from main.py after all module imports have run."""
-    app = FastAPI(title="yaaof", version="0.0.1", lifespan=_lifespan)
+    app = FastAPI(title="yaaos", version="0.0.1", lifespan=_lifespan)
     _install_middleware(app)
     return app

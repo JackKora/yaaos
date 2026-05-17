@@ -1,4 +1,4 @@
-"""domain/tickets — yaaof's unit of work."""
+"""domain/tickets — yaaos's unit of work."""
 
 from app.domain.tickets import web  # noqa: F401
 from app.domain.tickets.models import TicketRow

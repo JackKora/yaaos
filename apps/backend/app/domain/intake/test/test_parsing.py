@@ -8,10 +8,10 @@ from app.domain.intake import is_skippable_path, parse_rereview
 @pytest.mark.parametrize(
     "body,expected_agent",
     [
-        ("hey @yaaof rereview please", None),
-        ("hello @yaaof-architecture rereview", "architecture"),
-        ("@yaaof-security rereview thanks", "security"),
-        ("@YAAOF-style ReReview", "style"),
+        ("hey @yaaos rereview please", None),
+        ("hello @yaaos-architecture rereview", "architecture"),
+        ("@yaaos-security rereview thanks", "security"),
+        ("@YAAOS-style ReReview", "style"),
     ],
 )
 def test_rereview_parses(body: str, expected_agent: str | None) -> None:
@@ -26,7 +26,7 @@ def test_no_match() -> None:
 
 
 def test_no_match_for_wrong_command() -> None:
-    matched, _ = parse_rereview("@yaaof review")
+    matched, _ = parse_rereview("@yaaos review")
     assert not matched
 
 

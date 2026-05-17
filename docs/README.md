@@ -1,21 +1,26 @@
-# yaaof — documentation
+# yaaos docs
 
-Present-tense docs for what's built today. Future-tense planning lives in
-[`../plan/`](../plan/).
+Present-tense documentation for shipped code. Future-tense planning lives in [`/plan/`](../plan/).
 
-## What's here today
+## System-wide
 
-The repo currently ships a **skeleton** — the foundation that proves the
-end-to-end shape works (`docker compose up` builds, the page renders, tests
-pass). M01 features are not yet implemented.
+- [setup.md](setup.md) — operator setup: Docker stack, GitHub App, Anthropic key, local-dev variant.
+- [system-architecture.md](system-architecture.md) — runtime topology, inter-app flows, cross-app conventions.
+- [glossary.md](glossary.md) — shared vocabulary across backend and UI.
 
-Modules built so far:
+## Per-app
 
-- [config.md](config.md) — boot-time configuration via pydantic-settings.
-- [database.md](database.md) — async SQLAlchemy engine + `schema_migrations` bootstrap.
-- [observability.md](observability.md) — structlog + conditional OTel SDK.
-- [webserver.md](webserver.md) — FastAPI app factory, `RouteSpec` registry, `/api/health` carve-out, SPA serving.
+Each app's docs live with its code.
 
-Foundational docs (`architecture.md`, `modularity.md`, `patterns.md`) get
-promoted from `plan/milestones/M01-code-review/` when M01 ships. Until then,
-those planning docs are the source of truth for cross-cutting conventions.
+- [`apps/backend/docs/`](../apps/backend/docs/README.md) — FastAPI service.
+- [`apps/web/docs/`](../apps/web/docs/README.md) — React SPA.
+- [`apps/fake-github/docs/`](../apps/fake-github/docs/README.md) — peer test service faking GitHub.
+- [`apps/e2e/docs/`](../apps/e2e/docs/README.md) — Playwright suite.
+
+## Conventions
+
+- Present tense only. Unbuilt work lives in `plan/`.
+- No decision history. Edit the doc; git log is the audit trail.
+- Per-module docs share a fixed template: Purpose · Public interface · Module architecture · Data owned · How it's tested.
+
+See [`/CLAUDE.md`](../CLAUDE.md) for the full working rules.

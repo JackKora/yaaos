@@ -12,7 +12,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   override componentDidCatch(error: Error, info: React.ErrorInfo): void {
     // Structured client-side log. Real telemetry pipe lands when needed.
-    console.error("yaaof.client.error", { error, componentStack: info.componentStack });
+    console.error("yaaos.client.error", { error, componentStack: info.componentStack });
   }
 
   override render(): React.ReactNode {

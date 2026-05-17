@@ -1,4 +1,4 @@
-"""Obviously-fake test secrets shared between yaaof + fake-github."""
+"""Obviously-fake test secrets shared between yaaos + fake-github."""
 
 # 40-byte hex HMAC secret — committed; TEST-FAKE-NOT-FOR-PROD.
 WEBHOOK_SECRET = "TEST-FAKE-NOT-FOR-PROD-aaaaaaaaaaaaaaaa"

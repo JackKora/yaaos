@@ -60,7 +60,7 @@ async def webhook(
         log.warning("github.webhook.no_settings_row")
         return JSONResponse(status_code=400, content={"error": "github_settings missing"})
 
-    fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
     secret = fernet.decrypt(settings_row.encrypted_webhook_secret)
     if not verify_webhook_signature(body, x_hub_signature_256, secret):
         log.warning("github.webhook.bad_signature", delivery=x_github_delivery)
@@ -184,7 +184,7 @@ async def manifest_callback(
     code: str = Query(..., min_length=1),
 ) -> RedirectResponse:
     """Exchange the temporary `code` GitHub hands us after the operator creates
-    yaaof's App via the manifest flow. Stores App ID / slug / PEM / webhook
+    yaaos's App via the manifest flow. Stores App ID / slug / PEM / webhook
     secret in `github_settings`, then redirects the browser back to /settings.
 
     The manifest flow is described at
@@ -225,7 +225,7 @@ async def manifest_callback(
         )
     # Chain straight into the install flow: GitHub created the App, now the
     # operator picks the account + repos. The App's setup_url (set in the
-    # manifest to <yaaof>/settings) brings them back here after install.
+    # manifest to <yaaos>/settings) brings them back here after install.
     return RedirectResponse(url=f"https://github.com/apps/{slug}/installations/new", status_code=303)
 
 
@@ -298,7 +298,7 @@ async def installation() -> InstallationResponse:
 @router.get("/repositories")
 async def repositories() -> dict[str, object]:
     """Live list of repos the App can see, fetched from GitHub via the
-    installation token. No yaaof-side allowlist — GitHub's install picker IS
+    installation token. No yaaos-side allowlist — GitHub's install picker IS
     the authority. Used by the Settings GitHub card's "Repositories" section.
 
     Returns `{repositories: [{full_name, html_url, private}], total_count}`
@@ -373,7 +373,7 @@ async def health() -> dict[str, object]:
 async def _start_catchup() -> None:
     """Spawn the catch-up poller as a background task. We do NOT await it from
     the startup hook — the hook must return promptly so FastAPI can finish
-    initializing. The poller sleeps for `yaaof_catchup_delay_seconds` first
+    initializing. The poller sleeps for `yaaos_catchup_delay_seconds` first
     and then refreshes open-PR metadata across each install's visible repos.
     """
     from app.core.primitives import spawn  # noqa: PLC0415

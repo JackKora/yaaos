@@ -44,14 +44,14 @@ class _FakeGitHubPlugin:
 def _make_bare_repo_with_commit() -> tuple[str, str, str]:
     """Create a local bare git repo with one commit on `main`. Returns
     (bare_repo_path, clone_url, head_sha)."""
-    bare_dir = tempfile.mkdtemp(prefix="yaaof-test-bare-")
-    work_dir = tempfile.mkdtemp(prefix="yaaof-test-work-")
+    bare_dir = tempfile.mkdtemp(prefix="yaaos-test-bare-")
+    work_dir = tempfile.mkdtemp(prefix="yaaos-test-work-")
     subprocess.run(["git", "init", "--bare", "--initial-branch=main", bare_dir], check=True)
     subprocess.run(["git", "init", "--initial-branch=main", work_dir], check=True)
-    subprocess.run(["git", "-C", work_dir, "config", "user.email", "test@yaaof.local"], check=True)
-    subprocess.run(["git", "-C", work_dir, "config", "user.name", "yaaof-test"], check=True)
+    subprocess.run(["git", "-C", work_dir, "config", "user.email", "test@yaaos.local"], check=True)
+    subprocess.run(["git", "-C", work_dir, "config", "user.name", "yaaos-test"], check=True)
     with open(os.path.join(work_dir, "README.md"), "w") as f:
-        f.write("hello yaaof\n")
+        f.write("hello yaaos\n")
     subprocess.run(["git", "-C", work_dir, "add", "."], check=True)
     subprocess.run(["git", "-C", work_dir, "commit", "-m", "initial"], check=True)
     subprocess.run(["git", "-C", work_dir, "remote", "add", "origin", bare_dir], check=True)
@@ -103,7 +103,7 @@ async def test_provision_clones_repo_at_sha(monkeypatch: pytest.MonkeyPatch) -> 
         assert os.path.isfile(os.path.join(working_dir, "README.md"))
         assert os.path.isdir(os.path.join(working_dir, ".git"))
         # Marker is written.
-        assert os.path.isfile(os.path.join(working_dir, ".yaaof-workspace"))
+        assert os.path.isfile(os.path.join(working_dir, ".yaaos-workspace"))
         # HEAD matches the requested sha.
         head = subprocess.run(
             ["git", "-C", working_dir, "rev-parse", "HEAD"],
@@ -146,7 +146,7 @@ async def test_health_check() -> None:
 @pytest.mark.asyncio
 async def test_run_coding_agent_cli_echoes_stdout() -> None:
     provider = get_provider()
-    working_dir = tempfile.mkdtemp(prefix="yaaof-ws-test-")
+    working_dir = tempfile.mkdtemp(prefix="yaaos-ws-test-")
     try:
         result = await provider.run_coding_agent_cli(
             {"working_dir": working_dir},
@@ -165,7 +165,7 @@ async def test_run_coding_agent_cli_echoes_stdout() -> None:
 @pytest.mark.asyncio
 async def test_run_coding_agent_cli_passes_stdin() -> None:
     provider = get_provider()
-    working_dir = tempfile.mkdtemp(prefix="yaaof-ws-test-")
+    working_dir = tempfile.mkdtemp(prefix="yaaos-ws-test-")
     try:
         result = await provider.run_coding_agent_cli(
             {"working_dir": working_dir},
@@ -182,7 +182,7 @@ async def test_run_coding_agent_cli_passes_stdin() -> None:
 @pytest.mark.asyncio
 async def test_run_coding_agent_cli_timeout_marks_timed_out() -> None:
     provider = get_provider()
-    working_dir = tempfile.mkdtemp(prefix="yaaof-ws-test-")
+    working_dir = tempfile.mkdtemp(prefix="yaaos-ws-test-")
     try:
         result = await provider.run_coding_agent_cli(
             {"working_dir": working_dir},

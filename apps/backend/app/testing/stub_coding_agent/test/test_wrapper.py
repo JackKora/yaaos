@@ -88,7 +88,7 @@ async def test_review_returns_canned_success() -> None:
     assert result.status == InvocationStatus.SUCCESS
     assert result.state == "COMMENT"
     # One synthetic finding lets UI specs exercise the finding-expansion
-    # and Teach-yaaof flow without needing a real LLM. See service.review.
+    # and Teach-yaaos flow without needing a real LLM. See service.review.
     assert len(result.findings) == 1
     assert result.findings[0].file == "src/example.ts"
     assert "architecture" in result.findings[0].title

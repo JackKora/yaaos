@@ -36,7 +36,7 @@ from app.domain import settings  # noqa: F401, E402
 # 7. Plugins.
 from app.plugins import in_process_workspace, claude_code, github  # noqa: F401, E402
 
-# 8. Test-only: when YAAOF_CODING_AGENT_STUB is set, wrap every registered
+# 8. Test-only: when YAAOS_CODING_AGENT_STUB is set, wrap every registered
 #    coding-agent plugin via the `testing/` layer. The testing layer sits above
 #    plugins (`core < domain < plugins < testing`) — nothing in production code
 #    depends on it. If the testing layer has been stripped from the deployment
@@ -44,7 +44,7 @@ from app.plugins import in_process_workspace, claude_code, github  # noqa: F401,
 #    mode cannot be silently enabled in a stripped production artifact.
 import os  # noqa: E402
 
-if os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
+if os.environ.get("YAAOS_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
     from app.testing.stub_coding_agent import wrap_all_registered_plugins
     from app.testing.stub_workspace import wrap_all_registered_workspace_providers
 
@@ -57,7 +57,7 @@ if os.environ.get("YAAOF_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}
 # if it ever ran with the layer stripped.
 from app.core.config import get_settings  # noqa: E402
 
-if get_settings().yaaof_env == "dev":
+if get_settings().yaaos_env == "dev":
     from app.testing import e2e_setup  # noqa: F401
 
 # 9. Build the FastAPI app.

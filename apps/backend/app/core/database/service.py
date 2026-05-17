@@ -36,7 +36,7 @@ def get_engine() -> AsyncEngine:
         # In dev/test we use NullPool — avoids cross-event-loop contamination
         # in TestClient-driven integration tests where each test brings up a
         # fresh loop. Prod uses the default pool.
-        if settings.yaaof_env == "dev":
+        if settings.yaaos_env == "dev":
             from sqlalchemy.pool import NullPool  # noqa: PLC0415
 
             kwargs["poolclass"] = NullPool

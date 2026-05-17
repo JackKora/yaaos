@@ -42,9 +42,9 @@ class StubWorkspaceProvider:
         self.meta = wrapped.meta
 
     async def provision(self, spec: WorkspaceSpec) -> dict[str, Any]:
-        working_dir = tempfile.mkdtemp(prefix="yaaof-ws-stub-")
+        working_dir = tempfile.mkdtemp(prefix="yaaos-ws-stub-")
         try:
-            with open(os.path.join(working_dir, ".yaaof-workspace"), "w", encoding="utf-8") as f:
+            with open(os.path.join(working_dir, ".yaaos-workspace"), "w", encoding="utf-8") as f:
                 f.write(
                     f"stub=true\n"
                     f"plugin_id={spec.repo.plugin_id}\n"
@@ -88,7 +88,7 @@ class StubWorkspaceProvider:
 def wrap_all_registered_workspace_providers() -> int:
     """Replace every entry in `core.workspace._PROVIDERS` with a stub wrapping it.
 
-    Idempotent. Called from `app/main.py` when `YAAOF_WORKSPACE_STUB` is set
+    Idempotent. Called from `app/main.py` when `YAAOS_WORKSPACE_STUB` is set
     (mirrors how stub_coding_agent's wrap is wired).
     """
     from app.core.workspace.service import _PROVIDERS  # noqa: PLC0415 — registry access

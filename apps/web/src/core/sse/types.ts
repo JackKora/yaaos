@@ -1,4 +1,4 @@
-/** Server-sent event from yaaof's `/api/events` stream.
+/** Server-sent event from yaaos's `/api/events` stream.
  *
  * The backend's `Event` base class (see `app/core/events/service.py`) emits:
  * - `kind`: discriminator (e.g. "ticket_status_changed", "review_job_status_changed")

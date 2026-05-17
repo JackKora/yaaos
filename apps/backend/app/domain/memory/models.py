@@ -1,8 +1,8 @@
 """SQLAlchemy model for `lessons`.
 
 Lessons are keyed by `(plugin_id, repo_external_id)` — a stable string identity
-the VCS plugin produces. There is no yaaof-side `repos` table; the GitHub App's
-install picks the access scope, and yaaof learns about repos as PRs arrive.
+the VCS plugin produces. There is no yaaos-side `repos` table; the GitHub App's
+install picks the access scope, and yaaos learns about repos as PRs arrive.
 """
 
 from __future__ import annotations

@@ -35,17 +35,17 @@ class Settings(BaseSettings):
         ...,
         description="Async Postgres URL (e.g., postgresql+asyncpg://user:pw@host:port/db).",
     )
-    yaaof_encryption_key: str = Field(
+    yaaos_encryption_key: str = Field(
         ...,
         description="Fernet key (32 bytes, URL-safe base64) for credential encryption at rest.",
     )
 
     # Optional
-    yaaof_env: Literal["dev", "prod"] = "prod"
-    yaaof_port: int = 8080
-    yaaof_cors_origins: str | None = None  # comma-separated; only honored in non-dev
+    yaaos_env: Literal["dev", "prod"] = "prod"
+    yaaos_port: int = 8080
+    yaaos_cors_origins: str | None = None  # comma-separated; only honored in non-dev
     otel_exporter_otlp_endpoint: str | None = None
-    otel_service_name: str = "yaaof"
+    otel_service_name: str = "yaaos"
     log_level: str = "INFO"
 
     # GitHub API base URL — overridden in the test stack to point at `apps/fake-github`.
@@ -53,18 +53,18 @@ class Settings(BaseSettings):
 
     # Time controls. Production defaults are reasonable; tests set short.
     # See plan/milestones/M01-code-review/patterns.md § Time controls.
-    yaaof_review_debounce_seconds: int = 30
-    yaaof_reaper_interval_seconds: int = 30
-    yaaof_heartbeat_interval_seconds: int = 10
-    yaaof_catchup_delay_seconds: int = 10
+    yaaos_review_debounce_seconds: int = 30
+    yaaos_reaper_interval_seconds: int = 30
+    yaaos_heartbeat_interval_seconds: int = 10
+    yaaos_catchup_delay_seconds: int = 10
 
     @property
     def cors_origins_list(self) -> list[str]:
-        if self.yaaof_env == "dev":
+        if self.yaaos_env == "dev":
             return ["*"]
-        if not self.yaaof_cors_origins:
+        if not self.yaaos_cors_origins:
             return []
-        return [o.strip() for o in self.yaaof_cors_origins.split(",") if o.strip()]
+        return [o.strip() for o in self.yaaos_cors_origins.split(",") if o.strip()]
 
     @property
     def otel_enabled(self) -> bool:

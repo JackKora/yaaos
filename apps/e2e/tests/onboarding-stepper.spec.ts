@@ -29,7 +29,7 @@ test("operator completes onboarding from an empty DB", async ({ page }) => {
   // Expand the manual credentials form (only visible in the "no app" state).
   await page.getByText("Already have an App? Enter it manually").click();
   await page.getByTestId("gh-app-id").fill("12345");
-  await page.getByTestId("gh-slug").fill("yaaof-test");
+  await page.getByTestId("gh-slug").fill("yaaos-test");
   await page
     .getByTestId("gh-pem")
     .fill(
@@ -44,8 +44,8 @@ test("operator completes onboarding from an empty DB", async ({ page }) => {
 
   // 3. Simulate the operator installing the App on GitHub: in real life
   // they click through to github.com which fires `installation.created`
-  // back to yaaof. We dispatch the webhook directly — fake-github HMAC-signs
-  // it with the secret yaaof just saved.
+  // back to yaaos. We dispatch the webhook directly — fake-github HMAC-signs
+  // it with the secret yaaos just saved.
   await dispatchWebhook({
     event: "installation",
     payload: {

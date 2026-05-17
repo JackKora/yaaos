@@ -101,7 +101,7 @@ class GitHubPlugin:
         row = await self._get_settings_row(org_id)
         if row is None:
             raise VCSAuthError("github_settings not configured")
-        fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+        fernet = Fernet(get_settings().yaaos_encryption_key.encode())
         pem = fernet.decrypt(row.encrypted_private_key).decode()
         secret = fernet.decrypt(row.encrypted_webhook_secret).decode()
         return row.app_id, pem, secret
@@ -234,7 +234,7 @@ class GitHubPlugin:
         ]
         return Diff(raw=raw, files=files)
 
-    async def list_yaaof_comments(self, external_id: str) -> list[Comment]:
+    async def list_yaaos_comments(self, external_id: str) -> list[Comment]:
         owner, repo, num = _split_external(external_id)
         org_id = await self._resolve_org_id()
         async with httpx.AsyncClient(base_url=self.base_url, timeout=15) as client:
@@ -397,7 +397,7 @@ class GitHubPlugin:
             ).scalar_one_or_none()
             if existing is not None:
                 return
-            fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+            fernet = Fernet(get_settings().yaaos_encryption_key.encode())
             row = GitHubSettingsRow(
                 id=uuid4(),
                 org_id=org_id,
@@ -422,7 +422,7 @@ async def set_github_credentials(
     installation-token (if any) so the next API call re-issues against the new
     private key.
     """
-    fernet = Fernet(get_settings().yaaof_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
     enc_key = fernet.encrypt(private_key.encode())
     enc_secret = fernet.encrypt(webhook_secret.encode())
     async with db_session() as s:
@@ -563,7 +563,7 @@ async def run_catchup_loop() -> None:
     """
     import asyncio  # noqa: PLC0415
 
-    delay = get_settings().yaaof_catchup_delay_seconds
+    delay = get_settings().yaaos_catchup_delay_seconds
     if delay > 0:
         await asyncio.sleep(delay)
     async with db_session() as s:

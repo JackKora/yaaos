@@ -12,7 +12,7 @@ const CRUMB_BY_PATH: Record<string, string> = {
 
 export function AppShell() {
   const { location } = useRouterState();
-  const crumb = CRUMB_BY_PATH[location.pathname] ?? "yaaof";
+  const crumb = CRUMB_BY_PATH[location.pathname] ?? "yaaos";
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">

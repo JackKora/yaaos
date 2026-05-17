@@ -64,7 +64,7 @@ def _ctx(**overrides) -> ReviewContext:
         diff=Diff(raw="diff --git a/x b/x\n+hi", files=[]),
         lessons=[],
         language_hint=None,
-        prior_yaaof_comment_bodies=[],
+        prior_yaaos_comment_bodies=[],
         agent_config={},
     )
     base.update(overrides)
@@ -92,7 +92,7 @@ def test_prompt_includes_lessons_when_given() -> None:
 
 def test_prompt_truncates_prior_comments() -> None:
     long_bodies = ["x" * 500 for _ in range(30)]
-    out = _assemble_review_prompt(_ctx(prior_yaaof_comment_bodies=long_bodies))
+    out = _assemble_review_prompt(_ctx(prior_yaaos_comment_bodies=long_bodies))
     # cap at 20 bodies, 200 chars each
     assert out.count("- x") <= 20
 

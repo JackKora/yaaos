@@ -2,20 +2,20 @@
  * Shared utilities for e2e specs.
  *
  * Each spec drives its own preconditions in `beforeEach` by composing these
- * helpers — there is no batch-seeded fixture. Reset wipes yaaof's DB and
+ * helpers — there is no batch-seeded fixture. Reset wipes yaaos's DB and
  * fake-github's in-memory state, then specs call `seedCredentialsAndInstall`
  * if they need the system in a "ready" state.
  *
  * URL envelope:
- *   - `YAAOF_URL`           — yaaof's UI, hit from the browser (default :58080).
+ *   - `YAAOS_URL`           — yaaos's UI, hit from the browser (default :58080).
  *   - `FAKE_GITHUB_URL`     — fake-github's UI, hit from the test runner.
- *   - `YAAOF_INTERNAL_URL`  — yaaof from inside fake-github's docker network.
- *     Used as `target_url` for webhook dispatch (fake-github → yaaof).
+ *   - `YAAOS_INTERNAL_URL`  — yaaos from inside fake-github's docker network.
+ *     Used as `target_url` for webhook dispatch (fake-github → yaaos).
  */
 
-export const YAAOF_URL = process.env.YAAOF_BASE_URL ?? "http://localhost:58080";
+export const YAAOS_URL = process.env.YAAOS_BASE_URL ?? "http://localhost:58080";
 export const FAKE_GITHUB_URL = process.env.FAKE_GITHUB_URL ?? "http://localhost:58081";
-export const YAAOF_INTERNAL_URL = process.env.YAAOF_INTERNAL_URL ?? "http://yaaof:8080";
+export const YAAOS_INTERNAL_URL = process.env.YAAOS_INTERNAL_URL ?? "http://yaaos:8080";
 
 async function jsonPost(url: string, body: unknown): Promise<Response> {
   const r = await fetch(url, {
@@ -29,22 +29,22 @@ async function jsonPost(url: string, body: unknown): Promise<Response> {
   return r;
 }
 
-/** Reset both yaaof's DB and fake-github's in-memory state to a known floor.
- *  After this call: yaaof DB is empty except for the three built-in reviewer
+/** Reset both yaaos's DB and fake-github's in-memory state to a known floor.
+ *  After this call: yaaos DB is empty except for the three built-in reviewer
  *  agents; fake-github has its default seeded PRs + repos.
  */
 export async function resetStack(): Promise<void> {
   await Promise.all([
-    jsonPost(`${YAAOF_URL}/api/testing/reset`, {}),
+    jsonPost(`${YAAOS_URL}/api/testing/reset`, {}),
     jsonPost(`${FAKE_GITHUB_URL}/__test/reset`, {}),
   ]);
 }
 
-/** Make yaaof "ready" — credentials + active install — without going through
+/** Make yaaos "ready" — credentials + active install — without going through
  *  the manifest flow. Use this in specs that aren't testing the setup UI.
  */
 export async function seedCredentialsAndInstall(orgLogin = "acme"): Promise<void> {
-  await jsonPost(`${YAAOF_URL}/api/testing/seed/credentials_and_install`, {
+  await jsonPost(`${YAAOS_URL}/api/testing/seed/credentials_and_install`, {
     org_login: orgLogin,
   });
 }
@@ -57,10 +57,10 @@ export async function seedLesson(opts: {
   title: string;
   body: string;
 }): Promise<void> {
-  await jsonPost(`${YAAOF_URL}/api/testing/seed/lesson`, opts);
+  await jsonPost(`${YAAOS_URL}/api/testing/seed/lesson`, opts);
 }
 
-/** Build the GitHub webhook payload yaaof's intake/parser will accept. */
+/** Build the GitHub webhook payload yaaos's intake/parser will accept. */
 export function prPayload(opts: {
   repo: string;
   number: number;
@@ -98,7 +98,7 @@ export function prPayload(opts: {
   };
 }
 
-/** Dispatch a HMAC-signed webhook from fake-github → yaaof. fake-github's
+/** Dispatch a HMAC-signed webhook from fake-github → yaaos. fake-github's
  *  /__test/dispatch_webhook does the signing with the shared test secret.
  *
  *  For `pull_request` events we also seed the PR JSON into fake-github
@@ -131,12 +131,12 @@ export async function dispatchWebhook(opts: {
   await jsonPost(`${FAKE_GITHUB_URL}/__test/dispatch_webhook`, {
     event: opts.event,
     payload: opts.payload,
-    target_url: `${YAAOF_INTERNAL_URL}/api/github/webhook`,
+    target_url: `${YAAOS_INTERNAL_URL}/api/github/webhook`,
     delivery_id: opts.deliveryId ?? `delivery-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   });
 }
 
-/** Seed a PR + its diff inside fake-github so subsequent yaaof API calls
+/** Seed a PR + its diff inside fake-github so subsequent yaaos API calls
  *  pulling the PR's diff find non-empty content.
  */
 export async function seedPRDiff(opts: {
@@ -168,7 +168,7 @@ export async function seedCompareDiverged(beforeSha: string, afterSha: string): 
   });
 }
 
-/** Fetch reviews that yaaof has posted to fake-github. */
+/** Fetch reviews that yaaos has posted to fake-github. */
 export async function postedReviews(): Promise<Array<Record<string, unknown>>> {
   const r = await fetch(`${FAKE_GITHUB_URL}/__test/posted_reviews`);
   return (await r.json()) as Array<Record<string, unknown>>;

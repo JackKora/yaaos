@@ -1,6 +1,6 @@
 """Wrapper plugin that fakes any `CodingAgentPlugin` for offline tests.
 
-The bootstrap (when `YAAOF_CODING_AGENT_STUB` is set) walks the
+The bootstrap (when `YAAOS_CODING_AGENT_STUB` is set) walks the
 `domain/coding_agent` registry and replaces each registered plugin with a
 `StubCodingAgentPlugin` wrapping it. From every consumer's perspective, nothing
 changes — `coding_agent.review("claude_code", ...)` returns the same
@@ -60,7 +60,7 @@ class StubCodingAgentPlugin:
     async def review(self, workspace: Workspace, context: ReviewContext) -> ReviewResult:
         del workspace
         # Emit one synthetic finding so UI flows that depend on findings
-        # (Teach-yaaof entry-point, expandable rows) have something to act
+        # (Teach-yaaos entry-point, expandable rows) have something to act
         # against. The verdict stays APPROVED — this is decoration, not a
         # real "must-fix". Tests that need a specific shape can layer over
         # this by injecting their own stub.
@@ -72,7 +72,7 @@ class StubCodingAgentPlugin:
             title=f"[stub] {context.agent_name} sample suggestion",
             body=(
                 f"Stub finding from `{context.agent_name}`. Used by e2e specs that "
-                "exercise the finding-expansion + Teach-yaaof flow."
+                "exercise the finding-expansion + Teach-yaaos flow."
             ),
             rationale=None,
             snippet=None,
@@ -106,7 +106,7 @@ def wrap_all_registered_plugins() -> int:
     """Replace every entry in `domain.coding_agent._PLUGINS` with a stub wrapping it.
 
     Returns the count of wrapped plugins. Called from `app/main.py` when
-    `YAAOF_CODING_AGENT_STUB` is set; the testing layer is the only thing
+    `YAAOS_CODING_AGENT_STUB` is set; the testing layer is the only thing
     permitted to reach into the registry like this.
     """
     from app.domain.coding_agent import _PLUGINS  # noqa: PLC0415 — registry access

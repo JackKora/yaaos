@@ -8,7 +8,7 @@ export default defineConfig({
   timeout: 60_000,
   reporter: [["list"]],
   use: {
-    baseURL: process.env.YAAOF_BASE_URL ?? "http://localhost:58080",
+    baseURL: process.env.YAAOS_BASE_URL ?? "http://localhost:58080",
     extraHTTPHeaders: { Accept: "application/json,text/html" },
     actionTimeout: 10_000,
     navigationTimeout: 15_000,

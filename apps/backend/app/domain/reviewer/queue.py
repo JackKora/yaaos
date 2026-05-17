@@ -163,7 +163,7 @@ async def schedule_review(
         target_names = ["architecture", "security", "style"]
     else:
         target_names = list(agent_names)
-    debounce = get_settings().yaaof_review_debounce_seconds
+    debounce = get_settings().yaaos_review_debounce_seconds
 
     new_ids: list[UUID] = []
     for name in target_names:
@@ -554,7 +554,7 @@ async def _run_review_job(input: ReviewJobInput) -> None:
 
         vcs_plugin = get_vcs_plugin(pr.plugin_id)
         diff = await vcs_plugin.fetch_diff(pr.external_id)
-        prior_comments = await vcs_plugin.list_yaaof_comments(pr.external_id)
+        prior_comments = await vcs_plugin.list_yaaos_comments(pr.external_id)
         prior_bodies = [c.body for c in prior_comments]
 
         # Skip checks
@@ -599,7 +599,7 @@ async def _run_review_job(input: ReviewJobInput) -> None:
             diff=diff,
             lessons=lessons,
             language_hint=language,
-            prior_yaaof_comment_bodies=prior_bodies,
+            prior_yaaos_comment_bodies=prior_bodies,
             agent_config=agent.agent_config,
         )
         # Hash captures everything that influences the agent's output — same
@@ -950,7 +950,7 @@ def _detect_secrets(diff: Diff) -> str | None:
 def _secrets_warning_review(agent_name: str, rule_id: str) -> Review:
     """One-shot review posted when the secrets pre-flight refuses to proceed."""
     body = (
-        "yaaof refused to review this PR — the diff contains content that "
+        "yaaos refused to review this PR — the diff contains content that "
         f"looks like a leaked secret (rule: `{rule_id}`). Remove the secret, "
         "rotate it on the upstream provider, then push a fresh commit and the "
         "review will run automatically."
@@ -1050,7 +1050,7 @@ async def startup_recovery() -> None:
             "review_job.failed",
             _FailedPayload(
                 invocation_status="crashed",
-                error="yaaof restarted during execution",
+                error="yaaos restarted during execution",
                 raw_output_excerpt="",
             ),
             actor=Actor.system(),

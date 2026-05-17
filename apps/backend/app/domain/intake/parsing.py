@@ -3,7 +3,7 @@
 import re
 
 _REREVIEW_RE = re.compile(
-    r"@yaaof(?:-(?P<agent>architecture|security|style))?\s+rereview",
+    r"@yaaos(?:-(?P<agent>architecture|security|style))?\s+rereview",
     re.IGNORECASE,
 )
 

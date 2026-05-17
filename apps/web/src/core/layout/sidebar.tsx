@@ -37,7 +37,7 @@ export function Sidebar() {
         </div>
         {pinned && (
           <div className="flex flex-col leading-tight">
-            <span className="font-semibold">yaaof</span>
+            <span className="font-semibold">yaaos</span>
             <span className="mono text-text-4 text-[9px] uppercase tracking-wider">
               logo · placeholder
             </span>

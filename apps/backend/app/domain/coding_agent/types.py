@@ -62,7 +62,7 @@ class ReviewContext(BaseModel):
     diff: Diff
     lessons: list[Lesson] = []
     language_hint: str | None = None
-    prior_yaaof_comment_bodies: list[str] = []
+    prior_yaaos_comment_bodies: list[str] = []
     agent_config: dict[str, Any] = {}
 
 
