@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Direct text-only LLM calls with prompts loaded from files and outputs validated against a Pydantic schema. Code-touching agent work goes through [`domain/coding_agent`](domain_coding_agent.md), not here. Owns: prompt-file parsing, jinja2 templating, LangChain runnable construction, structured-output validation, retries, Braintrust gateway routing. Does NOT own prompts, schemas, eval infrastructure, agent loops, RAG, or cost budgeting.
+Direct text-only LLM calls with prompts loaded from files and outputs validated against a Pydantic schema. Code-touching agent work goes through [`domain/coding_agent`](domain_coding_agent.md), not here. Owns: prompt-file parsing, jinja2 templating, LangChain runnable construction, structured-output validation, retries, Braintrust gateway routing, file-colocated LLM test cache, thin `braintrust.Eval` wrapper. Does NOT own prompts, schemas, agent loops, RAG, cost budgeting, or eval fixtures/scorers (those live in the owner module under `<module>/eval/`).
 
 ## Public interface
 
@@ -14,7 +14,11 @@ Exported from `app/core/llm/__init__.py`:
 - Loading — `load_prompt(path)`.
 - Invocation — `PromptRunnable[OutputT]` (constructed with a `FilePrompt` + Pydantic schema; exposes `async ainvoke(input_vars)`).
 - Setup — `configure_gateway()` (call once from app startup).
+- Test cache — `LLMTestCache` (file-colocated JSON, committed to git). Auto-installed by the pytest plugin; no caller wiring needed.
+- Eval helper — `create_eval(experiment_name, module_name, task, scores, dataset_name, max_concurrency=None)` — thin `braintrust.Eval(...)` wrapper. Owner modules supply task + scorers + dataset; eval files live under `<module>/eval/*.eval.py`.
 - Exceptions — `LLMError`, `MalformedOutput`, `PromptParseError`.
+
+Pytest plugin auto-loaded via `[project.entry-points."pytest11"]`. Provides `--allow-llm-calls` CLI flag, autouse `setup_llm_cache` session fixture, and an `allow_llm_calls` fixture for opt-in tests.
 
 No HTTP routes.
 
@@ -44,6 +48,25 @@ One file per prompt. Extension `.prompt.md`. YAML frontmatter required: `name`, 
 
 `configure_gateway()` sets `ANTHROPIC_API_BASE` / `OPENAI_API_BASE` and the matching keys to the Braintrust gateway when configured. Per-call `user` tag = `f"{prompt.name}.v{prompt.version}"`; Braintrust groups rows by it without span wrapping. Called explicitly from `app/main.py` — never as an import side effect.
 
+### LLM test cache (`LLMTestCache`)
+
+File-colocated cache for LangChain LLM responses. One `.langchain_cache.json` per test directory, committed to git so every CI / contributor runs against the same responses.
+
+- Key = `md5(json.dumps(semantic_fields, sort_keys=True))` where `semantic_fields` is a whitelist of prompt + LLM-config fields (message `role`/`content`/`type`/`tool_calls`/`name`, model name, temperature, top_p, frequency/presence_penalty, max_tokens, n, plus a `params` blob from the model's own serialization). Environment churn (UUIDs, API keys, base URLs, timeouts) does not invalidate the cache.
+- HTML-unescape on `content` before hashing so Mustache-style `{{var}}` templating is stable across renderers.
+- pytest-xdist aware: workers read the committed `.langchain_cache.json` AND a per-worker `_gw0.json` overlay.
+- Cache miss with `allow_real_calls=False` raises a loud `RuntimeError` telling the dev to re-run with `--allow-llm-calls`. With the flag, real call runs and the response is appended.
+- Serialization: langchain's own `dumps()`; deserialization uses `Reviver("all", valid_namespaces=["app", "langchain", "langchain_core"])` with `allowed_class_paths=None` so domain subclasses round-trip past the langchain 1.3+ class-path allowlist.
+
+To populate or update a cache file:
+
+1. `pytest --allow-llm-calls path/to/test_file.py` — real LLM calls run; responses get appended to the colocated `.langchain_cache.json`.
+2. Commit the updated file.
+
+### Eval helper (`create_eval`)
+
+Thin wrapper around `braintrust.Eval(...)`. Owner modules call it from `<module>/eval/*.eval.py`. The wrapper hard-codes `data=init_dataset(project=module_name, name=dataset_name)` because every prompt-using module wants the same shape; everything else (task, scorers, prompts) stays in the owner. No Braintrust-prompt-as-parameter machinery — prompts in yaaof are file-based (`<module>/llm/prompts/*.prompt.md`), not registered in Braintrust.
+
 ### State machines
 
 None.
@@ -54,6 +77,6 @@ None. No DB tables. Process env vars set by `configure_gateway()` are the only m
 
 ## How it's tested
 
-- Unit tests in `app/core/llm/test/` — frontmatter parsing, message splitting, render-with-missing-var, retry-then-give-up, env patching.
+- Unit tests in `app/core/llm/test/` — frontmatter parsing, message splitting, render-with-missing-var, retry-then-give-up, env patching, `LLMTestCache` key derivation + JSON round-trip + cache-miss-loud-failure.
 - `PromptRunnable` tests substitute the chat model by subclassing and overriding `_build_model` — no `@patch`.
-- Test caching: when a downstream caller exercises real LLM calls in tests, wire `langchain.cache.SQLiteCache` pointed at `apps/backend/test/.llm-cache.sqlite` (gitignored) in the harness; evals deliberately bypass the cache.
+- The pytest plugin's session-scoped `setup_llm_cache` autouse fixture wires `LLMTestCache` globally; tests that intentionally make LLM calls declare the `allow_llm_calls` fixture (skipped without the CLI flag).

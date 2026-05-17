@@ -22,13 +22,16 @@ dependencies = [
     "httpx>=0.27",
     # core/llm — direct LLM calls with structured output. Used today only by the
     # reviewer's reply classifier; coding_agent plugins shell out to a CLI and
-    # don't pull this in. langchain-community ships SQLiteCache for test replay.
+    # don't pull this in. Test replay uses LLMTestCache (file-colocated JSON
+    # checked into git), not langchain-community's SQLiteCache.
     "langchain>=0.3",
     "langchain-core>=0.3",
     "langchain-anthropic>=0.3",
-    "langchain-community>=0.3",
     "jinja2>=3.1",
     "pyyaml>=6.0",
+    # Eval helper in core/llm wraps braintrust.Eval; the dep is lazy-imported
+    # by core/llm/braintrust_evals.py so non-eval callers don't pay for it.
+    "braintrust>=0.4",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +44,9 @@ dev = [
     "ruff>=0.7",
     "tach>=0.16",
 ]
+
+[project.entry-points."pytest11"]
+yaaos_llm_cache = "app.core.llm.pytest_plugin"
 
 [build-system]
 requires = ["hatchling"]
