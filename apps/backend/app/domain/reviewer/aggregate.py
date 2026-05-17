@@ -187,6 +187,10 @@ class PRReviewAggregate:
         return list(self._state.threads.values())
 
     @property
+    def messages(self) -> list[CommentMessage]:
+        return list(self._state.messages)
+
+    @property
     def events(self) -> list[DomainEvent]:
         return list(self._events)
 
