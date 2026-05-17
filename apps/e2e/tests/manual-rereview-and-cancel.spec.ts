@@ -13,7 +13,7 @@
 import { expect, test } from "@playwright/test";
 import {
   dispatchWebhook,
-  postedReviews,
+  postedComments,
   prPayload,
   resetStack,
   seedCredentialsAndInstall,
@@ -38,12 +38,12 @@ test("Re-review triggers a fresh batch", async ({ page }) => {
       timeout: 30_000,
     })
     .toBe(1);
-  const reviewsBefore = (await postedReviews()).length;
+  const commentsBefore = (await postedComments()).length;
 
   await page.getByTestId("rereview-button").click();
   await expect
-    .poll(async () => (await postedReviews()).length, { timeout: 30_000 })
-    .toBeGreaterThan(reviewsBefore);
+    .poll(async () => (await postedComments()).length, { timeout: 30_000 })
+    .toBeGreaterThan(commentsBefore);
 });
 
 test("Cancel endpoint records review_job.cancelled in the audit log", async ({ request }) => {

@@ -38,7 +38,9 @@ Lets a coding-agent plugin run a CLI inside the workspace. Provider owns subproc
 
 1. Read `working_dir` from `plugin_state`. Missing/vanished → `WorkspaceExecError`.
 2. `asyncio.create_subprocess_exec` with `cwd=working_dir`, `start_new_session=True` (so SIGKILL can target the process group if the agent spawns children).
-3. `asyncio.wait_for(proc.communicate(input=stdin), timeout=timeout_seconds)`.
+3. Branch on `on_stream_line`:
+   - `None` → `asyncio.wait_for(proc.communicate(input=stdin), timeout=timeout_seconds)` (buffered).
+   - Set → stream stdout line-by-line via `proc.stdout.readline()` and invoke the callback per line. stderr is still buffered (small enough; only consulted on failure).
 4. Return `CodingAgentCliResult`. Bytes decoded `errors="replace"` so partial UTF-8 never crashes the caller.
 
 Two kill paths share a single `_kill_process_group(proc)` helper (SIGTERM → 2s grace → SIGKILL of the whole process group):

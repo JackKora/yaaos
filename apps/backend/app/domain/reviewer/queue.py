@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,7 +36,7 @@ from app.core.workspace import (
     with_workspace,
 )
 from app.domain import coding_agent, memory, pull_requests, tickets
-from app.domain.coding_agent import InvocationStatus, ReviewContext
+from app.domain.coding_agent import ActivityEvent, InvocationStatus, ReviewContext
 from app.domain.reviewer.models import PostedCommentRow, ReviewJobRow
 from app.domain.vcs import Diff, Review, VCSPullRequest
 from app.domain.vcs import (
@@ -52,6 +53,13 @@ M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 # body. Per-comment prefixes come from each finding's `source_agent` field.
 _REVIEWER_TAG = "yaaos"
 _CODING_AGENT_PLUGIN_ID = "claude_code"
+
+# Recorded onto every review_jobs row at insert time. Mirrors the constants
+# in `plugins/claude_code` (`_MODEL`, `_EFFORT`). Duplicated to keep the
+# Tach layering clean — `domain/reviewer` cannot import from `plugins/*`.
+# Future UI configuration replaces both copies with a settings row.
+_DEFAULT_MODEL = "opus"
+_DEFAULT_EFFORT = "medium"
 
 
 # In-flight task registry, keyed by review_job_id. Used by `cancel_pending`
@@ -92,6 +100,21 @@ class ReviewJobStepProgress(Event):
     current_step: str
 
 
+class ReviewJobActivity(Event):
+    """One captured stream event from the coding-agent CLI.
+
+    High-frequency (~50-100 per review). Not persisted as an audit entry —
+    the per-row `activity_log` JSONB column carries the durable copy. SSE
+    consumers push events into a local store keyed by review_job_id.
+    """
+
+    kind: Literal["review_job_activity"] = "review_job_activity"
+    source_module: Literal["reviewer"] = "reviewer"
+    pr_id: UUID
+    review_job_id: UUID
+    event: dict[str, Any]
+
+
 # Audit payloads
 
 
@@ -120,7 +143,6 @@ class _PostedPayload(BaseModel):
     findings_by_agent: dict[str, int]
     tokens_in: int | None
     tokens_out: int | None
-    cost_usd: str | None
     latency_ms: int
     review_external_id: str
 
@@ -203,6 +225,8 @@ async def schedule_review(
                 status="queued",
                 triggered_by=trigger_reason,
                 destination="vcs",
+                model=_DEFAULT_MODEL,
+                effort=_DEFAULT_EFFORT,
             )
         )
         await s.commit()
@@ -296,11 +320,13 @@ class ReviewJob(BaseModel):
     lessons_applied: list[UUID] | None
     tokens_in: int | None
     tokens_out: int | None
-    cost_usd: float | None
     duration_s: int | None
     error_message: str | None
     review_external_id: str | None
     findings: list[dict[str, Any]] | None
+    activity_log: list[dict[str, Any]]
+    model: str | None
+    effort: str | None
 
     @classmethod
     def from_row(cls, row: ReviewJobRow) -> ReviewJob:
@@ -321,11 +347,13 @@ class ReviewJob(BaseModel):
             lessons_applied=row.lessons_applied,
             tokens_in=row.tokens_in,
             tokens_out=row.tokens_out,
-            cost_usd=float(row.cost_usd) if row.cost_usd is not None else None,
             duration_s=row.duration_s,
             error_message=row.error_message,
             review_external_id=row.review_external_id,
             findings=row.findings,
+            activity_log=row.activity_log or [],
+            model=row.model,
+            effort=row.effort,
         )
 
 
@@ -379,21 +407,17 @@ async def metrics_summary(*, org_id: UUID) -> dict[str, Any]:
     async with db_session() as s:
         rows = (await s.execute(select(ReviewJobRow).where(ReviewJobRow.org_id == org_id))).scalars().all()
     statuses: dict[str, int] = {}
-    total_cost = 0.0
     posted = 0
     failed = 0
     for r in rows:
         statuses[r.status] = statuses.get(r.status, 0) + 1
         if r.status == "posted":
             posted += 1
-            if r.cost_usd is not None:
-                total_cost += float(r.cost_usd)
         if r.status == "failed":
             failed += 1
     return {
         "review_jobs_by_status": statuses,
         "total_reviews_posted": posted,
-        "total_cost_usd": round(total_cost, 4),
         "failure_count": failed,
         "failure_rate": (failed / (posted + failed)) if (posted + failed) > 0 else 0.0,
     }
@@ -453,10 +477,42 @@ async def _run_review_job(input: ReviewJobInput) -> None:
         await s.commit()
     await publish(ReviewJobStatusChanged(pr_id=row.pr_id, review_job_id=job_id, status="running"))
 
+    # Activity buffer for this review run. Each entry is a dict-serialised
+    # `ActivityEvent`. Capped at ~5 MB total; once exceeded, append a
+    # `log_truncated` marker and stop persisting (live SSE still flows so the
+    # UI keeps updating). Persisted on every terminal transition below.
+    activity_buffer: list[dict[str, Any]] = []
+    activity_bytes = 0
+    activity_truncated = False
+    activity_cap_bytes = 5 * 1024 * 1024
+
+    async def _on_activity(event: ActivityEvent) -> None:
+        nonlocal activity_bytes, activity_truncated
+        entry = event.model_dump(mode="json")
+        if not activity_truncated:
+            entry_size = len(json.dumps(entry))
+            if activity_bytes + entry_size > activity_cap_bytes:
+                activity_buffer.append(
+                    {
+                        "ts": event.ts.isoformat(),
+                        "kind": "log_truncated",
+                        "message": "activity log truncated at 5MB",
+                        "detail": {},
+                    }
+                )
+                activity_truncated = True
+            else:
+                activity_buffer.append(entry)
+                activity_bytes += entry_size
+        # Publish SSE regardless of buffer cap — live updates stay current.
+        await publish(ReviewJobActivity(pr_id=row.pr_id, review_job_id=job_id, event=entry))
+
     try:
         ticket = await tickets.get(ticket_id, org_id=org_id)
         if ticket.pr_id is None:
-            await _transition_failed(job_id, "ticket has no linked PR", org_id=org_id)
+            await _transition_failed(
+                job_id, "ticket has no linked PR", org_id=org_id, activity_log=activity_buffer
+            )
             return
         pr = await pull_requests.get(ticket.pr_id, org_id=org_id)
         vcs_plugin = get_vcs_plugin(pr.plugin_id)
@@ -471,7 +527,7 @@ async def _run_review_job(input: ReviewJobInput) -> None:
         # Ticket-level skip checks.
         skip_reason = _ticket_skip_reason(pr, diff)
         if skip_reason is not None:
-            await _transition_skipped(job_id, skip_reason, org_id=org_id)
+            await _transition_skipped(job_id, skip_reason, org_id=org_id, activity_log=activity_buffer)
             return
 
         # Secrets pre-flight.
@@ -481,7 +537,7 @@ async def _run_review_job(input: ReviewJobInput) -> None:
                 await vcs_plugin.post_review(pr.external_id, _secrets_warning_review(secret_rule))
             except Exception:
                 log.exception("review_job.secrets_warning_post_failed", review_job_id=str(job_id))
-            await _transition_skipped(job_id, "secrets_detected", org_id=org_id)
+            await _transition_skipped(job_id, "secrets_detected", org_id=org_id, activity_log=activity_buffer)
             return
 
         language = _detect_language(diff)
@@ -551,6 +607,7 @@ async def _run_review_job(input: ReviewJobInput) -> None:
                 plugin_id=_CODING_AGENT_PLUGIN_ID,
                 workspace=ws,
                 context=review_ctx,
+                on_activity=_on_activity,
             )
 
         if result.status != InvocationStatus.SUCCESS:
@@ -560,6 +617,7 @@ async def _run_review_job(input: ReviewJobInput) -> None:
                 org_id=org_id,
                 invocation_status=str(result.status),
                 raw_output_excerpt=(result.telemetry.raw_output or "")[:1000],
+                activity_log=activity_buffer,
             )
             return
 
@@ -598,12 +656,13 @@ async def _run_review_job(input: ReviewJobInput) -> None:
                     review_external_id=post_result.review_external_id,
                     tokens_in=result.telemetry.tokens_in,
                     tokens_out=result.telemetry.tokens_out,
-                    cost_usd=float(result.telemetry.cost_usd)
-                    if result.telemetry.cost_usd is not None
-                    else None,
                     duration_s=duration,
                     current_step="posted",
                     findings=[f.model_dump(mode="json") for f in result.findings],
+                    activity_log=activity_buffer,
+                    # CLI may report a resolved model name (e.g. an `opus`
+                    # alias becomes a versioned full name); persist that.
+                    model=result.telemetry.model or _DEFAULT_MODEL,
                 )
             )
             await s.commit()
@@ -621,7 +680,6 @@ async def _run_review_job(input: ReviewJobInput) -> None:
                 findings_by_agent=by_agent,
                 tokens_in=result.telemetry.tokens_in,
                 tokens_out=result.telemetry.tokens_out,
-                cost_usd=str(result.telemetry.cost_usd) if result.telemetry.cost_usd is not None else None,
                 latency_ms=result.telemetry.latency_ms,
                 review_external_id=post_result.review_external_id,
             ),
@@ -635,15 +693,32 @@ async def _run_review_job(input: ReviewJobInput) -> None:
         # and the `review_job.cancelled` audit was written by `cancel_pending`
         # BEFORE the task was cancelled. The workspace's `async with` exit
         # has already destroyed the tempdir and the CLI subprocess was killed
-        # by `workspace.run_coding_agent_cli`'s CancelledError handler. There
-        # is nothing more to do here — let the cancellation propagate so the
-        # task ends cleanly.
+        # by `workspace.run_coding_agent_cli`'s CancelledError handler. Attach
+        # whatever activity we captured before re-raising; cancel_pending
+        # already wrote the status + audit.
         log.info("review_job.cancelled_mid_flight", review_job_id=str(job_id))
+        if activity_buffer:
+            try:
+                async with db_session() as s:
+                    await s.execute(
+                        update(ReviewJobRow)
+                        .where(ReviewJobRow.id == job_id)
+                        .values(activity_log=activity_buffer)
+                    )
+                    await s.commit()
+            except Exception:
+                log.exception("review_job.cancel_persist_failed", review_job_id=str(job_id))
         raise
 
     except Exception as e:
         log.exception("review_job.handler_crashed", review_job_id=str(job_id))
-        await _transition_failed(job_id, f"handler crashed: {e}", org_id=org_id, invocation_status="crashed")
+        await _transition_failed(
+            job_id,
+            f"handler crashed: {e}",
+            org_id=org_id,
+            invocation_status="crashed",
+            activity_log=activity_buffer,
+        )
 
 
 def _ticket_skip_reason(pr: Any, diff: Diff) -> str | None:
@@ -666,18 +741,18 @@ async def _transition_failed(
     org_id: UUID,
     invocation_status: str = "agent_error",
     raw_output_excerpt: str = "",
+    activity_log: list[dict[str, Any]] | None = None,
 ) -> None:
+    values: dict[str, Any] = {
+        "status": "failed",
+        "completed_at": _utcnow(),
+        "error_message": error,
+        "current_step": "failed",
+    }
+    if activity_log is not None:
+        values["activity_log"] = activity_log
     async with db_session() as s:
-        await s.execute(
-            update(ReviewJobRow)
-            .where(ReviewJobRow.id == job_id)
-            .values(
-                status="failed",
-                completed_at=_utcnow(),
-                error_message=error,
-                current_step="failed",
-            )
-        )
+        await s.execute(update(ReviewJobRow).where(ReviewJobRow.id == job_id).values(**values))
         await s.commit()
     await audit_for_review_job(
         job_id,
@@ -692,13 +767,22 @@ async def _transition_failed(
     )
 
 
-async def _transition_skipped(job_id: UUID, reason: str, *, org_id: UUID) -> None:
+async def _transition_skipped(
+    job_id: UUID,
+    reason: str,
+    *,
+    org_id: UUID,
+    activity_log: list[dict[str, Any]] | None = None,
+) -> None:
+    values: dict[str, Any] = {
+        "status": "skipped",
+        "skip_reason": reason,
+        "completed_at": _utcnow(),
+    }
+    if activity_log is not None:
+        values["activity_log"] = activity_log
     async with db_session() as s:
-        await s.execute(
-            update(ReviewJobRow)
-            .where(ReviewJobRow.id == job_id)
-            .values(status="skipped", skip_reason=reason, completed_at=_utcnow())
-        )
+        await s.execute(update(ReviewJobRow).where(ReviewJobRow.id == job_id).values(**values))
         await s.commit()
     await audit_for_review_job(
         job_id,

@@ -96,7 +96,7 @@ def test_log_event_handles_each_type_without_raising(caplog: pytest.LogCaptureFi
                 "content": [{"type": "tool_result", "tool_use_id": "x", "content": "ok", "is_error": False}]
             },
         },
-        {"type": "result", "subtype": "success", "duration_ms": 1234, "num_turns": 4, "total_cost_usd": 0.05},
+        {"type": "result", "subtype": "success", "duration_ms": 1234, "num_turns": 4},
         {"type": "unknown"},  # forward-compatible: skip silently
     ]:
         _log_stream_event(ev)

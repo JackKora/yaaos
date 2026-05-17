@@ -27,6 +27,7 @@ from app.core.primitives import PluginMeta
 from app.core.workspace import (
     CodingAgentCliResult,
     HealthStatus,
+    OnStreamLine,
     WorkspaceExecError,
     WorkspaceProvisionError,
     WorkspaceSpec,
@@ -42,6 +43,48 @@ _ASKPASS_CONTENT = """#!/bin/sh
 # unlinked after the auth-needing git command completes.
 exec printf '%s\\n' "$YAAOS_GIT_TOKEN"
 """
+
+
+async def _stream_subprocess(
+    proc: asyncio.subprocess.Process,
+    *,
+    stdin: bytes | None,
+    on_stream_line: OnStreamLine,
+) -> tuple[bytes, bytes]:
+    """Consume stdout line-by-line, forward each line to `on_stream_line`,
+    and return `(stdout_buffer, stderr_buffer)` once the process exits.
+
+    Stdin (if any) is written once up front and stdin is closed. stderr is
+    buffered with `proc.stderr.read()` so we don't deadlock on a stderr-heavy
+    child while we're servicing stdout. Callback exceptions are logged but
+    don't abort the stream — losing one event shouldn't fail the whole run.
+    """
+    if stdin is not None and proc.stdin is not None:
+        proc.stdin.write(stdin)
+        await proc.stdin.drain()
+        proc.stdin.close()
+
+    stdout_chunks: list[bytes] = []
+
+    async def _consume_stdout() -> None:
+        assert proc.stdout is not None
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            stdout_chunks.append(line)
+            try:
+                await on_stream_line(line)
+            except Exception:
+                log.exception("workspace.in_process.on_stream_line_failed")
+
+    async def _consume_stderr() -> bytes:
+        assert proc.stderr is not None
+        return await proc.stderr.read()
+
+    _, stderr_b = await asyncio.gather(_consume_stdout(), _consume_stderr())
+    await proc.wait()
+    return b"".join(stdout_chunks), stderr_b
 
 
 async def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
@@ -172,6 +215,7 @@ class InProcessWorkspaceProvider:
         env: dict[str, str] | None = None,
         stdin: bytes | None = None,
         timeout_seconds: int | None = None,
+        on_stream_line: OnStreamLine | None = None,
     ) -> CodingAgentCliResult:
         """Run a coding-agent CLI inside the workspace.
 
@@ -184,6 +228,12 @@ class InProcessWorkspaceProvider:
         - **Cancellation** — caller (e.g. `reviewer.cancel_pending`) cancels the
           surrounding task. We kill the process group, then re-raise
           `CancelledError` so the cancellation unwinds normally.
+
+        When `on_stream_line` is provided, stdout is consumed line-by-line and
+        each newline-terminated chunk is forwarded to the callback as it
+        arrives. The accumulated stdout is still returned in the result for
+        callers that want a final blob. When `on_stream_line` is None, the
+        buffered (`communicate`) path runs — semantically identical to before.
         """
         working_dir = plugin_state.get("working_dir")
         if not working_dir or not os.path.isdir(working_dir):
@@ -206,18 +256,32 @@ class InProcessWorkspaceProvider:
             raise WorkspaceExecError(f"could not spawn {argv[0]}: {e}") from e
 
         timed_out = False
+        stdout_b: bytes = b""
+        stderr_b: bytes = b""
         try:
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(input=stdin),
-                timeout=timeout_seconds,
-            )
+            if on_stream_line is not None:
+                # Streaming path: read stdout line-by-line, forward each chunk
+                # to the callback. stderr stays buffered (only consulted on
+                # failure). stdin is written once up front (callers using the
+                # streaming path don't pipe interactive input).
+                stdout_b, stderr_b = await asyncio.wait_for(
+                    _stream_subprocess(proc, stdin=stdin, on_stream_line=on_stream_line),
+                    timeout=timeout_seconds,
+                )
+            else:
+                stdout_b, stderr_b = await asyncio.wait_for(
+                    proc.communicate(input=stdin),
+                    timeout=timeout_seconds,
+                )
         except TimeoutError:
             timed_out = True
             await _kill_process_group(proc)
             try:
-                stdout_b, stderr_b = await proc.communicate()
+                drained_out, drained_err = await proc.communicate()
+                stdout_b = stdout_b + drained_out
+                stderr_b = stderr_b + drained_err
             except Exception:
-                stdout_b, stderr_b = b"", b""
+                pass
         except asyncio.CancelledError:
             # Caller-initiated cancel — kill the subprocess group, drain pipes
             # (with a short timeout so a stuck child doesn't block the cancel

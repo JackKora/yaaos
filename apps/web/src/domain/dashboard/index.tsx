@@ -142,7 +142,6 @@ function DashboardPopulated() {
   const openInReview = inFlight.length;
 
   const totalReviews = metrics?.total_reviews_posted ?? 0;
-  const totalCost = metrics?.total_cost_usd ?? 0;
   const failureRate = metrics?.failure_rate ?? 0;
   const failureCount = metrics?.failure_count ?? 0;
 
@@ -155,7 +154,6 @@ function DashboardPopulated() {
 
       <div className="flex gap-3" data-testid="dashboard-metrics">
         <MetricTile label="Reviews posted" value={totalReviews.toLocaleString()} sub="all-time" />
-        <MetricTile label="Cost" value={fmtCost(totalCost)} sub="all-time" />
         <MetricTile label="Open tickets" value={openInReview.toString()} sub="in review" />
         <MetricTile
           label="Failure rate"
@@ -247,9 +245,4 @@ function AgentInline({ name, status }: { name: string; status: string }) {
       <Badge variant={variant}>{status}</Badge>
     </div>
   );
-}
-
-function fmtCost(cost: number): string {
-  if (cost < 1) return `$${cost.toFixed(3)}`;
-  return `$${cost.toFixed(2)}`;
 }

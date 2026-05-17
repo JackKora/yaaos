@@ -9,7 +9,7 @@
 import { expect, test } from "@playwright/test";
 import {
   dispatchWebhook,
-  postedReviews,
+  postedComments,
   prPayload,
   resetStack,
   seedCredentialsAndInstall,
@@ -54,8 +54,9 @@ test("PR with secret in diff is refused; review skips", async ({ page }) => {
     page.locator('[data-testid^="agent-card-"][data-state="posted"]'),
   ).toHaveCount(0);
 
-  // fake-github received the refuse-to-review review(s).
-  const reviews = await postedReviews();
-  const refusalBodies = reviews.map((r) => String(r.body ?? ""));
-  expect(refusalBodies.some((b) => b.toLowerCase().includes("secret"))).toBe(true);
+  // fake-github received the refuse-to-review notification as a top-level
+  // PR comment (issue-comments endpoint).
+  const comments = await postedComments();
+  const bodies = comments.map((c) => String(c.body ?? ""));
+  expect(bodies.some((b) => b.toLowerCase().includes("secret"))).toBe(true);
 });

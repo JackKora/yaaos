@@ -10,7 +10,7 @@ A small, hand-maintained layer between the FastAPI backend and the UI. Owns the 
 
 Re-exports from `@core/api`:
 - **Client:** `apiClient`, `apiFetch`.
-- **Resource types:** `HealthResponse`, `OnboardingStatus`, `Ticket`, `Lesson`, `ReviewJob`, `Finding`, `FindingSnippetLine`, `AuditEntry`, `GithubInstallation`, `GithubRepository`, `GithubRepositoriesResponse`, `PluginMeta`, `PluginType`, `PluginHealth`, `SetGithubCredentialsInput`.
+- **Resource types:** `HealthResponse`, `OnboardingStatus`, `Ticket`, `Lesson`, `ReviewJob`, `ReviewJobActivityEvent`, `Finding`, `FindingSnippetLine`, `AuditEntry`, `GithubInstallation`, `GithubRepository`, `GithubRepositoriesResponse`, `PluginMeta`, `PluginType`, `PluginHealth`, `SetGithubCredentialsInput`.
 - **Queries:** `useHealth`, `useOnboarding`, `useTickets`, `useTicket`, `useTicketAudit`, `useReviewJobsForTicket`, `useLessons`, `useMetricsSummary`, `useGithubInstallation`, `useGithubRepositories`, `usePluginsList`, `usePluginHealth`.
 - **Mutations:** `useRereviewMutation`, `useCancelReviewerJobs`, `useCreateLesson`, `useDeleteLesson`, `useSetAnthropicKey`, `useSetGithubCredentials`.
 
@@ -29,7 +29,8 @@ OpenAPI codegen is deferred — the surface is small enough that hand-declared t
 Each API resource has a type alias in `client.ts`, mirroring the backend Pydantic models. Notes:
 - `Ticket` — includes `pr_number` / `author_login` / `is_draft` enriched from the linked PR at read-time.
 - `Finding` — `severity` is `"must-fix" | "nit" | "suggestion" | "info"`; carries optional `rationale`, `snippet: FindingSnippetLine[]`, `applied_lesson_ids`, and `source_agent` (which yaaos subagent surfaced this finding).
-- `ReviewJob` — one row per (PR × review run). Full state including `current_step`, `last_heartbeat_at`, `tokens_in`/`out`, `cost_usd`, `findings`.
+- `ReviewJob` — one row per (PR × review run). Full state including `current_step`, `last_heartbeat_at`, `tokens_in`/`out`, `findings`, `model`, `effort`, and `activity_log` (persisted chronological events from the coding-agent stream).
+- `ReviewJobActivityEvent` — `{ts, kind, message, detail?}`. `message` is rendered server-side. Used both in `ReviewJob.activity_log` (persisted) and as the payload of `review_job_activity` SSE events (live tail).
 - `PluginMeta` — driven by `/api/settings/plugins` so the Settings UI auto-lists plugins.
 
 ### Query hooks

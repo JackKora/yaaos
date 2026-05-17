@@ -11,7 +11,7 @@
 import { expect, test } from "@playwright/test";
 import {
   dispatchWebhook,
-  postedReviews,
+  postedComments,
   prPayload,
   resetStack,
   seedCredentialsAndInstall,
@@ -52,6 +52,6 @@ test("PR open → reviewer posts; ticket detail renders findings", async ({ page
   await expect(page.getByTestId("summary-strip")).toBeVisible();
 
   // fake-github recorded the post.
-  const reviews = await postedReviews();
-  expect(reviews.length).toBeGreaterThanOrEqual(1);
+  const comments = await postedComments();
+  expect(comments.length).toBeGreaterThanOrEqual(1);
 });

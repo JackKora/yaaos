@@ -168,8 +168,9 @@ export async function seedCompareDiverged(beforeSha: string, afterSha: string): 
   });
 }
 
-/** Fetch reviews that yaaos has posted to fake-github. */
-export async function postedReviews(): Promise<Array<Record<string, unknown>>> {
-  const r = await fetch(`${FAKE_GITHUB_URL}/__test/posted_reviews`);
+/** Fetch comments that yaaos has posted to fake-github (both inline review
+ *  comments on PR diffs and non-inline issue-comments on the PR). */
+export async function postedComments(): Promise<Array<Record<string, unknown>>> {
+  const r = await fetch(`${FAKE_GITHUB_URL}/__test/posted_comments`);
   return (await r.json()) as Array<Record<string, unknown>>;
 }

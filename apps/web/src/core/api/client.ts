@@ -71,6 +71,19 @@ export type Finding = {
   source_agent: string | null;
 };
 
+/**
+ * Pre-rendered activity event captured from the coding-agent stream.
+ *
+ * `message` is rendered by the backend so the FE doesn't interpret raw
+ * Claude shapes; `detail` carries kind-specific extras for expanded views.
+ */
+export type ReviewJobActivityEvent = {
+  ts: string;
+  kind: string;
+  message: string;
+  detail?: Record<string, unknown> | null;
+};
+
 export type ReviewJob = {
   id: string;
   pr_id: string;
@@ -85,11 +98,17 @@ export type ReviewJob = {
   lessons_applied: string[] | null;
   tokens_in: number | null;
   tokens_out: number | null;
-  cost_usd: number | null;
   error_message: string | null;
   duration_s: number | null;
   review_external_id: string | null;
   findings: Finding[] | null;
+  // Chronological events captured from the coding-agent stream. Empty array
+  // for rows from before migration 006 or runs that didn't emit anything.
+  activity_log: ReviewJobActivityEvent[];
+  // CLI model alias requested at kickoff (e.g. "opus"). On completion this is
+  // updated to the resolved name the CLI reported (e.g. "claude-opus-4-7-...").
+  model: string | null;
+  effort: string | null;
 };
 
 export type AuditEntry = {

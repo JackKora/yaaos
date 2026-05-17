@@ -11,7 +11,7 @@
 import { expect, test } from "@playwright/test";
 import {
   dispatchWebhook,
-  postedReviews,
+  postedComments,
   prPayload,
   resetStack,
   seedCompareDiverged,
@@ -39,7 +39,7 @@ test("synchronize event re-runs reviewers and grows the audit log", async ({ pag
     })
     .toBe(1);
 
-  const reviewsBefore = (await postedReviews()).length;
+  const commentsBefore = (await postedComments()).length;
 
   // Second push — declare it diverged, simulating a force-push.
   const beforeSha = "head-acme-api-7";
@@ -61,8 +61,8 @@ test("synchronize event re-runs reviewers and grows the audit log", async ({ pag
   // Poll fake-github for the second batch of posts — synchronize triggers a
   // new review run that posts one Review.
   await expect
-    .poll(async () => (await postedReviews()).length, { timeout: 30_000 })
-    .toBeGreaterThan(reviewsBefore);
+    .poll(async () => (await postedComments()).length, { timeout: 30_000 })
+    .toBeGreaterThan(commentsBefore);
 
   // Audit log grew — initial review run + the synchronize re-run write
   // scheduled/prompt_sent/posted entries each, so the list has at least

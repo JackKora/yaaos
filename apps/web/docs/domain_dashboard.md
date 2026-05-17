@@ -28,11 +28,12 @@ Single card with two stepper rows (Install GitHub App / Add Anthropic key). Each
 
 Header reads "Overview" (one org in M01).
 
-**Metrics row — 4 tiles** from `useMetricsSummary()` + `useTickets()`:
+**Metrics row — 3 tiles** from `useMetricsSummary()` + `useTickets()`:
 1. Reviews posted (`total_reviews_posted`, "all-time").
-2. Cost (`total_cost_usd`, "all-time").
-3. Open tickets (count where `status === "in_review"`).
-4. Failure rate (`failure_rate * 100`, with `failure_count` failed subtitle).
+2. Open tickets (count where `status === "in_review"`).
+3. Failure rate (`failure_rate * 100`, with `failure_count` failed subtitle).
+
+Cost is not surfaced — CLI pricing data is not authoritative, so the backend doesn't track it.
 
 Sparklines and 24h delta indicators are deferred — `/api/reviewer/metrics` returns lifetime aggregates only.
 

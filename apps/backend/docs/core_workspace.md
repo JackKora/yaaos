@@ -22,7 +22,9 @@ HTTP routes registered by the module under `/api/workspaces/*` (list, get, force
 
 ### `Workspace` Protocol
 
-Carries `id` plus two methods: `info()` returns `WorkspaceInfo`; `run_coding_agent_cli(argv, *, env=None, stdin=None, timeout_seconds=None)` returns `CodingAgentCliResult`. That's the entire surface. No file or search methods, no `working_dir`. Callers hand `argv` + `env` + `stdin` to the workspace; the workspace forwards to the provider, which decides where and how (cwd, container, sandbox). Subprocess timeout + process-group kill are the provider's responsibility.
+Carries `id` plus two methods: `info()` returns `WorkspaceInfo`; `run_coding_agent_cli(argv, *, env=None, stdin=None, timeout_seconds=None, on_stream_line=None)` returns `CodingAgentCliResult`. That's the entire surface. No file or search methods, no `working_dir`. Callers hand `argv` + `env` + `stdin` to the workspace; the workspace forwards to the provider, which decides where and how (cwd, container, sandbox). Subprocess timeout + process-group kill are the provider's responsibility.
+
+`on_stream_line: Callable[[bytes], Awaitable[None]] | None` is optional. When provided, the provider reads stdout line-by-line and invokes the callback per line (consumers parse JSON inline so they can react live, e.g. the Claude Code plugin rendering activity events). When `None`, the provider buffers stdout to completion — the existing behaviour. Timeout + cancel kill paths are unchanged either way.
 
 Each new capability (run tests, install deps, push commits) arrives as a deliberate new method with its own policy. A generic `exec(argv)` would silently broaden as features land.
 

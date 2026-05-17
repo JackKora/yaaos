@@ -24,9 +24,9 @@ The only surface that exercises the full live-update path (webhook → reviewer 
 - **Filter chips (status)** — All / Review / Done with live counts from `useTickets()`.
 - **Filter dropdowns** — `repo`, `kind` (hardcoded to `feature`), `author`.
 - **Group-by toggle** — None / Status. Status mode renders sub-tables per status.
-- **Row layout (CSS grid)** — status badge · `#PR · repo` + title · kind chip · verdict dot · cost · source icon · author avatar+login · tokens · updated-ago.
+- **Row layout (CSS grid)** — status badge · `#PR · repo` + title · kind chip · verdict dot · source icon · author avatar+login · tokens · updated-ago.
 - **Verdict dot** — lazy per-row via `useReviewJobsForTicket(id)`. Colors: posted-no-findings green, posted-with-must-fix red, posted-other grey, running pulsing accent, queued grey square, failed red, absent empty.
-- **Cost / tokens cells** — read from the latest review job.
+- **Tokens cell** — read from the latest review job. Cost is not shown — CLI pricing data is not authoritative, so the backend doesn't track it.
 
 ### Detail page
 
@@ -36,21 +36,17 @@ The only surface that exercises the full live-update path (webhook → reviewer 
 
 ### Review tab — `SummaryStrip`
 
-Five-cell card: Findings (red if any must-fix), Total cost, Tokens, Latency (live-ticking `LiveLatency` while running; otherwise `duration_s`), Lessons applied.
+Four-cell card: Findings (red if any must-fix), Tokens (in + out), Latency (live-ticking `LiveLatency` while running; otherwise `duration_s`), Lessons applied. Cost cell removed — backend no longer tracks cost.
 
 ### Review tab — `AgentCard`
 
-One card representing the yaaos parent reviewer. Carries `data-testid="agent-card-yaaos"` and `data-state="<status>"`.
+One card representing the yaaos parent reviewer. Carries `data-testid="agent-card-yaaos"` and `data-state="<status>"`. The card header shows the job's `model` (alias requested, resolved name on completion) and `effort` next to the subtitle.
 
-| Status | Body |
-|---|---|
-| `no-job` | "no review run yet — click Re-review." |
-| `queued` | grey square + "Waiting for an open slot…" |
-| `running` | `current_step` label + indeterminate bar + live tokens & cost |
-| `posted` | list of `Finding` rows |
-| `skipped` | `Skipped: <skip_reason>.` |
-| `failed` | `Failed: <error_message>.` |
-| `cancelled` | `Cancelled (<skip_reason>).` |
+Body composition (applies to every status with a job — except `no-job` which renders an empty-state CTA):
+- **Status banner** (top) — one-line `Running · resolving_entities` / `Posted: 4 findings` / `Failed: <error_message>` / `Skipped: <skip_reason>` / `Cancelled (<skip_reason>)`. Running shows the indeterminate bar + tokens too.
+- **Activity feed** (`data-testid="activity-feed"`) — newest 10 events from the merged source: `job.activity_log` (hydrated history) ++ `useLiveActivity(job.id)` (live SSE tail), deduped by `ts+kind+message`, sorted newest-first. Format: `<formatTime(ts)> · <message>`.
+- **"All events (N)"** `<details>` — full event list, collapsible.
+- **Findings list** — only when `status === 'posted'` and findings exist; otherwise the banner alone covers the posted state.
 
 ### Finding rows
 

@@ -47,7 +47,7 @@ No batch-seeded fixture. Each spec drives its own preconditions in `beforeEach` 
 | `seedPRDiff({repo, number, diff, files})` | Sets a specific diff. Used by the secrets spec to inject `AKIA…`. |
 | `seedCompareDiverged(before, after)` | Forces fake-github's `/compare` to return `"diverged"`. |
 | `prPayload(opts)` | Builds the JSON shape yaaos's webhook parser accepts. |
-| `postedReviews()` | Fetches `/__test/posted_reviews` for outbound-call assertions. |
+| `postedComments()` | Fetches `/__test/posted_comments` for outbound-call assertions (both inline review comments and top-level PR comments). |
 
 ## yaaos-side test surface
 
@@ -59,7 +59,7 @@ No batch-seeded fixture. Each spec drives its own preconditions in `beforeEach` 
 
 ## fake-github contract
 
-See [`apps/fake-github/docs/README.md`](../../fake-github/docs/README.md). Relevant for specs: `POST /__test/dispatch_webhook`, `POST /__test/seed_pr` (auto-called by `dispatchWebhook`), `POST /__test/seed_diff`, `GET /__test/posted_reviews`.
+See [`apps/fake-github/docs/README.md`](../../fake-github/docs/README.md). Relevant for specs: `POST /__test/dispatch_webhook`, `POST /__test/seed_pr` (auto-called by `dispatchWebhook`), `POST /__test/seed_diff`, `GET /__test/posted_comments`.
 
 ## Why no batch-seed fixture
 

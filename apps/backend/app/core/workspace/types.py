@@ -8,6 +8,7 @@ implementations where "working_dir" wouldn't be a host-filesystem path at all.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol
@@ -16,6 +17,12 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.core.primitives import PluginMeta
+
+# Per-line callback used by `run_coding_agent_cli` to stream stdout in real
+# time. When provided, the provider invokes it for each newline-terminated
+# chunk from the CLI; when None, stdout is buffered and returned in the
+# final `CodingAgentCliResult.stdout` instead.
+OnStreamLine = Callable[[bytes], Awaitable[None]]
 
 
 class WorkspaceStatus(StrEnum):
@@ -120,6 +127,7 @@ class Workspace(Protocol):
         env: dict[str, str] | None = None,
         stdin: bytes | None = None,
         timeout_seconds: int | None = None,
+        on_stream_line: OnStreamLine | None = None,
     ) -> CodingAgentCliResult: ...
 
 
@@ -140,6 +148,7 @@ class WorkspaceProvider(Protocol):
         env: dict[str, str] | None = None,
         stdin: bytes | None = None,
         timeout_seconds: int | None = None,
+        on_stream_line: OnStreamLine | None = None,
     ) -> CodingAgentCliResult: ...
     async def destroy(self, plugin_state: dict[str, Any]) -> None: ...
     async def health_check(self) -> HealthStatus: ...

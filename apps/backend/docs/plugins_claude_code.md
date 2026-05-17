@@ -35,7 +35,7 @@ Single parent invocation. The CLI is given the Task tool so the parent can dispa
 
 `_load_settings_for_invocation` selects the single `claude_code_settings` row and decrypts the Anthropic key. Returns `(api_key, cli_path)`. No key or no CLI path: early `AGENT_ERROR`. The default timeout is a module constant (`_DEFAULT_TIMEOUT_SECONDS = 1200`); per-call override via `agent_config["timeout_seconds"]`.
 
-Argv: `claude --print --output-format=stream-json --verbose --permission-mode=bypassPermissions --allowed-tools=Read,Glob,Grep,LS,NotebookRead,TodoWrite,WebFetch,WebSearch,Task,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(git ls-files:*),Bash(git rev-parse:*),Bash(git status)` plus optional `--model` / `--max-turns` from `agent_config`. `Task` lets the parent dispatch yaaos-* subagents. `Bash` is restricted to read-only git commands so the agent can `git diff base_sha..HEAD` itself rather than yaaos inlining the diff into the prompt (saves tens of thousands of tokens on large PRs and avoids duplicating the diff across N subagent task briefs). No `Bash` for non-git, no `Write`, no `Edit`. Timeout: `agent_config["timeout_seconds"]` overrides the `_DEFAULT_TIMEOUT_SECONDS` module constant (1200s / 20 min) — sized for real-PR reviews where the parent fans out to multiple subagents. `stream-json` (requires `--verbose`) emits one JSON event per line as work progresses — we parse it post-hoc to log a per-event trace so stuck or timed-out runs leave readable diagnostics.
+Argv: `claude --print --output-format=stream-json --verbose --permission-mode=bypassPermissions --allowed-tools=Read,Glob,Grep,LS,NotebookRead,TodoWrite,WebFetch,WebSearch,Task,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(git ls-files:*),Bash(git rev-parse:*),Bash(git status) --model <alias> --effort <level>`. `Task` lets the parent dispatch yaaos-* subagents. `Bash` is restricted to read-only git commands so the agent can `git diff base_sha..HEAD` itself rather than yaaos inlining the diff into the prompt (saves tens of thousands of tokens on large PRs and avoids duplicating the diff across N subagent task briefs). No `Bash` for non-git, no `Write`, no `Edit`. Timeout: `agent_config["timeout_seconds"]` overrides the `_DEFAULT_TIMEOUT_SECONDS` module constant (1200s / 20 min) — sized for real-PR reviews where the parent fans out to multiple subagents. `--model` + `--effort` are hardcoded module constants (`_MODEL`, `_EFFORT`) at M01 — `opus` (alias resolves to latest Opus) and `medium`. UI to configure them is M02+ work; the resolved model name reported in the terminal `result` event is captured into `InvocationTelemetry.model` so consumers persist the actual name. `stream-json` (requires `--verbose`) emits one JSON event per line as work progresses — parsed inline so consumers can react live, with the same parsed stream also serving as the per-event log for stuck or timed-out runs.
 
 Env: copy of `os.environ` with `ANTHROPIC_API_KEY` injected. Key never on argv.
 
@@ -53,9 +53,11 @@ Workspace owns subprocess lifecycle (`cwd`, process group, SIGTERM → 2s grace 
 
 **Step 4 — parse stream-json events:**
 
-`--output-format=stream-json --verbose` emits one JSON event per line: `system` (init), `assistant` (model turn, may contain `tool_use` blocks — Task dispatches surface here with the target subagent name), `user` (tool_result blocks), terminal `result` (with `usage`, `total_cost_usd`, final `result` text). `_parse_stream_events(stdout)` parses every line (skipping blank / non-JSON noise); `_log_stream_event` emits one structured log entry per event with type-appropriate fields (tool name + subagent for `tool_use`, excerpt + is_error for `tool_result`, duration + turns + cost for `result`). The terminal `result` event populates `InvocationTelemetry` and supplies `agent_text`. Missing `result` event → `AGENT_ERROR` with raw output captured.
+`--output-format=stream-json --verbose` emits one JSON event per line: `system` (init, reports `model` + `session_id`), `assistant` (model turn, may contain `tool_use` blocks — Task dispatches surface here with the target subagent name), `user` (tool_result blocks), terminal `result` (with `usage`, `modelUsage`, final `result` text). The workspace's `on_stream_line` callback hands each raw line to a plugin-local handler that parses it via `_parse_stream_events`, logs it via `_log_stream_event`, and renders it to an `ActivityEvent` via `_render_activity`; rendered events are dispatched to the caller's `on_activity` callback (consumed by `domain/reviewer` to buffer + persist + broadcast). The terminal `result` event populates `InvocationTelemetry` (including the resolved `model` reported by the CLI) and supplies `agent_text`. Missing `result` event → `AGENT_ERROR` with raw output captured.
 
 Per-event logging runs on every code path including timeout and non-zero exit — the partial trace from a stuck run is the primary diagnostic. The log line `claude_code.stream.tool_use` with `tool=Task` shows which subagent was in flight; absence of multiple Task tool_use events in a single `claude_code.stream.assistant` turn indicates the parent is dispatching serially rather than in parallel.
+
+`_render_activity(event)` maps each known stream-event shape to an `ActivityEvent(kind, message, detail)` with the user-facing `message` pre-rendered server-side. Unknown event types are logged + skipped — forward-compatible.
 
 **Step 5 — strict-parse agent response:**
 
@@ -67,7 +69,7 @@ Strict JSON parse → validate against `_FindingList`. No markdown-fence fallbac
 
 ### `validate_config`
 
-Schema check only. Allowed keys: `timeout_seconds` (positive int), `max_turns` (positive int), `model` (non-empty string). Unknown keys error. No model-id enumeration — Anthropic ships new ones often.
+Schema check only. Allowed keys: `timeout_seconds` (positive int). Unknown keys error. Model + effort are hardcoded module constants at M01.
 
 ### `health_check`
 

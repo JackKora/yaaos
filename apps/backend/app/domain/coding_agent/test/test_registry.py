@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -13,6 +12,7 @@ from app.domain.coding_agent import (
     HealthStatus,
     InvocationStatus,
     InvocationTelemetry,
+    OnActivity,
     PluginNotFoundError,
     ReviewContext,
     ReviewResult,
@@ -30,14 +30,19 @@ from app.domain.coding_agent import (
 class _StubPlugin:
     meta = PluginMeta(id="stub", type="coding_agent", display_name="Stub")
 
-    async def review(self, workspace: Any, context: ReviewContext) -> ReviewResult:
-        del workspace, context
+    async def review(
+        self,
+        workspace: Any,
+        context: ReviewContext,
+        on_activity: OnActivity | None = None,
+    ) -> ReviewResult:
+        del workspace, context, on_activity
         return ReviewResult(
             status=InvocationStatus.SUCCESS,
             findings=[],
             state="APPROVED",
             summary_body="reviewed",
-            telemetry=InvocationTelemetry(tokens_in=1, tokens_out=2, cost_usd=Decimal("0.001"), latency_ms=5),
+            telemetry=InvocationTelemetry(tokens_in=1, tokens_out=2, latency_ms=5),
         )
 
     async def validate_config(self, agent_config: dict[str, Any]) -> ValidationResult:
