@@ -240,3 +240,7 @@ apps/web/src/core/api/generated/
 
 # uv
 .venv/
+
+# Test report outputs (pytest-reportlog, vitest JSON reporter) consumed by RWX
+apps/backend/tmp/
+apps/web/tmp/

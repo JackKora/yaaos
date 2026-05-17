@@ -25,5 +25,8 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
+    // Captain (RWX) requires source locations on each task to parse the
+    // vitest JSON reporter output.
+    includeTaskLocation: true,
   },
 });

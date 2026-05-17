@@ -37,7 +37,13 @@ tasks:
     # pattern per apps/backend/docs/patterns.md). We bring up the postgres
     # service from docker-compose.test.yml, run backend-ci on the same compose
     # network, and tear it down on exit.
+    #
+    # apps/backend/tmp is mounted writable so the pytest-reportlog file
+    # produced inside the container survives `--rm` and is picked up by
+    # outputs.test-results. The mount is chmod 777 because the container
+    # runs as uid 1000 (yaaos), which won't match the RWX runner uid.
     run: |
+      mkdir -p apps/backend/tmp && chmod 777 apps/backend/tmp
       docker compose -f docker/docker-compose.test.yml up -d --wait postgres
       trap "docker compose -f docker/docker-compose.test.yml down -v" EXIT
       docker build -f docker/Dockerfile --target backend-ci -t yaaos-backend-ci .
@@ -51,11 +57,29 @@ tasks:
         -v "$(pwd)/apps/web/docs:/app/apps/web/docs:ro" \
         -v "$(pwd)/apps/e2e/docs:/app/apps/e2e/docs:ro" \
         -v "$(pwd)/apps/fake-github/docs:/app/apps/fake-github/docs:ro" \
+        -v "$(pwd)/apps/backend/tmp:/app/apps/backend/tmp" \
         yaaos-backend-ci sh -c "cd apps/backend && bin/ci"
+    outputs:
+      test-results:
+        - path: apps/backend/tmp/pytest-reportlog.json
+          options:
+            language: Python
+            framework: pytest
 
   - key: web-ci
     use: [code]
     docker: true
+    # apps/web/tmp is mounted writable so vitest's JSON reporter output
+    # survives `--rm` and is picked up by outputs.test-results.
     run: |
+      mkdir -p apps/web/tmp && chmod 777 apps/web/tmp
       docker build -f docker/Dockerfile --target web-builder -t yaaos-web-ci .
-      docker run --rm yaaos-web-ci sh -c "cd apps/web && bin/ci"
+      docker run --rm \
+        -v "$(pwd)/apps/web/tmp:/build/apps/web/tmp" \
+        yaaos-web-ci sh -c "cd apps/web && bin/ci"
+    outputs:
+      test-results:
+        - path: apps/web/tmp/vitest.json
+          options:
+            language: JavaScript
+            framework: Vitest

@@ -12,7 +12,8 @@ echo "==> tsc --noEmit"
 pnpm exec tsc --noEmit
 
 echo "==> vitest"
-pnpm exec vitest run
+mkdir -p tmp
+pnpm exec vitest run --reporter=default --reporter=json --outputFile=./tmp/vitest.json
 
 echo "==> vite build"
 pnpm exec vite build

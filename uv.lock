@@ -1405,6 +1405,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-reportlog"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/93/d5/2f4a73822efaad1d6aea6660468d6290963e5f61d2f9d9ca707f7f0b1c13/pytest_reportlog-1.0.0.tar.gz", hash = "sha256:75aec3a92bb53456c3e028605a636579d26f31c6f1e035ad9f706c203cfcb74e", size = 5646, upload-time = "2025-11-11T16:05:15.98Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/70/807cbdac584629623c1c2f76b7a39a343e3989510cd52385f1f40581e963/pytest_reportlog-1.0.0-py3-none-any.whl", hash = "sha256:3fc837ef3be6e50f33b52aaf99f88bfbb2ec525febbc3990389d24bbfba28753", size = 6015, upload-time = "2025-11-11T16:05:14.585Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1935,6 +1947,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-httpx" },
+    { name = "pytest-reportlog" },
     { name = "ruff" },
     { name = "tach" },
 ]
@@ -1963,6 +1976,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-httpx", marker = "extra == 'dev'", specifier = ">=0.33" },
+    { name = "pytest-reportlog", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.7" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
