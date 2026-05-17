@@ -8,7 +8,6 @@ export {
   type Lesson,
   type OnboardingStatus,
   type ReviewJob,
-  type ReviewerAgent,
   type Ticket,
 } from "./client";
 export {
@@ -30,13 +29,10 @@ export {
   usePluginHealth,
   usePluginsList,
   useRereviewMutation,
-  useResetAgentPrompt,
   useReviewJobsForTicket,
-  useReviewerAgents,
   useSetAnthropicKey,
   useSetGithubCredentials,
   useTicket,
   useTicketAudit,
   useTickets,
-  useUpdateAgentPrompt,
 } from "./queries";

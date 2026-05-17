@@ -12,8 +12,6 @@ from app.domain.coding_agent.types import (
     CodingAgentPlugin,
     HealthStatus,
     PluginNotFoundError,
-    ReplyContext,
-    ReplyResult,
     ReviewContext,
     ReviewResult,
     ValidationResult,
@@ -48,25 +46,8 @@ async def review(plugin_id: str, workspace: Workspace, context: ReviewContext) -
     log.info(
         "agent.reviewed",
         plugin_id=plugin_id,
-        agent_name=context.agent_name,
         status=result.status,
         findings=len(result.findings),
-        tokens_in=result.telemetry.tokens_in,
-        tokens_out=result.telemetry.tokens_out,
-        cost_usd=str(result.telemetry.cost_usd) if result.telemetry.cost_usd is not None else None,
-        latency_ms=result.telemetry.latency_ms,
-    )
-    return result
-
-
-async def reply(plugin_id: str, workspace: Workspace, context: ReplyContext) -> ReplyResult:
-    plugin = get_plugin(plugin_id)
-    result = await plugin.reply(workspace, context)
-    log.info(
-        "agent.replied",
-        plugin_id=plugin_id,
-        agent_name=context.agent_name,
-        status=result.status,
         tokens_in=result.telemetry.tokens_in,
         tokens_out=result.telemetry.tokens_out,
         cost_usd=str(result.telemetry.cost_usd) if result.telemetry.cost_usd is not None else None,

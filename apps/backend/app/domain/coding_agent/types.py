@@ -1,13 +1,17 @@
 """Types + Protocol for the coding-agent abstraction.
 
-The Protocol exposes targeted operations — `review(context)` and `reply(context)` —
-not a generic `invoke(prompt, response_model)`. Consumers hand over domain inputs
-(a PR, a diff, lessons, a persona) and receive vendor-neutral results. Prompt
-assembly, output-schema definition, and JSON parsing are the plugin's job.
+The Protocol exposes one operation — `review(context)` — not a generic
+`invoke(prompt, response_model)`. Consumers hand over domain inputs (a PR,
+a diff, lessons) and receive vendor-neutral results. Prompt assembly,
+output-schema definition, and JSON parsing are the plugin's job.
+
+The plugin is expected to spawn a single parent reviewer that dispatches
+subagent definitions (shipped under `app/domain/coding_agent/reviewers/`)
+and synthesizes their findings — the plugin owns the orchestration shape,
+not the contract.
 
 Lives in `domain/` (not `core/`) because its types reference `vcs.Finding` and
-related domain models. The plugin contract still resolves through a registry,
-same shape as before.
+related domain models. The plugin contract resolves through a registry.
 """
 
 from __future__ import annotations
@@ -41,38 +45,18 @@ class InvocationTelemetry(BaseModel):
     raw_stderr: str = ""
 
 
-class AgentSpec(BaseModel):
-    name: str
-    prompt_text: str
-    coding_agent_plugin_id: str
-    agent_config: dict[str, Any] = {}
-
-
 class ReviewContext(BaseModel):
-    """Everything a plugin needs to produce a review.
+    """Everything a plugin needs to produce a review of a PR.
 
-    `persona` is the agent row's `prompt_text` — focus/role instructions the
-    plugin weaves into its own review prompt. The plugin owns the structural
-    framing (system message, output schema, etc.); the persona is content.
+    There's no per-agent persona anymore — the plugin spawns a single parent
+    reviewer that dispatches subagents whose definitions ship with yaaos.
     """
 
-    persona: str
-    agent_name: str
     pr: VCSPullRequest
     diff: Diff
     lessons: list[Lesson] = []
     language_hint: str | None = None
     prior_yaaos_comment_bodies: list[str] = []
-    agent_config: dict[str, Any] = {}
-
-
-class ReplyContext(BaseModel):
-    persona: str
-    agent_name: str
-    pr: VCSPullRequest
-    diff: Diff
-    reply_body: str
-    parent_comment_external_id: str
     agent_config: dict[str, Any] = {}
 
 
@@ -86,13 +70,6 @@ class ReviewResult(BaseModel):
     error_message: str | None = None
 
 
-class ReplyResult(BaseModel):
-    status: InvocationStatus
-    body: str | None = None
-    telemetry: InvocationTelemetry = InvocationTelemetry()
-    error_message: str | None = None
-
-
 class ValidationResult(BaseModel):
     valid: bool
     errors: list[str] = []
@@ -102,8 +79,6 @@ class CodingAgentPlugin(Protocol):
     meta: PluginMeta
 
     async def review(self, workspace: Workspace, context: ReviewContext) -> ReviewResult: ...
-
-    async def reply(self, workspace: Workspace, context: ReplyContext) -> ReplyResult: ...
 
     async def validate_config(self, agent_config: dict[str, Any]) -> ValidationResult: ...
 

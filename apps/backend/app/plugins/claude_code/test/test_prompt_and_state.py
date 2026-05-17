@@ -58,8 +58,6 @@ def _ctx(**overrides) -> ReviewContext:
         updated_at=now,
     )
     base = dict(
-        persona="Review the changes.",
-        agent_name="architecture",
         pr=pr,
         diff=Diff(raw="diff --git a/x b/x\n+hi", files=[]),
         lessons=[],
@@ -71,10 +69,10 @@ def _ctx(**overrides) -> ReviewContext:
     return ReviewContext(**base)
 
 
-def test_prompt_includes_agent_header_and_diff() -> None:
+def test_prompt_includes_parent_header_and_diff() -> None:
     out = _assemble_review_prompt(_ctx())
-    assert "# Agent: architecture" in out
-    assert "Review the changes." in out
+    assert "yaaos parent reviewer" in out
+    assert "yaaos-architecture" in out  # parent must know its subagents
     assert "diff --git" in out
     assert "Add widget" in out
 

@@ -13,14 +13,12 @@
 import {
   type Finding,
   type ReviewJob,
-  type ReviewerAgent,
   type Ticket,
   useCancelReviewerJobs,
   useCreateLesson,
   useGithubRepositories,
   useRereviewMutation,
   useReviewJobsForTicket,
-  useReviewerAgents,
   useTicket,
   useTicketAudit,
   useTickets,
@@ -417,20 +415,11 @@ function GroupedList({ tickets }: { tickets: Ticket[] }) {
 
 function VerdictDots({ ticketId }: { ticketId: string }) {
   const { data: jobs } = useReviewJobsForTicket(ticketId);
-  const byAgent: Record<string, ReviewJob | undefined> = {};
-  const { data: agents } = useReviewerAgents();
-  const nameById = new Map((agents ?? []).map((a) => [a.id, a.name] as const));
-  for (const j of jobs ?? []) {
-    if (j.kind !== "review") continue;
-    const name = nameById.get(j.agent_id);
-    if (!name) continue;
-    byAgent[name] = j;
-  }
+  // One review job per ticket now; show its single status dot.
+  const latest = (jobs ?? [])[0];
   return (
     <div className="flex items-center gap-1.5">
-      {["architecture", "security", "style"].map((name) => (
-        <VerdictDot key={name} job={byAgent[name]} />
-      ))}
+      <VerdictDot job={latest} />
     </div>
   );
 }
@@ -509,7 +498,6 @@ export function TicketDetailPage() {
   const { data: ticket } = useTicket(ticketId);
   const { data: jobs } = useReviewJobsForTicket(ticketId);
   const { data: audit } = useTicketAudit(ticketId);
-  const { data: agents } = useReviewerAgents();
   const rereview = useRereviewMutation();
   const cancel = useCancelReviewerJobs();
   const [tab, setTab] = useState<TabKey>("review");
@@ -518,15 +506,9 @@ export function TicketDetailPage() {
     return <div className="mx-auto max-w-[1100px] text-text-3 text-[12.5px]">Loading…</div>;
   }
 
-  const reviewJobs = (jobs ?? []).filter((j) => j.kind === "review");
-  const agentByName = new Map((agents ?? []).map((a) => [a.name, a]));
-  const agentById = new Map((agents ?? []).map((a) => [a.id, a]));
-  const jobsByAgentName: Record<string, ReviewJob | undefined> = {};
-  for (const j of reviewJobs) {
-    const a = agentById.get(j.agent_id);
-    if (a) jobsByAgentName[a.name] = j;
-  }
-  const findingsCount = reviewJobs.reduce((s, j) => s + ((j.findings ?? []).length || 0), 0);
+  // One review job per (ticket, run). Show the most recent.
+  const latest = (jobs ?? [])[0];
+  const findingsCount = (latest?.findings ?? []).length;
 
   return (
     <div className="mx-auto max-w-[1100px] flex flex-col gap-4" data-testid="ticket-detail">
@@ -558,7 +540,7 @@ export function TicketDetailPage() {
       </div>
 
       {tab === "review" ? (
-        <ReviewTab ticket={ticket} jobsByAgent={jobsByAgentName} agentByName={agentByName} />
+        <ReviewTab ticket={ticket} job={latest} />
       ) : (
         <AuditTab audit={audit ?? []} />
       )}
@@ -645,31 +627,13 @@ function TabButton({
   );
 }
 
-function ReviewTab({
-  ticket,
-  jobsByAgent,
-  agentByName,
-}: {
-  ticket: Ticket;
-  jobsByAgent: Record<string, ReviewJob | undefined>;
-  agentByName: Map<string, ReviewerAgent>;
-}) {
-  const order = ["architecture", "security", "style"];
-  const allJobs = order.map((n) => jobsByAgent[n]).filter((j): j is ReviewJob => !!j);
+function ReviewTab({ ticket, job }: { ticket: Ticket; job: ReviewJob | undefined }) {
+  // One review run per ticket. Findings carry source_agent for per-finding attribution.
+  const jobs = job ? [job] : [];
   return (
     <div className="flex flex-col gap-4">
-      <SummaryStrip jobs={allJobs} ticket={ticket} />
-      <div className="flex flex-col gap-3">
-        {order.map((name) => (
-          <AgentCard
-            key={name}
-            agent={agentByName.get(name)}
-            agentName={name}
-            job={jobsByAgent[name]}
-            repoExternalId={ticket.repo_external_id}
-          />
-        ))}
-      </div>
+      <SummaryStrip jobs={jobs} ticket={ticket} />
+      <AgentCard agentName="yaaos" job={job} repoExternalId={ticket.repo_external_id} />
     </div>
   );
 }
@@ -756,12 +720,10 @@ function fmtDuration(seconds: number): string {
 }
 
 function AgentCard({
-  agent,
   agentName,
   job,
   repoExternalId,
 }: {
-  agent: ReviewerAgent | undefined;
   agentName: string;
   job: ReviewJob | undefined;
   repoExternalId: string;
@@ -782,11 +744,9 @@ function AgentCard({
         <AgentAvatar name={agentName} />
         <div className="flex flex-col gap-0.5 flex-1 min-w-0">
           <div className="font-semibold text-[13.5px] capitalize">{agentName}</div>
-          {agent?.prompt_text && (
-            <div className="text-text-4 text-[11px] truncate">
-              {agent.prompt_text.split("\n").find((l) => l.trim()) ?? ""}
-            </div>
-          )}
+          <div className="text-text-4 text-[11px] truncate">
+            yaaos parent reviewer (dispatches yaaos-* subagents)
+          </div>
         </div>
         <AgentStatusBadge status={status} />
       </CardHeader>

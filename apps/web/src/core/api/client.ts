@@ -67,22 +67,13 @@ export type Finding = {
   rationale: string | null;
   snippet: FindingSnippetLine[] | null;
   applied_lesson_ids: string[];
-};
-
-export type ReviewerAgent = {
-  id: string;
-  org_id: string;
-  name: string;
-  prompt_text: string;
-  coding_agent_plugin_id: string;
-  is_built_in: boolean;
+  // Which yaaos subagent surfaced this finding (e.g. "yaaos-architecture").
+  source_agent: string | null;
 };
 
 export type ReviewJob = {
   id: string;
   pr_id: string;
-  agent_id: string;
-  kind: string;
   status: string;
   skip_reason: string | null;
   scheduled_at: string;

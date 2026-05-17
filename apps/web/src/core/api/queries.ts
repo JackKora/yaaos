@@ -5,7 +5,6 @@ import {
   type Lesson,
   type OnboardingStatus,
   type ReviewJob,
-  type ReviewerAgent,
   type Ticket,
   apiClient,
   apiFetch,
@@ -129,36 +128,6 @@ export function useDeleteLesson() {
     mutationFn: (id: string) =>
       apiFetch<{ status: string }>(`/api/memory/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["memory"] }),
-  });
-}
-
-export function useReviewerAgents() {
-  return useQuery<ReviewerAgent[]>({
-    queryKey: ["reviewer", "agents"],
-    queryFn: () => apiFetch<ReviewerAgent[]>("/api/reviewer/agents"),
-  });
-}
-
-export function useUpdateAgentPrompt() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { name: string; prompt_text: string }) =>
-      apiFetch<ReviewerAgent>(`/api/reviewer/agents/${args.name}/prompt`, {
-        method: "PUT",
-        body: JSON.stringify({ prompt_text: args.prompt_text }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["reviewer", "agents"] }),
-  });
-}
-
-export function useResetAgentPrompt() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      apiFetch<ReviewerAgent>(`/api/reviewer/agents/${name}/reset_prompt`, {
-        method: "POST",
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["reviewer", "agents"] }),
   });
 }
 

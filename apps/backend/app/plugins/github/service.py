@@ -326,18 +326,19 @@ class GitHubPlugin:
                     {
                         "path": f.file,
                         "line": f.line_end or f.line_start,
-                        "body": _format_finding_body(review.agent_tag, f),
+                        "body": _format_finding_body(f.source_agent or review.agent_tag, f),
                     }
                 )
                 finding_index_for_comment.append(i)
-        # Summary body collects the agent tag + a one-line title for each finding
-        # that didn't get an inline comment (or as the review body for an APPROVED).
+        # Summary body uses the review-level tag (today: "yaaos"). Each per-line
+        # comment is prefixed by the subagent that surfaced it (`f.source_agent`).
         body_lines = [f"[{review.agent_tag}]"]
         if review.summary_body:
             body_lines.append(review.summary_body)
         for i, f in enumerate(review.findings):
             if i not in set(finding_index_for_comment):
-                body_lines.append(f"- **{f.severity}**: {f.title}\n  {f.body}")
+                tag = f.source_agent or review.agent_tag
+                body_lines.append(f"- **{f.severity}** _[{tag}]_: {f.title}\n  {f.body}")
         review_payload = {
             "body": "\n\n".join(body_lines),
             "event": _review_event_for_state(review.state),

@@ -1,4 +1,8 @@
-"""SQLAlchemy models for reviewer_agents, review_jobs, posted_comments."""
+"""SQLAlchemy models for review_jobs + posted_comments.
+
+One row per (PR x review run). No per-agent decomposition — a single parent
+reviewer dispatches subagents internally; the row records the whole run.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +11,12 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     Numeric,
     String,
-    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -22,26 +24,6 @@ from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-
-
-class ReviewerAgentRow(Base):
-    __tablename__ = "reviewer_agents"
-
-    id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    prompt_text: Mapped[str] = mapped_column(String, nullable=False)
-    coding_agent_plugin_id: Mapped[str] = mapped_column(String, nullable=False, default="claude_code")
-    agent_config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    is_built_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-    __table_args__ = (UniqueConstraint("org_id", "name", name="uq_reviewer_agents_org_name"),)
 
 
 class ReviewJobRow(Base):
@@ -52,18 +34,13 @@ class ReviewJobRow(Base):
     pr_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("pull_requests.id"), nullable=False
     )
-    agent_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), ForeignKey("reviewer_agents.id"), nullable=False
-    )
-    kind: Mapped[str] = mapped_column(String, nullable=False, default="review")
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     # Why this review was scheduled. Values: `pr_ready`, `pr_synchronized`,
     # `rereview_command`, `ui_rereview`. Future: `implementer_loop` once an
     # implementer module exists to call `run_review`.
     triggered_by: Mapped[str] = mapped_column(String, nullable=False, server_default="pr_ready")
     # Where the review result went. `vcs` (today: posted via the VCS plugin).
-    # Future: `caller` when `run_review` returns findings without posting (used
-    # by implementer agents that have no PR to post against yet).
+    # Future: `caller` when `run_review` returns findings without posting.
     destination: Mapped[str] = mapped_column(String, nullable=False, server_default="vcs")
     skip_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     scheduled_at: Mapped[datetime] = mapped_column(
@@ -83,9 +60,9 @@ class ReviewJobRow(Base):
     duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
     review_external_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Each finding object carries a `source_agent` field naming which subagent
+    # surfaced it (e.g. "yaaos-architecture").
     findings: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
-    parent_comment_external_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    reply_body: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -109,9 +86,6 @@ class PostedCommentRow(Base):
     )
     review_job_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("review_jobs.id"), nullable=False
-    )
-    agent_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), ForeignKey("reviewer_agents.id"), nullable=False
     )
     posted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

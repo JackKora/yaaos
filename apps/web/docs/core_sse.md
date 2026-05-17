@@ -46,4 +46,4 @@ None. The `EventSource` is per-mount.
 
 ## How it's tested
 
-End-to-end via `apps/e2e/tests/sse-step-progress-live.spec.ts` — dispatches a webhook, opens the ticket detail page without refreshing, asserts AgentCards transition to `posted` via SSE-driven invalidations alone. No Vitest — mocking `EventSource` would test the mock more than the code.
+End-to-end via `apps/e2e/tests/sse-step-progress-live.spec.ts` — dispatches a webhook, opens the ticket detail page without refreshing, asserts the review card transitions to `posted` via SSE-driven invalidations alone. No Vitest — mocking `EventSource` would test the mock more than the code.

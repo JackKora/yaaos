@@ -101,6 +101,7 @@ _M01_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("002_github_settings_slug", "add_github_settings_slug"),
     ("003_drop_repos_table", "drop_repos_table"),
     ("004_review_jobs_triggered_by_destination", "add_review_jobs_triggered_by_destination"),
+    ("005_drop_reviewer_agents", "drop_reviewer_agents"),
 )
 
 
@@ -194,6 +195,29 @@ async def _apply_add_review_jobs_triggered_by_destination(conn) -> None:  # type
         await conn.execute(text(stmt))
 
 
+async def _apply_drop_reviewer_agents(conn) -> None:  # type: ignore[no-untyped-def]
+    """Collapse the per-agent decomposition: one row per (PR x review run).
+
+    Drops `reviewer_agents` and the FKs that referenced it (`review_jobs.agent_id`,
+    `posted_comments.agent_id`). Also drops the reply-related columns on
+    `review_jobs` (`kind`, `parent_comment_external_id`, `reply_body`) — replies
+    are deferred to a future `review_comments` table.
+
+    Idempotent. CASCADE handles the FK references when dropping the parent table.
+    """
+    statements: list[str] = [
+        # Indexes that reference soon-to-be-dropped columns.
+        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS agent_id",
+        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS kind",
+        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS parent_comment_external_id",
+        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS reply_body",
+        "ALTER TABLE posted_comments DROP COLUMN IF EXISTS agent_id",
+        "DROP TABLE IF EXISTS reviewer_agents CASCADE",
+    ]
+    for stmt in statements:
+        await conn.execute(text(stmt))
+
+
 async def migrate() -> None:
     """Apply any un-applied migrations. Idempotent."""
     await ensure_schema_migrations_table()
@@ -212,6 +236,8 @@ async def migrate() -> None:
                 await _apply_drop_repos_table(conn)
             elif kind == "add_review_jobs_triggered_by_destination":
                 await _apply_add_review_jobs_triggered_by_destination(conn)
+            elif kind == "drop_reviewer_agents":
+                await _apply_drop_reviewer_agents(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

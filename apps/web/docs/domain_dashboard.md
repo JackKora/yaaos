@@ -36,7 +36,7 @@ Header reads "Overview" (one org in M01).
 
 Sparklines and 24h delta indicators are deferred — `/api/reviewer/metrics` returns lifetime aggregates only.
 
-**Live agents · in flight panel** — full-width card listing tickets where `status === "in_review"`. Each row is a `<Link to="/tickets/$ticketId">` with PR number + repo + truncated title, updated-ago, and three agent labels (architecture / security / style) with `status` + `current_step` from `useReviewJobsForTicket(ticket.id)`.
+**Live · in flight panel** — full-width card listing tickets where `status === "in_review"`. Each row is a `<Link to="/tickets/$ticketId">` with PR number + repo + truncated title, updated-ago, and one `yaaos` status badge sourced from the latest review job via `useReviewJobsForTicket(ticket.id)`.
 
 The per-row hook is N+1; TanStack Query dedupes shared keys and the cost is negligible at POC scale. A future `GET /api/dashboard/in-flight` would consolidate. The activity feed from the original design is deferred — `GET /api/dashboard/activity` isn't built.
 

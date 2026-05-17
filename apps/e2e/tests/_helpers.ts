@@ -30,8 +30,8 @@ async function jsonPost(url: string, body: unknown): Promise<Response> {
 }
 
 /** Reset both yaaos's DB and fake-github's in-memory state to a known floor.
- *  After this call: yaaos DB is empty except for the three built-in reviewer
- *  agents; fake-github has its default seeded PRs + repos.
+ *  After this call: yaaos DB is fully empty (reviewer specialists are shipped
+ *  markdown files, not DB rows); fake-github has its default seeded PRs + repos.
  */
 export async function resetStack(): Promise<void> {
   await Promise.all([

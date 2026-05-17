@@ -37,7 +37,7 @@ test("Re-review triggers a fresh batch", async ({ page }) => {
     .poll(() => page.locator('[data-testid^="agent-card-"][data-state="posted"]').count(), {
       timeout: 30_000,
     })
-    .toBe(3);
+    .toBe(1);
   const reviewsBefore = (await postedReviews()).length;
 
   await page.getByTestId("rereview-button").click();

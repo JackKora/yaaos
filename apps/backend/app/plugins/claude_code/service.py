@@ -1,9 +1,9 @@
 """Claude Code CLI wrapper. Implements `domain/coding_agent.CodingAgentPlugin`.
 
 Vendor-only: this module talks to Anthropic's Claude Code CLI and nothing else.
-It owns prompt assembly (system framing + persona + diff/lessons/comments),
-the output JSON schema appendix, subprocess invocation via the workspace, and
-parsing the agent's response into vendor-neutral `vcs.Finding`s.
+It spawns ONE parent reviewer per PR review. The parent dispatches yaaos-*
+subagents (installed by `installer.py` into `~/.claude/agents/`) via the Task
+tool, then synthesizes their findings by re-reading cited code.
 
 Test-mode (stub/replay) wrapping is handled by the `testing/` layer's
 `StubCodingAgentPlugin` — see `app.testing.stub_coding_agent`. The bootstrap
@@ -35,8 +35,6 @@ from app.domain.coding_agent import (
     HealthStatus,
     InvocationStatus,
     InvocationTelemetry,
-    ReplyContext,
-    ReplyResult,
     ReviewContext,
     ReviewResult,
     ValidationResult,
@@ -73,26 +71,52 @@ class _FindingDto(BaseModel):
     rationale: str | None = None
     snippet: list[_FindingSnippetLine] | None = None
     applied_lesson_ids: list[UUID] = []
+    source_agent: str | None = None
 
 
 class _FindingList(BaseModel):
     findings: list[_FindingDto]
 
 
-class _ReplyResponse(BaseModel):
-    body: str
-
-
 # ── Prompt assembly ───────────────────────────────────────────────────────────
+
+# Parent dispatcher prompt. The reviewer that wraps it is one Claude Code
+# subprocess; its job is to (1) decide which yaaos-* subagents apply to this
+# PR, (2) dispatch them in parallel via the Task tool, (3) synthesize their
+# findings by re-reading any cited code, (4) emit one merged JSON.
+#
+# Subagent names are listed explicitly so the parent knows what's available
+# without us needing to scan the install dir at runtime.
+_PARENT_PROMPT_HEADER = """You are the **yaaos parent reviewer**. Your job is to orchestrate a code review of a pull request and produce one synthesized finding list.
+
+You have these subagents available (installed in `~/.claude/agents/`):
+- `yaaos-architecture` — module boundaries, patterns, abstractions, CLAUDE.md adherence (always run)
+- `yaaos-security` — auth, injection, secrets, crypto misuse (always run)
+- `yaaos-line-level` — per-line correctness, idioms, code-level patterns like "no mocks in tests" (always run)
+- `yaaos-tests` — test presence and quality for new behavior (always run)
+- `yaaos-docs` — documentation sync per CLAUDE.md (always run)
+- `yaaos-skill` — Claude Code Skill file validation (run ONLY if the diff touches `**/SKILL.md` or `.claude/skills/**`)
+
+## Your workflow
+
+1. **Read the diff** below to understand what changed.
+2. **Decide which subagents to dispatch.** All five always-on subagents plus `yaaos-skill` if and only if the diff touches a skill file. Do not run unnecessary subagents.
+3. **Dispatch them in parallel via the Task tool**, one Task call per subagent. Give each subagent the same brief: the PR title/body and the diff. Each subagent will return a JSON object with `findings`.
+4. **Collect their findings.** For each finding, tag it with `source_agent` set to the subagent's name (e.g. `"yaaos-architecture"`).
+5. **Synthesize.** Drop duplicates (two subagents finding the same thing — keep the one with better evidence). For each surviving finding, re-read the cited file to confirm the finding is accurate; drop hallucinated findings whose snippet doesn't match what's actually at that location.
+6. **Rank by severity** (must-fix > suggestion > nit > info) within each `source_agent` group.
+7. **Emit the final JSON.** Schema below. No markdown fences, no preamble.
+
+## Output discipline
+
+- Findings must include `source_agent` so downstream code can attribute each comment.
+- Findings must include a verbatim `snippet` (a list of `{line_number, kind, text}` objects from the actual file at HEAD). If you can't produce a verbatim snippet, drop the finding.
+- If no findings survive synthesis, emit `{"findings": []}`.
+"""
 
 
 def _assemble_review_prompt(ctx: ReviewContext) -> str:
-    parts: list[str] = [
-        f"# Agent: {ctx.agent_name}",
-        "",
-        ctx.persona.strip(),
-        "",
-    ]
+    parts: list[str] = [_PARENT_PROMPT_HEADER, ""]
     if ctx.language_hint:
         parts.extend(
             [
@@ -118,7 +142,7 @@ def _assemble_review_prompt(ctx: ReviewContext) -> str:
             [
                 "",
                 "## Lessons learned from past reviews",
-                "Apply these when reviewing this PR.",
+                "Apply these when reviewing this PR. Pass them to each subagent in its task brief.",
                 "",
             ]
         )
@@ -128,24 +152,14 @@ def _assemble_review_prompt(ctx: ReviewContext) -> str:
         parts.extend(
             [
                 "",
-                "## Prior comments from sibling review agents",
-                "Don't duplicate them; build on or disagree.",
+                "## Prior yaaos comments on this PR",
+                "Don't duplicate them in your final synthesis; build on or disagree.",
                 "",
             ]
         )
         for body in ctx.prior_yaaos_comment_bodies[:20]:
             parts.append(f"- {body[:200]}")
     return "\n".join(parts)
-
-
-def _assemble_reply_prompt(ctx: ReplyContext) -> str:
-    return (
-        f"# Agent: {ctx.agent_name}\n\n"
-        f"{ctx.persona.strip()}\n\n"
-        f"A human replied to your earlier comment:\n\n> {ctx.reply_body}\n\n"
-        f"## Diff (for context)\n```diff\n{ctx.diff.raw}\n```\n"
-        "Reply with a short follow-up in JSON form."
-    )
 
 
 def _schema_appendix(response_model: type[BaseModel]) -> str:
@@ -184,6 +198,7 @@ def _dto_to_finding(dto: _FindingDto) -> Finding:
         rationale=dto.rationale,
         snippet=snippet,
         applied_lesson_ids=dto.applied_lesson_ids,
+        source_agent=dto.source_agent,
     )
 
 
@@ -246,43 +261,6 @@ class ClaudeCodePlugin:
             telemetry=telemetry.model_copy(update={"raw_output": agent_text}),
         )
 
-    async def reply(self, workspace: Workspace, context: ReplyContext) -> ReplyResult:
-        prep = await self._prepare_invocation(context.agent_config)
-        if isinstance(prep, ReviewResult):
-            return ReplyResult(
-                status=prep.status,
-                telemetry=prep.telemetry,
-                error_message=prep.error_message,
-            )
-        argv, env, timeout = prep
-
-        full_prompt = _assemble_reply_prompt(context) + _schema_appendix(_ReplyResponse)
-
-        envelope = await self._run_and_parse_envelope(workspace, argv, env, full_prompt, timeout)
-        if isinstance(envelope, ReviewResult):
-            return ReplyResult(
-                status=envelope.status,
-                telemetry=envelope.telemetry,
-                error_message=envelope.error_message,
-            )
-        agent_text, telemetry = envelope
-
-        try:
-            parsed_dict = json.loads(agent_text)
-            parsed = _ReplyResponse.model_validate(parsed_dict)
-        except (json.JSONDecodeError, ValidationError) as e:
-            return ReplyResult(
-                status=InvocationStatus.PARSE_FAILURE,
-                telemetry=telemetry.model_copy(update={"raw_output": agent_text}),
-                error_message=f"agent response didn't match _ReplyResponse: {e}",
-            )
-
-        return ReplyResult(
-            status=InvocationStatus.SUCCESS,
-            body=parsed.body,
-            telemetry=telemetry.model_copy(update={"raw_output": agent_text}),
-        )
-
     async def _prepare_invocation(
         self, agent_config: dict[str, Any]
     ) -> tuple[list[str], dict[str, str], int] | ReviewResult:
@@ -311,7 +289,8 @@ class ClaudeCodePlugin:
             "--print",
             "--output-format=json",
             "--permission-mode=bypassPermissions",
-            "--allowed-tools=Read,Glob,Grep,LS,NotebookRead,TodoWrite,WebFetch,WebSearch",
+            # Task is required so the parent reviewer can dispatch yaaos-* subagents.
+            "--allowed-tools=Read,Glob,Grep,LS,NotebookRead,TodoWrite,WebFetch,WebSearch,Task",
         ]
         if agent_config.get("model"):
             argv += [f"--model={agent_config['model']}"]
@@ -523,9 +502,18 @@ async def _set_anthropic_key(org_id: UUID, raw_key: str) -> None:
 
 def bootstrap() -> None:
     from app.domain.settings import register_onboarding_contributor  # noqa: PLC0415
+    from app.plugins.claude_code.installer import install_subagents  # noqa: PLC0415
 
     register_coding_agent_plugin(_plugin)
     register_onboarding_contributor("anthropic_key_set", _onboarding_anthropic_key_set)
+    # Install yaaos-* subagent definitions so the parent reviewer can dispatch
+    # them via the Task tool. Static files, idempotent — fine to run on every
+    # backend startup. M02+ Docker-workspace isolation will move this per-
+    # workspace; today there's one HOME shared by all reviews.
+    try:
+        install_subagents()
+    except OSError as e:
+        log.warning("claude_code.subagent_install_failed", error=str(e))
 
 
 def get_plugin() -> ClaudeCodePlugin:

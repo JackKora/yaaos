@@ -1,9 +1,10 @@
 """domain/coding_agent — Protocol + registry for coding-agent CLI plugins.
 
-The Protocol exposes targeted methods (`review`, `reply`) — not a generic
-`invoke(prompt, response_model)`. Plugins own prompt assembly + parsing;
-consumers (today: `domain/reviewer`) hand over domain context and read
-domain results.
+The Protocol exposes `review(context)`. Plugins own prompt assembly + parsing;
+consumers (today: `domain/reviewer`) hand over domain context and read domain
+results. Subagent definitions live under `app/domain/coding_agent/reviewers/`
+and are installed into the local Claude Code agent directory by the
+`plugins/claude_code` plugin at bootstrap.
 """
 
 from app.domain.coding_agent.service import (
@@ -13,12 +14,10 @@ from app.domain.coding_agent.service import (
     health_check_all,
     register_coding_agent_plugin,
     registered_plugin_ids,
-    reply,
     review,
     validate_config,
 )
 from app.domain.coding_agent.types import (
-    AgentSpec,
     CodingAgentCacheMiss,
     CodingAgentError,
     CodingAgentPlugin,
@@ -26,8 +25,6 @@ from app.domain.coding_agent.types import (
     InvocationStatus,
     InvocationTelemetry,
     PluginNotFoundError,
-    ReplyContext,
-    ReplyResult,
     ReviewContext,
     ReviewResult,
     ValidationResult,
@@ -35,7 +32,6 @@ from app.domain.coding_agent.types import (
 
 __all__ = [
     "_PLUGINS",
-    "AgentSpec",
     "CodingAgentCacheMiss",
     "CodingAgentError",
     "CodingAgentPlugin",
@@ -43,8 +39,6 @@ __all__ = [
     "InvocationStatus",
     "InvocationTelemetry",
     "PluginNotFoundError",
-    "ReplyContext",
-    "ReplyResult",
     "ReviewContext",
     "ReviewResult",
     "ValidationResult",
@@ -53,7 +47,6 @@ __all__ = [
     "health_check_all",
     "register_coding_agent_plugin",
     "registered_plugin_ids",
-    "reply",
     "review",
     "validate_config",
 ]

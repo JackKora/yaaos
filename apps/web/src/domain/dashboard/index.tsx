@@ -1,11 +1,9 @@
 import {
   type OnboardingStatus,
-  type ReviewerAgent,
   type Ticket,
   useMetricsSummary,
   useOnboarding,
   useReviewJobsForTicket,
-  useReviewerAgents,
   useTickets,
 } from "@core/api";
 import { Badge, Button, Card, CardContent, CardHeader } from "@shared/components";
@@ -140,7 +138,6 @@ function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
 function DashboardPopulated() {
   const { data: metrics } = useMetricsSummary();
   const { data: tickets } = useTickets();
-  const { data: agents } = useReviewerAgents();
   const inFlight = (tickets ?? []).filter((t) => t.status === "in_review");
   const openInReview = inFlight.length;
 
@@ -184,7 +181,7 @@ function DashboardPopulated() {
           ) : (
             <ul data-testid="dashboard-inflight">
               {inFlight.map((t) => (
-                <LiveTicketRow key={t.id} ticket={t} agents={agents ?? []} />
+                <LiveTicketRow key={t.id} ticket={t} />
               ))}
             </ul>
           )}
@@ -204,10 +201,9 @@ function MetricTile({ label, value, sub }: { label: string; value: string; sub: 
   );
 }
 
-function LiveTicketRow({ ticket, agents }: { ticket: Ticket; agents: ReviewerAgent[] }) {
+function LiveTicketRow({ ticket }: { ticket: Ticket }) {
   const { data: jobs } = useReviewJobsForTicket(ticket.id);
-  const idToName = new Map(agents.map((a) => [a.id, a.name] as const));
-  const reviewJobs = (jobs ?? []).filter((j) => j.kind === "review");
+  const latest = (jobs ?? [])[0];
   return (
     <li className="border-t border-border-soft first:border-t-0">
       <Link
@@ -225,16 +221,10 @@ function LiveTicketRow({ ticket, agents }: { ticket: Ticket; agents: ReviewerAge
           <span className="text-text-4 mono text-[11px] flex-none">{ago(ticket.updated_at)}</span>
         </div>
         <div className="flex items-center gap-6 text-[11.5px]">
-          {reviewJobs.length === 0 ? (
+          {!latest ? (
             <span className="text-text-4 text-[11px] mono">no jobs yet</span>
           ) : (
-            reviewJobs.map((j) => (
-              <AgentInline
-                key={j.id}
-                name={idToName.get(j.agent_id) ?? j.agent_id.slice(0, 6)}
-                status={j.status}
-              />
-            ))
+            <AgentInline name="yaaos" status={latest.status} />
           )}
         </div>
       </Link>
