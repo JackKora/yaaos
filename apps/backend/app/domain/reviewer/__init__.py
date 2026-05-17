@@ -61,6 +61,16 @@ from app.domain.reviewer.queue import (
 )
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.repository_protocol import AggregateRepository
+from app.domain.reviewer.trigger import (
+    Debounce,
+    Run,
+    Skip,
+    SkipReason,
+    TriggerDecision,
+    TriggerInputs,
+    decide_trigger,
+    humanize_skip,
+)
 from app.domain.reviewer.types import (
     AckKind,
     AcknowledgmentDecision,
@@ -94,6 +104,7 @@ __all__ = [
     "CommentReplyReceived",
     "CommentThread",
     "CommentThreadRow",
+    "Debounce",
     "DomainEvent",
     "Finding",
     "FindingAcknowledged",
@@ -125,11 +136,18 @@ __all__ = [
     "ReviewStarted",
     "ReviewSuperseded",
     "ReviewTrigger",
+    "Run",
     "Severity",
+    "Skip",
+    "SkipReason",
     "SqlAlchemyAggregateRepository",
+    "TriggerDecision",
+    "TriggerInputs",
     "acquire_pr_lock",
     "cancel_pending",
+    "decide_trigger",
     "get_review_job",
+    "humanize_skip",
     "list_in_flight",
     "list_review_jobs_for_pr",
     "metrics_summary",
