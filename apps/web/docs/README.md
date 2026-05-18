@@ -39,7 +39,7 @@ Under `apps/web/src/`: `core/` (api, sse, routing, layout, observability), `doma
 
 ## CI
 
-`apps/web/bin/ci` runs Biome format-check + lint, `tsc --noEmit`, Vitest, the Vite production build, and `semgrep scan` (rulesets `p/typescript` + `p/react` + `p/owasp-top-ten`). Semgrep is invoked through the backend's uv venv (`uv run --directory ../backend semgrep`) so the version is pinned alongside other backend dev deps. `.semgrepignore` at repo root excludes `node_modules`, `dist`, and other vendored/generated paths.
+`apps/web/bin/ci` runs Biome format-check + lint, `tsc --noEmit`, Vitest, and the Vite production build. Semgrep static security scanning lives in its own RWX task (`web-security` in `.rwx/push.yml`) using the official `semgrep/semgrep` Docker image — kept out of `bin/ci` because the web-builder image is node-only (no Python) and the web pipeline must not depend on the backend pipeline's artifacts. Local dev shortcut: `cd apps/web && uv run --directory ../backend semgrep scan --config p/typescript --config p/react --config p/owasp-top-ten --error --metrics off --quiet src` — reuses the semgrep already installed in the backend's uv venv as a convenience (not a structural dependency; the rulesets and target are entirely web-specific). Full docker-image invocation also documented inline in `apps/web/bin/ci`.
 
 ## Stack
 

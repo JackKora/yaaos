@@ -12,6 +12,16 @@ Anchored in AWS IAM. At startup the workspace fetches a cryptographically signed
 
 Yaaos's marketplace GitHub App provides scoped, short-lived installation tokens for repository access. The App's private key is the only long-lived secret yaaos holds; it sits in KMS-managed storage with audit logging on every retrieval.
 
+## Sessions
+
+All yaaos sessions — browser and workspace agent — are **opaque, server-side, revocable** tokens. No yaaos-issued JWTs. The token is 32 bytes of randomness, stored hashed in Postgres alongside `user_id` or `workspace_id`, `current_org_id`, `created_at`, `last_seen_at`, `expires_at`, `ip`, `user_agent`. Lookup is one indexed query per request. Revocation is row deletion (logout, role change, suspicious activity, admin force-logout).
+
+For browser sessions the cookie is `HttpOnly`, `Secure`, `SameSite=Lax`. Lax preserves the shared-link UX (clicking a yaaos URL from Slack/email opens logged in) while still blocking cross-site state-changing requests; explicit anti-CSRF tokens (double-submit) protect all state-changing endpoints as belt-and-suspenders.
+
+For workspace agents the initial AWS-signed identity blob is exchanged for an opaque session token; the workspace stores it in memory and sends it on every subsequent call. Expiry forces re-bootstrap against AWS — cheap, and ensures the workspace's underlying IAM trust is still valid.
+
+JWTs are reserved for tokens **signed by external systems** that yaaos verifies — AWS STS / OIDC identity blobs at the workspace bootstrap, GitHub webhook HMAC signatures. Yaaos itself never issues JWTs, eliminating signing-key rotation, `alg: none` attacks, and the inability-to-revoke-before-expiry problem.
+
 ## Workspace lifecycle and scaling
 
 Workspaces are long-running ECS workers that the customer deploys and sizes. The control plane never calls customer-side AWS APIs in the default model — it only adds work to a per-org queue. Agents poll over outbound HTTPS, pick up jobs, and post results back.

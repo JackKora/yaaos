@@ -55,6 +55,7 @@ tasks:
         -v "$(pwd)/docker:/app/docker:ro" \
         -v "$(pwd)/plan:/app/plan:ro" \
         -v "$(pwd)/CLAUDE.md:/app/CLAUDE.md:ro" \
+        -v "$(pwd)/.semgrepignore:/app/apps/backend/.semgrepignore:ro" \
         -v "$(pwd)/apps/web/docs:/app/apps/web/docs:ro" \
         -v "$(pwd)/apps/e2e/docs:/app/apps/e2e/docs:ro" \
         -v "$(pwd)/apps/fake-github/docs:/app/apps/fake-github/docs:ro" \
@@ -84,3 +85,25 @@ tasks:
           options:
             language: JavaScript
             framework: Vitest
+
+  - key: web-security
+    use: [code]
+    docker: true
+    # Semgrep scan against the web source. Runs in the OFFICIAL
+    # `semgrep/semgrep` Docker image — no dependency on the backend image
+    # or its dev deps. The web-builder Docker stage is node-only and can't
+    # host semgrep directly; the official image is the cleanest way to run
+    # the scanner without coupling the web pipeline to backend tooling.
+    run: |
+      docker run --rm \
+        -v "$(pwd)/apps/web/src:/scan/src:ro" \
+        -v "$(pwd)/.semgrepignore:/scan/.semgrepignore:ro" \
+        -w /scan \
+        semgrep/semgrep:latest semgrep scan \
+          --config p/typescript \
+          --config p/react \
+          --config p/owasp-top-ten \
+          --error \
+          --metrics off \
+          --quiet \
+          /scan/src
