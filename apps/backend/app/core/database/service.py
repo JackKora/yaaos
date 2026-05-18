@@ -208,15 +208,34 @@ async def _apply_drop_repos_table(conn) -> None:  # type: ignore[no-untyped-def]
         await conn.execute(text(stmt))
 
 
+async def _table_exists(conn, name: str) -> bool:  # type: ignore[no-untyped-def]
+    """True iff a table with the given name lives in the current search_path.
+
+    Used by the legacy `review_jobs` / `posted_comments` migrations: those
+    tables existed in pre-cutover schemas but `001_create_all` now produces
+    the post-cutover `reviews` table directly, so the ALTERs would target a
+    table that was never created. Migration 008 (`reviews_cutover`) is the
+    drop-and-recreate point.
+    """
+    result = await conn.execute(
+        text("SELECT 1 FROM information_schema.tables WHERE table_name = :n"),
+        {"n": name},
+    )
+    return result.scalar() is not None
+
+
 async def _apply_add_review_jobs_triggered_by_destination(conn) -> None:  # type: ignore[no-untyped-def]
     """Promote audit-only `trigger_reason` into a queryable column and add
     `destination` so future `run_review` callers can be distinguished from
     today's `schedule_review → post-to-VCS` flow.
 
-    Idempotent — works on fresh DBs (where `create_all` already added the
-    columns from the model) and on existing DBs where this migration is the
-    first time they appear.
+    No-op on fresh DBs (post-cutover `001_create_all` produces `reviews`, not
+    `review_jobs` — and `008_reviews_cutover` drops the old table anyway).
+    On legacy DBs that ran 001 against the pre-cutover model, idempotently
+    adds the two columns.
     """
+    if not await _table_exists(conn, "review_jobs"):
+        return
     statements: list[str] = [
         "ALTER TABLE review_jobs ADD COLUMN IF NOT EXISTS triggered_by TEXT NOT NULL DEFAULT 'pr_ready'",
         "ALTER TABLE review_jobs ADD COLUMN IF NOT EXISTS destination TEXT NOT NULL DEFAULT 'vcs'",
@@ -233,8 +252,10 @@ async def _apply_add_review_jobs_activity_log_model_effort(conn) -> None:  # typ
     completion). Cost tracking is removed — the data we'd persist isn't
     authoritative pricing.
 
-    Idempotent.
+    No-op on fresh DBs — see `_apply_add_review_jobs_triggered_by_destination`.
     """
+    if not await _table_exists(conn, "review_jobs"):
+        return
     statements: list[str] = [
         "ALTER TABLE review_jobs ADD COLUMN IF NOT EXISTS activity_log JSONB NOT NULL DEFAULT '[]'::jsonb",
         "ALTER TABLE review_jobs ADD COLUMN IF NOT EXISTS model TEXT",
@@ -253,17 +274,25 @@ async def _apply_drop_reviewer_agents(conn) -> None:  # type: ignore[no-untyped-
     `review_jobs` (`kind`, `parent_comment_external_id`, `reply_body`) — replies
     are deferred to a future `review_comments` table.
 
-    Idempotent. CASCADE handles the FK references when dropping the parent table.
+    No-op on fresh DBs — neither `review_jobs` nor `posted_comments` exists
+    post-cutover. Idempotent for legacy DBs.
     """
-    statements: list[str] = [
-        # Indexes that reference soon-to-be-dropped columns.
-        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS agent_id",
-        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS kind",
-        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS parent_comment_external_id",
-        "ALTER TABLE review_jobs DROP COLUMN IF EXISTS reply_body",
-        "ALTER TABLE posted_comments DROP COLUMN IF EXISTS agent_id",
-        "DROP TABLE IF EXISTS reviewer_agents CASCADE",
-    ]
+    has_review_jobs = await _table_exists(conn, "review_jobs")
+    has_posted_comments = await _table_exists(conn, "posted_comments")
+    statements: list[str] = []
+    if has_review_jobs:
+        statements.extend(
+            [
+                "ALTER TABLE review_jobs DROP COLUMN IF EXISTS agent_id",
+                "ALTER TABLE review_jobs DROP COLUMN IF EXISTS kind",
+                "ALTER TABLE review_jobs DROP COLUMN IF EXISTS parent_comment_external_id",
+                "ALTER TABLE review_jobs DROP COLUMN IF EXISTS reply_body",
+            ]
+        )
+    if has_posted_comments:
+        statements.append("ALTER TABLE posted_comments DROP COLUMN IF EXISTS agent_id")
+    # `reviewer_agents` itself uses IF EXISTS — safe regardless.
+    statements.append("DROP TABLE IF EXISTS reviewer_agents CASCADE")
     for stmt in statements:
         await conn.execute(text(stmt))
 
