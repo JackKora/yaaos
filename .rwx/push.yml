@@ -50,6 +50,7 @@ tasks:
       docker run --rm \
         --network yaaos-test_default \
         -e DATABASE_URL=postgresql+asyncpg://yaaos:yaaos@postgres:5432/yaaos \
+        -e YAAOS_ENV=dev \
         -v "$(pwd)/docs:/app/docs:ro" \
         -v "$(pwd)/docker:/app/docker:ro" \
         -v "$(pwd)/plan:/app/plan:ro" \

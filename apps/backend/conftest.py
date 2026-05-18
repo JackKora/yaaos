@@ -12,7 +12,12 @@ import pytest_asyncio
 # Set test env vars BEFORE any app imports so module-level `get_settings()` works.
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://yaaos:yaaos@localhost:5432/yaaos_test")
 os.environ.setdefault("YAAOS_ENCRYPTION_KEY", "vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI=")
-os.environ.setdefault("YAAOS_ENV", "dev")
+# YAAOS_ENV must be `dev` for tests — `get_engine()` switches to NullPool in
+# dev mode, which is what keeps the transactional-rollback fixture safe across
+# pytest-asyncio's per-test event loops. The `backend-ci` Docker stage
+# inherits `YAAOS_ENV=prod` from the prod base; force the override here so
+# the test invocation environment doesn't leak prod-pool semantics in.
+os.environ["YAAOS_ENV"] = "dev"
 os.environ.setdefault("YAAOS_CODING_AGENT_STUB", "1")
 os.environ.setdefault("YAAOS_REVIEW_DEBOUNCE_SECONDS", "0")
 os.environ.setdefault("YAAOS_REAPER_INTERVAL_SECONDS", "1")
