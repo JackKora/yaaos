@@ -74,6 +74,7 @@ class _BootstrapOwnerRequest(BaseModel):
     github_id: str = Field(..., min_length=1)
     org_slug: str = Field(..., min_length=1)
     display_name: str = Field(default="Owner")
+    provider: str = Field(default="github")
 
 
 @router.post("/seed/bootstrap_owner")
@@ -85,6 +86,7 @@ async def seed_bootstrap_owner(req: _BootstrapOwnerRequest) -> dict[str, str]:
         github_id=req.github_id,
         org_slug=req.org_slug,
         display_name=req.display_name,
+        provider=req.provider,
     )
     return {"status": "seeded", **ids}
 

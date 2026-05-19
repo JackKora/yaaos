@@ -113,20 +113,17 @@ def _install_middleware(app: FastAPI) -> None:
     app.add_middleware(AuthMiddleware)
 
     # M02 Phase 13: slowapi rate limiting. Per-IP on /api/auth/* (anonymous
-    # endpoints); per-user on mutating /api/* paths. Limits live in
-    # core/auth/types.py; disabled in `test` env to keep the suite fast.
-    if settings.yaaos_env != "test":
-        from slowapi import Limiter, _rate_limit_exceeded_handler  # noqa: PLC0415
+    # endpoints); per-user on mutating /api/* paths. Limits live on
+    # individual route decorators (`@limiter.limit(AUTH_LIMIT)`). Only
+    # mounted in `prod` so dev + Playwright suites aren't throttled.
+    if settings.yaaos_env == "prod":
+        from slowapi import _rate_limit_exceeded_handler  # noqa: PLC0415
         from slowapi.errors import RateLimitExceeded  # noqa: PLC0415
         from slowapi.middleware import SlowAPIMiddleware  # noqa: PLC0415
-        from slowapi.util import get_remote_address  # noqa: PLC0415
 
-        def _per_user_key(request: Request) -> str:
-            cookie = request.cookies.get("yaaos_session", "")
-            return f"u:{cookie}" if cookie else f"ip:{get_remote_address(request)}"
+        from app.core.auth.rate_limit import limiter as _limiter  # noqa: PLC0415
 
-        limiter = Limiter(key_func=_per_user_key, default_limits=[])
-        app.state.limiter = limiter
+        app.state.limiter = _limiter
         app.add_middleware(SlowAPIMiddleware)
         app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

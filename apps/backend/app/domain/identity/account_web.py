@@ -17,10 +17,11 @@ from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Cookie, Depends, HTTPException
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.core.auth.context import user_id_var
+from app.core.auth.rate_limit import MUTATE_LIMIT, limiter
 from app.core.auth.types import Action
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
@@ -69,7 +70,9 @@ async def list_emails() -> list[EmailView]:
 
 
 @router.post("/emails", dependencies=[Depends(_require_account())])
+@limiter.limit(MUTATE_LIMIT)
 async def add_email(
+    request: Request,
     body: _AddEmailRequest,
     yaaos_csrf: Annotated[str | None, Cookie()] = None,
 ) -> EmailView:
@@ -87,7 +90,8 @@ async def add_email(
 
 
 @router.delete("/emails/{email_id}", dependencies=[Depends(_require_account())])
-async def remove_email(email_id: UUID) -> dict[str, str]:
+@limiter.limit(MUTATE_LIMIT)
+async def remove_email(request: Request, email_id: UUID) -> dict[str, str]:
     from sqlalchemy import select  # noqa: PLC0415
 
     from app.domain.identity import repository as identity_repo  # noqa: PLC0415

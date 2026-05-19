@@ -159,11 +159,18 @@ def is_dev_env() -> bool:
 
 
 async def seed_bootstrap_owner(
-    *, email: str, github_id: str, org_slug: str, display_name: str = "Owner"
+    *,
+    email: str,
+    github_id: str,
+    org_slug: str,
+    display_name: str = "Owner",
+    provider: str = "github",
 ) -> dict[str, str]:
-    """Mint user + verified email + GitHub oauth_identity + org + Owner
+    """Mint user + verified email + oauth_identity + org + Owner
     membership in a single transaction. Idempotent against the same
-    `(email, github_id, org_slug)`."""
+    `(email, external_subject, org_slug)`. The provider defaults to
+    `github`; tests using the `oauth_test` stub pass `provider="test"`
+    so the subsequent test-stub login matches by identity."""
     from datetime import UTC, datetime  # noqa: PLC0415
     from uuid import uuid4 as _uuid4  # noqa: PLC0415
 
@@ -187,7 +194,7 @@ async def seed_bootstrap_owner(
             OAuthIdentityRow(
                 id=_uuid4(),
                 user_id=user.id,
-                provider="github",
+                provider=provider,
                 external_subject=str(github_id),
                 verified_at=datetime.now(UTC),
             )
@@ -208,9 +215,10 @@ async def seed_bootstrap_owner(
 
 
 async def seed_user_with_session(*, email: str, raw_session_token: str) -> str:
-    """Create a user + a session row whose token hashes to `raw_session_token`.
-    Caller sets the `yaaos_session` cookie to `raw_session_token` and the
-    backend resolves the session normally."""
+    """Bind `raw_session_token` to the user identified by `email`. Creates
+    the user + verified primary email if missing. Caller sets the
+    `yaaos_session` cookie to `raw_session_token` and the backend resolves
+    the session normally."""
     from datetime import UTC, datetime, timedelta  # noqa: PLC0415
     from uuid import uuid4 as _uuid4  # noqa: PLC0415
 
@@ -222,18 +230,22 @@ async def seed_user_with_session(*, email: str, raw_session_token: str) -> str:
     )
 
     async with db_session() as s:
-        user = UserRow(id=_uuid4(), display_name=email.split("@", 1)[0])
-        s.add(user)
-        await s.flush()
-        s.add(
-            UserEmailRow(
-                id=_uuid4(),
-                user_id=user.id,
-                email=email.lower(),
-                is_primary=True,
-                verified_at=datetime.now(UTC),
+        existing = await identity_repo.find_user_by_email(s, email)
+        if existing is not None:
+            user = existing
+        else:
+            user = UserRow(id=_uuid4(), display_name=email.split("@", 1)[0])
+            s.add(user)
+            await s.flush()
+            s.add(
+                UserEmailRow(
+                    id=_uuid4(),
+                    user_id=user.id,
+                    email=email.lower(),
+                    is_primary=True,
+                    verified_at=datetime.now(UTC),
+                )
             )
-        )
         s.add(
             SessionRow(
                 token_hash=identity_repo.hash_token(raw_session_token),

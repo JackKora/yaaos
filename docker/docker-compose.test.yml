@@ -36,7 +36,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://yaaos:yaaos@postgres:5432/yaaos
       YAAOS_ENCRYPTION_KEY: vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI=
-      YAAOS_ENV: dev
+      YAAOS_ENV: test
       GITHUB_API_BASE_URL: http://fake-github:8080
       YAAOS_CODING_AGENT_STUB: "1"
       YAAOS_REVIEW_DEBOUNCE_SECONDS: "0"

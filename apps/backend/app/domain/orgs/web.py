@@ -19,10 +19,11 @@ from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Cookie, Depends, HTTPException
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.core.auth.context import org_id_var, user_id_var
+from app.core.auth.rate_limit import AUTH_LIMIT, MUTATE_LIMIT, limiter
 from app.core.auth.types import Action
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
@@ -95,7 +96,8 @@ async def list_members() -> list[MemberView]:
 
 
 @router.post("/invite", dependencies=[Depends(require(Action.MEMBERS_INVITE))])
-async def invite_member(body: InviteRequest) -> InviteResponse:
+@limiter.limit(MUTATE_LIMIT)
+async def invite_member(request: Request, body: InviteRequest) -> InviteResponse:
     org_id = org_id_var.get()
     if org_id is None:
         raise _err(400, "no_org_context")
@@ -119,7 +121,9 @@ async def invite_member(body: InviteRequest) -> InviteResponse:
 
 
 @router.post("/accept", dependencies=[Depends(public_route)])
+@limiter.limit(AUTH_LIMIT)
 async def accept_invitation(
+    request: Request,
     body: AcceptRequest,
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> Membership:
@@ -147,7 +151,8 @@ async def accept_invitation(
 
 
 @router.delete("/{target_user_id}", dependencies=[Depends(require(Action.MEMBERS_REMOVE))])
-async def remove_member(target_user_id: UUID) -> dict[str, str]:
+@limiter.limit(MUTATE_LIMIT)
+async def remove_member(request: Request, target_user_id: UUID) -> dict[str, str]:
     org_id = org_id_var.get()
     if org_id is None:
         raise _err(400, "no_org_context")
@@ -159,7 +164,8 @@ async def remove_member(target_user_id: UUID) -> dict[str, str]:
 
 
 @router.patch("/{target_user_id}", dependencies=[Depends(require(Action.MEMBERS_CHANGE_ROLE))])
-async def change_role(target_user_id: UUID, body: ChangeRoleRequest) -> Membership:
+@limiter.limit(MUTATE_LIMIT)
+async def change_role(request: Request, target_user_id: UUID, body: ChangeRoleRequest) -> Membership:
     org_id = org_id_var.get()
     if org_id is None:
         raise _err(400, "no_org_context")

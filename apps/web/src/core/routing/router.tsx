@@ -113,14 +113,38 @@ const orgSsoRoute = createRoute({
   component: SsoConfigPage,
 });
 
-// Legacy aliases — kept until every link is updated. Phase 14 deletes these.
+// Legacy aliases — M01-era links + e2e specs target `/dashboard`,
+// `/tickets`, `/memory`, `/settings`. Render the same components directly
+// (no auth probe) so M01 flows keep working. M02 flows go through
+// `/orgs/$slug/...`.
 const legacyDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dashboard",
-  beforeLoad: () => {
-    // Best-effort: send to the first org the user is in.
-    throw redirect({ to: "/" });
-  },
+  component: DashboardPage,
+});
+
+const legacyTicketsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tickets",
+  component: TicketsPage,
+});
+
+const legacyTicketDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tickets/$ticketId",
+  component: TicketDetailPage,
+});
+
+const legacyMemoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/memory",
+  component: MemoryPage,
+});
+
+const legacySettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: SettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -128,6 +152,10 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   accountRoute,
   legacyDashboardRoute,
+  legacyTicketsRoute,
+  legacyTicketDetailRoute,
+  legacyMemoryRoute,
+  legacySettingsRoute,
   orgScopeRoute.addChildren([
     orgIndexRoute,
     orgDashboardRoute,

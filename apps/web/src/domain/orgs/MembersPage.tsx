@@ -1,6 +1,7 @@
 import { apiFetch } from "@core/api";
 import { Badge, Button, Card, CardContent, CardHeader } from "@shared/components";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 type Role = "owner" | "admin" | "member";
@@ -75,7 +76,11 @@ function useRemoveMember(orgSlug: string | null) {
  * page reads from `window.location` so devs can preview at `/members?org=...`.
  */
 export function MembersPage(props: { orgSlug?: string }) {
-  const orgSlug = props.orgSlug ?? new URLSearchParams(window.location.search).get("org");
+  // Route is `/orgs/$slug/members` — params.slug carries the org slug.
+  // Fallback to a prop or to `?org=` for ad-hoc preview at `/members`.
+  const params = useParams({ strict: false }) as { slug?: string };
+  const orgSlug =
+    props.orgSlug ?? params.slug ?? new URLSearchParams(window.location.search).get("org");
   const { data, isLoading, error } = useMembers(orgSlug);
   const invite = useInvite(orgSlug);
   const changeRole = useChangeRole(orgSlug);

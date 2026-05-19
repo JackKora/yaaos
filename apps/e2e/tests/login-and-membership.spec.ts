@@ -9,7 +9,7 @@
 
 import { expect, test } from "@playwright/test";
 
-const BASE = process.env.BASE_URL ?? "http://localhost:8080";
+const BASE = process.env.YAAOS_BASE_URL ?? "http://localhost:58080";
 
 test.describe("auth + members", () => {
   test("login → invite → accept → change role → logout-all", async ({ page, request }) => {
@@ -21,6 +21,7 @@ test.describe("auth + members", () => {
         github_id: "1001",
         org_slug: "acme",
         display_name: "Owner",
+        provider: "test",
       },
     });
     // Stage the oauth_test profile that will be returned on callback.
@@ -42,6 +43,12 @@ test.describe("auth + members", () => {
     await page.locator('input[type="email"]').fill("bob@example.com");
     await page.getByTestId("invite-role").selectOption("member");
     await page.getByRole("button", { name: "Invite" }).click();
+    // Wait for the network roundtrip (mutation + reload) before pulling the
+    // test inbox, otherwise the invite-send may not have hit SMTP yet.
+    await page.waitForResponse(
+      (resp) => resp.url().includes("/api/memberships/invite") && resp.status() === 200,
+      { timeout: 10_000 },
+    );
 
     // Fetch the raw invitation token from the test inbox.
     const inboxResp = await request.get(`${BASE}/api/testing/email_inbox`);

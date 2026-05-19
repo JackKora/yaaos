@@ -51,6 +51,16 @@ class StubWorkspaceProvider:
                     f"repo={spec.repo.external_id}\n"
                     f"sha={spec.sha}\n"
                 )
+            # The stub coding agent emits a finding anchored to
+            # `src/example.ts`. Real workspaces would have cloned this
+            # from the PR; the stub workspace pre-writes a placeholder so
+            # the reviewer's anchor + fingerprint hashes succeed and the
+            # finding isn't dropped via `findingdraft_dropped_no_file`.
+            os.makedirs(os.path.join(working_dir, "src"), exist_ok=True)
+            with open(
+                os.path.join(working_dir, "src", "example.ts"), "w", encoding="utf-8"
+            ) as f:
+                f.write("// stub workspace placeholder for finding anchors\nexport {};\n")
         except OSError:
             pass
         return {"working_dir": working_dir}

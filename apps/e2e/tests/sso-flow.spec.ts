@@ -9,7 +9,8 @@
 
 import { expect, test } from "@playwright/test";
 
-const BASE = process.env.BASE_URL ?? "http://localhost:8080";
+const BASE = process.env.YAAOS_BASE_URL ?? "http://localhost:58080";
+const OWNER_SESSION = "owner-sso-cookie";
 
 test.describe("SAML SSO", () => {
   test("enable → block without SSO → satisfy → JIT create", async ({ request }) => {
@@ -22,9 +23,13 @@ test.describe("SAML SSO", () => {
         display_name: "SSO Owner",
       },
     });
+    // Bind the bootstrapped Owner to a known session cookie so we can
+    // authenticate the PUT /api/sso/config call below.
+    await request.post(`${BASE}/api/testing/seed/user_with_session`, {
+      data: { email: "owner@sso.test", session_cookie: OWNER_SESSION },
+    });
 
-    // Owner enables SSO + JIT via the config endpoint. The middleware path is
-    // skipped for the Owner here because we configure first then enforce.
+    // Owner enables SSO + JIT via the config endpoint.
     const enable = await request.put(`${BASE}/api/sso/config`, {
       data: {
         idp_metadata_xml: "<EntityDescriptor>fake</EntityDescriptor>",
@@ -32,7 +37,10 @@ test.describe("SAML SSO", () => {
         enabled: true,
         exempt_owner_user_id: null,
       },
-      headers: { "X-Org-Slug": "ssoacme" },
+      headers: {
+        "X-Org-Slug": "ssoacme",
+        cookie: `yaaos_session=${OWNER_SESSION}`,
+      },
     });
     expect(enable.status()).toBe(200);
 
@@ -44,6 +52,7 @@ test.describe("SAML SSO", () => {
 
     const acs = await request.post(`${BASE}/api/sso/ssoacme/acs`, {
       data: { SAMLResponse: token },
+      maxRedirects: 0,
     });
     expect([302, 303]).toContain(acs.status());
   });

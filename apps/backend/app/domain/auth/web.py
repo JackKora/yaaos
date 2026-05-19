@@ -39,7 +39,7 @@ from app.core.auth.cookies import (
     csrf_cookie_attrs,
     session_cookie_attrs,
 )
-from app.core.auth.rate_limit import AUTH_LIMIT, limiter
+from app.core.auth.rate_limit import AUTH_LIMIT, MUTATE_LIMIT, limiter
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.primitives import Actor
@@ -261,7 +261,9 @@ async def callback(
 
 
 @router.post("/logout", dependencies=[Depends(public_route)])
+@limiter.limit(MUTATE_LIMIT)
 async def logout(
+    request: Request,
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> Response:
     if yaaos_session:
@@ -278,7 +280,9 @@ async def logout(
 
 
 @router.post("/logout-all", dependencies=[Depends(public_route)])
+@limiter.limit(MUTATE_LIMIT)
 async def logout_all(
+    request: Request,
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> Response:
     """Revoke every session for the user behind the current cookie. The
@@ -369,7 +373,9 @@ class _TotpVerifyRequest(BaseModel):
 
 
 @router.post("/totp/enroll", dependencies=[Depends(public_route)])
+@limiter.limit(MUTATE_LIMIT)
 async def totp_enroll(
+    request: Request,
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> Response:
     """Mint a fresh (unverified) TOTP secret for the cookie-bearer. Returns
@@ -392,6 +398,7 @@ async def totp_enroll(
 
 
 @router.post("/totp/challenge", dependencies=[Depends(public_route)])
+@limiter.limit(AUTH_LIMIT)
 async def totp_challenge(
     body: _TotpVerifyRequest,
     request: Request,
@@ -442,7 +449,9 @@ async def totp_challenge(
 
 
 @router.post("/totp/verify", dependencies=[Depends(public_route)])
+@limiter.limit(MUTATE_LIMIT)
 async def totp_verify(
+    request: Request,
     body: _TotpVerifyRequest,
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> Response:

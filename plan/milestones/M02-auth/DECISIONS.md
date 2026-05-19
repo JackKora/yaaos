@@ -133,3 +133,43 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Alternatives considered**: leave it in `domain/auth` and ban legacy routers from declaring (back to non-default-deny); add explicit tach exceptions per legacy module (noisy).
 - **Why this one**: `public_route` is pure infrastructure — sets a single contextvar. It belongs in core. Compat re-export keeps existing imports working.
 - **Reversal cost**: trivial.
+
+### Post-milestone audit — rate-limit decorators on every mutating + auth route; enabled only in `prod`
+
+- **Certainty**: 3/5
+- **Decision**: Every `POST`/`PUT`/`PATCH`/`DELETE` route under `/api/auth/`, `/api/memberships/`, `/api/account/`, `/api/sso/` now carries `@limiter.limit(AUTH_LIMIT|MUTATE_LIMIT)`. `core/auth/rate_limit.limiter` is enabled only when `yaaos_env == "prod"` — dev and test skip the throttle so the Playwright suite + manual dev testing aren't artificially limited.
+- **Alternatives considered**: enable in `dev` too — but the M01 e2e suite fires many requests per second per IP and would hit the 30/min auth bucket immediately.
+- **Why this one**: covers the spec line "rate limiter on `/api/auth/*` (per-IP) and all mutating `/api/*` endpoints (per-user)" without breaking the test suite.
+- **Reversal cost**: trivial — flip `_enabled()`.
+
+### Post-milestone audit — `apiFetch` auto-injects `X-CSRF-Token` on mutating requests
+
+- **Certainty**: 3/5
+- **Decision**: The SPA's `apiFetch` reads `document.cookie['yaaos_csrf']` and adds it as `X-CSRF-Token` on every `POST`/`PUT`/`PATCH`/`DELETE` unless the caller supplied one. Implements the double-submit half the spec requires (the cookie carries the random token; the SPA echoes it via header). Without this every mutation from the UI 403'd post-login.
+- **Alternatives considered**: require every caller to thread CSRF manually; have the backend skip CSRF for `same-site` cookies. Manual is error-prone; same-site relax weakens defense-in-depth.
+- **Why this one**: matches the spec's stated double-submit pattern with zero ceremony at the call site.
+- **Reversal cost**: trivial.
+
+### Post-milestone audit — legacy `/dashboard` (and friends) render the page directly, not a redirect
+
+- **Certainty**: 2/5
+- **Decision**: The router has BOTH `/dashboard` (legacy alias) and `/orgs/$slug/dashboard` (M02 canonical). Legacy renders `DashboardPage` directly; M02 path enforces the `/orgs/$slug` scope. Same for `/tickets`, `/tickets/$ticketId`, `/memory`, `/settings`. M01 e2e specs that target `/dashboard` directly keep working; M02 flows go through `/orgs/$slug/...`.
+- **Alternatives considered**: delete legacy aliases — breaks ~10 M01 e2e specs without rewriting them. Redirect-only — same problem (M01 specs don't auth themselves first).
+- **Why this one**: the dashboard page itself reads no org-scoped state on initial render (it shows onboarding status from a public endpoint). Letting it render at both paths is a low-risk way to keep M01 flows alive while M02 ships its own URL shape.
+- **Reversal cost**: low — delete the legacy aliases when the M01 e2e specs are rewritten.
+
+### Post-milestone audit — `docker-compose.test.yml` `YAAOS_ENV=test`, not `dev`
+
+- **Certainty**: 3/5
+- **Decision**: The e2e docker stack now sets `YAAOS_ENV=test`. The `oauth_test` and `saml_test` plugins are env-gated to exactly `"test"`; the previous `dev` setup loaded them in test paths only when launched via pytest (which sets `YAAOS_ENV=test` in `conftest.py`). The Playwright suite was running against `dev`, which means the test stubs weren't registered, and any spec hitting `/api/auth/providers` or `/api/sso/{slug}/acs` failed.
+- **Alternatives considered**: broaden the env gate to `!= "prod"` and let dev load the stubs (risky — dev sees a working test provider, which can mask real OAuth flow bugs); have the e2e CI export `YAAOS_ENV=test` itself (works, but the compose file should be the single source of truth for the test stack's env).
+- **Why this one**: the compose file IS the test stack's env config. The plugins want `test`. Now they match.
+- **Reversal cost**: trivial.
+
+### Post-milestone audit — `seed_user_with_session` reuses existing user when email matches
+
+- **Certainty**: 3/5
+- **Decision**: `app/testing/e2e_setup/service.seed_user_with_session` now looks up the user by email first; only creates a new one when there's no match. Specs that bootstrap an Owner via `seed_bootstrap_owner` then bind a session to the same email no longer fail with a unique-email constraint.
+- **Alternatives considered**: have specs always delete + re-seed (verbose); merge `seed_bootstrap_owner` and `seed_user_with_session` (changes the shape of two helpers that have different jobs).
+- **Why this one**: keeps the helpers tightly scoped — "seed user with session" should be idempotent against pre-existing users.
+- **Reversal cost**: trivial.

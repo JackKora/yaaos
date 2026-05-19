@@ -18,8 +18,12 @@ export function Sidebar() {
   const { location } = useRouterState();
   const active = location.pathname;
   const slug = getCurrentOrgSlug();
-  // Org-scoped pages require a slug; without one the sidebar collapses.
-  const nav = slug ? NAV.map((n) => ({ ...n, path: `/orgs/${slug}${n.suffix}` })) : [];
+  // Org-scoped paths when we have a slug; legacy aliases (Members hidden)
+  // when we don't, so legacy M01-era flows + e2e specs that hit
+  // `/dashboard` directly still see usable nav links.
+  const nav = slug
+    ? NAV.map((n) => ({ ...n, path: `/orgs/${slug}${n.suffix}` }))
+    : NAV.filter((n) => n.suffix !== "/members").map((n) => ({ ...n, path: n.suffix }));
 
   const togglePin = () => {
     const next = !pinned;

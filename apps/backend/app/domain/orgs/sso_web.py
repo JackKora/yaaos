@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from app.core.audit_log import audit as audit_write
 from app.core.auth.context import org_id_var
+from app.core.auth.rate_limit import AUTH_LIMIT, MUTATE_LIMIT, limiter
 from app.core.auth.types import Action
 from app.core.config import get_settings
 from app.core.database import session as db_session
@@ -88,10 +89,11 @@ async def sso_login_start(slug: str) -> Response:
 
 
 @router.post("/{slug}/acs")
+@limiter.limit(AUTH_LIMIT)
 async def sso_acs(
+    request: Request,
     slug: str,
     body: _AssertionBody,
-    request: Request,
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> Response:
     """Assertion Consumer Service. Verifies the SAML response (real or stub),
@@ -219,7 +221,8 @@ async def get_org_sso_config() -> dict:
 
 
 @router.put("/config", dependencies=[Depends(_require_sso_configure())])
-async def upsert_org_sso_config(body: _SsoConfigBody) -> dict:
+@limiter.limit(MUTATE_LIMIT)
+async def upsert_org_sso_config(request: Request, body: _SsoConfigBody) -> dict:
     """Upsert per-org SSO config. The exempt-Owner picker requires the
     candidate to have a verified TOTP secret — otherwise reject with
     `exempt_owner_no_totp`. Phase 11 helper enforces. Writes a
