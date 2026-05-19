@@ -34,6 +34,18 @@ dependencies = [
     # so non-eval callers don't pay for them.
     "braintrust>=0.4",
     "braintrust-langchain>=0.1",
+    # M02 — auth stack.
+    # authlib: OAuth/OIDC client used by plugins/oauth_github.
+    # python3-saml: SAML 2.0 (SP-initiated only) — requires libxmlsec1-dev
+    # + xmlsec1 system packages, installed in docker/Dockerfile.
+    # itsdangerous: signed invitation tokens + GitHub install state.
+    # pyotp: TOTP fallback for 2FA.
+    # slowapi: rate limiting on /api/auth/* + mutating endpoints.
+    "authlib>=1.3",
+    "python3-saml>=1.16",
+    "itsdangerous>=2.2",
+    "pyotp>=2.9",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]

@@ -38,6 +38,7 @@ RUN apt-get update \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code \
+    && apt-get install -y --no-install-recommends libxmlsec1-dev xmlsec1 pkg-config libxml2-dev libxslt1-dev \
     && apt-get purge -y --auto-remove curl gnupg \
     && rm -rf /var/lib/apt/lists/*
 

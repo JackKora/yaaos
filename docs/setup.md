@@ -19,6 +19,14 @@ How to get yaaos running. Covers the Docker stack (recommended) and the no-Docke
 
 The full env-var list is in [`apps/backend/docs/core_config.md`](../apps/backend/docs/core_config.md).
 
+### GitHub OAuth (M02)
+
+Dev login uses a real GitHub OAuth App — credentials provisioned out-of-band and pasted into `.env` as `OAUTH_GITHUB_CLIENT_ID` + `OAUTH_GITHUB_CLIENT_SECRET`. The callback URL is the dev origin's `/api/auth/callback/github`. Production uses its own App.
+
+### Dev mail (Mailpit)
+
+The dev overlay (`docker-compose.dev.yml`) starts [Mailpit](https://mailpit.axllent.org/) — a local SMTP sink that catches invitation emails and any other outbound mail. Web UI at <http://localhost:8025>. SMTP on `:1025`; backend points `SMTP_HOST`/`SMTP_PORT` there in dev. No real mail is ever sent in dev.
+
 ## 2. Bring up the stack
 
 From the repo root:

@@ -72,7 +72,11 @@ Polling (5s / 3s) remains as a safety net.
 One append-only `audit_log` table owned by `core/audit_log` records business-meaningful state changes. Row carries `{id, org_id, created_at, entity_kind, entity_id, kind ("<entity>.<verb_past>"), payload (Pydantic-validated JSONB), actor}`. Reads never write. Progress steps go to structlog, not audit. Each domain module writes its own entries.
 
 ### Org scoping
-Every domain function takes `org_id` kwarg; every query filters by it. One org today; discipline makes future RBAC a check, not a refactor.
+Every domain function takes `org_id` kwarg; every query filters by it. Multi-org from M02 onward; per-request org comes from the `X-Org-Slug` header (HTTP) or the `org_context()` async-context-manager (background jobs).
+
+### Identity & access
+
+Users, orgs, memberships, sessions, OAuth + SAML SSO live in `domain/identity` + `domain/orgs`. `core/auth` owns the security middleware: every `/api/*` route declares its security via `Depends(require(action))` or `Depends(public_route)`; the middleware enforces `X-Org-Slug` resolution, sets contextvars (`org_id`, `user_id`, `actor_kind`, `actor_id`), and 500s the response if no route declared security. Sessions are opaque server-side rows (sha256-hashed tokens), `HttpOnly; SameSite=Lax; Secure`-flagged cookies, double-submit CSRF on mutations. SSO satisfaction tracked per-session per-org with an 8-hour TTL. Background jobs open `org_context(org_id, actor_kind, actor_id)` to set the same contextvars + OTel + structlog fields the HTTP middleware sets. Per-module deep dives land under `apps/backend/docs/` as each module ships.
 
 ### Secrets at rest
 Plugin credentials encrypted in their plugin's settings table via `cryptography.Fernet` keyed by `YAAOS_ENCRYPTION_KEY`. Decrypt only at the call site. Never logged, echoed in errors, or placed in audit payloads.
