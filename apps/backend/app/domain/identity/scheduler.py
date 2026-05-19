@@ -1,5 +1,6 @@
-"""Periodic cleanup of expired sessions, expired invitations, and
-unverified-TOTP secrets older than 24h.
+"""Periodic cleanup of expired sessions, expired invitations,
+unverified-TOTP secrets older than 24h, and audit-log entries older
+than `AUDIT_LOG_RETENTION`.
 
 Single background loop owned by `domain/identity`. Spawned in the FastAPI
 lifespan via the module's `RouteSpec.on_startup` hook (see `web.py`).
@@ -13,7 +14,9 @@ from datetime import UTC, datetime, timedelta
 import structlog
 from sqlalchemy import delete as sql_delete
 
+from app.core.audit_log import purge_older_than as purge_audit_older_than
 from app.core.config import get_settings
+from app.core.constants import AUDIT_LOG_RETENTION
 from app.core.database import session as db_session
 from app.domain.identity import sessions
 from app.domain.identity.models import UserTotpSecretRow
@@ -62,6 +65,10 @@ async def _purge_expired_sessions() -> int:
         return n
 
 
+async def _purge_old_audit_entries() -> int:
+    return await purge_audit_older_than(datetime.now(UTC) - AUDIT_LOG_RETENTION)
+
+
 async def run_cleanup_loop() -> None:
     """Forever-loop: every `yaaos_auth_cleanup_interval_seconds`, purge.
 
@@ -73,12 +80,14 @@ async def run_cleanup_loop() -> None:
             sessions_purged = await _purge_expired_sessions()
             invitations_purged = await _purge_expired_invitations()
             totps_purged = await _purge_stale_unverified_totp_secrets()
-            if sessions_purged or invitations_purged or totps_purged:
+            audit_purged = await _purge_old_audit_entries()
+            if sessions_purged or invitations_purged or totps_purged or audit_purged:
                 log.info(
                     "identity.cleanup.ran",
                     sessions_purged=sessions_purged,
                     invitations_purged=invitations_purged,
                     totps_purged=totps_purged,
+                    audit_purged=audit_purged,
                 )
         except Exception:
             log.exception("identity.cleanup.failed")

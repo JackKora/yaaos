@@ -28,9 +28,11 @@ from app.domain import identity, orgs  # noqa: F401, E402
 from app.core import auth  # noqa: F401, E402
 from app.domain import auth as _domain_auth  # noqa: F401, E402
 
-# Register `/api/memberships/*` after both `domain.orgs` and `domain.auth` are
-# loaded — `orgs.web` imports `domain.auth.dependencies`, which imports back
-# into `domain.orgs`, so the cycle must break here, not in `orgs/__init__`.
+# Register `/api/memberships/*` and `/api/audit/*` after both `domain.orgs`
+# and `domain.auth` are loaded — `orgs.web` imports `domain.auth.dependencies`,
+# which imports back into `domain.orgs`, so the cycle must break here, not in
+# `orgs/__init__`.
+from app.domain.orgs import audit_web as _orgs_audit_web  # noqa: F401, E402
 from app.domain.orgs import web as _orgs_web  # noqa: F401, E402
 
 # 6. Domain modules — order: types first (vcs, memory), then coding_agent

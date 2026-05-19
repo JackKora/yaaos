@@ -29,7 +29,9 @@ import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from pydantic import BaseModel
 
+from app.core.audit_log import audit as audit_write
 from app.core.auth.cookies import (
     CSRF_COOKIE_NAME,
     SESSION_COOKIE_NAME,
@@ -39,6 +41,7 @@ from app.core.auth.cookies import (
 )
 from app.core.config import get_settings
 from app.core.database import session as db_session
+from app.core.primitives import Actor
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.auth.dependencies import public_route
 from app.domain.identity import sessions as session_lifecycle
@@ -169,6 +172,12 @@ async def callback(
                 ip=request.client.host if request.client else None,
                 user_agent=request.headers.get("user-agent"),
             )
+            await _emit_login_audit(
+                s,
+                user_id=login_result.user.id,
+                provider=provider,
+                newly_created=login_result.newly_created,
+            )
             await s.commit()
     except HardRejectError:
         return JSONResponse(
@@ -211,6 +220,9 @@ async def logout(
 ) -> Response:
     if yaaos_session:
         async with db_session() as s:
+            session = await session_lifecycle.lookup(s, yaaos_session)
+            if session and session.user_id is not None:
+                await _emit_logout_audit(s, user_id=session.user_id, kind="logout")
             await session_lifecycle.revoke(s, yaaos_session)
             await s.commit()
     resp = JSONResponse(content={"ok": True})
@@ -307,6 +319,53 @@ def _set_session_cookies(resp: Response, created: session_lifecycle.CreatedSessi
     max_age = get_settings().yaaos_session_lifetime_seconds
     resp.set_cookie(value=created.raw_token, **session_cookie_attrs(max_age_seconds=max_age))
     resp.set_cookie(value=created.csrf_token, **csrf_cookie_attrs(max_age_seconds=max_age))
+
+
+# Audit emission for user-global events (login, logout, link). The audit_log
+# row schema requires `org_id`; we write one row per org the user is a member
+# of. Users with zero memberships emit nothing — there's no org to attribute
+# the event to.
+class _LoginAuditPayload(BaseModel):
+    provider: str
+    newly_created: bool
+
+
+class _LogoutAuditPayload(BaseModel):
+    kind: str  # "logout" | "logout_all"
+
+
+async def _emit_login_audit(s, *, user_id, provider: str, newly_created: bool) -> None:
+    from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
+
+    memberships = await orgs_repo.list_memberships_for_user(s, user_id)
+    actor = Actor.user(user_id=user_id)
+    for m in memberships:
+        await audit_write(
+            "user",
+            user_id,
+            "logged_in",
+            _LoginAuditPayload(provider=provider, newly_created=newly_created),
+            actor,
+            org_id=m.org_id,
+            session=s,
+        )
+
+
+async def _emit_logout_audit(s, *, user_id, kind: str = "logout") -> None:
+    from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
+
+    memberships = await orgs_repo.list_memberships_for_user(s, user_id)
+    actor = Actor.user(user_id=user_id)
+    for m in memberships:
+        await audit_write(
+            "user",
+            user_id,
+            kind,
+            _LogoutAuditPayload(kind=kind),
+            actor,
+            org_id=m.org_id,
+            session=s,
+        )
 
 
 register_routes(RouteSpec(module_name="auth", router=router))

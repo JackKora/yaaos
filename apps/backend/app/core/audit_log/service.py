@@ -230,3 +230,51 @@ async def get(entry_id: UUID, *, org_id: UUID) -> AuditEntry:
         if row is None:
             raise AuditEntryNotFoundError(str(entry_id))
         return AuditEntry.from_row(row)
+
+
+async def list_for_org(
+    *,
+    org_id: UUID,
+    actor_kinds: list[str] | None = None,
+    actions: list[str] | None = None,
+    before_ts: datetime | None = None,
+    after_ts: datetime | None = None,
+    limit: int = 50,
+) -> list[AuditEntry]:
+    """Cross-entity org-scoped feed for the Audit page (Owners/Admins).
+
+    Filters by `actor_kinds`, `actions` (matches `kind` column), and a
+    `created_at` window. Newest first; capped at 500 per page.
+    """
+    capped_limit = max(1, min(limit, 500))
+    async with get_session() as s:
+        stmt = (
+            select(AuditEntryRow)
+            .where(AuditEntryRow.org_id == org_id)
+            .order_by(AuditEntryRow.created_at.desc())
+            .limit(capped_limit)
+        )
+        if actor_kinds:
+            stmt = stmt.where(AuditEntryRow.actor_kind.in_(actor_kinds))
+        if actions:
+            stmt = stmt.where(AuditEntryRow.kind.in_(actions))
+        if before_ts is not None:
+            stmt = stmt.where(AuditEntryRow.created_at < before_ts)
+        if after_ts is not None:
+            stmt = stmt.where(AuditEntryRow.created_at >= after_ts)
+        rows = (await s.execute(stmt)).scalars().all()
+        return [AuditEntry.from_row(r) for r in rows]
+
+
+async def purge_older_than(cutoff: datetime) -> int:
+    """Delete `audit_entries` rows with `created_at < cutoff`. Returns
+    count purged. Used by the daily retention task."""
+    from sqlalchemy import delete as sql_delete  # noqa: PLC0415
+
+    async with get_session() as s:
+        result = await s.execute(
+            sql_delete(AuditEntryRow).where(AuditEntryRow.created_at < cutoff).returning(AuditEntryRow.id)
+        )
+        n = len(result.all())
+        await s.commit()
+        return n

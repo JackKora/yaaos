@@ -3,7 +3,7 @@ import { AppShell } from "@core/layout";
 import { AccountPage, LoginPage } from "@domain/auth";
 import { DashboardPage } from "@domain/dashboard";
 import { MemoryPage } from "@domain/memory";
-import { MembersPage } from "@domain/orgs";
+import { AuditPage, MembersPage } from "@domain/orgs";
 import { SettingsPage } from "@domain/settings";
 import { TicketDetailPage, TicketsPage } from "@domain/tickets";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
@@ -101,6 +101,12 @@ const orgMembersRoute = createRoute({
   component: MembersPage,
 });
 
+const orgAuditRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/audit",
+  component: AuditPage,
+});
+
 // Legacy aliases — kept until every link is updated. Phase 14 deletes these.
 const legacyDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -124,6 +130,7 @@ const routeTree = rootRoute.addChildren([
     orgMemoryRoute,
     orgSettingsRoute,
     orgMembersRoute,
+    orgAuditRoute,
   ]),
 ]);
 
