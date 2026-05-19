@@ -112,6 +112,24 @@ def _install_middleware(app: FastAPI) -> None:
 
     app.add_middleware(AuthMiddleware)
 
+    # M02 Phase 13: slowapi rate limiting. Per-IP on /api/auth/* (anonymous
+    # endpoints); per-user on mutating /api/* paths. Limits live in
+    # core/auth/types.py; disabled in `test` env to keep the suite fast.
+    if settings.yaaos_env != "test":
+        from slowapi import Limiter, _rate_limit_exceeded_handler  # noqa: PLC0415
+        from slowapi.errors import RateLimitExceeded  # noqa: PLC0415
+        from slowapi.middleware import SlowAPIMiddleware  # noqa: PLC0415
+        from slowapi.util import get_remote_address  # noqa: PLC0415
+
+        def _per_user_key(request: Request) -> str:
+            cookie = request.cookies.get("yaaos_session", "")
+            return f"u:{cookie}" if cookie else f"ip:{get_remote_address(request)}"
+
+        limiter = Limiter(key_func=_per_user_key, default_limits=[])
+        app.state.limiter = limiter
+        app.add_middleware(SlowAPIMiddleware)
+        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
     # Unhandled-exception handler — log + return JSON 500.
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
@@ -119,8 +137,31 @@ def _install_middleware(app: FastAPI) -> None:
         return JSONResponse(status_code=500, content={"error": "internal_server_error"})
 
 
+def _check_required_prod_secrets() -> None:
+    """In `prod`, refuse to start when any required secret is at its dev
+    default. `dev`/`test` get to boot with stubs so the suite + onboarding
+    flow keep working."""
+    s = get_settings()
+    if s.yaaos_env != "prod":
+        return
+    missing: list[str] = []
+    if s.yaaos_oauth_state_secret == "dev-only-oauth-state-secret":
+        missing.append("YAAOS_OAUTH_STATE_SECRET")
+    if s.yaaos_invitation_token_secret == "dev-only-invitation-secret":
+        missing.append("YAAOS_INVITATION_TOKEN_SECRET")
+    if not s.yaaos_oauth_github_client_id:
+        missing.append("YAAOS_OAUTH_GITHUB_CLIENT_ID")
+    if not s.yaaos_oauth_github_client_secret:
+        missing.append("YAAOS_OAUTH_GITHUB_CLIENT_SECRET")
+    if not s.yaaos_totp_master_key:
+        missing.append("YAAOS_TOTP_MASTER_KEY")
+    if missing:
+        raise RuntimeError(f"yaaos refuses to start in prod with missing/stub secrets: {', '.join(missing)}")
+
+
 def create_app() -> FastAPI:
     """FastAPI app factory. Called from main.py after all module imports have run."""
+    _check_required_prod_secrets()
     app = FastAPI(title="yaaos", version="0.0.1", lifespan=_lifespan)
     _install_middleware(app)
     return app

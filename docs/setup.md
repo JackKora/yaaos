@@ -23,6 +23,24 @@ The full env-var list is in [`apps/backend/docs/core_config.md`](../apps/backend
 
 Dev login uses a real GitHub OAuth App — credentials provisioned out-of-band and pasted into `.env` as `OAUTH_GITHUB_CLIENT_ID` + `OAUTH_GITHUB_CLIENT_SECRET`. The callback URL is the dev origin's `/api/auth/callback/github`. Production uses its own App.
 
+### M02 env vars (full inventory)
+
+Required in prod; defaults shipped for dev/test:
+
+| Var | Purpose |
+|---|---|
+| `YAAOS_ENCRYPTION_KEY` | Fernet, 32-byte URL-safe base64. Encrypts plugin credentials + (fallback) TOTP/SAML keys. |
+| `YAAOS_TOTP_MASTER_KEY` | Fernet, 32-byte URL-safe base64. Encrypts TOTP secrets + SP private keys. Falls back to `YAAOS_ENCRYPTION_KEY` in non-prod. |
+| `YAAOS_OAUTH_STATE_SECRET` | itsdangerous secret for OAuth `state`, link-pending, TOTP-challenge, GitHub-install state, SAML stub assertions. Rotate on suspected compromise. |
+| `YAAOS_INVITATION_TOKEN_SECRET` | itsdangerous secret for invitation tokens (7-day TTL). |
+| `YAAOS_OAUTH_GITHUB_CLIENT_ID` / `YAAOS_OAUTH_GITHUB_CLIENT_SECRET` | GitHub OAuth App (separate from the GitHub App that handles webhooks). |
+| `YAAOS_APP_BASE_URL` | Public origin of this deployment. Used in invitation + SAML ACS URLs. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` / `SMTP_USE_TLS` | Outbound mail (invitations). Dev → Mailpit (`localhost:1025`). |
+| `YAAOS_SESSION_LIFETIME_SECONDS` | Session cookie lifetime; default 14 days. |
+| `YAAOS_AUTH_CLEANUP_INTERVAL_SECONDS` | Cleanup loop tick; default 1h. Purges expired sessions + invitations + audit (`AUDIT_LOG_RETENTION` = 30d). |
+
+The backend refuses to start in `prod` with any *required* secret unset; dev/test boot with stub defaults.
+
 ### Dev mail (Mailpit)
 
 The dev overlay (`docker-compose.dev.yml`) starts [Mailpit](https://mailpit.axllent.org/) — a local SMTP sink that catches invitation emails and any other outbound mail. Web UI at <http://localhost:8025>. SMTP on `:1025`; backend points `SMTP_HOST`/`SMTP_PORT` there in dev. No real mail is ever sent in dev.

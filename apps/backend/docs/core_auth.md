@@ -62,6 +62,19 @@ The vars reset to `None` at the start of every request so a leak from one reques
 
 Phase 1 ships the minimum: sets all four identity vars + `route_security_resolved = "background"` and resets them on exit. Phase 9 layers in the OTel span attrs + structlog `bind_contextvars` so background-job logs and traces carry the same fields HTTP requests do.
 
+### Rate limiting (M02 Phase 13)
+
+`slowapi` wraps the ASGI app in `prod`/`dev`; skipped in `test`. Limits are per-key with two keys:
+
+- **Per-IP** on `/api/auth/*` — anonymous endpoints (`/login`, `/callback/*`, `/totp/challenge`, `/providers`). Default: 30/minute. Catches credential-stuffing + replay.
+- **Per-user** on mutating `/api/*` — every `POST`/`PUT`/`PATCH`/`DELETE` keyed by the `yaaos_session` cookie value (falls back to per-IP for anonymous mutations). Default: 120/minute.
+
+Limits live as `@limiter.limit("...")` decorators on handlers in M02+; the global default is empty so legacy routes don't suddenly throttle. Exceeded → 429 `Retry-After: <s>`.
+
+### Secret hygiene (M02 Phase 13)
+
+`create_app()` calls `_check_required_prod_secrets()` before mounting middleware. In `prod`, missing/stub values for `YAAOS_OAUTH_STATE_SECRET`, `YAAOS_INVITATION_TOKEN_SECRET`, `YAAOS_OAUTH_GITHUB_CLIENT_ID`, `YAAOS_OAUTH_GITHUB_CLIENT_SECRET`, or `YAAOS_TOTP_MASTER_KEY` raise `RuntimeError` at boot. Dev/test boot with the bundled defaults. See [`docs/runbooks/secret-rotation.md`](../../../docs/runbooks/secret-rotation.md) for rotation procedure.
+
 ## Data owned
 
 None.
