@@ -30,19 +30,19 @@
 
 ## Phase 2 — core/auth + middleware
 
-- [ ] `core/auth` module created with `context.py`, `dependencies.py`, `middleware.py`, `module.py`, `__init__.py`
-- [ ] Contextvars defined: `org_id`, `user_id`, `actor_kind`, `actor_id`, `route_security_resolved`
-- [ ] `require(action)` dependency factory implemented; resolves `X-Org-Slug` → membership, checks role, sets contextvars
-- [ ] `public_route` dependency implemented; sets `route_security_resolved` without auth
-- [ ] Middleware rejects `/api/*` requests missing `X-Org-Slug` (allowlist: `/api/auth/*`, `/api/health`) with 400
-- [ ] Middleware post-response guard: 500 + log if `route_security_resolved` unset
-- [ ] OTel span attributes `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind` set in middleware
-- [ ] structlog contextvars processor configured for the same fields
-- [ ] Error-shape helper: 401 unauthenticated, 403 wrong role, 404 unknown-or-forbidden org slug
-- [ ] Integration tests cover: missing header → 400, unknown slug → 404, wrong role → 403, success → 200, missing dependency → 500
-- [ ] `apps/backend/docs/core_auth.md` written
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `core/auth` module created with `context.py`, `middleware.py`, `module.py`, `__init__.py`, `types.py` (the dependency factories live in `domain/auth` — see DECISIONS, layering forbids `core → domain`)
+- [x] Contextvars defined: `org_id`, `user_id`, `actor_kind`, `actor_id`, `route_security_resolved`
+- [x] `require(action)` dependency factory implemented in `domain/auth`; resolves `X-Org-Slug` → membership, checks role, sets contextvars
+- [x] `public_route` dependency implemented in `domain/auth`; sets `route_security_resolved` without auth
+- [x] Middleware rejects `/api/*` requests missing `X-Org-Slug` on M02-protected prefixes (allowlist: `/api/auth/*`, `/api/health`) with 400; legacy prefixes pass through (Phase 14 expands the protected set)
+- [x] Middleware post-response guard: 500 + log if `route_security_resolved` unset on a 2xx response (4xx/5xx pass through unchanged to avoid masking dep-raised 401/403/404 with a misleading 500)
+- [x] OTel span attributes `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind` set in middleware
+- [x] structlog contextvars processor configured for the same fields (Phase 9 will extend `org_context()` with `bind_contextvars`)
+- [x] Error-shape helper: 401 unauthenticated, 403 wrong role, 404 unknown-or-forbidden org slug
+- [x] Integration tests cover: missing header → 400, unknown slug → 404, wrong role → 403, success → 200, missing dependency → 500
+- [x] `apps/backend/docs/core_auth.md` written (+ `apps/backend/docs/domain_auth.md`)
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 3 — sessions
 
