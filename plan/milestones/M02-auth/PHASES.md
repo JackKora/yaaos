@@ -127,16 +127,16 @@
 
 ## Phase 9 — background-job context
 
-- [ ] `core/auth/context.py` exports `org_context(org_id, actor_kind, actor_id=None)` async context manager
-- [ ] `org_context` sets the same contextvars + OTel span attrs + structlog vars as HTTP middleware
-- [ ] GitHub poller wraps each org's poll in `org_context(...)`
-- [ ] Reviewer worker wraps each review in `org_context(...)` with appropriate `actor_kind`
-- [ ] Scheduler cleanup jobs wrap their work in `org_context(..., actor_kind=system)`
-- [ ] Audit entries written from background jobs have correct `actor_kind` (`workspace` for reviewer, `system` for scheduler)
-- [ ] `apps/backend/docs/patterns.md` documents the rule: any function reading from an org-scoped table must either assert `org_id` contextvar is set or take `org_id` as an explicit parameter
-- [ ] Tests: contextvar propagation through `asyncio.create_task`; missing context raises in assertion-mode functions
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `core/auth/context.py` exports `org_context(org_id, actor_kind, actor_id=None)` async context manager
+- [x] `org_context` sets the same contextvars + OTel span attrs + structlog vars as HTTP middleware
+- [x] GitHub poller wraps each org's poll in `org_context(...)`
+- [x] Reviewer worker wraps each review in `org_context(...)` with appropriate `actor_kind`
+- [x] Scheduler cleanup jobs wrap their work in `org_context(..., actor_kind=system)`
+- [x] Audit entries written from background jobs have correct `actor_kind` (`workspace` for reviewer, `system` for scheduler)
+- [x] `apps/backend/docs/patterns.md` documents the rule: any function reading from an org-scoped table must either assert `org_id` contextvar is set or take `org_id` as an explicit parameter
+- [x] Tests: contextvar propagation through `asyncio.create_task`; missing context raises in assertion-mode functions
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 10 — GitHub App org binding
 
