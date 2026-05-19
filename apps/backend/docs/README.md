@@ -9,7 +9,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 
 ## Module map
 
-23 modules: **9 core · 8 domain · 3 plugins · 3 testing**. Each has a doc with five fixed sections.
+27 modules: **10 core · 10 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections.
 
 ### Core — infrastructure, no business logic
 
@@ -24,6 +24,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [core_observability](core_observability.md) | structlog + conditional OTel SDK. |
 | [core_primitives](core_primitives.md) | `Actor`, `PluginMeta`, `spawn()`. |
 | [core_llm](core_llm.md) | Direct LLM call mechanics: `FilePrompt`, `PromptRunnable`, gateway routing. |
+| [core_auth](core_auth.md) | M02 default-deny middleware, contextvars, `Action` enum, `org_context()`. |
 
 ### Domain — business logic, vendor-neutral
 
@@ -37,6 +38,9 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [domain_reviewer](domain_reviewer.md) | `ReviewJob` aggregate, per-PR queue, workflow. |
 | [domain_intake](domain_intake.md) | Inbound VCS event router; filters drafts/forks/bots. |
 | [domain_settings](domain_settings.md) | Onboarding-status aggregator + plugin discovery. |
+| [domain_identity](domain_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP (M02). |
+| [domain_orgs](domain_orgs.md) | Orgs, memberships, roles, invitations, SSO config (M02). |
+| [domain_auth](domain_auth.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints (M02). |
 
 ### Plugins — vendor-specific implementations
 
@@ -45,6 +49,8 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [plugins_github](plugins_github.md) | `VCSPlugin` for GitHub: App auth, HMAC, REST, Manifest Flow, catch-up poller. |
 | [plugins_claude_code](plugins_claude_code.md) | `CodingAgentPlugin` wrapping the Claude Code CLI. |
 | [plugins_in_process_workspace](plugins_in_process_workspace.md) | `WorkspaceProvider` using tempdir + git clone (POC). |
+| [plugins_oauth_github](plugins_oauth_github.md) | `Provider` for GitHub OAuth. Authorization-code flow + userinfo. |
+| [plugins_oauth_test](plugins_oauth_test.md) | Test-only `Provider` stub; refuses to load outside `YAAOS_ENV=test`. |
 
 ### Testing — scaffolding, stripped from prod wheels
 

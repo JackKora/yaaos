@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     )
 
     # Optional
-    yaaos_env: Literal["dev", "prod"] = "prod"
+    yaaos_env: Literal["dev", "test", "prod"] = "prod"
     yaaos_port: int = 8080
     yaaos_cors_origins: str | None = None  # comma-separated; only honored in non-dev
     otel_exporter_otlp_endpoint: str | None = None
@@ -70,9 +70,25 @@ class Settings(BaseSettings):
     yaaos_session_lifetime_seconds: int = 60 * 60 * 24 * 14  # 14 days
     yaaos_auth_cleanup_interval_seconds: int = 60 * 60  # 1 hour
 
+    # M02 — OAuth GitHub credentials. Required in `prod`; defaults let `dev`
+    # boot without provisioning. Tests override via env at fixture time.
+    yaaos_oauth_github_client_id: str = ""
+    yaaos_oauth_github_client_secret: str = ""
+    yaaos_oauth_github_authorize_url: str = "https://github.com/login/oauth/authorize"
+    yaaos_oauth_github_token_url: str = "https://github.com/login/oauth/access_token"
+    yaaos_oauth_github_userinfo_url: str = "https://api.github.com/user"
+    yaaos_oauth_github_emails_url: str = "https://api.github.com/user/emails"
+    yaaos_oauth_state_secret: str = "dev-only-oauth-state-secret"
+
+    @property
+    def is_non_prod(self) -> bool:
+        """True when `yaaos_env` is `dev` or `test`. Use for affordances that
+        should be permissive in both (NullPool, no-Secure cookies, etc.)."""
+        return self.yaaos_env != "prod"
+
     @property
     def cors_origins_list(self) -> list[str]:
-        if self.yaaos_env == "dev":
+        if self.is_non_prod:
             return ["*"]
         if not self.yaaos_cors_origins:
             return []

@@ -6,6 +6,8 @@ identity + orgs lookups.
 `public_route`) that resolve sessions, orgs, memberships.
 """
 
+# Side-effect import: registers /api/auth/* routes.
+from app.domain.auth import web
 from app.domain.auth.dependencies import (
     current_actor,
     public_route,
@@ -13,4 +15,4 @@ from app.domain.auth.dependencies import (
     required_role_for,
 )
 
-__all__ = ["current_actor", "public_route", "require", "required_role_for"]
+__all__ = ["current_actor", "public_route", "require", "required_role_for", "web"]

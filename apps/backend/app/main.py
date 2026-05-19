@@ -26,6 +26,7 @@ from app.core import audit_log, workspace  # noqa: F401, E402
 # `Depends(public_route)` so the contextvars + middleware classes exist.
 from app.domain import identity, orgs  # noqa: F401, E402
 from app.core import auth  # noqa: F401, E402
+from app.domain import auth as _domain_auth  # noqa: F401, E402
 
 # 6. Domain modules — order: types first (vcs, memory), then coding_agent
 #    (which references vcs + memory types), then leaf domain modules,
@@ -41,6 +42,12 @@ from app.domain import settings  # noqa: F401, E402
 
 # 7. Plugins.
 from app.plugins import in_process_workspace, claude_code, github  # noqa: F401, E402
+from app.plugins import oauth_github  # noqa: F401, E402
+from app.core.config import get_settings  # noqa: E402
+
+# 7b. Test-only provider — env-gated import; module asserts on yaaos_env=="test".
+if get_settings().yaaos_env == "test":
+    from app.plugins import oauth_test  # noqa: F401
 
 # 8. Test-only: when YAAOS_CODING_AGENT_STUB is set, wrap every registered
 #    coding-agent plugin via the `testing/` layer. The testing layer sits above
@@ -61,9 +68,7 @@ if os.environ.get("YAAOS_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}
 # the e2e Playwright suite (and ad-hoc local seeding). Mounted only in dev/test
 # builds; prod wheels exclude the testing/ tree, so this import would fail loud
 # if it ever ran with the layer stripped.
-from app.core.config import get_settings  # noqa: E402
-
-if get_settings().yaaos_env == "dev":
+if get_settings().is_non_prod:
     from app.testing import e2e_setup  # noqa: F401
 
 # 9. Build the FastAPI app.

@@ -69,3 +69,19 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Alternatives considered**: 500 unconditionally when the contextvar is unset (would mask legitimate 401/403/404 from `require()` raising `HTTPException` before setting the var with a misleading 500).
 - **Why this one**: a 401 from "no session" is a legitimate response, not a missing-security bug. The guard's job is to catch "route handler returned a 200 but no security dep ran", which is the actual failure mode.
 - **Reversal cost**: trivial.
+
+### Phase 4 — extended `yaaos_env` to include `"test"`; conftest sets it; non-prod checks use `is_non_prod`
+
+- **Certainty**: 2/5
+- **Decision**: `core/config.Settings.yaaos_env` is now `Literal["dev", "test", "prod"]` (was `Literal["dev", "prod"]`). The test conftest sets `YAAOS_ENV=test`. Sites that previously checked `== "dev"` to enable non-prod affordances (NullPool, no-Secure cookies, ConsoleRenderer, e2e_setup mount) now check `settings.is_non_prod`, which returns True for both `dev` and `test`. `plugins/oauth_test/service.py` asserts the exact value (`yaaos_env == "test"`) at module import time per the spec.
+- **Alternatives considered**: (a) keep `dev`/`prod` only and gate the test stub on `yaaos_env != "prod"` (loses the literal spec match; lets `dev` run a test-only provider); (b) add a separate `yaaos_oauth_test_enabled` flag (extra knob with no other use; the spec specifically named the env value as the gate).
+- **Why this one**: matches the spec verbatim, gives the test stub a precise gate, and consolidates the dev-vs-non-prod distinction into one `is_non_prod` property so future call sites don't need to remember to list both values.
+- **Reversal cost**: low — Literal can be narrowed and the property removed; the affected call sites are a single grep.
+
+### Phase 4 — link-confirm flow uses a signed `yaaos_link_pending` cookie, not server-side state
+
+- **Certainty**: 3/5
+- **Decision**: When `login_via_oauth` raises `LinkChallengeRequiredError`, the callback handler returns 409 with a signed `yaaos_link_pending` cookie carrying `{target_email, new_provider, new_external_subject}`. The user signs in via an already-linked provider; that second callback validates the cookie + email match and attaches the new identity via `complete_oauth_link`. No DB row, no Redis, no `link_attempts` table.
+- **Alternatives considered**: a `link_attempts` DB table keyed by a server-issued token (durable, queryable, but adds a table whose only consumer is a 10-minute flow); a session-row column carrying pending-link state (couples link-confirm to a pre-existing session, which the unauthenticated entry point doesn't have).
+- **Why this one**: itsdangerous-signed cookies are already in use for invitation tokens and OAuth state; the link-confirm payload is small, short-lived, and naturally tied to the browser performing the link.
+- **Reversal cost**: medium — promoting to a DB-backed flow later is straightforward, but the cookie's salt becomes legacy.

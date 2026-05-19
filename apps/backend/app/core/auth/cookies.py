@@ -1,7 +1,7 @@
 """Cookie helpers — names, attributes, max-age.
 
-`Secure` is env-gated off when `yaaos_env == "dev"` so `http://localhost` works
-without TLS termination.
+`Secure` is env-gated off in non-prod (`dev`, `test`) so `http://localhost`
+works without TLS termination.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ def session_cookie_attrs(*, max_age_seconds: int) -> dict[str, object]:
         "max_age": max_age_seconds,
         "httponly": True,
         "samesite": "lax",
-        "secure": get_settings().yaaos_env != "dev",
+        "secure": not get_settings().is_non_prod,
         "path": "/",
     }
 
@@ -32,7 +32,7 @@ def csrf_cookie_attrs(*, max_age_seconds: int) -> dict[str, object]:
         "max_age": max_age_seconds,
         "httponly": False,
         "samesite": "lax",
-        "secure": get_settings().yaaos_env != "dev",
+        "secure": not get_settings().is_non_prod,
         "path": "/",
     }
 

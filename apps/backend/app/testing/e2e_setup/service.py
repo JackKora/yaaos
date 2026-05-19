@@ -149,9 +149,10 @@ async def seed_lesson(*, repo_external_id: str, title: str, body: str) -> UUID:
 
 def is_dev_env() -> bool:
     """Gate used by every `/api/testing/*` route. Centralised so the rule
-    `dev-only routes` lives in one place, not per-handler.
+    `non-prod-only routes` lives in one place, not per-handler. True for
+    `dev` and `test`; prod returns 404 via every gated handler.
     """
-    return get_settings().yaaos_env == "dev"
+    return get_settings().is_non_prod
 
 
 __all__ = [
