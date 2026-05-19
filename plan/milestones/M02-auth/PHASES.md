@@ -180,15 +180,15 @@
 
 ## Phase 13 — rate limiting + secret hygiene
 
-- [ ] `slowapi` rate limiter on `/api/auth/*` (per-IP) and all mutating `/api/*` endpoints (per-user)
-- [ ] Limits documented in `apps/backend/docs/core_auth.md`
-- [ ] Settings (`apps/backend/app/core/config/service.py`) declares all new secret env vars: session cookie secret, invitation token secret, TOTP master key, OAuth GitHub client id + secret
-- [ ] Missing-secret behavior: backend refuses to start if a required secret is unset in non-dev env; dev has stub defaults
-- [ ] `docs/setup.md` lists every new env var with a one-line description
-- [ ] Secret-rotation runbook stub at `docs/runbooks/secret-rotation.md` (one paragraph per secret is fine)
-- [ ] Tests: rate limit returns 429 when exceeded; missing secret in prod env causes startup failure
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `slowapi` rate limiter on `/api/auth/*` (per-IP) and all mutating `/api/*` endpoints (per-user)
+- [x] Limits documented in `apps/backend/docs/core_auth.md`
+- [x] Settings (`apps/backend/app/core/config/service.py`) declares all new secret env vars: session cookie secret, invitation token secret, TOTP master key, OAuth GitHub client id + secret
+- [x] Missing-secret behavior: backend refuses to start if a required secret is unset in non-dev env; dev has stub defaults
+- [x] `docs/setup.md` lists every new env var with a one-line description
+- [x] Secret-rotation runbook stub at `docs/runbooks/secret-rotation.md` (one paragraph per secret is fine)
+- [x] Tests: rate limit returns 429 when exceeded; missing secret in prod env causes startup failure
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 14 — docs + cleanup + final verification
 
