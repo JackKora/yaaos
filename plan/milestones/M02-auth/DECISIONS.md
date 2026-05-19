@@ -78,6 +78,14 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Why this one**: matches the spec verbatim, gives the test stub a precise gate, and consolidates the dev-vs-non-prod distinction into one `is_non_prod` property so future call sites don't need to remember to list both values.
 - **Reversal cost**: low — Literal can be narrowed and the property removed; the affected call sites are a single grep.
 
+### Phase 7 — e2e CI cannot run from the loop iteration; trusted to pass under the docker stack
+
+- **Certainty**: 2/5
+- **Decision**: `apps/e2e/bin/ci` (`docker compose up` → Playwright) cannot run inside the autonomous loop's sandbox — the Docker stack is provisioned by the developer, not the loop. The Playwright spec `apps/e2e/tests/login-and-membership.spec.ts` and the supporting `/api/testing/{seed/bootstrap_owner,seed/user_with_session,oauth_test/stage_profile,email_inbox}` helpers are written, type-check clean, and the backend integration tests covering the same paths pass. Phase 7 is marked complete on that basis; the developer runs e2e CI on the branch before review.
+- **Alternatives considered**: block the milestone on developer-only CI (would stall the entire ledger indefinitely); ship a placeholder Playwright spec that exits 0 unconditionally (would lie to the CI gate).
+- **Why this one**: the functional surface is in place + backed by backend tests; the docker-only step is an environment gap, not a missing feature.
+- **Reversal cost**: trivial — the spec is real Playwright code that runs against a real backend; rerunning `apps/e2e/bin/ci` when the stack is up will surface any gap immediately.
+
 ### Phase 4 — link-confirm flow uses a signed `yaaos_link_pending` cookie, not server-side state
 
 - **Certainty**: 3/5

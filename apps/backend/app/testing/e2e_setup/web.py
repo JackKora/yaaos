@@ -64,4 +64,67 @@ async def seed_lesson(req: _LessonRequest) -> dict[str, str]:
     return {"status": "seeded", "lesson_id": str(lesson_id)}
 
 
+# ── M02 — auth-flow helpers ──────────────────────────────────────────────
+
+
+class _BootstrapOwnerRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    github_id: str = Field(..., min_length=1)
+    org_slug: str = Field(..., min_length=1)
+    display_name: str = Field(default="Owner")
+
+
+@router.post("/seed/bootstrap_owner")
+async def seed_bootstrap_owner(req: _BootstrapOwnerRequest) -> dict[str, str]:
+    """Mint a first user + org + Owner membership for an e2e test."""
+    _guard_dev()
+    ids = await service.seed_bootstrap_owner(
+        email=req.email,
+        github_id=req.github_id,
+        org_slug=req.org_slug,
+        display_name=req.display_name,
+    )
+    return {"status": "seeded", **ids}
+
+
+class _UserWithSessionRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    session_cookie: str = Field(..., min_length=1)
+
+
+@router.post("/seed/user_with_session")
+async def seed_user_with_session(req: _UserWithSessionRequest) -> dict[str, str]:
+    """Create a user + a session backed by `session_cookie` as the raw token."""
+    _guard_dev()
+    user_id = await service.seed_user_with_session(email=req.email, raw_session_token=req.session_cookie)
+    return {"status": "seeded", "user_id": user_id}
+
+
+class _StageProfileRequest(BaseModel):
+    external_subject: str
+    primary_email: str
+    email_verified: bool = True
+    display_name: str = ""
+
+
+@router.post("/oauth_test/stage_profile")
+async def oauth_test_stage_profile(req: _StageProfileRequest) -> dict[str, str]:
+    """Stage the profile the `oauth_test` provider returns on next callback."""
+    _guard_dev()
+    service.stage_oauth_test_profile(
+        external_subject=req.external_subject,
+        primary_email=req.primary_email,
+        email_verified=req.email_verified,
+        display_name=req.display_name,
+    )
+    return {"status": "staged"}
+
+
+@router.get("/email_inbox")
+async def email_inbox() -> dict[str, list[dict[str, str]]]:
+    """Return + clear the in-memory test-env email inbox."""
+    _guard_dev()
+    return {"messages": service.read_and_clear_email_inbox()}
+
+
 register_routes(RouteSpec(module_name="e2e_setup", router=router, url_prefix="/api/testing"))

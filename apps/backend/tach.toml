@@ -110,7 +110,7 @@ depends_on = ["app.core.config", "app.domain.identity"]
 
 [[modules]]
 path = "app.testing.e2e_setup"
-depends_on = ["app.core.audit_log", "app.core.config", "app.core.database", "app.core.webserver", "app.core.workspace", "app.domain.memory", "app.domain.pull_requests", "app.domain.reviewer", "app.domain.tickets", "app.plugins.claude_code", "app.plugins.github"]
+depends_on = ["app.core.audit_log", "app.core.config", "app.core.database", "app.core.webserver", "app.core.workspace", "app.domain.identity", "app.domain.memory", "app.domain.orgs", "app.domain.pull_requests", "app.domain.reviewer", "app.domain.tickets", "app.plugins.claude_code", "app.plugins.github", "app.plugins.oauth_test"]
 
 [[modules]]
 path = "app.testing.stub_coding_agent"
