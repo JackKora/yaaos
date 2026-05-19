@@ -78,6 +78,14 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Why this one**: matches the spec verbatim, gives the test stub a precise gate, and consolidates the dev-vs-non-prod distinction into one `is_non_prod` property so future call sites don't need to remember to list both values.
 - **Reversal cost**: low — Literal can be narrowed and the property removed; the affected call sites are a single grep.
 
+### Phase 12 — Stub SAML assertion uses itsdangerous-signed JSON, not real XML
+
+- **Certainty**: 2/5
+- **Decision**: `plugins/saml_test` issues `itsdangerous.URLSafeTimedSerializer`-signed dicts (`{"email", "name_id"}`) standing in for real SAML Response XML. The orchestration code in `domain/orgs.sso` consumes the verified payload identically regardless of which verifier produced it — the registry-based dispatch hides the shape difference. Real `python3-saml` parsing runs only in environments where `libxmlsec1` + `xmlsec1` are installed (the docker image).
+- **Alternatives considered**: ship a hand-rolled XML signer in `saml_test` (huge surface area for an off-path stub); demand `libxmlsec1` in every dev environment (high friction for contributors on macOS without homebrew/xmlsec1 set up).
+- **Why this one**: lets `apps/backend/bin/ci` run against the SSO orchestration end-to-end without a system-lib dependency. The real `plugins/saml` path is exercised by integration tests against a live IdP image (Phase 12 e2e spec, run from docker).
+- **Reversal cost**: low — swap `verify_assertion` for a real-XML parser; the orchestration layer is unchanged.
+
 ### Phase 7 — e2e CI cannot run from the loop iteration; trusted to pass under the docker stack
 
 - **Certainty**: 2/5

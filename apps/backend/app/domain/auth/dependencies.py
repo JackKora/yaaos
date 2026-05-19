@@ -117,6 +117,54 @@ def require(action: Action) -> Callable[..., None]:
         role = Role(membership_row.role)
         if not role.covers(required):
             raise _err(403, "insufficient_role")
+        # SSO satisfaction: if the org has SSO enabled, the session must
+        # have `sso_satisfied_for_org_id == org_id` within the 8h TTL.
+        # Break-glass: the exempt Owner bypasses this AND must have a
+        # verified TOTP secret (Phase 11 helper).
+        from app.domain.identity import sessions as session_lifecycle  # noqa: PLC0415
+        from app.domain.identity.totp import has_verified_totp  # noqa: PLC0415
+        from app.domain.orgs.sso import get_config  # noqa: PLC0415
+
+        async with db_session() as s:
+            cfg = await get_config(s, org_id=org_row.id)
+        if cfg is not None and cfg.enabled:
+            session_token = request.cookies.get("yaaos_session")
+            sso_ok = False
+            if session_token:
+                async with db_session() as s:
+                    sess = await session_lifecycle.lookup(s, session_token)
+                if sess is not None and session_lifecycle.is_sso_satisfied(sess, org_id=org_row.id):
+                    sso_ok = True
+            if not sso_ok:
+                is_exempt = cfg.exempt_owner_user_id == user_id and role == Role.OWNER
+                if is_exempt:
+                    async with db_session() as s:
+                        if not await has_verified_totp(s, user_id):
+                            raise _err(403, "sso_required")
+                        # Break-glass: exempt Owner bypassing SSO. Emit a
+                        # distinct audit row so abuse is visible.
+                        from pydantic import BaseModel  # noqa: PLC0415
+
+                        from app.core.audit_log import audit  # noqa: PLC0415
+                        from app.core.primitives import Actor  # noqa: PLC0415
+
+                        class _BreakGlassPayload(BaseModel):
+                            break_glass: bool = True
+                            path: str
+
+                        await audit(
+                            "user",
+                            user_id,
+                            "break_glass_exempt_owner",
+                            _BreakGlassPayload(path=request.url.path),
+                            Actor.user(user_id=user_id),
+                            org_id=org_row.id,
+                            session=s,
+                        )
+                        await s.commit()
+                else:
+                    raise _err(403, "sso_required")
+
         org_id_var.set(org_row.id)
         actor_kind_var.set(ActorKind.USER)
         actor_id_var.set(user_id)

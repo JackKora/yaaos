@@ -29,7 +29,14 @@ class Action(StrEnum):
 
 # Public-allowlist prefixes: any path matching one of these bypasses the
 # X-Org-Slug requirement AND the post-response security guard.
-PUBLIC_PATH_PREFIXES: tuple[str, ...] = ("/api/auth/",)
+PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
+    "/api/auth/",
+    # `/api/sso/{slug}/...` carries the org slug in the path, not the
+    # `X-Org-Slug` header. The handlers resolve the slug themselves.
+    # `/api/sso/config` (Owner-only) goes through the standard auth chain
+    # via the path-prefix override below.
+    "/api/sso/",
+)
 # `/api/memberships/accept` lives on the public allowlist because acceptance
 # must work for users who have a session but no membership yet — the signed
 # invitation token is the authorization, not an org membership.
@@ -43,7 +50,6 @@ PUBLIC_PATH_EXACT: frozenset[str] = frozenset({"/api/health", "/api/memberships/
 M02_PROTECTED_PREFIXES: tuple[str, ...] = (
     "/api/account/",
     "/api/memberships/",
-    "/api/sso/",
     "/api/audit",  # exact + prefix both — endpoint is /api/audit and /api/audit/...
 )
 

@@ -127,4 +127,20 @@ async def email_inbox() -> dict[str, list[dict[str, str]]]:
     return {"messages": service.read_and_clear_email_inbox()}
 
 
+class _SamlSignRequest(BaseModel):
+    email: str
+    name_id: str = ""
+
+
+@router.post("/saml/sign")
+async def saml_sign(req: _SamlSignRequest) -> dict[str, str]:
+    """Test-only: sign a stub SAML assertion the `/api/sso/<slug>/acs`
+    handler will accept. Drives the Phase 12 Playwright spec."""
+    _guard_dev()
+    from app.plugins.saml_test.service import sign_assertion  # noqa: PLC0415
+
+    token = sign_assertion({"email": req.email, "name_id": req.name_id or req.email})
+    return {"token": token}
+
+
 register_routes(RouteSpec(module_name="e2e_setup", router=router, url_prefix="/api/testing"))
