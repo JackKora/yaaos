@@ -46,15 +46,15 @@
 
 ## Phase 3 — sessions
 
-- [ ] `domain/identity/sessions.py` implements `create`, `lookup_by_hash`, `touch`, `revoke`, `revoke_all_for_user`, `rotate`
-- [ ] Session token: 32 random bytes via `secrets.token_bytes`; stored as `hashlib.sha256` hex
-- [ ] Cookie config: `HttpOnly; SameSite=Lax; Secure` — `Secure` env-gated off when `yaaos_env == "dev"`
-- [ ] Double-submit CSRF token issued at session creation, validated on `POST/PUT/PATCH/DELETE` to `/api/*`
-- [ ] `sessions.rotate(old_token)` returns new token + deletes old row in same transaction
-- [ ] Periodic cleanup task in existing scheduler purges expired sessions, expired invitations, unverified TOTP secrets older than 24h
-- [ ] Tests: create + lookup, rotate (old invalidated), revoke, revoke-all, CSRF mismatch returns 403, expired session returns 401
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `domain/identity/sessions.py` implements `create`, `lookup`, `touch`, `revoke`, `revoke_all_for_user`, `rotate`
+- [x] Session token: 32 bytes via `secrets.token_urlsafe`; stored as `hashlib.sha256` hex
+- [x] Cookie config: `HttpOnly; SameSite=Lax; Secure` — `Secure` env-gated off when `yaaos_env == "dev"`
+- [x] Double-submit CSRF token issued at session creation, validated on `POST/PUT/PATCH/DELETE` to M02-protected `/api/*` paths
+- [x] `sessions.rotate(old_token)` returns new token + deletes old row in same transaction
+- [x] Periodic cleanup task spawned in FastAPI lifespan purges expired sessions, expired invitations, unverified TOTP secrets older than 24h
+- [x] Tests: create + lookup, rotate (old invalidated), revoke, revoke-all, CSRF mismatch returns 403, expired session returns None
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 4 — GitHub OAuth
 
