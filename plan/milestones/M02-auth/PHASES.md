@@ -73,14 +73,14 @@
 
 ## Phase 5 — bootstrap script
 
-- [ ] `apps/backend/bin/bootstrap` is executable, interactive
-- [ ] Prompts for: email, GitHub username, display name, org name, org slug
-- [ ] Creates `users` row + `user_emails` row (verified) + `oauth_identities` row for GitHub + `orgs` row + `memberships` row with role=Owner
-- [ ] Idempotent: running twice with the same inputs does not error or duplicate
-- [ ] `docs/setup.md` documents the bootstrap step
-- [ ] Test: invokable via subprocess in pytest with stdin-piped inputs; produces expected rows
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `apps/backend/bin/bootstrap` is executable, interactive
+- [x] Prompts for: email, GitHub username, display name, org name, org slug
+- [x] Creates `users` row + `user_emails` row (verified) + `oauth_identities` row for GitHub + `orgs` row + `memberships` row with role=Owner
+- [x] Idempotent: running twice with the same inputs does not error or duplicate
+- [x] `docs/setup.md` documents the bootstrap step
+- [x] Test: invokable via subprocess in pytest with stdin-piped inputs; produces expected rows
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 6 — invitations + membership
 
