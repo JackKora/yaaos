@@ -9,7 +9,7 @@
 Three specialist review agents (architecture, security, style) review every PR on configured repos, accept human feedback, and remember per-repo lessons. → [details](milestones/M01-code-review/README.md)
 
 ### M02 — Users, orgs, auth  `[planned]`
-Real users, multi-org tenancy, GitHub OAuth + SAML SSO, opaque sessions, three-role permissions, polymorphic audit log. Depends on M01. → [details](milestones/M02-auth/README.md)
+Real users, multi-org tenancy, GitHub OAuth + SAML SSO, opaque sessions, three-role permissions, polymorphic audit log. → [details](milestones/M02-auth/README.md)
 
 ## Backlog
 

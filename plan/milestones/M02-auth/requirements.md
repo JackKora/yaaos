@@ -77,7 +77,7 @@ Per-action role minimums declared in code (single action enum); evaluated at eve
 
 ## URL & header conventions
 
-- **UI**: `/orgs/{slug}/...` — slug in browser URL bar for shareability + switching.
+- **UI**: `/orgs/{slug}/...` for all org-scoped pages (dashboard, tickets, settings, audit). `/account` at the root for user-global settings (email management, TOTP enrollment, "sign out all sessions") — not org-scoped because identity belongs to the user.
 - **API**: flat `/api/...` (`/api/auth/login`, `/api/findings`, `/api/memberships`, …).
 - **Webhooks**: `/webhooks/...` (`/webhooks/github`).
 - API requests carry `X-Org-Slug: <slug>` header (except `/api/auth/*` and `/api/health`). Middleware resolves slug → org_id and verifies membership.

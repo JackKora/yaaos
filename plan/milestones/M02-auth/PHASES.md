@@ -1,0 +1,219 @@
+# M02 phase ledger
+
+> Source of truth for "what's done." Every box must become `[x]` before M02 is complete. Tick boxes as you go. See [START_HERE.md](START_HERE.md) for the ritual.
+
+## Phase 0 — scaffolding
+
+- [ ] `authlib`, `python3-saml`, `itsdangerous`, `pyotp`, `slowapi` added to `apps/backend/pyproject.toml`
+- [ ] `docker-compose.dev.yml` installs `libxmlsec1-dev` + `xmlsec1` in the backend image (or its base Dockerfile does)
+- [ ] `docker-compose.dev.yml` adds `mailpit` service (`axllent/mailpit`, ports `1025:1025` SMTP and `8025:8025` UI)
+- [ ] `apps/web/vite.config.ts` proxy table includes `/webhooks` alongside `/api` and `/openapi.json`
+- [ ] `docs/setup.md` mentions Mailpit UI at `http://localhost:8025` + GitHub OAuth note (creds in `.env`)
+- [ ] `docs/system-architecture.md` has a stub "Identity & access" section (filled later)
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed on branch `m02-auth`
+
+## Phase 1 — data model
+
+- [ ] `domain/identity` module skeleton (`__init__.py`, `service.py`, `repository.py`, `models.py`, `types.py`) + `apps/backend/docs/domain_identity.md` skeleton
+- [ ] `domain/orgs` module skeleton + `apps/backend/docs/domain_orgs.md` skeleton
+- [ ] `core/primitives.ActorKind` extended additively with `USER`, `WORKSPACE`, `SSO` (existing values preserved)
+- [ ] `apps/backend/docs/core_primitives.md` updated for the new ActorKind values
+- [ ] `apps/backend/docs/core_audit_log.md` updated to note M02 actor kinds
+- [ ] New tables added: `users`, `user_emails`, `oauth_identities`, `user_totp_secrets`, `orgs`, `memberships`, `invitations`, `sso_configs`, `sessions`, `github_installations`
+- [ ] `memberships` has `UNIQUE(org_id, handle)` constraint
+- [ ] Named migration `002_create_all_m02` registered in `core/database/service.py:_MIGRATIONS`
+- [ ] Repository tests against real Postgres for each new table (TDD: tests written first)
+- [ ] `apps/backend/bin/sync_modules` run; `tach.toml` updated by the script
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed
+
+## Phase 2 — core/auth + middleware
+
+- [ ] `core/auth` module created with `context.py`, `dependencies.py`, `middleware.py`, `module.py`, `__init__.py`
+- [ ] Contextvars defined: `org_id`, `user_id`, `actor_kind`, `actor_id`, `route_security_resolved`
+- [ ] `require(action)` dependency factory implemented; resolves `X-Org-Slug` → membership, checks role, sets contextvars
+- [ ] `public_route` dependency implemented; sets `route_security_resolved` without auth
+- [ ] Middleware rejects `/api/*` requests missing `X-Org-Slug` (allowlist: `/api/auth/*`, `/api/health`) with 400
+- [ ] Middleware post-response guard: 500 + log if `route_security_resolved` unset
+- [ ] OTel span attributes `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind` set in middleware
+- [ ] structlog contextvars processor configured for the same fields
+- [ ] Error-shape helper: 401 unauthenticated, 403 wrong role, 404 unknown-or-forbidden org slug
+- [ ] Integration tests cover: missing header → 400, unknown slug → 404, wrong role → 403, success → 200, missing dependency → 500
+- [ ] `apps/backend/docs/core_auth.md` written
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed
+
+## Phase 3 — sessions
+
+- [ ] `domain/identity/sessions.py` implements `create`, `lookup_by_hash`, `touch`, `revoke`, `revoke_all_for_user`, `rotate`
+- [ ] Session token: 32 random bytes via `secrets.token_bytes`; stored as `hashlib.sha256` hex
+- [ ] Cookie config: `HttpOnly; SameSite=Lax; Secure` — `Secure` env-gated off when `yaaos_env == "dev"`
+- [ ] Double-submit CSRF token issued at session creation, validated on `POST/PUT/PATCH/DELETE` to `/api/*`
+- [ ] `sessions.rotate(old_token)` returns new token + deletes old row in same transaction
+- [ ] Periodic cleanup task in existing scheduler purges expired sessions, expired invitations, unverified TOTP secrets older than 24h
+- [ ] Tests: create + lookup, rotate (old invalidated), revoke, revoke-all, CSRF mismatch returns 403, expired session returns 401
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed
+
+## Phase 4 — GitHub OAuth
+
+- [ ] `Provider` Protocol defined in `domain/identity/providers.py`
+- [ ] `plugins/oauth_github` implements Provider via Authlib; reads creds from settings
+- [ ] `plugins/oauth_test` implements Provider as a test-only stub; `assert settings.yaaos_env == "test"` at module import
+- [ ] `GET /api/auth/login?provider=<id>` redirects to provider's authorization URL
+- [ ] `GET /api/auth/callback/<provider>` exchanges code, verifies `email_verified`, applies account-linking + hard-reject rules
+- [ ] Hard-reject path: un-invited login → 403 with "ask for invite" message
+- [ ] Account-linking challenge: same-browser inline flow (sign in via existing provider to confirm link)
+- [ ] Backend integration tests for `oauth_github` use `pytest-httpx` to mock GitHub's token + `/user` endpoints
+- [ ] Backend integration tests via `oauth_test` cover: existing-identity, link-confirm, hard-reject
+- [ ] `apps/backend/docs/plugins_oauth_github.md` + `plugins_oauth_test.md` written
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed
+
+## Phase 5 — bootstrap script
+
+- [ ] `apps/backend/bin/bootstrap` is executable, interactive
+- [ ] Prompts for: email, GitHub username, display name, org name, org slug
+- [ ] Creates `users` row + `user_emails` row (verified) + `oauth_identities` row for GitHub + `orgs` row + `memberships` row with role=Owner
+- [ ] Idempotent: running twice with the same inputs does not error or duplicate
+- [ ] `docs/setup.md` documents the bootstrap step
+- [ ] Test: invokable via subprocess in pytest with stdin-piped inputs; produces expected rows
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed
+
+## Phase 6 — invitations + membership
+
+- [ ] `domain/orgs` service: `invite`, `accept_invitation`, `remove_member`, `change_role`; each emits an audit-log entry
+- [ ] Endpoints: `POST /api/memberships/invite`, `POST /api/memberships/accept`, `DELETE /api/memberships/{id}`, `PATCH /api/memberships/{id}`
+- [ ] Invitation tokens: signed via `itsdangerous`, 7-day expiry, single-use (mark `accepted_at`)
+- [ ] Email sent via SMTP (configured to Mailpit in dev); invitation contains signed link
+- [ ] Role-change auto-rotates affected user's sessions
+- [ ] Removed member's sessions are all revoked
+- [ ] Tests: invite happy path, accept token, accept expired token → 410, accept used token → 410, remove member revokes sessions, change role rotates sessions
+- [ ] Frontend `apps/web/src/domain/orgs` has Members page with invite form + role picker + remove button
+- [ ] `apps/backend/docs/domain_orgs.md` populated
+- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [ ] Phase committed
+
+## Phase 7 — frontend integration
+
+- [ ] `GET /api/auth/me` endpoint returns `{user, orgs, current_org_slug}`
+- [ ] `apps/web/src/domain/auth` exists with Login page (provider buttons) + post-login org picker + `useCurrentUser` hook
+- [ ] TanStack Router refactored: org-scoped routes nested under `/orgs/$slug/...`; user-global account page at `/account` (not org-scoped)
+- [ ] Existing pages (dashboard, tickets, memory, settings) accessible via `/orgs/$slug/<page>`
+- [ ] `/account` page with email list, TOTP setup entry point, and "Sign out of all sessions" button
+- [ ] Root `/` redirects to `/orgs/<default-slug>/dashboard` if logged in, `/login` if not
+- [ ] API-client wrapper auto-injects `X-Org-Slug` header from current route param
+- [ ] `<RequireMembership role="...">` component wraps role-gated UI
+- [ ] "Sign out of all sessions" button lives on `/account`; calls `POST /api/auth/logout-all`
+- [ ] Playwright E2E test: login via `oauth_test` → land on dashboard → switch org → invite member → accept invite → change role → logout-all
+- [ ] `apps/web/docs/` per-page docs updated for new URL shape
+- [ ] `apps/web/bin/ci` + `apps/e2e/bin/ci` exit 0
+- [ ] Phase committed
+
+## Phase 8 — audit log wiring
+
+- [ ] All identity service calls (login, logout, link, unlink) emit audit entries via `core/audit_log.write`
+- [ ] All orgs service calls (invite/accept/remove/change-role/sso-config-change) emit audit entries
+- [ ] `AUDIT_LOG_RETENTION = timedelta(days=30)` defined in a single constants module (create `apps/backend/app/core/constants.py` if absent)
+- [ ] Cleanup task purges `audit_entries` older than `AUDIT_LOG_RETENTION`; runs daily in the existing scheduler
+- [ ] Read-only `GET /api/audit` endpoint with org-scoped filtering by `actor_kind`, `action`, date range
+- [ ] Frontend Audit page in `apps/web/src/domain/orgs` for Owners/Admins
+- [ ] Tests: each emitter writes the expected row; cleanup purges old rows; endpoint paginates and filters
+- [ ] `apps/backend/docs/core_audit_log.md` updated with new actions list
+- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [ ] Phase committed
+
+## Phase 9 — background-job context
+
+- [ ] `core/auth/context.py` exports `org_context(org_id, actor_kind, actor_id=None)` async context manager
+- [ ] `org_context` sets the same contextvars + OTel span attrs + structlog vars as HTTP middleware
+- [ ] GitHub poller wraps each org's poll in `org_context(...)`
+- [ ] Reviewer worker wraps each review in `org_context(...)` with appropriate `actor_kind`
+- [ ] Scheduler cleanup jobs wrap their work in `org_context(..., actor_kind=system)`
+- [ ] Audit entries written from background jobs have correct `actor_kind` (`workspace` for reviewer, `system` for scheduler)
+- [ ] `apps/backend/docs/patterns.md` documents the rule: any function reading from an org-scoped table must either assert `org_id` contextvar is set or take `org_id` as an explicit parameter
+- [ ] Tests: contextvar propagation through `asyncio.create_task`; missing context raises in assertion-mode functions
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed
+
+## Phase 10 — GitHub App org binding
+
+- [ ] `GET /api/github/install` endpoint signs `state=<org_id>` via `itsdangerous` and redirects to GitHub App install URL
+- [ ] `/webhooks/github/install_callback` (or post-install redirect) verifies state, writes `github_installations(org_id, installation_id)` row
+- [ ] Existing GitHub webhook handler looks up `installation_id → org_id` and wraps handling in `org_context(...)`
+- [ ] Frontend Settings page has "Connect GitHub" button visible to Owners
+- [ ] Tests: state signature verified, mismatched state rejected, webhook handler resolves org correctly
+- [ ] `apps/backend/docs/plugins_github.md` updated for install binding
+- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [ ] Phase committed
+
+## Phase 11 — 2FA
+
+- [ ] `domain/identity` exposes IdP MFA detection: parses `amr`/`acr` from OIDC tokens when present
+- [ ] GitHub OAuth path documented as MFA-trusted (no API check); comment in `plugins/oauth_github` references this
+- [ ] `POST /api/auth/totp/enroll` returns QR seed; `POST /api/auth/totp/verify` confirms a code and writes `verified_at`
+- [ ] TOTP secret encrypted at rest using env-var master key + `cryptography` library
+- [ ] Login flow: if user has verified TOTP and IdP didn't satisfy MFA, present TOTP challenge before issuing session
+- [ ] SSO-exempt Owner flag cannot be set unless that Owner has a verified TOTP secret (enforced at API + UI)
+- [ ] Frontend account-settings page has "Set up 2FA" flow with QR display + verify input
+- [ ] Tests: enroll → verify happy path, login step-up triggers when needed, exempt-flag-without-TOTP rejected
+- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [ ] Phase committed
+
+## Phase 12 — SAML SSO
+
+- [ ] `plugins/saml` implements Provider via `python3-saml`, SP-initiated only
+- [ ] `plugins/saml_test` stub IdP, env-gated to `test`, issues signed assertions for seeded users
+- [ ] Per-org SSO config: upload IdP metadata XML, generate SP metadata for download, JIT-toggle, exempt-Owner picker
+- [ ] Endpoints: `GET /api/sso/{slug}/login`, `POST /api/sso/{slug}/acs`, `GET /api/sso/{slug}/metadata`
+- [ ] On successful assertion: match by verified email, JIT-create membership if enabled, mark session `sso_satisfied_for_org_id` with 8-hour TTL
+- [ ] Middleware enforces SSO satisfaction when org has SSO on; exempt Owners bypass via OAuth + TOTP
+- [ ] Break-glass exempt-Owner login emits audit entry with `actor_kind=user` + metadata `{"break_glass": true}`
+- [ ] Frontend Settings SSO page: upload metadata, download SP metadata, toggle JIT, pick exempt Owner
+- [ ] Playwright E2E via `saml_test`: enable SSO → login fails without SSO → SSO satisfies → JIT creates membership when enabled
+- [ ] SAML SP private key per org encrypted at rest using same master key as TOTP
+- [ ] `apps/backend/docs/plugins_saml.md` written
+- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` + `apps/e2e/bin/ci` exit 0
+- [ ] Phase committed
+
+## Phase 13 — rate limiting + secret hygiene
+
+- [ ] `slowapi` rate limiter on `/api/auth/*` (per-IP) and all mutating `/api/*` endpoints (per-user)
+- [ ] Limits documented in `apps/backend/docs/core_auth.md`
+- [ ] Settings (`apps/backend/app/core/config/service.py`) declares all new secret env vars: session cookie secret, invitation token secret, TOTP master key, OAuth GitHub client id + secret
+- [ ] Missing-secret behavior: backend refuses to start if a required secret is unset in non-dev env; dev has stub defaults
+- [ ] `docs/setup.md` lists every new env var with a one-line description
+- [ ] Secret-rotation runbook stub at `docs/runbooks/secret-rotation.md` (one paragraph per secret is fine)
+- [ ] Tests: rate limit returns 429 when exceeded; missing secret in prod env causes startup failure
+- [ ] `apps/backend/bin/ci` exits 0
+- [ ] Phase committed
+
+## Phase 14 — docs + cleanup + final verification
+
+- [ ] Per-module docs filled and reviewed: `core_auth.md`, `domain_identity.md`, `domain_orgs.md`, plugin docs (`plugins_oauth_github.md`, `plugins_oauth_test.md`, `plugins_saml.md`, `plugins_saml_test.md`)
+- [ ] `apps/backend/docs/core_audit_log.md` + `core_primitives.md` reflect ActorKind extension
+- [ ] `docs/system-architecture.md` "Identity & access" section complete: login flow ASCII, session lifecycle, contextvar propagation
+- [ ] `apps/backend/docs/patterns.md` includes "every route declares security" + "every background job opens org_context"
+- [ ] `apps/web/docs/patterns.md` includes "API client auto-injects X-Org-Slug" + "use RequireMembership for role gates"
+- [ ] `docs/glossary.md` adds: user, org, membership, role, session, invitation, provider, SSO, break-glass Owner
+- [ ] `grep -rn "TBD\|TODO\|coming soon" plan/milestones/M02-auth apps/*/docs` returns no hits introduced by M02
+- [ ] `grep -rn "<old-renamed-thing>" apps/*/docs docs` clean for any symbols renamed during M02
+- [ ] `apps/backend/bin/sync_modules` produces no diff (tach is up to date)
+- [ ] Full CI: `apps/backend/bin/ci` + `apps/web/bin/ci` + `apps/e2e/bin/ci` all exit 0
+- [ ] Security scan run (semgrep via backend CI covers it)
+- [ ] `plan/notes/users_orgs_auth.md` deleted (promoted into this milestone)
+- [ ] `plan/ROADMAP.md` updated: M02 status moved from `[planned]` to `[done]`
+- [ ] `grep -n '\[ \]' plan/milestones/M02-auth/PHASES.md` returns zero matches
+- [ ] Final assistant message summarizes work done + appends `DECISIONS.md` contents
+- [ ] Phase committed
+
+## Completion check (run before declaring milestone done)
+
+- [ ] `grep -n '\[ \]' plan/milestones/M02-auth/PHASES.md` → no output
+- [ ] `apps/backend/bin/ci` → exit 0
+- [ ] `apps/web/bin/ci` → exit 0
+- [ ] `apps/e2e/bin/ci` → exit 0
+- [ ] `git status` on branch `m02-auth` → clean
+- [ ] `git log main..m02-auth --oneline` shows commits for every phase

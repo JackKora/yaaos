@@ -4,13 +4,26 @@
 
 ## Status
 
-`[planned]` — depends on M01 shipping.
+`[planned]` — built on top of whatever code exists today. No formal dependency on M01 milestone status; the runner works against actual repo state.
 
 ## Reading order
 
-1. [requirements.md](requirements.md) — locked spec: data model, roles, flows, explicit cuts.
-2. [architecture.md](architecture.md) — module layout, middleware design, contextvar propagation, URL/header conventions.
-3. [implementation-plan.md](implementation-plan.md) — phased build order, dependencies, risks.
+1. [START_HERE.md](START_HERE.md) — **autonomous-run entry point.** Ritual, invocation, decision protocol, completion check.
+2. [PHASES.md](PHASES.md) — checkable ledger; source of truth for "what's done."
+3. [requirements.md](requirements.md) — locked spec: data model, roles, flows, explicit cuts.
+4. [architecture.md](architecture.md) — module layout, middleware design, contextvar propagation, URL/header conventions.
+5. [implementation-plan.md](implementation-plan.md) — phased build order, dependencies, risks (prose; PHASES.md is the executable version).
+6. [DECISIONS.md](DECISIONS.md) — append-only log of low-certainty decisions made during the run.
+
+## To execute M02 autonomously
+
+Open a fresh Claude Code session in this repo. Send:
+
+```
+Execute the milestone at plan/milestones/M02-auth/START_HERE.md. Follow it exactly.
+```
+
+That is the only manual step.
 
 ## Scope at a glance
 
