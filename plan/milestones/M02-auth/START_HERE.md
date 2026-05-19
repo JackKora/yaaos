@@ -43,6 +43,7 @@ For each phase, in order:
 5. `git add` the changed files and commit. Commit message: `M02 Phase <N>: <short summary>`.
 6. Edit `PHASES.md`: change every `[ ]` for this phase to `[x]`. Commit again as `M02 Phase <N>: tick ledger`. (Two commits per phase is fine.)
 7. Move to next phase.
+8. **Do not stop until `grep -n '\[ \]' plan/milestones/M02-auth/PHASES.md` returns zero matches.** Context-budget conservatism is not a stopping signal. If a tool returns a real "context window full" error, commit current work first so the next session resumes cleanly; otherwise keep going. The compaction-survival contract (below) is the *fallback*, not permission to quit early.
 
 ## Decision protocol
 
@@ -73,7 +74,7 @@ Context compaction will happen during this run. After every compaction:
 1. Re-read `START_HERE.md` (this file).
 2. Re-read `PHASES.md` to learn current progress.
 3. Resume at the first phase with unchecked items.
-4. Do not assume any in-memory state survived. The filesystem and git log are the truth.
+4. Do not assume any in-memory state survived. **Trigger this contract only when context compaction has actually occurred — not as a pre-emptive stopping signal.** The filesystem and git log are the truth.
 
 ## What NOT to do
 
@@ -83,3 +84,4 @@ Context compaction will happen during this run. After every compaction:
 - Do not commit `.env` files or secrets.
 - Do not push the branch. The user reviews and pushes when M02 is done.
 - Do not delete `plan/notes/users_orgs_auth.md` until Phase 14 explicitly says to.
+- Do not write a "status checkpoint" mid-milestone in lieu of more phase commits. If you can commit another phase, commit another phase.
