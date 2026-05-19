@@ -84,17 +84,17 @@
 
 ## Phase 6 — invitations + membership
 
-- [ ] `domain/orgs` service: `invite`, `accept_invitation`, `remove_member`, `change_role`; each emits an audit-log entry
-- [ ] Endpoints: `POST /api/memberships/invite`, `POST /api/memberships/accept`, `DELETE /api/memberships/{id}`, `PATCH /api/memberships/{id}`
-- [ ] Invitation tokens: signed via `itsdangerous`, 7-day expiry, single-use (mark `accepted_at`)
-- [ ] Email sent via SMTP (configured to Mailpit in dev); invitation contains signed link
-- [ ] Role-change auto-rotates affected user's sessions
-- [ ] Removed member's sessions are all revoked
-- [ ] Tests: invite happy path, accept token, accept expired token → 410, accept used token → 410, remove member revokes sessions, change role rotates sessions
-- [ ] Frontend `apps/web/src/domain/orgs` has Members page with invite form + role picker + remove button
-- [ ] `apps/backend/docs/domain_orgs.md` populated
-- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
-- [ ] Phase committed
+- [x] `domain/orgs` service: `invite`, `accept_invitation`, `remove_member`, `change_role`; each emits an audit-log entry
+- [x] Endpoints: `POST /api/memberships/invite`, `POST /api/memberships/accept`, `DELETE /api/memberships/{id}`, `PATCH /api/memberships/{id}`
+- [x] Invitation tokens: signed via `itsdangerous`, 7-day expiry, single-use (mark `accepted_at`)
+- [x] Email sent via SMTP (configured to Mailpit in dev); invitation contains signed link
+- [x] Role-change auto-rotates affected user's sessions
+- [x] Removed member's sessions are all revoked
+- [x] Tests: invite happy path, accept token, accept expired token → 410, accept used token → 410, remove member revokes sessions, change role rotates sessions
+- [x] Frontend `apps/web/src/domain/orgs` has Members page with invite form + role picker + remove button
+- [x] `apps/backend/docs/domain_orgs.md` populated
+- [x] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [x] Phase committed
 
 ## Phase 7 — frontend integration
 
