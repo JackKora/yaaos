@@ -94,7 +94,7 @@ depends_on = ["app.core.config", "app.core.database", "app.core.primitives", "ap
 
 [[modules]]
 path = "app.plugins.github"
-depends_on = ["app.core.auth", "app.core.config", "app.core.database", "app.core.primitives", "app.core.webserver", "app.domain.intake", "app.domain.settings", "app.domain.vcs"]
+depends_on = ["app.core.auth", "app.core.config", "app.core.database", "app.core.primitives", "app.core.webserver", "app.domain.identity", "app.domain.intake", "app.domain.settings", "app.domain.vcs"]
 
 [[modules]]
 path = "app.plugins.in_process_workspace"

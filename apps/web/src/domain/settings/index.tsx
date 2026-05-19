@@ -158,7 +158,7 @@ function AppCreatedBody({ data }: { data: GithubInstallation }) {
         App <b className="text-text mono">{data.slug}</b> exists on your GitHub account. Install it
         next — GitHub will let you pick which account and which repos.
       </p>
-      <div>
+      <div className="flex gap-2 items-center">
         {data.install_url ? (
           <a href={data.install_url} target="_blank" rel="noopener noreferrer">
             <Button variant="primary">Install on GitHub</Button>
@@ -168,6 +168,11 @@ function AppCreatedBody({ data }: { data: GithubInstallation }) {
             Install on GitHub
           </Button>
         )}
+        <a href="/api/github/install">
+          <Button variant="ghost" data-testid="connect-github-org">
+            Connect to this org
+          </Button>
+        </a>
       </div>
     </div>
   );
