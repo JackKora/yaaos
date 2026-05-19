@@ -151,16 +151,16 @@
 
 ## Phase 11 — 2FA
 
-- [ ] `domain/identity` exposes IdP MFA detection: parses `amr`/`acr` from OIDC tokens when present
-- [ ] GitHub OAuth path documented as MFA-trusted (no API check); comment in `plugins/oauth_github` references this
-- [ ] `POST /api/auth/totp/enroll` returns QR seed; `POST /api/auth/totp/verify` confirms a code and writes `verified_at`
-- [ ] TOTP secret encrypted at rest using env-var master key + `cryptography` library
-- [ ] Login flow: if user has verified TOTP and IdP didn't satisfy MFA, present TOTP challenge before issuing session
-- [ ] SSO-exempt Owner flag cannot be set unless that Owner has a verified TOTP secret (enforced at API + UI)
-- [ ] Frontend account-settings page has "Set up 2FA" flow with QR display + verify input
-- [ ] Tests: enroll → verify happy path, login step-up triggers when needed, exempt-flag-without-TOTP rejected
-- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
-- [ ] Phase committed
+- [x] `domain/identity` exposes IdP MFA detection: parses `amr`/`acr` from OIDC tokens when present
+- [x] GitHub OAuth path documented as MFA-trusted (no API check); comment in `plugins/oauth_github` references this
+- [x] `POST /api/auth/totp/enroll` returns QR seed; `POST /api/auth/totp/verify` confirms a code and writes `verified_at`
+- [x] TOTP secret encrypted at rest using env-var master key + `cryptography` library
+- [x] Login flow: if user has verified TOTP and IdP didn't satisfy MFA, present TOTP challenge before issuing session
+- [x] SSO-exempt Owner flag cannot be set unless that Owner has a verified TOTP secret (enforced at API + UI)
+- [x] Frontend account-settings page has "Set up 2FA" flow with QR display + verify input
+- [x] Tests: enroll → verify happy path, login step-up triggers when needed, exempt-flag-without-TOTP rejected
+- [x] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [x] Phase committed
 
 ## Phase 12 — SAML SSO
 
