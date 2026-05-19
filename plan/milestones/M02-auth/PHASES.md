@@ -15,18 +15,18 @@
 
 ## Phase 1 — data model
 
-- [ ] `domain/identity` module skeleton (`__init__.py`, `service.py`, `repository.py`, `models.py`, `types.py`) + `apps/backend/docs/domain_identity.md` skeleton
-- [ ] `domain/orgs` module skeleton + `apps/backend/docs/domain_orgs.md` skeleton
-- [ ] `core/primitives.ActorKind` extended additively with `USER`, `WORKSPACE`, `SSO` (existing values preserved)
-- [ ] `apps/backend/docs/core_primitives.md` updated for the new ActorKind values
-- [ ] `apps/backend/docs/core_audit_log.md` updated to note M02 actor kinds
-- [ ] New tables added: `users`, `user_emails`, `oauth_identities`, `user_totp_secrets`, `orgs`, `memberships`, `invitations`, `sso_configs`, `sessions`, `github_installations`
-- [ ] `memberships` has `UNIQUE(org_id, handle)` constraint
-- [ ] Named migration `002_create_all_m02` registered in `core/database/service.py:_MIGRATIONS`
-- [ ] Repository tests against real Postgres for each new table (TDD: tests written first)
-- [ ] `apps/backend/bin/sync_modules` run; `tach.toml` updated by the script
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `domain/identity` module skeleton (`__init__.py`, `service.py`, `repository.py`, `models.py`, `types.py`) + `apps/backend/docs/domain_identity.md` skeleton
+- [x] `domain/orgs` module skeleton + `apps/backend/docs/domain_orgs.md` skeleton
+- [x] `core/primitives.ActorKind` extended additively with `USER`, `WORKSPACE`, `SSO` (existing values preserved)
+- [x] `apps/backend/docs/core_primitives.md` updated for the new ActorKind values
+- [x] `apps/backend/docs/core_audit_log.md` updated to note M02 actor kinds
+- [x] New tables added: `users`, `user_emails`, `oauth_identities`, `user_totp_secrets`, `orgs`, `memberships`, `invitations`, `sso_configs`, `sessions`, `github_installations`
+- [x] `memberships` has `UNIQUE(org_id, handle)` constraint
+- [x] Named migration `010_create_all_m02` registered in `core/database/service.py:_MIGRATIONS` (see DECISIONS.md — `002` collided with an existing M01 migration)
+- [x] Repository tests against real Postgres for each new table (TDD: tests written first)
+- [x] `apps/backend/bin/sync_modules` run; `tach.toml` updated by the script
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 2 — core/auth + middleware
 
