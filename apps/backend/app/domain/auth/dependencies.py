@@ -169,20 +169,32 @@ def require(action: Action) -> Callable[..., None]:
         actor_kind_var.set(ActorKind.USER)
         actor_id_var.set(user_id)
         route_security_resolved.set("membership")
+        # Bind structlog so log lines + the inner handler carry the identity.
+        # Middleware unbinds at request end.
+        from app.core.auth.context import bind_request_structlog_vars  # noqa: PLC0415
+
+        bind_request_structlog_vars()
+        # Best-effort: touch the session row so `last_seen_at` reflects
+        # actual usage. Single-write per authenticated request; cheap.
+        session_cookie = request.cookies.get("yaaos_session")
+        if session_cookie:
+            from app.domain.identity import sessions as session_lifecycle  # noqa: PLC0415
+
+            async with db_session() as s:
+                await session_lifecycle.touch(s, session_cookie)
+                await s.commit()
         return Membership.from_row(membership_row)
 
     return _dep
 
 
 async def public_route(request: Request) -> None:
-    """Dependency for routes that intentionally have no auth requirement.
+    """Compat re-export. The canonical definition lives in
+    `core.auth.context.public_route` so non-domain modules can import it
+    without layering cycles."""
+    from app.core.auth.context import public_route as _core_public_route  # noqa: PLC0415
 
-    Sets `route_security_resolved = "public"` so the middleware's post-response
-    guard recognizes the declaration. Reserved for login/health/etc. — using
-    this on a route that should require a role is the bug we are trying to
-    catch.
-    """
-    route_security_resolved.set("public")
+    await _core_public_route()
 
 
 def current_actor() -> Actor:

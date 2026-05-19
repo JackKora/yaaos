@@ -10,15 +10,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.auth import public_route
 from app.core.primitives import PluginMeta
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.settings.service import OnboardingStatus, get_onboarding_status, list_plugins
 
 M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-router = APIRouter()
+# M02 default-deny: settings endpoints declare `public_route` for now.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 @router.get("/onboarding")

@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.audit_log import list_for_entity
+from app.core.auth import public_route
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.tickets.service import (
     Ticket,
@@ -19,7 +20,11 @@ from app.domain.tickets.service import (
 
 M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-router = APIRouter()
+# M02 default-deny: every legacy /api/* route declares security. M01-era
+# tickets endpoints aren't org-scoped via X-Org-Slug yet — they hard-code
+# `M01_ORG_ID`. Mark them as explicitly public for now; the M03+ migration
+# to per-org access will swap this for `require(Action.X)`.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 @router.get("")

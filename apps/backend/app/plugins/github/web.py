@@ -15,11 +15,12 @@ from uuid import UUID
 import httpx
 import structlog
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.core.auth import public_route
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
@@ -39,7 +40,10 @@ log = structlog.get_logger("github.webhook")
 
 M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-router = APIRouter()
+# M02 default-deny: GitHub plugin routes declare `public_route`. The webhook
+# endpoint authenticates via HMAC signature; the install/install_callback
+# endpoints are SSO-style flows. M03+ may swap install_* to `require()`.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 # ─── Webhook receiver ────────────────────────────────────────────────────────
@@ -475,10 +479,29 @@ async def github_install_callback(request: Request) -> RedirectResponse:
                 .where(GithubInstallationRow.installation_id == int(installation_id))
             )
         ).scalar_one_or_none()
+        first_bind = existing is None
         if existing is None:
             s.add(GithubInstallationRow(installation_id=int(installation_id), org_id=org_id))
         elif existing.org_id != org_id:
             existing.org_id = org_id
+        if first_bind:
+            from pydantic import BaseModel as _BaseModel  # noqa: PLC0415
+
+            from app.core.audit_log import audit as _audit  # noqa: PLC0415
+            from app.core.primitives import Actor as _Actor  # noqa: PLC0415
+
+            class _InstallAuditPayload(_BaseModel):
+                installation_id: int
+
+            await _audit(
+                "github_installation",
+                org_id,
+                "github_app_installation_linked",
+                _InstallAuditPayload(installation_id=int(installation_id)),
+                _Actor(kind="system"),
+                org_id=org_id,
+                session=s,
+            )
         await s.commit()
 
     return _RedirectResponse("/")

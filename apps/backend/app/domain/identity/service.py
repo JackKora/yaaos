@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.identity import repository as repo
@@ -115,7 +116,8 @@ async def complete_oauth_link(
     external_subject: str,
 ) -> OAuthIdentity:
     """Attach `(provider_id, external_subject)` to `user_id`. Used after the
-    link-confirm flow."""
+    link-confirm flow. Emits a `provider_linked` audit row per membership
+    org so each org sees the link event from a user-domain entity."""
     existing = await repo.find_oauth_identity(db, provider=provider_id, external_subject=external_subject)
     if existing is not None and existing.user_id != user_id:
         raise EmailAlreadyLinkedError(provider_id)
@@ -127,7 +129,34 @@ async def complete_oauth_link(
         provider=provider_id,
         external_subject=external_subject,
     )
+    await _emit_link_audit(db, user_id=user_id, provider_id=provider_id, kind="provider_linked")
     return OAuthIdentity.from_row(row)
+
+
+class _LinkAuditPayload(BaseModel):
+    provider: str
+
+
+async def _emit_link_audit(db: AsyncSession, *, user_id: UUID, provider_id: str, kind: str) -> None:
+    """Write one `provider_linked` (or `_unlinked`) audit row per membership
+    org. Identity events are user-global; the audit table requires `org_id`
+    so we fan out by membership. Users with no memberships emit nothing."""
+    from app.core.audit_log import audit  # noqa: PLC0415
+    from app.core.primitives import Actor  # noqa: PLC0415
+    from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
+
+    memberships = await orgs_repo.list_memberships_for_user(db, user_id)
+    actor = Actor.user(user_id=user_id)
+    for m in memberships:
+        await audit(
+            "user",
+            user_id,
+            kind,
+            _LinkAuditPayload(provider=provider_id),
+            actor,
+            org_id=m.org_id,
+            session=db,
+        )
 
 
 async def _find_pending_invitation_by_email(db: AsyncSession, email: str):

@@ -39,6 +39,7 @@ from app.core.auth.cookies import (
     csrf_cookie_attrs,
     session_cookie_attrs,
 )
+from app.core.auth.rate_limit import AUTH_LIMIT, limiter
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.primitives import Actor
@@ -94,6 +95,7 @@ def _safe_next(value: str | None) -> str:
 
 
 @router.get("/login", dependencies=[Depends(public_route)])
+@limiter.limit(AUTH_LIMIT)
 async def login(
     request: Request,
     provider: Annotated[str, Query()],
@@ -108,7 +110,17 @@ async def login(
     )
 
 
+async def _revoke_pre_auth_session(s, request: Request) -> None:
+    """If the user has any session cookie at the moment of login, revoke it.
+    Implements the spec rule 'sessions rotated on login' — prevents a
+    pre-auth session from being silently promoted into an authed one."""
+    cookie = request.cookies.get("yaaos_session")
+    if cookie:
+        await session_lifecycle.revoke(s, cookie)
+
+
 @router.get("/callback/{provider}", dependencies=[Depends(public_route)])
+@limiter.limit(AUTH_LIMIT)
 async def callback(
     request: Request,
     provider: str,
@@ -155,6 +167,7 @@ async def callback(
                     provider_id=link_payload["new_provider"],
                     external_subject=link_payload["new_external_subject"],
                 )
+                await _revoke_pre_auth_session(s, request)
                 created = await session_lifecycle.create(
                     s,
                     user_id=login_result.user.id,
@@ -197,6 +210,7 @@ async def callback(
                 )
                 return resp
 
+            await _revoke_pre_auth_session(s, request)
             created = await session_lifecycle.create(
                 s,
                 user_id=login_result.user.id,
@@ -410,6 +424,7 @@ async def totp_challenge(
         ok = await totp_lifecycle.verify(s, user_id=user_id, code=body.code)
         if not ok:
             return JSONResponse(status_code=400, content={"error": "totp_invalid"})
+        await _revoke_pre_auth_session(s, request)
         created = await session_lifecycle.create(
             s,
             user_id=user_id,

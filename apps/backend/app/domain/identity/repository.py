@@ -60,6 +60,36 @@ async def add_email(
     return row
 
 
+async def count_verified_emails(session: AsyncSession, user_id: UUID) -> int:
+    """Number of verified emails the user owns. Used to enforce
+    'removing the last verified email is blocked'."""
+    from sqlalchemy import func as _func  # noqa: PLC0415
+
+    stmt = (
+        select(_func.count())
+        .select_from(UserEmailRow)
+        .where(
+            UserEmailRow.user_id == user_id,
+            UserEmailRow.verified_at.is_not(None),
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def delete_email(session: AsyncSession, *, user_id: UUID, email_id: UUID) -> bool:
+    """Delete one of the user's email rows. Returns False if the row
+    doesn't exist or belongs to another user. Callers enforce the
+    last-verified-email invariant before calling."""
+    from sqlalchemy import delete as _sql_delete  # noqa: PLC0415
+
+    result = await session.execute(
+        _sql_delete(UserEmailRow)
+        .where(UserEmailRow.id == email_id, UserEmailRow.user_id == user_id)
+        .returning(UserEmailRow.id)
+    )
+    return result.first() is not None
+
+
 async def find_user_by_email(session: AsyncSession, email: str) -> UserRow | None:
     """Lookup by any verified email. Returns None if no match or only matches
     are on deactivated users (lazy-reuse rule)."""

@@ -11,12 +11,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
+from fastapi import Depends as _Depends
 from pydantic import BaseModel, Field
 
+from app.core.auth import public_route as _public_route
 from app.core.webserver import RouteSpec, register_routes
 from app.testing.e2e_setup import service
 
-router = APIRouter()
+router = APIRouter(dependencies=[_Depends(_public_route)])
 
 
 def _guard_dev() -> None:

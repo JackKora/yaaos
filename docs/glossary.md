@@ -4,7 +4,7 @@ Shared vocabulary across backend and frontend. These terms appear in code, URLs,
 
 | Term | Meaning |
 |---|---|
-| **Org** | Tenant boundary. One org today; every domain function takes `org_id`. |
+| **Org** | Tenant boundary. UUID PK + immutable unique `slug` used in `/orgs/{slug}/...` URLs. Multi-org from M02 onward; users may belong to many. Every non-user data row is `org_id`-scoped. Soft-deleted via `archived_at`. |
 | **Ticket** | yaaos's unit of work. References a PR; flows `open` → `in_review` → `complete` / `abandoned`. |
 | **PR** | The VCS-side artefact. Mirrored from GitHub into `pull_requests`. Owned by `domain/pull_requests`. |
 | **Review job** | One review run for one PR. One per ticket. States: `queued` → `running` → `posted` / `failed` / `skipped` / `cancelled`. Owned by `domain/reviewer`. |

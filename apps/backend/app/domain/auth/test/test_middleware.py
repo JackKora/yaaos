@@ -192,11 +192,14 @@ async def test_public_allowlist_bypasses_header_requirement() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_route_not_in_m02_protected_set_passes_through() -> None:
+async def test_legacy_route_without_security_declaration_500s() -> None:
+    """M02 default-deny: every `/api/*` route must declare security via
+    `require()` or `public_route`. A route that returns 2xx without one
+    gets swapped for 500 by the middleware's post-response guard."""
     async with _client(_make_app()) as c:
         resp = await c.get("/api/legacy/anything")
-    assert resp.status_code == 200
-    assert resp.json() == {"ok": "legacy"}
+    assert resp.status_code == 500
+    assert resp.json()["error"] == "route_missing_security_declaration"
 
 
 def test_required_role_for_covers_every_action() -> None:

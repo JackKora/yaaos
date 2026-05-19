@@ -93,7 +93,7 @@ class Session(BaseModel):
             sso_satisfied_for_org_id=row.sso_satisfied_for_org_id,
             sso_satisfied_at=row.sso_satisfied_at,
             csrf_token=row.csrf_token,
-            ip=row.ip,
+            ip=str(row.ip) if row.ip is not None else None,
             user_agent=row.user_agent,
             created_at=row.created_at,
             last_seen_at=row.last_seen_at,

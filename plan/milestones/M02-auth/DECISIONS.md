@@ -101,3 +101,35 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Alternatives considered**: a `link_attempts` DB table keyed by a server-issued token (durable, queryable, but adds a table whose only consumer is a 10-minute flow); a session-row column carrying pending-link state (couples link-confirm to a pre-existing session, which the unauthenticated entry point doesn't have).
 - **Why this one**: itsdangerous-signed cookies are already in use for invitation tokens and OAuth state; the link-confirm payload is small, short-lived, and naturally tied to the browser performing the link.
 - **Reversal cost**: medium — promoting to a DB-backed flow later is straightforward, but the cookie's salt becomes legacy.
+
+### Post-milestone audit — default-deny enforced via marker-dep on legacy routers
+
+- **Certainty**: 2/5
+- **Decision**: The middleware's post-response guard now fires on every `/api/*` path (previously only on `M02_PROTECTED_PREFIXES`). Legacy routers under `/api/tickets/`, `/api/reviewer/`, `/api/memory/`, `/api/settings/`, `/api/events`, `/api/github/`, `/api/in_process/`, `/api/claude_code/`, `/api/testing/` declare `Depends(public_route)` at the router-level so every route satisfies "every `/api/*` route declares security." Routes that should require auth (mutations on org-scoped data) keep using `Depends(require(action))`.
+- **Alternatives considered**: (a) Add `Depends(require(...))` to every legacy route directly — large diff, breaks M01 tests that don't supply `X-Org-Slug` or sessions. (b) Leave the partial enforcement from the loop iterations — fails the "default-deny on /api/*" spec line literally.
+- **Why this one**: Closes the spec gap with the lowest test-regression risk. M03+ migration to per-org access converts the public declarations to `require()` per route as the routes themselves get tenancy-aware.
+- **Reversal cost**: low — flip the marker.
+
+### Post-milestone audit — login session-rotation revokes any pre-existing cookie
+
+- **Certainty**: 3/5
+- **Decision**: Every OAuth-callback success path (main, link-confirm, TOTP step-up complete) calls `_revoke_pre_auth_session(s, request)` before `sessions.create(...)`. Implements the spec rule "rotated on login" — a pre-auth session cookie can't survive into the new identity.
+- **Alternatives considered**: keep `sessions.rotate(old_raw_token)` — but rotate requires the old token to belong to the same principal, which isn't true for the anonymous→authed transition.
+- **Why this one**: pre-auth → authed is a different relationship from same-user rotation; revoke+create is the correct semantics. The existing `sessions.rotate` remains for SSO-satisfaction + role-change paths where the principal is constant.
+- **Reversal cost**: trivial.
+
+### Post-milestone audit — identity events fan out to every membership org
+
+- **Certainty**: 3/5
+- **Decision**: User-global events (login, logout, logout-all, provider-linked, link-challenge-issued, bootstrap, logout-expiry) write one audit row per `(org_id, user_id)` pair the user is a member of. Users with no memberships emit nothing. SSO-config changes + GitHub-installation bindings are inherently per-org and emit a single row.
+- **Alternatives considered**: route identity events to a `user_global` sentinel `org_id` — but the audit table requires real org references, and querying by org needs every org's audit to see those events.
+- **Why this one**: each org's audit feed shows when its members logged in / linked / accepted invitations. Volume is bounded by membership count (small in POC; if it grows, batch the writes).
+- **Reversal cost**: medium — would require a schema change to nullable `org_id`.
+
+### Post-milestone audit — `public_route` lives in `core/auth/context`
+
+- **Certainty**: 3/5
+- **Decision**: The `public_route` dep was moved from `domain/auth/dependencies` to `core/auth/context`. `domain/auth.public_route` is a compat re-export. Legacy domain + plugin routers import from `core/auth` to avoid a `domain.*` → `domain.auth` → `domain.identity` layering cycle that tach would otherwise reject.
+- **Alternatives considered**: leave it in `domain/auth` and ban legacy routers from declaring (back to non-default-deny); add explicit tach exceptions per legacy module (noisy).
+- **Why this one**: `public_route` is pure infrastructure — sets a single contextvar. It belongs in core. Compat re-export keeps existing imports working.
+- **Reversal cost**: trivial.

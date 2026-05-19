@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
+from app.core.auth import public_route
 from app.core.events.service import EventFilter, stream_events_for_filter
 from app.core.webserver import RouteSpec, register_routes
 
-router = APIRouter()
+# M02 default-deny: SSE endpoint declares `public_route`.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 @router.get("")

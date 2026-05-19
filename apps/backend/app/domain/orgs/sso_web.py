@@ -222,14 +222,20 @@ async def get_org_sso_config() -> dict:
 async def upsert_org_sso_config(body: _SsoConfigBody) -> dict:
     """Upsert per-org SSO config. The exempt-Owner picker requires the
     candidate to have a verified TOTP secret — otherwise reject with
-    `exempt_owner_no_totp`. Phase 11 helper enforces."""
+    `exempt_owner_no_totp`. Phase 11 helper enforces. Writes a
+    `sso_config_changed` audit row + an `exempt_owner_set` row when
+    the exempt-Owner pointer changed."""
+    from app.core.auth.context import user_id_var  # noqa: PLC0415
+    from app.core.primitives import Actor  # noqa: PLC0415
+    from app.domain.auth.dependencies import current_actor  # noqa: PLC0415
     from app.domain.identity.totp import can_be_sso_exempt_owner  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
-    from app.domain.orgs.sso import SsoConfigError, upsert_config  # noqa: PLC0415
+    from app.domain.orgs.sso import SsoConfigError, get_config, upsert_config  # noqa: PLC0415
 
     org_id = org_id_var.get()
     assert org_id is not None
-    actor_user_id = org_id_var.get()  # placeholder — real actor is below
+    actor_user_id = user_id_var.get()
+    actor = current_actor() if actor_user_id else Actor(kind="system")
 
     async with db_session() as s:
         if body.exempt_owner_user_id is not None:
@@ -238,6 +244,10 @@ async def upsert_org_sso_config(body: _SsoConfigBody) -> dict:
                 raise _err(400, "exempt_must_be_owner")
             if not await can_be_sso_exempt_owner(s, body.exempt_owner_user_id):
                 raise _err(400, "exempt_owner_no_totp")
+        previous = await get_config(s, org_id=org_id)
+        prev_exempt = previous.exempt_owner_user_id if previous else None
+        prev_enabled = previous.enabled if previous else False
+        prev_jit = previous.jit_enabled if previous else False
         try:
             cfg = await upsert_config(
                 s,
@@ -249,14 +259,73 @@ async def upsert_org_sso_config(body: _SsoConfigBody) -> dict:
             )
         except SsoConfigError as exc:
             raise _err(400, str(exc))
+        await _emit_sso_config_audit(
+            s,
+            org_id=org_id,
+            actor=actor,
+            prev_enabled=prev_enabled,
+            new_enabled=cfg.enabled,
+            prev_jit=prev_jit,
+            new_jit=cfg.jit_enabled,
+            prev_exempt=prev_exempt,
+            new_exempt=cfg.exempt_owner_user_id,
+        )
         await s.commit()
-    _ = actor_user_id  # silence linter
     return {
         "enabled": cfg.enabled,
         "jit_enabled": cfg.jit_enabled,
         "exempt_owner_user_id": (str(cfg.exempt_owner_user_id) if cfg.exempt_owner_user_id else None),
         "updated_at": datetime.now(UTC).isoformat(),
     }
+
+
+class _SsoConfigAuditPayload(BaseModel):
+    enabled: bool
+    jit_enabled: bool
+    exempt_owner_user_id: UUID | None
+    changed_enabled: bool = False
+    changed_jit: bool = False
+    changed_exempt_owner: bool = False
+
+
+async def _emit_sso_config_audit(
+    s,
+    *,
+    org_id: UUID,
+    actor,
+    prev_enabled: bool,
+    new_enabled: bool,
+    prev_jit: bool,
+    new_jit: bool,
+    prev_exempt: UUID | None,
+    new_exempt: UUID | None,
+) -> None:
+    from app.core.audit_log import audit  # noqa: PLC0415
+
+    payload = _SsoConfigAuditPayload(
+        enabled=new_enabled,
+        jit_enabled=new_jit,
+        exempt_owner_user_id=new_exempt,
+        changed_enabled=prev_enabled != new_enabled,
+        changed_jit=prev_jit != new_jit,
+        changed_exempt_owner=prev_exempt != new_exempt,
+    )
+    await audit("sso_config", org_id, "sso_config_changed", payload, actor, org_id=org_id, session=s)
+    if prev_exempt != new_exempt and new_exempt is not None:
+        await audit(
+            "sso_config",
+            org_id,
+            "exempt_owner_set",
+            _SsoConfigAuditPayload(
+                enabled=new_enabled,
+                jit_enabled=new_jit,
+                exempt_owner_user_id=new_exempt,
+                changed_exempt_owner=True,
+            ),
+            actor,
+            org_id=org_id,
+            session=s,
+        )
 
 
 register_routes(RouteSpec(module_name="sso", router=router, url_prefix="/api/sso"))

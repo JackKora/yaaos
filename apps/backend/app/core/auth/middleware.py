@@ -1,18 +1,17 @@
 """Default-deny middleware for `/api/*`.
 
-Behavior (only on M02-protected paths — see `types.M02_PROTECTED_PREFIXES`):
+Behavior:
 
-  1. Reset identity contextvars.
-  2. If path is in the public allowlist (`/api/auth/*`, `/api/health`),
-     pass through without further enforcement.
-  3. Otherwise require `X-Org-Slug` header — else 400.
-  4. Call the route. Route deps (`require(action)` / `public_route`) populate
-     `route_security_resolved`.
-  5. Post-response: if `route_security_resolved` is None on an M02-protected
-     path and the response is a 2xx, log + 500 (a route forgot its security
-     declaration). Non-2xx responses pass through (the dep raised an
-     intended HTTPException — the post-response guard would otherwise mask
-     legitimate 401/403/404s with a misleading 500).
+  1. Reset identity contextvars at every request.
+  2. If path is in the public allowlist (`/api/auth/*`, `/api/sso/`,
+     `/api/health`), pass through without header enforcement.
+  3. If path matches `M02_PROTECTED_PREFIXES` and lacks `X-Org-Slug`, 400.
+  4. If protected + mutating + bad CSRF, 403.
+  5. Call the route. Route deps (`require(action)` / `public_route`)
+     populate `route_security_resolved`.
+  6. **Default-deny post-response guard (any `/api/*`):** if the route
+     returned 2xx but no security was declared, swap the response for
+     500. Non-2xx pass through so dep-raised 401/403/404 aren't masked.
 
 Implemented as pure ASGI middleware (not Starlette `BaseHTTPMiddleware`) so
 contextvars set inside the route handler propagate back here when we check
@@ -34,6 +33,7 @@ from app.core.auth.context import (
     actor_kind_var,
     org_id_var,
     route_security_resolved,
+    unbind_request_structlog_vars,
     user_id_var,
 )
 from app.core.auth.types import is_m02_protected_path, is_public_path
@@ -137,7 +137,12 @@ class AuthMiddleware:
             # body or trailers
             if message["type"] == "http.response.body" and intercepted_start:
                 start = intercepted_start.pop(0)
-                if protected and 200 <= sent_status["status"] < 300 and route_security_resolved.get() is None:
+                # Default-deny: every /api/* route must consume either
+                # `Depends(require(...))` or `Depends(public_route)`. If
+                # the response is 2xx and no security was declared, swap
+                # in a 500. (Non-2xx pass through so dep-raised
+                # 401/403/404 aren't masked.)
+                if 200 <= sent_status["status"] < 300 and route_security_resolved.get() is None:
                     log.error("auth.route_missing_security_declaration", path=path)
                     err_start, err_body = _json_response(500, {"error": "route_missing_security_declaration"})
                     await send(err_start)
@@ -146,7 +151,13 @@ class AuthMiddleware:
                 await send(start)
             await send(message)
 
-        await self.app(scope, receive, _send)
+        try:
+            await self.app(scope, receive, _send)
+        finally:
+            # structlog contextvars set during the request need explicit
+            # cleanup — they live in the global contextvars map, not the
+            # request scope.
+            unbind_request_structlog_vars()
 
         # Tag the OTel span (best-effort).
         span = trace.get_current_span()

@@ -6,12 +6,13 @@ Plugin-owned URL namespace per `plan/milestones/M01-code-review/backend.md` §
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.auth import public_route
 from app.core.webserver import RouteSpec, register_routes
 from app.plugins.in_process_workspace.service import get_provider
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 @router.get("/health")

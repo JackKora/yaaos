@@ -95,6 +95,45 @@ async def org_context(
         org_id_var.reset(org_token)
 
 
+_REQUEST_STRUCTLOG_KEYS = ("yaaos_org_id", "yaaos_user_id", "yaaos_actor_kind", "yaaos_actor_id")
+
+
+def bind_request_structlog_vars() -> None:
+    """Bind the currently-resolved identity contextvars to structlog so every
+    log line inside the request carries them. Idempotent — called after
+    `require()` resolves a session + membership."""
+    org_id = org_id_var.get()
+    user_id = user_id_var.get()
+    actor_kind = actor_kind_var.get()
+    actor_id = actor_id_var.get()
+    bindings: dict[str, str] = {}
+    if org_id is not None:
+        bindings["yaaos_org_id"] = str(org_id)
+    if user_id is not None:
+        bindings["yaaos_user_id"] = str(user_id)
+    if actor_kind is not None:
+        bindings["yaaos_actor_kind"] = actor_kind.value
+    if actor_id is not None:
+        bindings["yaaos_actor_id"] = str(actor_id)
+    if bindings:
+        structlog.contextvars.bind_contextvars(**bindings)
+
+
+def unbind_request_structlog_vars() -> None:
+    """Clear structlog bindings at request end. Safe to call even when no
+    binding ever happened — `unbind_contextvars` no-ops on missing keys."""
+    structlog.contextvars.unbind_contextvars(*_REQUEST_STRUCTLOG_KEYS)
+
+
+async def public_route() -> None:
+    """FastAPI dependency for routes that have no auth requirement. Sets
+    `route_security_resolved = "public"` so the middleware's post-response
+    guard recognizes the declaration. Lives in `core/auth` (not
+    `domain/auth`) so non-domain modules can use it without a layering
+    cycle."""
+    route_security_resolved.set("public")
+
+
 def require_org_context() -> UUID:
     """Assertion helper for functions that read org-scoped state. Raises
     `RuntimeError` outside an HTTP middleware or `org_context()` block —

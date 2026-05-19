@@ -141,6 +141,36 @@ async def _ensure_owner_membership(s, *, user_id, org_id, handle: str):
     return row, True
 
 
+async def _emit_bootstrap_audit(
+    s, *, org_id, user_id, user_created: bool, org_created: bool, membership_created: bool
+) -> None:
+    """Emit a `bootstrap_owner_seeded` audit row capturing what the script
+    created. Idempotent re-runs that found everything already existing
+    don't emit (caller checks)."""
+    from app.core.audit_log import audit  # noqa: E402
+    from app.core.primitives import Actor  # noqa: E402
+    from pydantic import BaseModel  # noqa: E402
+
+    class _BootstrapPayload(BaseModel):
+        user_created: bool
+        org_created: bool
+        membership_created: bool
+
+    await audit(
+        "user",
+        user_id,
+        "bootstrap_owner_seeded",
+        _BootstrapPayload(
+            user_created=user_created,
+            org_created=org_created,
+            membership_created=membership_created,
+        ),
+        Actor(kind="system"),
+        org_id=org_id,
+        session=s,
+    )
+
+
 async def _run(stream: IO[str]) -> int:
     email = _prompt(stream, "Email", _is_email).lower()
     gh_login = _prompt(stream, "GitHub username", _is_github_login)
@@ -160,6 +190,15 @@ async def _run(stream: IO[str]) -> int:
         _, membership_created = await _ensure_owner_membership(
             s, user_id=user.id, org_id=org.id, handle=handle
         )
+        if user_created or org_created or membership_created:
+            await _emit_bootstrap_audit(
+                s,
+                org_id=org.id,
+                user_id=user.id,
+                user_created=user_created,
+                org_created=org_created,
+                membership_created=membership_created,
+            )
         await s.commit()
 
     summary = (

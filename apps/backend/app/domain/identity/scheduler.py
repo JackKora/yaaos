@@ -59,7 +59,43 @@ async def _purge_stale_unverified_totp_secrets() -> int:
 
 
 async def _purge_expired_sessions() -> int:
+    """Purge expired session rows. Each purged session emits a `logout`
+    audit row with `kind=expiry` so the audit timeline reflects every
+    logout-style event (explicit, forced, expiry) per the spec."""
+    from pydantic import BaseModel as _BaseModel  # noqa: PLC0415
+    from sqlalchemy import select as _select  # noqa: PLC0415
+
+    from app.core.audit_log import audit as _audit  # noqa: PLC0415
+    from app.core.primitives import Actor as _Actor  # noqa: PLC0415
+    from app.domain.identity.models import SessionRow  # noqa: PLC0415
+    from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
+
+    class _ExpiryPayload(_BaseModel):
+        kind: str = "expiry"
+
     async with db_session() as s:
+        # Collect about-to-be-purged sessions so we can emit audit rows per
+        # affected (user, org) pair before deletion.
+        expired = (
+            await s.execute(
+                _select(SessionRow.token_hash, SessionRow.user_id).where(
+                    SessionRow.expires_at < datetime.now(UTC), SessionRow.user_id.is_not(None)
+                )
+            )
+        ).all()
+        for _token_hash, user_id in expired:
+            if user_id is None:
+                continue
+            for m in await orgs_repo.list_memberships_for_user(s, user_id):
+                await _audit(
+                    "user",
+                    user_id,
+                    "logout",
+                    _ExpiryPayload(),
+                    _Actor(kind="system"),
+                    org_id=m.org_id,
+                    session=s,
+                )
         n = await sessions.cleanup_expired(s)
         await s.commit()
         return n
