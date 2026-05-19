@@ -14,6 +14,7 @@ from app.core.auth.context import (
     current_user_id,
     org_context,
     org_id_var,
+    require_org_context,
     route_security_resolved,
     user_id_var,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "is_public_path",
     "org_context",
     "org_id_var",
+    "require_org_context",
     "route_security_resolved",
     "session_cookie_attrs",
     "user_id_var",

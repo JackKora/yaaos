@@ -64,18 +64,46 @@ async def org_context(
     actor_id: UUID | None = None,
 ):
     """Background-job entry point — sets the same contextvars HTTP middleware
-    sets. Phase 9 extends this with OTel span attrs + structlog vars; the
-    minimum implementation lands here so Phase 2 tests for `current_*`
-    helpers have a non-HTTP code path.
-    """
+    sets, plus OTel span attrs + structlog bound contextvars."""
+    from opentelemetry import trace  # noqa: PLC0415
+
     org_token = org_id_var.set(org_id)
     kind_token = actor_kind_var.set(actor_kind)
     actor_token = actor_id_var.set(actor_id)
     sec_token = route_security_resolved.set("background")
+
+    span = trace.get_current_span()
+    if span is not None:
+        span.set_attribute("yaaos.org_id", str(org_id))
+        span.set_attribute("yaaos.actor_kind", actor_kind.value)
+        if actor_id is not None:
+            span.set_attribute("yaaos.actor_id", str(actor_id))
+
+    structlog.contextvars.bind_contextvars(
+        yaaos_org_id=str(org_id),
+        yaaos_actor_kind=actor_kind.value,
+        yaaos_actor_id=str(actor_id) if actor_id is not None else None,
+    )
+
     try:
         yield
     finally:
+        structlog.contextvars.unbind_contextvars("yaaos_org_id", "yaaos_actor_kind", "yaaos_actor_id")
         route_security_resolved.reset(sec_token)
         actor_id_var.reset(actor_token)
         actor_kind_var.reset(kind_token)
         org_id_var.reset(org_token)
+
+
+def require_org_context() -> UUID:
+    """Assertion helper for functions that read org-scoped state. Raises
+    `RuntimeError` outside an HTTP middleware or `org_context()` block —
+    surfaces forgotten-context bugs loudly instead of silently leaking
+    cross-org data."""
+    org_id = org_id_var.get()
+    if org_id is None:
+        raise RuntimeError(
+            "org_id contextvar is unset — wrap this code in `org_context(...)` "
+            "or pass `org_id` as an explicit parameter"
+        )
+    return org_id

@@ -612,13 +612,17 @@ async def run_catchup_loop() -> None:
             .scalars()
             .all()
         )
+    from app.core.auth import org_context  # noqa: PLC0415
+    from app.core.primitives import ActorKind  # noqa: PLC0415
+
     seen_orgs: set[UUID] = set()
     for row in installs:
         if row.org_id in seen_orgs:
             continue
         seen_orgs.add(row.org_id)
         try:
-            await _run_catchup(row.org_id)
+            async with org_context(row.org_id, ActorKind.SYSTEM):
+                await _run_catchup(row.org_id)
         except Exception:
             log.exception("github.catchup.org_failed", org_id=str(row.org_id))
 

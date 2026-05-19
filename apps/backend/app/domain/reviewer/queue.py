@@ -277,7 +277,7 @@ async def schedule_review(
     await publish(ReviewJobStatusChanged(pr_id=pr.id, review_job_id=new_id, status="queued"))
     task = spawn(
         f"review_job:{new_id}",
-        _run_review_job(
+        _run_review_job_with_context(
             ReviewJobInput(
                 review_job_id=new_id,
                 ticket_id=ticket_id,
@@ -483,7 +483,18 @@ class _ResolvedContext:
     language: str | None
 
 
-async def _run_review_job(input: ReviewJobInput) -> None:
+async def _run_review_job_with_context(input: ReviewJobInput) -> None:
+    """Phase 9: wrap `_run_review_job_inner` in `org_context(...)` so
+    background audit rows + structlog lines carry the correct org +
+    workspace actor."""
+    from app.core.auth import org_context  # noqa: PLC0415
+    from app.core.primitives import ActorKind  # noqa: PLC0415
+
+    async with org_context(input.org_id, ActorKind.WORKSPACE):
+        await _run_review_job_inner(input)
+
+
+async def _run_review_job_inner(input: ReviewJobInput) -> None:
     """Run one review job end-to-end: provision workspace, invoke parent
     reviewer, post one Review to the VCS.
     """
@@ -1152,7 +1163,7 @@ async def startup_recovery() -> None:
             continue
         spawn(
             f"review_job:{row.id}",
-            _run_review_job(
+            _run_review_job_with_context(
                 ReviewJobInput(
                     review_job_id=row.id,
                     ticket_id=pr_row.ticket_id,
