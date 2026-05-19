@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth import public_route
 from app.core.primitives import Actor
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.memory.service import (
@@ -23,7 +24,8 @@ from app.domain.memory.service import (
 
 M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-router = APIRouter()
+# M02 default-deny: legacy memory endpoints declare `public_route`.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 class CreateLessonRequest(BaseModel):

@@ -108,6 +108,14 @@ No shared `httpx.AsyncClient` — short-lived per-method against `github_api_bas
 
 `post_review` posts each finding as its own comment rather than bundling them into a single `Review` object — no top-level wrapper comment, no `APPROVE` / `REQUEST_CHANGES` verdict (deferred). Findings with `file` + `line_start` go to `POST /pulls/{n}/comments` (the inline-review-comments endpoint, which requires the PR's `head_sha` as `commit_id`); orphan findings and the secrets-warning `summary_body` case route to `POST /issues/{n}/comments` (GitHub's path for non-inline PR comments — naming aside, this is *not* a GitHub Issues operation). `Review.state` is recorded internally but ignored on post; the approve flow will reintroduce it later.
 
+### Install ↔ org binding (M02)
+
+The M02 `github_installations(installation_id PK, org_id, created_at)` table — owned by [`domain/identity`](domain_identity.md) — records which yaaos org an installation belongs to. Owners initiate the bind by hitting `GET /api/github/install` from `/orgs/<slug>/settings`; the handler signs `state={org_id}` via `itsdangerous.URLSafeTimedSerializer` (15-minute TTL, salt `yaaos-github-install`) and 302's to `https://github.com/apps/<slug>/installations/new?state=...`.
+
+After the install completes, GitHub redirects to `GET /api/github/install_callback?installation_id=<n>&state=<signed>`. The handler verifies the signature + TTL and either inserts or updates the `github_installations` row to map `installation_id → org_id`. Bad/expired states return 400. Successful binds 303 to `/`.
+
+`resolve_org_for_installation(installation_id)` is the public helper webhook consumers + the catch-up poller can call to look up which org owns an installation event. Returns `None` when the install hasn't been bound to an org yet.
+
 ### Catch-up poller
 
 `_start_catchup` is the `on_startup` hook; spawns `run_catchup_loop()` via `core/primitives.spawn("github.catchup", ...)`.
@@ -134,6 +142,8 @@ All four tables detailed in `docs/architecture.md` under "Data model":
 - `github_settings` — App ID, slug, encrypted PEM + webhook secret (one per org).
 - `github_webhook_events` — idempotency on `X-GitHub-Delivery`.
 - `github_poller_state` — per-(org, repo) catch-up cursor.
+
+Reads (M02): `github_installations` — owned by [`domain/identity`](domain_identity.md); the plugin only inserts via `/install_callback` and reads via `resolve_org_for_installation`.
 
 ## How it's tested
 

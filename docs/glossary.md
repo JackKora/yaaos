@@ -4,7 +4,7 @@ Shared vocabulary across backend and frontend. These terms appear in code, URLs,
 
 | Term | Meaning |
 |---|---|
-| **Org** | Tenant boundary. One org today; every domain function takes `org_id`. |
+| **Org** | Tenant boundary. UUID PK + immutable unique `slug` used in `/orgs/{slug}/...` URLs. Multi-org from M02 onward; users may belong to many. Every non-user data row is `org_id`-scoped. Soft-deleted via `archived_at`. |
 | **Ticket** | yaaos's unit of work. References a PR; flows `open` → `in_review` → `complete` / `abandoned`. |
 | **PR** | The VCS-side artefact. Mirrored from GitHub into `pull_requests`. Owned by `domain/pull_requests`. |
 | **Review job** | One review run for one PR. One per ticket. States: `queued` → `running` → `posted` / `failed` / `skipped` / `cancelled`. Owned by `domain/reviewer`. |
@@ -19,3 +19,11 @@ Shared vocabulary across backend and frontend. These terms appear in code, URLs,
 | **Audit entry** | One row in `audit_log`. Append-only. Kind is `<entity>.<verb_past>`. Payload is a Pydantic model owned by the writing module. |
 | **Actor** | Who initiated an action — `{kind: "github_user" | "agent" | "system", login?, agent_id?}`. Required on every audit entry. Defined in `core/primitives`. |
 | **Onboarding** | Dashboard's pre-ready state. Two checks: GitHub App installed + Anthropic API key set (validated by live probe). Computed by `domain/settings.get_onboarding_status()`. |
+| **User** | A human identity. UUID PK, soft-deletable via `deactivated_at`. Distinct from `actor_kind=github_user` which is the GitHub-as-VCS actor on legacy rows. Owned by `domain/identity`. |
+| **Membership** | Link between a `User` and an `Org`. Composite PK `(user_id, org_id)`. Carries a per-org `handle` and one of three `Role`s. Same user can be `@jack` in one org and `@jkora` in another. |
+| **Role** | `owner ≥ admin ≥ member`. Compared via `role.covers(required)` only. Action-to-role minimums declared at `Depends(require(Action.X))` call sites. |
+| **Session** | Opaque server-side row keyed by `sha256(raw_token)`. Cookie is `HttpOnly; SameSite=Lax; Secure`. Double-submit CSRF via the per-session `csrf_token`. `sso_satisfied_for_org_id` + timestamp track the 8-hour SSO TTL. |
+| **Invitation** | Owner/Admin-issued offer for an external email to join an org. Token is `itsdangerous`-signed, 7-day TTL, single-use. Stored as `sha256(token)`; raw tokens live only in the invitation email. |
+| **Provider** | OAuth identity provider. Plugins (`oauth_github`, `oauth_test`) implement the `Provider` Protocol. Returns a `ProviderProfile` (`external_subject`, `primary_email`, `email_verified`, `display_name`, `mfa_satisfied`). |
+| **SSO** | SAML 2.0 per-org single sign-on. SP-initiated. Verified assertion → session `sso_satisfied_for_org_id`. Middleware blocks org access when SSO is enabled and the session isn't satisfied. |
+| **Break-glass Owner** | Owner picked as the SSO `exempt_owner`. Can sign in via OAuth + TOTP when SSO is broken. Each bypass writes a `break_glass_exempt_owner` audit entry. The exempt-Owner candidate must already have a verified TOTP secret. |

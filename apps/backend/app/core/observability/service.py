@@ -35,7 +35,7 @@ def configure() -> None:
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
-    if settings.yaaos_env == "dev":
+    if settings.is_non_prod:
         processors.append(structlog.dev.ConsoleRenderer(colors=True))
     else:
         processors.append(structlog.processors.JSONRenderer())

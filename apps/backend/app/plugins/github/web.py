@@ -15,11 +15,12 @@ from uuid import UUID
 import httpx
 import structlog
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.core.auth import public_route
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
@@ -39,7 +40,10 @@ log = structlog.get_logger("github.webhook")
 
 M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-router = APIRouter()
+# M02 default-deny: GitHub plugin routes declare `public_route`. The webhook
+# endpoint authenticates via HMAC signature; the install/install_callback
+# endpoints are SSO-style flows. M03+ may swap install_* to `require()`.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 # ─── Webhook receiver ────────────────────────────────────────────────────────
@@ -379,6 +383,145 @@ async def _start_catchup() -> None:
     from app.core.primitives import spawn  # noqa: PLC0415
 
     spawn("github.catchup", run_catchup_loop())
+
+
+# ── M02 — GitHub App install ↔ org binding ──────────────────────────────
+
+
+_INSTALL_STATE_SALT = "yaaos-github-install"
+
+
+def _install_state_serializer():
+    from itsdangerous import URLSafeTimedSerializer  # noqa: PLC0415
+
+    from app.core.config import get_settings  # noqa: PLC0415
+
+    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret, salt=_INSTALL_STATE_SALT)
+
+
+@router.get("/install")
+async def github_install_start(request: Request) -> RedirectResponse:
+    """Owner-initiated GitHub App install. Signs `state=<org_id>` via
+    itsdangerous and 302's to the App install URL. Callback verifies the
+    state and writes a `github_installations(org_id, installation_id)` row.
+
+    Reads `org_id` from the `X-Org-Slug` header — the route is gated on
+    the `GITHUB_APP_LINK` action (Owner) via the standard
+    middleware/dep pair. Hitting this from `/orgs/<slug>/settings` brings
+    the Owner through the install picker on GitHub.
+    """
+    from fastapi import HTTPException as _HTTPException  # noqa: PLC0415
+
+    from app.core.auth import org_id_var  # noqa: PLC0415
+
+    org_id = org_id_var.get()
+    if org_id is None:
+        raise _HTTPException(status_code=400, detail={"error": "no_org_context"})
+    state = _install_state_serializer().dumps({"org_id": str(org_id)})
+    # Build the install URL. The App's slug comes from settings (stored at
+    # manifest-create time). If not yet provisioned, send the operator to
+    # the manifest-create flow instead.
+    from sqlalchemy import select as _select  # noqa: PLC0415
+
+    from app.core.database import session as db_session  # noqa: PLC0415
+    from app.plugins.github.models import GitHubSettingsRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        row = (
+            await s.execute(_select(GitHubSettingsRow).where(GitHubSettingsRow.org_id == org_id))
+        ).scalar_one_or_none()
+    if row is None or not row.slug:
+        raise _HTTPException(status_code=409, detail={"error": "app_not_provisioned"})
+    redirect_to = f"https://github.com/apps/{row.slug}/installations/new?state={state}"
+    from fastapi.responses import RedirectResponse as _RedirectResponse  # noqa: PLC0415
+
+    return _RedirectResponse(redirect_to)
+
+
+@router.get("/install_callback")
+async def github_install_callback(request: Request) -> RedirectResponse:
+    """Post-install redirect target. GitHub redirects here with
+    `installation_id=<n>&state=<signed>` so we can bind the new install to
+    the right org. On success, write the `github_installations` row and
+    303 to /orgs/<slug>/settings.
+    """
+    from fastapi import HTTPException as _HTTPException  # noqa: PLC0415
+    from fastapi.responses import RedirectResponse as _RedirectResponse  # noqa: PLC0415
+    from itsdangerous import BadSignature, SignatureExpired  # noqa: PLC0415
+
+    qp = request.query_params
+    raw_state = qp.get("state")
+    installation_id = qp.get("installation_id")
+    if not raw_state or not installation_id:
+        raise _HTTPException(status_code=400, detail={"error": "missing_params"})
+    try:
+        payload = _install_state_serializer().loads(raw_state, max_age=900)
+    except SignatureExpired:
+        raise _HTTPException(status_code=400, detail={"error": "state_expired"})
+    except BadSignature:
+        raise _HTTPException(status_code=400, detail={"error": "state_invalid"})
+
+    from uuid import UUID as _UUID  # noqa: PLC0415
+
+    try:
+        org_id = _UUID(payload["org_id"])
+    except (KeyError, ValueError):
+        raise _HTTPException(status_code=400, detail={"error": "state_invalid"})
+
+    from app.core.database import session as db_session  # noqa: PLC0415
+    from app.domain.identity.models import GithubInstallationRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        existing = (
+            await s.execute(
+                __import__("sqlalchemy")
+                .select(GithubInstallationRow)
+                .where(GithubInstallationRow.installation_id == int(installation_id))
+            )
+        ).scalar_one_or_none()
+        first_bind = existing is None
+        if existing is None:
+            s.add(GithubInstallationRow(installation_id=int(installation_id), org_id=org_id))
+        elif existing.org_id != org_id:
+            existing.org_id = org_id
+        if first_bind:
+            from pydantic import BaseModel as _BaseModel  # noqa: PLC0415
+
+            from app.core.audit_log import audit as _audit  # noqa: PLC0415
+            from app.core.primitives import Actor as _Actor  # noqa: PLC0415
+
+            class _InstallAuditPayload(_BaseModel):
+                installation_id: int
+
+            await _audit(
+                "github_installation",
+                org_id,
+                "github_app_installation_linked",
+                _InstallAuditPayload(installation_id=int(installation_id)),
+                _Actor(kind="system"),
+                org_id=org_id,
+                session=s,
+            )
+        await s.commit()
+
+    return _RedirectResponse("/")
+
+
+async def resolve_org_for_installation(installation_id: int):
+    """Look up `(org_id)` by GitHub installation id via the M02
+    `github_installations` table. Returns None if not bound yet."""
+    from app.core.database import session as db_session  # noqa: PLC0415
+    from app.domain.identity.models import GithubInstallationRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        row = (
+            await s.execute(
+                __import__("sqlalchemy")
+                .select(GithubInstallationRow)
+                .where(GithubInstallationRow.installation_id == int(installation_id))
+            )
+        ).scalar_one_or_none()
+    return row.org_id if row else None
 
 
 register_routes(RouteSpec(module_name="github", router=router, on_startup=[_start_catchup]))

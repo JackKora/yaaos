@@ -35,6 +35,10 @@ def _required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.core.config.service import get_settings  # noqa: PLC0415
 
     get_settings.cache_clear()
+    yield
+    # Restore: monkeypatch reverts env, but the cache still holds dev settings.
+    # Clear it so downstream tests see the conftest-default `YAAOS_ENV=test`.
+    get_settings.cache_clear()
 
 
 def test_health_endpoint_responds_200() -> None:

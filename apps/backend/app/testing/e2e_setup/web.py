@@ -1,6 +1,6 @@
 """HTTP routes for the `e2e_setup` test surface.
 
-Every route is gated on `yaaos_env == "dev"`. In prod the routes still mount
+Every route is gated on `is_non_prod` (dev + test). In prod the routes still mount
 (because the testing tree is excluded from prod wheels, so prod never imports
 this module — see `apps/backend/pyproject.toml`), but defense-in-depth here
 ensures a stray dev-flagged build can't be probed for seed endpoints.
@@ -11,12 +11,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
+from fastapi import Depends as _Depends
 from pydantic import BaseModel, Field
 
+from app.core.auth import public_route as _public_route
 from app.core.webserver import RouteSpec, register_routes
 from app.testing.e2e_setup import service
 
-router = APIRouter()
+router = APIRouter(dependencies=[_Depends(_public_route)])
 
 
 def _guard_dev() -> None:
@@ -62,6 +64,87 @@ async def seed_lesson(req: _LessonRequest) -> dict[str, str]:
         body=req.body,
     )
     return {"status": "seeded", "lesson_id": str(lesson_id)}
+
+
+# ── M02 — auth-flow helpers ──────────────────────────────────────────────
+
+
+class _BootstrapOwnerRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    github_id: str = Field(..., min_length=1)
+    org_slug: str = Field(..., min_length=1)
+    display_name: str = Field(default="Owner")
+    provider: str = Field(default="github")
+
+
+@router.post("/seed/bootstrap_owner")
+async def seed_bootstrap_owner(req: _BootstrapOwnerRequest) -> dict[str, str]:
+    """Mint a first user + org + Owner membership for an e2e test."""
+    _guard_dev()
+    ids = await service.seed_bootstrap_owner(
+        email=req.email,
+        github_id=req.github_id,
+        org_slug=req.org_slug,
+        display_name=req.display_name,
+        provider=req.provider,
+    )
+    return {"status": "seeded", **ids}
+
+
+class _UserWithSessionRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    session_cookie: str = Field(..., min_length=1)
+
+
+@router.post("/seed/user_with_session")
+async def seed_user_with_session(req: _UserWithSessionRequest) -> dict[str, str]:
+    """Create a user + a session backed by `session_cookie` as the raw token."""
+    _guard_dev()
+    user_id = await service.seed_user_with_session(email=req.email, raw_session_token=req.session_cookie)
+    return {"status": "seeded", "user_id": user_id}
+
+
+class _StageProfileRequest(BaseModel):
+    external_subject: str
+    primary_email: str
+    email_verified: bool = True
+    display_name: str = ""
+
+
+@router.post("/oauth_test/stage_profile")
+async def oauth_test_stage_profile(req: _StageProfileRequest) -> dict[str, str]:
+    """Stage the profile the `oauth_test` provider returns on next callback."""
+    _guard_dev()
+    service.stage_oauth_test_profile(
+        external_subject=req.external_subject,
+        primary_email=req.primary_email,
+        email_verified=req.email_verified,
+        display_name=req.display_name,
+    )
+    return {"status": "staged"}
+
+
+@router.get("/email_inbox")
+async def email_inbox() -> dict[str, list[dict[str, str]]]:
+    """Return + clear the in-memory test-env email inbox."""
+    _guard_dev()
+    return {"messages": service.read_and_clear_email_inbox()}
+
+
+class _SamlSignRequest(BaseModel):
+    email: str
+    name_id: str = ""
+
+
+@router.post("/saml/sign")
+async def saml_sign(req: _SamlSignRequest) -> dict[str, str]:
+    """Test-only: sign a stub SAML assertion the `/api/sso/<slug>/acs`
+    handler will accept. Drives the Phase 12 Playwright spec."""
+    _guard_dev()
+    from app.plugins.saml_test.service import sign_assertion  # noqa: PLC0415
+
+    token = sign_assertion({"email": req.email, "name_id": req.name_id or req.email})
+    return {"token": token}
 
 
 register_routes(RouteSpec(module_name="e2e_setup", router=router, url_prefix="/api/testing"))

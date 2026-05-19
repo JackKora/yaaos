@@ -16,9 +16,12 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     proxy: {
-      // Forward API + OpenAPI to FastAPI on :8080 during dev.
+      // Forward API + OpenAPI + webhooks to FastAPI on :8080 during dev.
+      // `/webhooks` is the same-origin path GitHub posts to (M02); the SPA
+      // never hits it directly but proxying keeps prod/dev shape identical.
       "/api": "http://localhost:8080",
       "/openapi.json": "http://localhost:8080",
+      "/webhooks": "http://localhost:8080",
     },
   },
   test: {

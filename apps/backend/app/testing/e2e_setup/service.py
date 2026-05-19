@@ -149,16 +149,158 @@ async def seed_lesson(*, repo_external_id: str, title: str, body: str) -> UUID:
 
 def is_dev_env() -> bool:
     """Gate used by every `/api/testing/*` route. Centralised so the rule
-    `dev-only routes` lives in one place, not per-handler.
+    `non-prod-only routes` lives in one place, not per-handler. True for
+    `dev` and `test`; prod returns 404 via every gated handler.
     """
-    return get_settings().yaaos_env == "dev"
+    return get_settings().is_non_prod
+
+
+# ── M02 — auth-flow helpers ──────────────────────────────────────────────
+
+
+async def seed_bootstrap_owner(
+    *,
+    email: str,
+    github_id: str,
+    org_slug: str,
+    display_name: str = "Owner",
+    provider: str = "github",
+) -> dict[str, str]:
+    """Mint user + verified email + oauth_identity + org + Owner
+    membership in a single transaction. Idempotent against the same
+    `(email, external_subject, org_slug)`. The provider defaults to
+    `github`; tests using the `oauth_test` stub pass `provider="test"`
+    so the subsequent test-stub login matches by identity."""
+    from datetime import UTC, datetime  # noqa: PLC0415
+    from uuid import uuid4 as _uuid4  # noqa: PLC0415
+
+    from app.domain.identity.models import OAuthIdentityRow, UserEmailRow, UserRow  # noqa: PLC0415
+    from app.domain.orgs.models import MembershipRow, OrgRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        user = UserRow(id=_uuid4(), display_name=display_name)
+        s.add(user)
+        await s.flush()
+        s.add(
+            UserEmailRow(
+                id=_uuid4(),
+                user_id=user.id,
+                email=email.lower(),
+                is_primary=True,
+                verified_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            OAuthIdentityRow(
+                id=_uuid4(),
+                user_id=user.id,
+                provider=provider,
+                external_subject=str(github_id),
+                verified_at=datetime.now(UTC),
+            )
+        )
+        org = OrgRow(id=_uuid4(), slug=org_slug, display_name=org_slug)
+        s.add(org)
+        await s.flush()
+        s.add(
+            MembershipRow(
+                user_id=user.id,
+                org_id=org.id,
+                role="owner",
+                handle=email.split("@", 1)[0][:64].lower(),
+            )
+        )
+        await s.commit()
+        return {"user_id": str(user.id), "org_id": str(org.id), "org_slug": org_slug}
+
+
+async def seed_user_with_session(*, email: str, raw_session_token: str) -> str:
+    """Bind `raw_session_token` to the user identified by `email`. Creates
+    the user + verified primary email if missing. Caller sets the
+    `yaaos_session` cookie to `raw_session_token` and the backend resolves
+    the session normally."""
+    from datetime import UTC, datetime, timedelta  # noqa: PLC0415
+    from uuid import uuid4 as _uuid4  # noqa: PLC0415
+
+    from app.domain.identity import repository as identity_repo  # noqa: PLC0415
+    from app.domain.identity.models import (  # noqa: PLC0415
+        SessionRow,
+        UserEmailRow,
+        UserRow,
+    )
+
+    async with db_session() as s:
+        existing = await identity_repo.find_user_by_email(s, email)
+        if existing is not None:
+            user = existing
+        else:
+            user = UserRow(id=_uuid4(), display_name=email.split("@", 1)[0])
+            s.add(user)
+            await s.flush()
+            s.add(
+                UserEmailRow(
+                    id=_uuid4(),
+                    user_id=user.id,
+                    email=email.lower(),
+                    is_primary=True,
+                    verified_at=datetime.now(UTC),
+                )
+            )
+        s.add(
+            SessionRow(
+                token_hash=identity_repo.hash_token(raw_session_token),
+                user_id=user.id,
+                workspace_id=None,
+                csrf_token="e2e-csrf",
+                ip=None,
+                user_agent="e2e",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        await s.commit()
+        return str(user.id)
+
+
+def stage_oauth_test_profile(
+    *, external_subject: str, primary_email: str, email_verified: bool, display_name: str
+) -> None:
+    """Stash the next profile the `oauth_test` provider will return."""
+    from app.domain.identity.providers import ProviderProfile  # noqa: PLC0415
+
+    # `plugins.oauth_test` loads only under YAAOS_ENV=test; this helper is
+    # imported by code that runs in dev too, so import lazily.
+    from app.plugins.oauth_test import set_next_profile  # noqa: PLC0415
+
+    set_next_profile(
+        ProviderProfile(
+            external_subject=external_subject,
+            primary_email=primary_email,
+            email_verified=email_verified,
+            display_name=display_name,
+        )
+    )
+
+
+def read_and_clear_email_inbox() -> list[dict[str, str]]:
+    """Return + clear the in-memory inbox `domain.orgs.email.send_plain` writes
+    to in test env."""
+    from app.domain.orgs.email import get_test_inbox  # noqa: PLC0415
+
+    inbox = get_test_inbox()
+    out = [{"to": m.to, "subject": m.subject, "body": m.body} for m in inbox]
+    inbox.clear()
+    return out
 
 
 __all__ = [
     "M01_ORG_ID",
     "is_dev_env",
+    "read_and_clear_email_inbox",
     "reset",
+    "seed_bootstrap_owner",
     "seed_credentials_and_install",
     "seed_lesson",
+    "seed_user_with_session",
+    "stage_oauth_test_profile",
     "truncate_all_tables",
 ]

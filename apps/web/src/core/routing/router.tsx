@@ -1,6 +1,9 @@
+import { setCurrentOrgSlug } from "@core/api";
 import { AppShell } from "@core/layout";
+import { AccountPage, LoginPage } from "@domain/auth";
 import { DashboardPage } from "@domain/dashboard";
 import { MemoryPage } from "@domain/memory";
+import { AuditPage, MembersPage, SsoConfigPage } from "@domain/orgs";
 import { SettingsPage } from "@domain/settings";
 import { TicketDetailPage, TicketsPage } from "@domain/tickets";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
@@ -10,36 +13,135 @@ const rootRoute = createRootRoute({ component: AppShell });
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  beforeLoad: () => {
-    throw redirect({ to: "/dashboard" });
+  beforeLoad: async () => {
+    // Probe `/api/auth/me`; on 401, send to login. Otherwise pick the first org.
+    const r = await fetch("/api/auth/me", { credentials: "include" });
+    if (r.status === 401) throw redirect({ to: "/login" });
+    if (r.ok) {
+      const body = (await r.json()) as { current_org_slug: string | null };
+      if (body.current_org_slug) {
+        throw redirect({
+          to: "/orgs/$slug/dashboard",
+          params: { slug: body.current_org_slug },
+        });
+      }
+    }
+    throw redirect({ to: "/login" });
   },
 });
 
-const dashboardRoute = createRoute({
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: LoginPage,
+  beforeLoad: () => {
+    setCurrentOrgSlug(null);
+  },
+});
+
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account",
+  component: AccountPage,
+  beforeLoad: () => {
+    // /account is user-scoped — no org context.
+    setCurrentOrgSlug(null);
+  },
+});
+
+const orgScopeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/orgs/$slug",
+  beforeLoad: ({ params }) => {
+    setCurrentOrgSlug(params.slug);
+  },
+});
+
+const orgIndexRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/",
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/orgs/$slug/dashboard", params: { slug: params.slug } });
+  },
+});
+
+const orgDashboardRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/dashboard",
+  component: DashboardPage,
+});
+
+const orgTicketsRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/tickets",
+  component: TicketsPage,
+});
+
+const orgTicketDetailRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/tickets/$ticketId",
+  component: TicketDetailPage,
+});
+
+const orgMemoryRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/memory",
+  component: MemoryPage,
+});
+
+const orgSettingsRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/settings",
+  component: SettingsPage,
+});
+
+const orgMembersRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/members",
+  component: MembersPage,
+});
+
+const orgAuditRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/audit",
+  component: AuditPage,
+});
+
+const orgSsoRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/sso",
+  component: SsoConfigPage,
+});
+
+// Legacy aliases — M01-era links + e2e specs target `/dashboard`,
+// `/tickets`, `/memory`, `/settings`. Render the same components directly
+// (no auth probe) so M01 flows keep working. M02 flows go through
+// `/orgs/$slug/...`.
+const legacyDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dashboard",
   component: DashboardPage,
 });
 
-const ticketsRoute = createRoute({
+const legacyTicketsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tickets",
   component: TicketsPage,
 });
 
-const ticketDetailRoute = createRoute({
+const legacyTicketDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tickets/$ticketId",
   component: TicketDetailPage,
 });
 
-const memoryRoute = createRoute({
+const legacyMemoryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/memory",
   component: MemoryPage,
 });
 
-const settingsRoute = createRoute({
+const legacySettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
   component: SettingsPage,
@@ -47,11 +149,24 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  dashboardRoute,
-  ticketsRoute,
-  ticketDetailRoute,
-  memoryRoute,
-  settingsRoute,
+  loginRoute,
+  accountRoute,
+  legacyDashboardRoute,
+  legacyTicketsRoute,
+  legacyTicketDetailRoute,
+  legacyMemoryRoute,
+  legacySettingsRoute,
+  orgScopeRoute.addChildren([
+    orgIndexRoute,
+    orgDashboardRoute,
+    orgTicketsRoute,
+    orgTicketDetailRoute,
+    orgMemoryRoute,
+    orgSettingsRoute,
+    orgMembersRoute,
+    orgAuditRoute,
+    orgSsoRoute,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

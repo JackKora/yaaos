@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth import public_route
 from app.core.database import session
 from app.core.primitives import Actor
 from app.core.webserver import RouteSpec, register_routes
@@ -28,7 +29,10 @@ from app.domain.reviewer.service import (
 
 M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-router = APIRouter()
+# M02 default-deny: legacy reviewer endpoints declare `public_route` so the
+# middleware's post-response guard recognizes the declaration. M03+ migration
+# to per-org access swaps this for `require(Action.X)`.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 class RereviewRequest(BaseModel):

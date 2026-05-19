@@ -20,6 +20,15 @@
 name: yaaos
 
 services:
+  # Mailpit — local SMTP sink for dev. Invitation emails (M02) and any
+  # future outbound mail land here instead of a real SMTP relay. UI at
+  # http://localhost:8025; SMTP on :1025 (point SMTP_HOST/SMTP_PORT there).
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   app:
     build:
       context: ..

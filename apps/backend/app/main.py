@@ -21,6 +21,22 @@ from app.core import webserver  # noqa: E402
 # 5. Core modules whose plugins are domain-facing.
 from app.core import audit_log, workspace  # noqa: F401, E402
 
+# 5b. Identity + tenancy + auth middleware (M02). Must be imported before
+# any domain module that declares `Depends(require(...))` or
+# `Depends(public_route)` so the contextvars + middleware classes exist.
+from app.domain import identity, orgs  # noqa: F401, E402
+from app.core import auth  # noqa: F401, E402
+from app.domain import auth as _domain_auth  # noqa: F401, E402
+
+# Register `/api/memberships/*` and `/api/audit/*` after both `domain.orgs`
+# and `domain.auth` are loaded — `orgs.web` imports `domain.auth.dependencies`,
+# which imports back into `domain.orgs`, so the cycle must break here, not in
+# `orgs/__init__`.
+from app.domain.identity import account_web as _identity_account_web  # noqa: F401, E402
+from app.domain.orgs import audit_web as _orgs_audit_web  # noqa: F401, E402
+from app.domain.orgs import sso_web as _orgs_sso_web  # noqa: F401, E402
+from app.domain.orgs import web as _orgs_web  # noqa: F401, E402
+
 # 6. Domain modules — order: types first (vcs, memory), then coding_agent
 #    (which references vcs + memory types), then leaf domain modules,
 #    then domain modules that depend on others.
@@ -35,6 +51,14 @@ from app.domain import settings  # noqa: F401, E402
 
 # 7. Plugins.
 from app.plugins import in_process_workspace, claude_code, github  # noqa: F401, E402
+from app.plugins import oauth_github  # noqa: F401, E402
+from app.plugins import saml as _plugins_saml  # noqa: F401, E402
+from app.core.config import get_settings  # noqa: E402
+
+# 7b. Test-only providers — env-gated; modules assert on yaaos_env=="test".
+if get_settings().yaaos_env == "test":
+    from app.plugins import oauth_test  # noqa: F401
+    from app.plugins import saml_test  # noqa: F401
 
 # 8. Test-only: when YAAOS_CODING_AGENT_STUB is set, wrap every registered
 #    coding-agent plugin via the `testing/` layer. The testing layer sits above
@@ -55,9 +79,7 @@ if os.environ.get("YAAOS_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}
 # the e2e Playwright suite (and ad-hoc local seeding). Mounted only in dev/test
 # builds; prod wheels exclude the testing/ tree, so this import would fail loud
 # if it ever ran with the layer stripped.
-from app.core.config import get_settings  # noqa: E402
-
-if get_settings().yaaos_env == "dev":
+if get_settings().is_non_prod:
     from app.testing import e2e_setup  # noqa: F401
 
 # 9. Build the FastAPI app.

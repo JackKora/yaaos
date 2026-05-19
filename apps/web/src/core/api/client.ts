@@ -6,6 +6,7 @@
  */
 
 import createClient from "openapi-fetch";
+import { getCurrentOrgSlug } from "./org-context";
 
 export type HealthResponse = {
   status: "ok" | "degraded";
@@ -133,12 +134,36 @@ const baseUrl = typeof window !== "undefined" ? window.location.origin : "http:/
 
 export const apiClient = createClient<Paths>({ baseUrl });
 
+function _readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return m && m[1] !== undefined ? decodeURIComponent(m[1]) : null;
+}
+
 // Lightweight typed fetch for our hand-written endpoints (the openapi-fetch client
 // only carries types for the small set above).
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Inject X-Org-Slug from the current route unless the caller already set one.
+  const slug = getCurrentOrgSlug();
+  const callerHeaders = (init?.headers as Record<string, string>) ?? {};
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...callerHeaders,
+  };
+  if (slug && !("X-Org-Slug" in callerHeaders) && !("x-org-slug" in callerHeaders)) {
+    headers["X-Org-Slug"] = slug;
+  }
+  // Double-submit CSRF: every mutating request echoes the `yaaos_csrf` cookie
+  // in the `X-CSRF-Token` header. Safe methods don't need it.
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !("X-CSRF-Token" in callerHeaders)) {
+    const csrf = _readCookie("yaaos_csrf");
+    if (csrf) headers["X-CSRF-Token"] = csrf;
+  }
   const r = await fetch(`${baseUrl}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     ...init,
+    headers,
   });
   if (!r.ok) {
     const body = await r.text();

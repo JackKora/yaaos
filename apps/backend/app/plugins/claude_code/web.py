@@ -9,15 +9,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth import public_route
 from app.core.webserver import RouteSpec, register_routes
 from app.plugins.claude_code.service import _set_anthropic_key, bootstrap_anthropic_env, get_plugin
 
 M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-router = APIRouter()
+# M02 default-deny: claude_code plugin routes declare `public_route`.
+router = APIRouter(dependencies=[Depends(public_route)])
 
 
 class SetApiKeyRequest(BaseModel):
