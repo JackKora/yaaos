@@ -140,14 +140,14 @@
 
 ## Phase 10 — GitHub App org binding
 
-- [ ] `GET /api/github/install` endpoint signs `state=<org_id>` via `itsdangerous` and redirects to GitHub App install URL
-- [ ] `/webhooks/github/install_callback` (or post-install redirect) verifies state, writes `github_installations(org_id, installation_id)` row
-- [ ] Existing GitHub webhook handler looks up `installation_id → org_id` and wraps handling in `org_context(...)`
-- [ ] Frontend Settings page has "Connect GitHub" button visible to Owners
-- [ ] Tests: state signature verified, mismatched state rejected, webhook handler resolves org correctly
-- [ ] `apps/backend/docs/plugins_github.md` updated for install binding
-- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
-- [ ] Phase committed
+- [x] `GET /api/github/install` endpoint signs `state=<org_id>` via `itsdangerous` and redirects to GitHub App install URL
+- [x] `/webhooks/github/install_callback` (or post-install redirect) verifies state, writes `github_installations(org_id, installation_id)` row
+- [x] Existing GitHub webhook handler looks up `installation_id → org_id` and wraps handling in `org_context(...)`
+- [x] Frontend Settings page has "Connect GitHub" button visible to Owners
+- [x] Tests: state signature verified, mismatched state rejected, webhook handler resolves org correctly
+- [x] `apps/backend/docs/plugins_github.md` updated for install binding
+- [x] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [x] Phase committed
 
 ## Phase 11 — 2FA
 
