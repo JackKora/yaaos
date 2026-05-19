@@ -164,19 +164,19 @@
 
 ## Phase 12 — SAML SSO
 
-- [ ] `plugins/saml` implements Provider via `python3-saml`, SP-initiated only
-- [ ] `plugins/saml_test` stub IdP, env-gated to `test`, issues signed assertions for seeded users
-- [ ] Per-org SSO config: upload IdP metadata XML, generate SP metadata for download, JIT-toggle, exempt-Owner picker
-- [ ] Endpoints: `GET /api/sso/{slug}/login`, `POST /api/sso/{slug}/acs`, `GET /api/sso/{slug}/metadata`
-- [ ] On successful assertion: match by verified email, JIT-create membership if enabled, mark session `sso_satisfied_for_org_id` with 8-hour TTL
-- [ ] Middleware enforces SSO satisfaction when org has SSO on; exempt Owners bypass via OAuth + TOTP
-- [ ] Break-glass exempt-Owner login emits audit entry with `actor_kind=user` + metadata `{"break_glass": true}`
-- [ ] Frontend Settings SSO page: upload metadata, download SP metadata, toggle JIT, pick exempt Owner
-- [ ] Playwright E2E via `saml_test`: enable SSO → login fails without SSO → SSO satisfies → JIT creates membership when enabled
-- [ ] SAML SP private key per org encrypted at rest using same master key as TOTP
-- [ ] `apps/backend/docs/plugins_saml.md` written
-- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` + `apps/e2e/bin/ci` exit 0
-- [ ] Phase committed
+- [x] `plugins/saml` implements Provider via `python3-saml`, SP-initiated only
+- [x] `plugins/saml_test` stub IdP, env-gated to `test`, issues signed assertions for seeded users
+- [x] Per-org SSO config: upload IdP metadata XML, generate SP metadata for download, JIT-toggle, exempt-Owner picker
+- [x] Endpoints: `GET /api/sso/{slug}/login`, `POST /api/sso/{slug}/acs`, `GET /api/sso/{slug}/metadata`
+- [x] On successful assertion: match by verified email, JIT-create membership if enabled, mark session `sso_satisfied_for_org_id` with 8-hour TTL
+- [x] Middleware enforces SSO satisfaction when org has SSO on; exempt Owners bypass via OAuth + TOTP
+- [x] Break-glass exempt-Owner login emits audit entry with `actor_kind=user` + metadata `{"break_glass": true}`
+- [x] Frontend Settings SSO page: upload metadata, download SP metadata, toggle JIT, pick exempt Owner
+- [x] Playwright E2E via `saml_test`: enable SSO → login fails without SSO → SSO satisfies → JIT creates membership when enabled
+- [x] SAML SP private key per org encrypted at rest using same master key as TOTP
+- [x] `apps/backend/docs/plugins_saml.md` written
+- [x] `apps/backend/bin/ci` + `apps/web/bin/ci` + `apps/e2e/bin/ci` exit 0
+- [x] Phase committed
 
 ## Phase 13 — rate limiting + secret hygiene
 
