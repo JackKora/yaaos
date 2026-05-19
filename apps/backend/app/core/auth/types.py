@@ -30,7 +30,10 @@ class Action(StrEnum):
 # Public-allowlist prefixes: any path matching one of these bypasses the
 # X-Org-Slug requirement AND the post-response security guard.
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = ("/api/auth/",)
-PUBLIC_PATH_EXACT: frozenset[str] = frozenset({"/api/health"})
+# `/api/memberships/accept` lives on the public allowlist because acceptance
+# must work for users who have a session but no membership yet — the signed
+# invitation token is the authorization, not an org membership.
+PUBLIC_PATH_EXACT: frozenset[str] = frozenset({"/api/health", "/api/memberships/accept"})
 
 
 # Paths the auth middleware enforces on. M02 routes opt in by adding their

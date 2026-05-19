@@ -80,6 +80,17 @@ class Settings(BaseSettings):
     yaaos_oauth_github_emails_url: str = "https://api.github.com/user/emails"
     yaaos_oauth_state_secret: str = "dev-only-oauth-state-secret"
 
+    # M02 — invitations + dev SMTP (Mailpit).
+    yaaos_invitation_token_secret: str = "dev-only-invitation-secret"
+    yaaos_invitation_lifetime_seconds: int = 60 * 60 * 24 * 7  # 7 days
+    yaaos_app_base_url: str = "http://localhost:8080"
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "yaaos@localhost"
+    smtp_use_tls: bool = False
+
     @property
     def is_non_prod(self) -> bool:
         """True when `yaaos_env` is `dev` or `test`. Use for affordances that
