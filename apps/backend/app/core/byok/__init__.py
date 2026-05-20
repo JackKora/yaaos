@@ -5,6 +5,9 @@ from app.core.byok.service import (
     ByokDecryptError,
     clear,
     get,
+    get_validator,
+    known_providers,
+    register_validator,
     set,
     validate,
 )
@@ -14,6 +17,9 @@ __all__ = [
     "ByokKeyRow",
     "clear",
     "get",
+    "get_validator",
+    "known_providers",
+    "register_validator",
     "set",
     "validate",
 ]

@@ -8,10 +8,12 @@ Adapter for [Claude Code](https://docs.claude.com/en/docs/claude-code), the only
 
 ## Public interface
 
-- Singleton `ClaudeCodePlugin` registered into `domain/coding_agent` at `bootstrap()`; also registers `anthropic_key_set` onboarding contributor and installs subagent definitions.
+- Singleton `ClaudeCodePlugin` registered into `domain/coding_agent` at `bootstrap()`; also registers `anthropic_key_set` onboarding contributor, the `anthropic` BYOK validator (`byok_validator.validate_anthropic_key`), and installs subagent definitions.
+- M03 settings model in `settings_schema.py`: orchestrator + sub-agents validated as a single Pydantic tree — agents list bounded to 1..8, sub-agent names unique within `agents`, name length ≤ 64, `model`/`version`/`effort` checked against the enums in `defaults.py`. The plugin's `validate_settings({})` substitutes the code defaults so the picker's install path doesn't have to pre-populate the JSONB.
 - Side-effect import of `web.py` wires HTTP routes (prefix `/api/claude_code`) and an `on_startup` hook:
-  - `POST /api_key` — set/rotate the Anthropic key (`{api_key: str}`). Empty rejected with 400. Fernet-encrypts, upserts on `claude_code_settings`, invalidates the auth-probe cache, and pushes the raw key into `os.environ["ANTHROPIC_API_KEY"]` so `core/llm` picks it up without a restart.
-  - `GET /health` — wraps `health_check()`.
+  - `POST /api_key` (`public_route`) — set/rotate the Anthropic key (M01 setup flow; M03 BYOK at `/api/byok/anthropic` supersedes for per-org storage).
+  - `GET /health` (`public_route`) — wraps `health_check()`.
+  - `GET /defaults` (`CODING_AGENT_READ`) — orchestrator + sub-agent defaults + model/version/effort dropdown enums. Imported at request time so a code change to `defaults.py` surfaces on the next request — never cached at module load. Consumed by the bespoke Claude Code settings page to render "Reset to default" + "Overridden" badges.
   - `bootstrap_anthropic_env` (startup hook) — decrypts the stored key into `os.environ["ANTHROPIC_API_KEY"]` at app boot so direct LLM calls (e.g., `domain/reviewer/llm/classifier.classify_reply`) authenticate via LangChain's default env resolution. No-op if the env var is already set (Braintrust gateway, test env) or no row exists yet (pre-onboarding).
 - Plugin credentials live under the plugin's own URL space, not a generic `/api/settings/*`.
 - Domain code never imports this module; uses `domain/coding_agent`'s registry.

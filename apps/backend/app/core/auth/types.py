@@ -64,6 +64,7 @@ M02_PROTECTED_PREFIXES: tuple[str, ...] = (
     "/api/vcs",  # exact + prefix
     "/api/coding-agents",  # exact + prefix
     "/api/orgs",  # exact + prefix
+    "/api/byok",  # exact + prefix
 )
 
 

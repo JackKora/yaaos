@@ -37,6 +37,26 @@ class ByokDecryptError(ValueError):
     """Stored ciphertext could not be decrypted with the configured master key."""
 
 
+# Validator registry — plugins register themselves at bootstrap time so
+# `core/byok` stays free of plugin imports. Each entry maps a `provider`
+# string to an `async (plaintext: str) -> bool` callable.
+_VALIDATORS: dict[str, Callable[[str], Awaitable[bool]]] = {}
+
+
+def register_validator(provider: str, validator: Callable[[str], Awaitable[bool]]) -> None:
+    """Idempotent — re-registering the same provider overwrites. Called from
+    plugin `bootstrap()` so a hot-reloaded plugin's validator picks up."""
+    _VALIDATORS[provider] = validator
+
+
+def get_validator(provider: str) -> Callable[[str], Awaitable[bool]] | None:
+    return _VALIDATORS.get(provider)
+
+
+def known_providers() -> list[str]:
+    return sorted(_VALIDATORS.keys())
+
+
 class _ByokAuditPayload(BaseModel):
     provider: str
 

@@ -552,14 +552,20 @@ class ClaudeCodePlugin:
         return None
 
     def validate_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
-        """Bare structural check at the plugin boundary. The full Pydantic
-        model with sub-agent uniqueness + bounds lives in `domain/orgs` and
-        runs at the API layer (Phase 10). Here we only confirm the top-level
-        keys."""
-        unknown = set(settings.keys()) - {"orchestrator", "agents"}
-        if unknown:
-            raise ValueError(f"unknown claude_code settings keys: {sorted(unknown)}")
-        return dict(settings)
+        """Full Pydantic validation: orchestrator + agents shape, enums on
+        model/version/effort, agent count 1..8, name uniqueness within
+        agents. See `settings_schema.validate_settings`. Accepts an empty
+        dict and substitutes defaults so the picker's `POST /api/coding-
+        agents` install path doesn't have to pre-populate settings."""
+        from app.plugins.claude_code.defaults import get_defaults  # noqa: PLC0415
+        from app.plugins.claude_code.settings_schema import (  # noqa: PLC0415
+            validate_settings as _validate,
+        )
+
+        if not settings:
+            d = get_defaults()
+            settings = {"orchestrator": d["orchestrator"], "agents": d["agents"]}
+        return _validate(settings)
 
     async def _load_settings_for_invocation(self) -> tuple[str | None, str | None]:
         """Returns (decrypted_api_key, cli_path). Timeout is a constant — see
@@ -1132,11 +1138,16 @@ async def bootstrap_anthropic_env() -> None:
 
 
 def bootstrap() -> None:
+    from app.core.byok import register_validator as _byok_register_validator  # noqa: PLC0415
     from app.domain.settings import register_onboarding_contributor  # noqa: PLC0415
+    from app.plugins.claude_code.byok_validator import validate_anthropic_key  # noqa: PLC0415
     from app.plugins.claude_code.installer import install_subagents  # noqa: PLC0415
 
     register_coding_agent_plugin(_plugin)
     register_onboarding_contributor("anthropic_key_set", _onboarding_anthropic_key_set)
+    # M03 BYOK: the `/api/byok/anthropic/validate` endpoint dispatches to this
+    # callable so core/byok stays free of provider-specific HTTP.
+    _byok_register_validator("anthropic", validate_anthropic_key)
     # Install yaaos-* subagent definitions so the parent reviewer can dispatch
     # them via the Task tool. Static files, idempotent — fine to run on every
     # backend startup. M02+ Docker-workspace isolation will move this per-

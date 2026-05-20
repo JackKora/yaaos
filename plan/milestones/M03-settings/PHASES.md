@@ -119,11 +119,11 @@
 
 ## Phase 10 — Claude Code plugin bespoke UI
 
-- [ ] `plugins/claude_code` exposes default orchestrator config + default sub-agent set as Python constants + a `get_defaults()` accessor
-- [ ] `apps/backend/docs/plugins_claude_code.md` updated to describe orchestrator + sub-agents model
-- [ ] Pydantic settings model in `domain/orgs` for `claude_code`: enforces sub-agent name uniqueness, sub-agent count ≥ 1 and ≤ 8, model/version/effort never blank, name length ≤ 64
-- [ ] Backend endpoint `GET /api/orgs/{slug}/coding-agents/claude_code/defaults` returns code defaults. Defaults imported at request time, not module load — `apps/backend/docs/plugins_claude_code.md` notes this.
-- [ ] Frontend `apps/web/src/domain/org_settings/coding_agents/plugins/claude_code/` bespoke component tree:
+- [x] `plugins/claude_code` exposes default orchestrator config + default sub-agent set as Python constants + a `get_defaults()` accessor
+- [x] `apps/backend/docs/plugins_claude_code.md` updated to describe orchestrator + sub-agents model
+- [x] Pydantic settings model in `domain/orgs` for `claude_code`: enforces sub-agent name uniqueness, sub-agent count ≥ 1 and ≤ 8, model/version/effort never blank, name length ≤ 64
+- [x] Backend endpoint `GET /api/orgs/{slug}/coding-agents/claude_code/defaults` returns code defaults. Defaults imported at request time, not module load — `apps/backend/docs/plugins_claude_code.md` notes this.
+- [x] Frontend `apps/web/src/domain/org_settings/coding_agents/plugins/claude_code/` bespoke component tree:
   - One-paragraph architecture description at the top (static copy)
   - Anthropic API key field (reveal/hide, "Test key" button, save) reading/writing via `core/byok` for provider=anthropic
   - Orchestrator section: collapsible prompt textarea (large, scrollable), model/version/effort dropdowns, per-field "Reset to default" + "Overridden" indicators, `updated_at` display
@@ -132,7 +132,7 @@
 - [ ] One audit entry per save action: `kind = "coding_agent.claude_code.settings_saved"`, metadata lists changed top-level sections (orchestrator / agents)
 - [ ] E2E: install Claude Code in fresh org → defaults populate UI → edit orchestrator prompt → reset it → add a sub-agent → rename to duplicate-of-existing → assert validation error → remove a sub-agent down to 1 → assert further remove blocked
 - [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` + `apps/e2e/bin/ci` exit 0
-- [ ] Phase committed
+- [x] Phase committed
 
 ## Phase 11 — Org Settings > BYOK UI
 

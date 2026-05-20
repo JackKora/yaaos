@@ -242,9 +242,10 @@ async def test_endpoint_member_forbidden(seeded) -> None:
 @pytest.mark.asyncio
 async def test_endpoint_install_and_list_via_http(seeded) -> None:
     async with _client() as c:
+        # Empty settings → claude_code plugin substitutes defaults.
         r = await c.post(
             "/api/coding-agents",
-            json={"plugin_id": "claude_code", "settings": {"orchestrator": {}, "agents": []}},
+            json={"plugin_id": "claude_code", "settings": {}},
             cookies={
                 "yaaos_session": seeded["admin_sess"].raw_token,
                 "yaaos_csrf": seeded["admin_sess"].csrf_token,

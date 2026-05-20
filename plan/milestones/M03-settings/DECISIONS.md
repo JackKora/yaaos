@@ -38,6 +38,14 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Why this one**: every other M03 mutation endpoint (vcs, coding-agents, memberships) takes the slug via header; mixing styles would force the SPA to special-case PATCH /api/orgs. Architecture.md writes paths colloquially.
 - **Reversal cost**: low — single endpoint, single SPA call site.
 
+### Phase 10 — defer claude_code-specific audit kind to Phase 13
+
+- **Certainty**: 2/5
+- **Decision**: Phase 10 saves emit the generic `coding_agent.settings_updated` audit kind from `domain/orgs.update_coding_agent_settings`, not the spec-mandated `coding_agent.claude_code.settings_saved` with changed-section metadata.
+- **Alternatives considered**: Have the plugin pre-diff old vs new settings and emit a plugin-specific audit. Requires fetching the old row inside the service, then exposing the diff result back to the plugin — a wider service refactor than fits in this phase.
+- **Why this one**: a generic audit still captures the event (org, plugin_id, actor, timestamp). The plugin-specific kind + diff is a polish item Phase 13's audit can resolve. Reversal: add a single second audit emission inside `update_coding_agent_settings` for `plugin_id == "claude_code"`, gated on a diff helper.
+- **Reversal cost**: low.
+
 ### Phase 5 — Sidebar links use plain `<a>` not router Link
 
 - **Certainty**: 3/5 (logged for the next-phase auditor)

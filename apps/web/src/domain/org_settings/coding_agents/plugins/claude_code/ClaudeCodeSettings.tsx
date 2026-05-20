@@ -1,0 +1,450 @@
+import { Badge, Button, Card, CardContent, CardHeader } from "@shared/components";
+import { useEffect, useState } from "react";
+import {
+  type CodingAgentInstall,
+  useCodingAgents,
+  useUpdateCodingAgentSettings,
+} from "../../queries";
+import {
+  type AgentConfig,
+  type ClaudeCodeDefaults,
+  useByokAnthropicStatus,
+  useClaudeCodeDefaults,
+  useClearByokAnthropic,
+  useSetByokAnthropic,
+  useValidateByokAnthropic,
+} from "./queries";
+
+/**
+ * Bespoke settings UI for the `claude_code` coding-agent plugin.
+ *
+ * Reads the org's stored settings via the generic /api/coding-agents list
+ * endpoint + code defaults from the dedicated endpoint. Renders:
+ *
+ *  - One-paragraph architecture description (static).
+ *  - Anthropic API key card (BYOK provider=anthropic — reveal/test/save/clear).
+ *  - Orchestrator card (prompt, model, version, effort + reset-to-default + overridden badges).
+ *  - Sub-agents list (1..8 — Add, Remove with last-protection, inline name uniqueness check).
+ *  - Save button — replaces the entire settings JSONB in one PATCH.
+ */
+export function ClaudeCodeSettings({ pluginId }: { pluginId: string }) {
+  const installs = useCodingAgents();
+  const defaults = useClaudeCodeDefaults();
+  const update = useUpdateCodingAgentSettings();
+
+  const install = (installs.data ?? []).find((i) => i.plugin_id === pluginId);
+
+  if (installs.isLoading || defaults.isLoading) {
+    return <p className="text-text-3 p-4 text-sm">Loading…</p>;
+  }
+  if (!install) {
+    return (
+      <Card>
+        <CardContent>
+          <p className="text-text-3 text-sm" data-testid="cc-not-installed">
+            Claude Code is not installed for this org. Install it from the Coding Agents page first.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!defaults.data) {
+    return <p className="text-text-3 p-4 text-sm">Could not load defaults.</p>;
+  }
+
+  return <Editor install={install} defaults={defaults.data} update={update} />;
+}
+
+function Editor({
+  install,
+  defaults,
+  update,
+}: {
+  install: CodingAgentInstall;
+  defaults: ClaudeCodeDefaults;
+  update: ReturnType<typeof useUpdateCodingAgentSettings>;
+}) {
+  const current = install.settings as { orchestrator?: AgentConfig; agents?: AgentConfig[] };
+  const [orchestrator, setOrchestrator] = useState<AgentConfig>(
+    current.orchestrator ?? defaults.orchestrator,
+  );
+  const [agents, setAgents] = useState<AgentConfig[]>(current.agents ?? defaults.agents);
+
+  const duplicateNames = (() => {
+    const names = agents.map((a) => a.name.trim());
+    return names.filter((n, i) => n !== "" && names.indexOf(n) !== i);
+  })();
+  const hasDuplicateNames = duplicateNames.length > 0;
+  const overCap = agents.length > 8;
+  const underCap = agents.length < 1;
+  const canSave = !hasDuplicateNames && !overCap && !underCap;
+
+  const onSave = () => {
+    if (!canSave) return;
+    update.mutate({
+      pluginId: install.plugin_id,
+      settings: { orchestrator, agents },
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <h2 className="text-[16px] font-semibold">Claude Code</h2>
+        </CardHeader>
+        <CardContent>
+          <p className="text-text-3 text-sm">
+            Claude Code runs as an orchestrator Claude session that delegates work to sub-agents via
+            its Task tool. The orchestrator's prompt sets the overall task; each sub-agent's prompt
+            sets a focused review pass run as its own Claude session.
+          </p>
+        </CardContent>
+      </Card>
+
+      <AnthropicKeyCard />
+
+      <OrchestratorCard
+        orchestrator={orchestrator}
+        defaults={defaults}
+        onChange={setOrchestrator}
+      />
+
+      <SubAgentsCard agents={agents} defaults={defaults} onChange={setAgents} />
+
+      <div className="flex items-center gap-2">
+        <Button data-testid="cc-save" disabled={!canSave || update.isPending} onClick={onSave}>
+          {update.isPending ? "Saving…" : "Save"}
+        </Button>
+        {hasDuplicateNames && (
+          <span className="text-xs text-red-500" data-testid="cc-duplicate-err">
+            Duplicate sub-agent names: {duplicateNames.join(", ")}
+          </span>
+        )}
+        {update.isError && (
+          <span className="text-xs text-red-500" data-testid="cc-save-err">
+            {(update.error as Error)?.message || "Save failed"}
+          </span>
+        )}
+        {update.isSuccess && (
+          <span className="text-xs text-success" data-testid="cc-save-ok">
+            Saved.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnthropicKeyCard() {
+  const status = useByokAnthropicStatus();
+  const setKey = useSetByokAnthropic();
+  const validate = useValidateByokAnthropic();
+  const clear = useClearByokAnthropic();
+  const [value, setValue] = useState("");
+  const [reveal, setReveal] = useState(false);
+
+  const configured = status.data?.status === "configured";
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13.5px] font-semibold">Anthropic API key</h3>
+          {configured ? (
+            <Badge variant="success" data-testid="cc-key-configured">
+              configured
+            </Badge>
+          ) : (
+            <Badge variant="danger" data-testid="cc-key-not-set">
+              not set
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2">
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            type={reveal ? "text" : "password"}
+            placeholder={configured ? "•••• last 4 only — replace to update" : "sk-ant-..."}
+            data-testid="cc-key-input"
+            className="flex-1 rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+          />
+          <Button data-testid="cc-key-reveal" onClick={() => setReveal((v) => !v)}>
+            {reveal ? "Hide" : "Show"}
+          </Button>
+          <Button
+            data-testid="cc-key-save"
+            disabled={!value || setKey.isPending}
+            onClick={() => setKey.mutate(value, { onSuccess: () => setValue("") })}
+          >
+            {setKey.isPending ? "Saving…" : "Save"}
+          </Button>
+          {configured && (
+            <Button
+              data-testid="cc-key-test"
+              disabled={validate.isPending}
+              onClick={() => validate.mutate()}
+            >
+              {validate.isPending ? "Testing…" : "Test"}
+            </Button>
+          )}
+          {configured && (
+            <Button
+              data-testid="cc-key-clear"
+              disabled={clear.isPending}
+              onClick={() => clear.mutate()}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+        {validate.data && (
+          <p
+            className={`mt-2 text-xs ${validate.data.valid ? "text-success" : "text-red-500"}`}
+            data-testid="cc-key-test-result"
+          >
+            {validate.data.valid ? "Key looks good." : "Key rejected."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OrchestratorCard({
+  orchestrator,
+  defaults,
+  onChange,
+}: {
+  orchestrator: AgentConfig;
+  defaults: ClaudeCodeDefaults;
+  onChange: (a: AgentConfig) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="text-[13.5px] font-semibold">Orchestrator</h3>
+      </CardHeader>
+      <CardContent>
+        <AgentEditor
+          agent={orchestrator}
+          baseline={defaults.orchestrator}
+          defaults={defaults}
+          onChange={onChange}
+          testIdPrefix="cc-orch"
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function SubAgentsCard({
+  agents,
+  defaults,
+  onChange,
+}: {
+  agents: AgentConfig[];
+  defaults: ClaudeCodeDefaults;
+  onChange: (a: AgentConfig[]) => void;
+}) {
+  const atCap = agents.length >= 8;
+  const onLast = agents.length <= 1;
+
+  const onAdd = () => {
+    if (atCap) return;
+    onChange([
+      ...agents,
+      {
+        name: `sub-agent-${agents.length + 1}`,
+        prompt: "",
+        model: defaults.models[0] ?? "",
+        version: defaults.versions[0] ?? "latest",
+        effort: defaults.efforts[0] ?? "medium",
+        updated_at: "",
+      },
+    ]);
+  };
+
+  const onRemove = (idx: number) => {
+    if (onLast) return;
+    onChange(agents.filter((_, i) => i !== idx));
+  };
+
+  const onAgentChange = (idx: number, next: AgentConfig) => {
+    onChange(agents.map((a, i) => (i === idx ? next : a)));
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <h3 className="text-[13.5px] font-semibold">Sub-agents ({agents.length}/8)</h3>
+          <Button data-testid="cc-add-agent" disabled={atCap} onClick={onAdd}>
+            Add sub-agent
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col gap-3" data-testid="cc-agents-list">
+          {agents.map((a, idx) => {
+            const seededDefault = defaults.agents.find((d) => d.name === a.name);
+            return (
+              <div
+                key={`${idx}-${a.name}`}
+                className="rounded border border-border-soft p-3"
+                data-testid={`cc-agent-${idx}`}
+              >
+                <AgentEditor
+                  agent={a}
+                  baseline={seededDefault}
+                  defaults={defaults}
+                  onChange={(next) => onAgentChange(idx, next)}
+                  testIdPrefix={`cc-agent-${idx}`}
+                  nameEditable
+                />
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    data-testid={`cc-remove-agent-${idx}`}
+                    disabled={onLast}
+                    onClick={() => onRemove(idx)}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AgentEditor({
+  agent,
+  baseline,
+  defaults,
+  onChange,
+  testIdPrefix,
+  nameEditable = false,
+}: {
+  agent: AgentConfig;
+  baseline?: AgentConfig;
+  defaults: ClaudeCodeDefaults;
+  onChange: (next: AgentConfig) => void;
+  testIdPrefix: string;
+  nameEditable?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // Auto-expand if prompt is short enough that a one-line preview is meaningless.
+  useEffect(() => {
+    if ((agent.prompt ?? "").length < 80) setExpanded(true);
+  }, [agent.prompt]);
+
+  const isOverridden = (field: keyof AgentConfig) =>
+    baseline !== undefined && agent[field] !== baseline[field];
+  const reset = (field: keyof AgentConfig) => {
+    if (!baseline) return;
+    onChange({ ...agent, [field]: baseline[field] });
+  };
+
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <div className="flex items-center gap-2">
+        <span className="text-text-3 w-20 text-xs">Name</span>
+        <input
+          value={agent.name}
+          disabled={!nameEditable}
+          onChange={(e) => onChange({ ...agent, name: e.target.value })}
+          data-testid={`${testIdPrefix}-name`}
+          maxLength={64}
+          className="flex-1 rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm disabled:opacity-60"
+        />
+        {isOverridden("name") && nameEditable && (
+          <>
+            <Badge variant="accent">overridden</Badge>
+            <Button data-testid={`${testIdPrefix}-reset-name`} onClick={() => reset("name")}>
+              Reset
+            </Button>
+          </>
+        )}
+      </div>
+      <div className="flex items-start gap-2">
+        <span className="text-text-3 w-20 pt-1.5 text-xs">Prompt</span>
+        <div className="flex-1">
+          {!expanded ? (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              data-testid={`${testIdPrefix}-prompt-expand`}
+              className="text-text-3 w-full truncate rounded border border-border-soft bg-bg-2 px-2 py-1 text-left text-xs hover:bg-hover"
+            >
+              {(agent.prompt || "").slice(0, 120) || "(empty)"}
+            </button>
+          ) : (
+            <textarea
+              value={agent.prompt}
+              onChange={(e) => onChange({ ...agent, prompt: e.target.value })}
+              data-testid={`${testIdPrefix}-prompt`}
+              rows={8}
+              className="w-full rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+            />
+          )}
+        </div>
+        {isOverridden("prompt") && (
+          <div className="flex flex-col gap-1">
+            <Badge variant="accent">overridden</Badge>
+            <Button data-testid={`${testIdPrefix}-reset-prompt`} onClick={() => reset("prompt")}>
+              Reset
+            </Button>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-text-3 w-20 text-xs">Model</span>
+        <select
+          value={agent.model}
+          onChange={(e) => onChange({ ...agent, model: e.target.value })}
+          data-testid={`${testIdPrefix}-model`}
+          className="flex-1 rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+        >
+          {defaults.models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+        <span className="text-text-3 text-xs">Version</span>
+        <select
+          value={agent.version}
+          onChange={(e) => onChange({ ...agent, version: e.target.value })}
+          data-testid={`${testIdPrefix}-version`}
+          className="rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+        >
+          {defaults.versions.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+        <span className="text-text-3 text-xs">Effort</span>
+        <select
+          value={agent.effort}
+          onChange={(e) => onChange({ ...agent, effort: e.target.value })}
+          data-testid={`${testIdPrefix}-effort`}
+          className="rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+        >
+          {defaults.efforts.map((eff) => (
+            <option key={eff} value={eff}>
+              {eff}
+            </option>
+          ))}
+        </select>
+      </div>
+      {agent.updated_at && <p className="text-text-4 text-[10.5px]">Updated {agent.updated_at}</p>}
+    </div>
+  );
+}
