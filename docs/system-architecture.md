@@ -104,7 +104,7 @@ GitHub  GET /api/auth/callback/github
 
 **Contextvar propagation:** HTTP middleware sets `org_id_var` / `user_id_var` / `actor_kind_var` / `actor_id_var` per request; background jobs open `with org_context(...)`. `require_org_context()` raises in functions that read org-scoped tables without context. OTel spans + structlog log lines carry `yaaos.org_id` + `yaaos.actor_kind` everywhere.
 
-Per-module deep dives: [`core_auth`](../apps/backend/docs/core_auth.md), [`domain_identity`](../apps/backend/docs/domain_identity.md), [`domain_orgs`](../apps/backend/docs/domain_orgs.md), [`plugins_oauth_github`](../apps/backend/docs/plugins_oauth_github.md), [`plugins_saml`](../apps/backend/docs/plugins_saml.md).
+Per-module deep dives: [`core_auth`](../apps/backend/docs/core_auth.md), [`domain_identity`](../apps/backend/docs/domain_identity.md), [`domain_orgs`](../apps/backend/docs/domain_orgs.md), [`plugins_github`](../apps/backend/docs/plugins_github.md), [`core_saml`](../apps/backend/docs/core_saml.md).
 
 ### Secrets at rest
 All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secrets.md) — a single Fernet wrapper resolving the master key from `YAAOS_TOTP_MASTER_KEY` (fallback `YAAOS_ENCRYPTION_KEY` in non-prod). Callers: `domain/identity/totp`, `domain/orgs/sso`, [`core/byok`](../apps/backend/docs/core_byok.md), and legacy plugin-settings tables. Plaintext crosses the boundary only at write (caller → encrypt) and at the specific call site that needs the decrypted value; never logged, never echoed in errors, never placed in audit payloads.

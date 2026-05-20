@@ -49,6 +49,11 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     # `/api/sso/config` (Owner-only) goes through the standard auth chain
     # via the path-prefix override below.
     "/api/sso/",
+    # M04 — the MCP proxy authenticates via the per-review bearer token,
+    # not the session cookie. The yaaos coding-agent CLI doesn't carry
+    # `X-Org-Slug`; the path encodes `review_id` and the proxy resolves
+    # `org_id` from the review row.
+    "/api/mcp/",
 )
 # `/api/memberships/accept` lives on the public allowlist because acceptance
 # must work for users who have a session but no membership yet — the signed

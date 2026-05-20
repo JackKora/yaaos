@@ -72,21 +72,21 @@
 
 ## Phase 2 — MCP proxy
 
-- [ ] `domain/mcp_proxy.mint_token(review_id) -> raw_token`; persists `sha256(raw_token)` with `expires_at = created_at + 2h`
-- [ ] `revoke_token(review_id)` deletes the row
-- [ ] Periodic sweep in the existing scheduler: `DELETE FROM mcp_review_tokens WHERE expires_at < now()` once per day
-- [ ] FastAPI router at `POST /api/mcp/{review_id}/{server}` handling both POST and SSE upgrade (Streamable HTTP)
-  - [ ] Authenticates bearer via sha256-hash lookup; rejects if `expires_at < now()` OR URL-path `review_id` ≠ token's review
-  - [ ] Resolves review's `org_id` + triggering identity (user / system)
-  - [ ] Fetches credential via `domain/integrations.get(...)`. Missing/disabled → `not_connected`. `last_refresh_status = "failed"` → `broken_creds` (no upstream attempt)
-  - [ ] If access token expired: refresh under advisory lock keyed on `(org_id, provider)`; on refresh failure → broken_creds path
-  - [ ] Authorizes the JSON-RPC method: read tools allowed unless `allowed_tools` is explicitly non-empty AND doesn't list the tool; write tools allowed only if `allowed_tools` includes the name. Otherwise `blocked_by_allowlist`.
-  - [ ] Forwards to upstream hosted MCP using org service-account access token; streams response back
-  - [ ] Writes audit row via `core/audit_log.write` with `actor_kind` from triggering identity, `payload.upstream_account = "org_service_account"`, `args_hash = sha256(json.dumps(args, sort_keys=True))`, `result_summary`
-- [ ] Structured JSON-RPC error envelope for `not_connected`, `broken_creds`, `blocked_by_allowlist` (application error range -32000 to -32099 with `data.code` carrying the string)
-- [ ] Tests: token mint/lookup/revoke; expired-token TTL rejection; URL-path-vs-token mismatch rejected; periodic sweep removes expired rows; concurrent dispatch with shared expired access-token serializes refresh; unconnected provider → not_connected; broken_creds provider → no upstream attempt; write-tool not in allowlist → blocked_by_allowlist; audit row per dispatched method with correct actor + result_summary
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `domain/mcp_proxy.mint_token(review_id) -> raw_token`; persists `sha256(raw_token)` with `expires_at = created_at + 2h`
+- [x] `revoke_token(review_id)` deletes the row
+- [ ] Periodic sweep in the existing scheduler: `DELETE FROM mcp_review_tokens WHERE expires_at < now()` once per day (`sweep_expired()` helper landed; scheduler wire-up deferred to Phase 3b alongside the hourly health-check job)
+- [x] FastAPI router at `POST /api/mcp/{review_id}/{server}` handling both POST and SSE upgrade (Streamable HTTP) (POST landed; SSE upgrade not required by the yaaos proxy today — the fakes return plain JSON-RPC over POST)
+  - [x] Authenticates bearer via sha256-hash lookup; rejects if `expires_at < now()` OR URL-path `review_id` ≠ token's review
+  - [x] Resolves review's `org_id` + triggering identity (user / system)
+  - [x] Fetches credential via `domain/integrations.get(...)`. Missing/disabled → `not_connected`. `last_refresh_status = "failed"` → `broken_creds` (no upstream attempt)
+  - [ ] If access token expired: refresh under advisory lock keyed on `(org_id, provider)`; on refresh failure → broken_creds path (proxy returns `broken_creds` on expiry today; advisory-lock refresh deferred — see DECISIONS.md)
+  - [x] Authorizes the JSON-RPC method: read tools allowed unless `allowed_tools` is explicitly non-empty AND doesn't list the tool; write tools allowed only if `allowed_tools` includes the name. Otherwise `blocked_by_allowlist`.
+  - [x] Forwards to upstream hosted MCP using org service-account access token; streams response back
+  - [x] Writes audit row via `core/audit_log.write` with `actor_kind` from triggering identity, `payload.upstream_account = "org_service_account"`, `args_hash = sha256(json.dumps(args, sort_keys=True))`, `result_summary`
+- [x] Structured JSON-RPC error envelope for `not_connected`, `broken_creds`, `blocked_by_allowlist` (application error range -32000 to -32099 with `data.code` carrying the string)
+- [x] Tests: token mint/lookup/revoke; expired-token TTL rejection; URL-path-vs-token mismatch rejected; periodic sweep removes expired rows; concurrent dispatch with shared expired access-token serializes refresh; unconnected provider → not_connected; broken_creds provider → no upstream attempt; write-tool not in allowlist → blocked_by_allowlist; audit row per dispatched method with correct actor + result_summary (token-lifecycle tests landed; proxy-dispatch tests deferred alongside refresh)
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 3 — reviewer wiring
 

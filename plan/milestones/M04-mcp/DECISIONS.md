@@ -22,6 +22,20 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 
 <!-- Append below. Do not edit prior entries. -->
 
+### Phase 2 — proxy returns broken_creds on token expiry (refresh deferred)
+
+- **Certainty**: 3/5
+- **Decision**: When the upstream OAuth access token's `expires_at` is in the past, the MCP proxy returns the `broken_creds` JSON-RPC error to the coding-agent instead of refreshing in-line. The advisory-lock-guarded refresh + the refresh-contention test land in a focused follow-up alongside Phase 3b's hourly health-check job.
+- **Why this one**: refresh involves a non-trivial advisory-lock dance plus contention testing. The proxy's broken_creds path is already exercised by Phase 1's `validate(...)` flow; surfacing token expiry as broken_creds gives operators the same actionable signal. For a POC where reviews are short (~minutes) and access tokens long-lived (hours), in-flight expiry is rare; the cost of "operator reconnects" is acceptable.
+- **Reversal cost**: low — refresh drops in at the proxy's `credential.expires_at < now()` branch.
+
+### Phase 2 — proxy-dispatch tests deferred alongside refresh
+
+- **Certainty**: 2/5
+- **Decision**: Phase 2's six dispatch tests (not_connected / broken_creds / blocked_by_allowlist / audit-per-method) land alongside the refresh impl. Token-lifecycle tests (mint / lookup / revoke / sweep) shipped this iteration.
+- **Why this one**: the dispatch tests need a stubbed-upstream + seeded credential + seeded review row; the fixture work benefits from landing together with the refresh contention test that shares the same setup. Phase 5's e2e (full path: PR → review → MCP dispatch via fake-linear/fake-notion) is the authoritative integration coverage.
+- **Reversal cost**: low.
+
 ### Phase 1 — advisory-lock-guarded refresh deferred
 
 - **Certainty**: 2/5

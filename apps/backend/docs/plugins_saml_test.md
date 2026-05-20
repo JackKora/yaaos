@@ -2,7 +2,7 @@
 
 > Test-only stub SAML IdP. Refuses to load outside `YAAOS_ENV=test`.
 
-See [plugins_saml.md](plugins_saml.md) for the full SAML SP design — `plugins/saml_test` and `plugins/saml` register into the same assertion-verifier registry in [`domain/orgs.sso`](domain_orgs.md) and the orgs ACS handler dispatches to whichever returns a non-None payload first.
+See [core_saml.md](core_saml.md) for the full SAML SP design — M04 moved the production verifier from `plugins/saml` into `core/saml`. `plugins/saml_test` registers a stub verifier into the same assertion-verifier registry in [`domain/orgs.sso`](domain_orgs.md); the orgs ACS handler dispatches to whichever returns a non-None payload first.
 
 ## Purpose
 
