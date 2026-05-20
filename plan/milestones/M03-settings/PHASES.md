@@ -162,41 +162,41 @@ A thorough sweep over the whole milestone. **Fix gaps inline; do not just record
 
 ### Requirements coverage
 
-- [ ] Re-read every section of [requirements.md](requirements.md). For every requirement, grep the codebase + docs to confirm it shipped. Any missing requirement → implement it now or document why it was deferred (with an entry in DECISIONS.md if certainty < 3).
-- [ ] Verify the permissions table from requirements.md matches actual route gating: for every entry, find the route, confirm its `Depends(require(...))` matches the table.
-- [ ] Verify every "explicit cut" in requirements.md is genuinely absent from the code (not silently half-implemented).
+- [x] Re-read every section of [requirements.md](requirements.md). For every requirement, grep the codebase + docs to confirm it shipped. Any missing requirement → implement it now or document why it was deferred (with an entry in DECISIONS.md if certainty < 3).
+- [x] Verify the permissions table from requirements.md matches actual route gating: for every entry, find the route, confirm its `Depends(require(...))` matches the table.
+- [x] Verify every "explicit cut" in requirements.md is genuinely absent from the code (not silently half-implemented).
 
 ### Test coverage
 
-- [ ] For every new protected endpoint, confirm the triplet exists: unauthenticated 401, wrong-org 404, insufficient-role 403, success 200. Add missing tests.
+- [x] For every new protected endpoint, confirm the triplet exists: unauthenticated 401, wrong-org 404, insufficient-role 403, success 200. Add missing tests.
 - [ ] For every user-visible flow listed in `apps/e2e/`, confirm a Playwright test exists that exercises it end-to-end. Add missing tests.
-- [ ] For every audit-log emission site, confirm a test asserts the row is written with the expected `kind`, `actor_kind`, and `entity_id`. Add missing tests.
-- [ ] `grep -rn "@pytest.mark.skip\|xfail" apps/backend/app apps/web/src apps/e2e` — every skip must be justified inline; resolve any introduced by M03.
+- [x] For every audit-log emission site, confirm a test asserts the row is written with the expected `kind`, `actor_kind`, and `entity_id`. Add missing tests.
+- [x] `grep -rn "@pytest.mark.skip\|xfail" apps/backend/app apps/web/src apps/e2e` — every skip must be justified inline; resolve any introduced by M03.
 
 ### Security posture
 
-- [ ] Every new endpoint declares `Depends(require(action))` or `Depends(public_route)` — the `route_security_resolved` middleware guard from M02 verifies this at runtime; confirm tests cover the path.
-- [ ] Every new secret persisted at rest goes through `core/secrets` (or, for already-hashed bearer tokens like session/CSRF/review-token, through sha256). Grep for raw `Fernet(`, raw `cryptography.fernet`, or plaintext `password`/`secret`/`token` columns introduced by M03.
-- [ ] Every new endpoint that accepts user input validates via Pydantic (no raw dict acceptance). Grep for FastAPI endpoints taking `dict` or `Request` directly.
-- [ ] CSRF tokens validated on every M03-introduced state-changing endpoint (POST/PUT/PATCH/DELETE under `/api/`). Spot-check tests.
-- [ ] Sub-agent name uniqueness Pydantic validator under `org_coding_agents.settings` rejects duplicates with a 422. Test confirms.
+- [x] Every new endpoint declares `Depends(require(action))` or `Depends(public_route)` — the `route_security_resolved` middleware guard from M02 verifies this at runtime; confirm tests cover the path.
+- [x] Every new secret persisted at rest goes through `core/secrets` (or, for already-hashed bearer tokens like session/CSRF/review-token, through sha256). Grep for raw `Fernet(`, raw `cryptography.fernet`, or plaintext `password`/`secret`/`token` columns introduced by M03.
+- [x] Every new endpoint that accepts user input validates via Pydantic (no raw dict acceptance). Grep for FastAPI endpoints taking `dict` or `Request` directly.
+- [x] CSRF tokens validated on every M03-introduced state-changing endpoint (POST/PUT/PATCH/DELETE under `/api/`). Spot-check tests.
+- [x] Sub-agent name uniqueness Pydantic validator under `org_coding_agents.settings` rejects duplicates with a 422. Test confirms.
 
 ### Observability
 
-- [ ] Every new code path's logs carry `yaaos.org_id` and `yaaos.user_id` (or `yaaos.actor_kind` + `yaaos.actor_id` for non-user actors) — these propagate via M02's contextvars + structlog processor. Smoke-test one M03 endpoint by hitting it locally and confirming a log line has both fields.
-- [ ] Every new OTel span set in M03 code has `yaaos.org_id` + `yaaos.user_id` attributes. Spot-check via the M02 wiring.
-- [ ] Background jobs introduced by M03 (the periodic cleanup task; any new scheduler entries) wrap their unit of work in `org_context(org_id, actor_kind=system)` per M02's pattern.
+- [x] Every new code path's logs carry `yaaos.org_id` and `yaaos.user_id` (or `yaaos.actor_kind` + `yaaos.actor_id` for non-user actors) — these propagate via M02's contextvars + structlog processor. Smoke-test one M03 endpoint by hitting it locally and confirming a log line has both fields.
+- [x] Every new OTel span set in M03 code has `yaaos.org_id` + `yaaos.user_id` attributes. Spot-check via the M02 wiring.
+- [x] Background jobs introduced by M03 (the periodic cleanup task; any new scheduler entries) wrap their unit of work in `org_context(org_id, actor_kind=system)` per M02's pattern.
 
 ### Documentation sync
 
-- [ ] `grep -rn "<old-renamed-thing>" apps/*/docs docs` clean for any symbol/route/concept renamed during M03.
-- [ ] Every per-module doc touched by M03 starts with the required 1-sentence purpose statement under the H1.
-- [ ] `docs/setup.md` documents any new env vars introduced by M03 (likely none — M03 reuses M02's secrets).
+- [x] `grep -rn "<old-renamed-thing>" apps/*/docs docs` clean for any symbol/route/concept renamed during M03.
+- [x] Every per-module doc touched by M03 starts with the required 1-sentence purpose statement under the H1.
+- [x] `docs/setup.md` documents any new env vars introduced by M03 (likely none — M03 reuses M02's secrets).
 
 ### Final checks
 
-- [ ] `apps/backend/bin/sync_modules` produces no diff
-- [ ] Phase committed
+- [x] `apps/backend/bin/sync_modules` produces no diff
+- [x] Phase committed
 
 ## Phase 14 — full CI green
 
