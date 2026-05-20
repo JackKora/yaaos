@@ -107,7 +107,17 @@ GitHub  GET /api/auth/callback/github
 Per-module deep dives: [`core_auth`](../apps/backend/docs/core_auth.md), [`domain_identity`](../apps/backend/docs/domain_identity.md), [`domain_orgs`](../apps/backend/docs/domain_orgs.md), [`plugins_oauth_github`](../apps/backend/docs/plugins_oauth_github.md), [`plugins_saml`](../apps/backend/docs/plugins_saml.md).
 
 ### Secrets at rest
-Plugin credentials encrypted in their plugin's settings table via `cryptography.Fernet` keyed by `YAAOS_ENCRYPTION_KEY`. Decrypt only at the call site. Never logged, echoed in errors, or placed in audit payloads.
+All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secrets.md) — a single Fernet wrapper resolving the master key from `YAAOS_TOTP_MASTER_KEY` (fallback `YAAOS_ENCRYPTION_KEY` in non-prod). Callers: `domain/identity/totp`, `domain/orgs/sso`, [`core/byok`](../apps/backend/docs/core_byok.md), and legacy plugin-settings tables. Plaintext crosses the boundary only at write (caller → encrypt) and at the specific call site that needs the decrypted value; never logged, never echoed in errors, never placed in audit payloads.
+
+### Settings surface (M03)
+
+`/orgs/{slug}/settings/{section}` consolidates every per-org knob into one shell with six sub-pages: `auth` (SSO + session-timeout override), `members`, `vcs`, `coding-agents`, `byok`, `audit`. Member role sees only the Members tab; Owner+Admin see all. The shell + tab nav live in [`apps/web/src/domain/org_settings`](../apps/web/src/domain/org_settings/).
+
+- **VCS**: one plugin per org, state on `orgs.vcs_plugin_id` + `orgs.vcs_settings`. The picker hits `GET /api/plugins/available?type=vcs`. When a plugin's `install_url(org_id)` is non-None (today: `github`'s `/api/github/install`), the SPA navigates there and the existing M02 handshake callback writes back via `domain/orgs.set_vcs`. All mutations audit.
+- **Coding Agents**: many installs per org in `org_coding_agents` keyed by `(org_id, plugin_id)`. The generic shell handles install/uninstall + the picker; per-plugin settings dispatch via a frontend registry (`coding_agents/plugin_registry.ts`). The `claude_code` plugin ships a bespoke settings UI (orchestrator + 1..8 sub-agents) reading defaults from `GET /api/claude_code/defaults` (request-time imports, never cached).
+- **BYOK**: `core/byok` owns `byok_keys` per `(org_id, provider)`; plaintext is encrypted via `core/secrets`. Plugins register validators at boot (`core/byok.register_validator`) so `/api/byok/{provider}/validate` dispatches without `core/byok` importing plugins. The Anthropic key surfaces twice — once on the BYOK page and once embedded in the Claude Code settings page — both writing the same row.
+- **Session-timeout override**: nullable `orgs.session_timeout_override` (minutes). The `require()` dep checks `last_seen_at + override` (falls back to `SESSION_IDLE_TIMEOUT` = 12h) on every org-scoped request and 401's `session_idle_expired` past the window.
+- **Verified GitHub username**: `users.github_username` populated by the OAuth-github login callback or by a separate verify-only flow at `/api/account/github/verify` that runs the OAuth handshake without creating an identity row or issuing a session.
 
 ### Dumb frontend
 SPA renders data and dispatches actions. It does not compute verdicts, derive status, hold permissions, or own any rule the backend doesn't also enforce. FE validation is for UX immediacy; backend re-validates. See [`apps/web/docs/patterns.md`](../apps/web/docs/patterns.md).

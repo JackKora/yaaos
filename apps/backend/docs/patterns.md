@@ -146,9 +146,14 @@ Handlers triggered by external events MUST be idempotent under retry.
 
 ## Secrets
 
-- Stored encrypted at rest in the owning plugin's settings table. Encryption key is `YAAOS_ENCRYPTION_KEY` (32 bytes URL-safe base64).
+- Single Fernet wrapper in [`core/secrets`](core_secrets.md); master key from `YAAOS_TOTP_MASTER_KEY` (fallback `YAAOS_ENCRYPTION_KEY` in non-prod). Callers `encrypt(plaintext)` / `decrypt(ciphertext)` — never construct `Fernet` directly.
 - Decrypted only at the call site. No "decrypted credentials" cache; no passing across module boundaries when not needed.
 - Never logged, echoed in errors, or placed in audit payloads. Redact before logging if an exception message could contain a secret.
+- Per-(org, provider) API keys go through [`core/byok`](core_byok.md); provider plugins register their `validate(key) -> bool` callable via `byok.register_validator(provider, callable)` at bootstrap so `core/byok` stays free of plugin imports.
+
+## Route security declarations
+
+Every `/api/*` route declares its security via `Depends(require(action))` (org-scoped, role-gated) or `Depends(public_route)` (no org context required). The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset — the gate is at the route, not the docs. Action → minimum-role map lives in `app/domain/auth/dependencies.py:_REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new protected URL prefix requires extending `app/core/auth/types.py:M02_PROTECTED_PREFIXES` so the middleware forces `X-Org-Slug` resolution before any route logic runs.
 
 ## Testing
 

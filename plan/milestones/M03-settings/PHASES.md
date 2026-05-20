@@ -147,14 +147,14 @@
 
 ## Phase 12 — docs + glossary
 
-- [ ] Per-module docs filled and reviewed: `core_secrets.md`, `core_byok.md`. Updates to `domain_orgs.md` (VCS + coding-agents methods + session-timeout override), `domain_identity.md` (`github_username` field + verify-only flow), `plugins_oauth_github.md` (updates `github_username` on login), `plugins_claude_code.md` (orchestrator/sub-agent model + defaults endpoint + BYOK consumer + Anthropic validator)
-- [ ] `docs/system-architecture.md` adds settings-restructure section
-- [ ] `apps/backend/docs/patterns.md` adds: "every route declares security" (carried from M02), "settings UIs are bespoke React per plugin via the registry"
-- [ ] `apps/web/docs/patterns.md` adds: "API client auto-injects X-Org-Slug", "use RequireMembership for role gates", "sidebar nav config typed per `architecture.md`"
-- [ ] `docs/glossary.md` adds: VCS plugin, coding agent, plugin install, verified GitHub username, session-timeout override, orchestrator, sub-agent, BYOK
-- [ ] `grep -rn "TBD\|TODO\|coming soon" plan/milestones/M03-settings apps/*/docs` returns no hits introduced by M03
-- [ ] `apps/backend/bin/sync_modules` produces no diff
-- [ ] Phase committed
+- [x] Per-module docs filled and reviewed: `core_secrets.md`, `core_byok.md`. Updates to `domain_orgs.md` (VCS + coding-agents methods + session-timeout override), `domain_identity.md` (`github_username` field + verify-only flow), `plugins_oauth_github.md` (updates `github_username` on login), `plugins_claude_code.md` (orchestrator/sub-agent model + defaults endpoint + BYOK consumer + Anthropic validator)
+- [x] `docs/system-architecture.md` adds settings-restructure section
+- [x] `apps/backend/docs/patterns.md` adds: "every route declares security" (carried from M02), "settings UIs are bespoke React per plugin via the registry"
+- [x] `apps/web/docs/patterns.md` adds: "API client auto-injects X-Org-Slug", "use RequireMembership for role gates", "sidebar nav config typed per `architecture.md`"
+- [x] `docs/glossary.md` adds: VCS plugin, coding agent, plugin install, verified GitHub username, session-timeout override, orchestrator, sub-agent, BYOK
+- [x] `grep -rn "TBD\|TODO\|coming soon" plan/milestones/M03-settings apps/*/docs` returns no hits introduced by M03
+- [x] `apps/backend/bin/sync_modules` produces no diff
+- [x] Phase committed
 
 ## Phase 13 — completeness audit
 
