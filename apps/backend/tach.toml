@@ -46,7 +46,7 @@ depends_on = []
 
 [[modules]]
 path = "app.core.saml"
-depends_on = []
+depends_on = ["app.core.secrets"]
 
 [[modules]]
 path = "app.core.secrets"
@@ -94,7 +94,7 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.c
 
 [[modules]]
 path = "app.domain.orgs"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.primitives", "app.core.secrets", "app.core.webserver", "app.domain.auth", "app.domain.coding_agent", "app.domain.identity", "app.domain.vcs"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.primitives", "app.core.saml", "app.core.webserver", "app.domain.auth", "app.domain.coding_agent", "app.domain.identity", "app.domain.vcs"]
 
 [[modules]]
 path = "app.domain.plugins"
@@ -137,12 +137,12 @@ path = "app.plugins.linear"
 depends_on = ["app.core.config", "app.core.oauth", "app.domain.integrations"]
 
 [[modules]]
-path = "app.plugins.oauth_test"
-depends_on = ["app.core.config", "app.domain.identity"]
+path = "app.plugins.notion"
+depends_on = ["app.core.config", "app.core.oauth", "app.domain.integrations"]
 
 [[modules]]
-path = "app.plugins.saml"
-depends_on = ["app.domain.orgs"]
+path = "app.plugins.oauth_test"
+depends_on = ["app.core.config", "app.domain.identity"]
 
 [[modules]]
 path = "app.plugins.saml_test"

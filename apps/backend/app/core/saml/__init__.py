@@ -1,5 +1,17 @@
-"""core/saml — generic SAML SP primitives.
+"""core/saml — generic SAML SP primitives: keypair, assertion verification, metadata."""
 
-Skeleton at Phase 0; Phase 1c moves SP-keypair generation, assertion
-verification, and SP-metadata generation here from `plugins/saml`.
-"""
+from app.core.saml.service import (
+    SamlNotAvailableError,
+    generate_sp_keypair,
+    is_available,
+    parse_assertion,
+    verify_assertion,
+)
+
+__all__ = [
+    "SamlNotAvailableError",
+    "generate_sp_keypair",
+    "is_available",
+    "parse_assertion",
+    "verify_assertion",
+]

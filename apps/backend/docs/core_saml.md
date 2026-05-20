@@ -4,24 +4,23 @@
 
 ## Purpose
 
-Wraps `python3-saml` so SAML mechanics live in one place. Phase 1c extracts the M02 SAML SP code from `plugins/saml` here so `domain/orgs/sso.py` no longer reaches into a plugin for protocol bits.
+Single home for SAML SP mechanics. M04 absorbed the M02 `plugins/saml` adapter + the SP-keypair generator from `domain/orgs/sso` so the protocol bits live in one module that's free of domain awareness. `domain/orgs/sso` imports the verifier at module load and registers it into its assertion-verifier list; test stubs (`plugins/saml_test`) register their own verifier into the same list (first non-None wins).
 
 ## Public interface
 
-Planned (Phase 1c):
-
-- `generate_sp_keypair() -> (private_key_pem, certificate_pem)`
-- `verify_assertion(saml_response, idp_metadata_xml) -> AssertionResult`
-- `generate_sp_metadata(entity_id, acs_url, sp_certificate) -> xml`
+- `is_available() -> bool` — True when `python3-saml` imports cleanly. Local-dev envs without `libxmlsec1` get False.
+- `generate_sp_keypair() -> (bytes, str)` — POC placeholder: random secret encrypted via `core/secrets` + `"POC-PLACEHOLDER-CERT"`. Real `cryptography.hazmat` RSA swaps in here without touching `domain/orgs/sso`.
+- `verify_assertion(saml_response, idp_metadata_xml) -> dict | None` — the callable `domain/orgs/sso` registers. Returns None when the library can't load OR the parse fails.
+- `parse_assertion(xml, settings_dict) -> dict` — lower-level. Raises `SamlNotAvailableError` when the library isn't importable.
 
 ## Module architecture
 
-Skeleton only. Phase 1c moves the existing implementation from `plugins/saml`.
+Stateless. `python3-saml` binds to `libxmlsec1` at C-extension load time; `is_available()` reports whether that succeeded so non-prod environments without the native library still boot cleanly (production deployments install `libxmlsec1` + `xmlsec1` in the docker image).
 
 ## Data owned
 
-None — `sso_configs` lives in `domain/orgs`.
+None — `sso_configs` lives in `domain/orgs`. `core/saml` is pure protocol.
 
 ## How it's tested
 
-Tests land alongside the Phase 1c implementation: SP-keypair round-trip + signed-assertion verify + metadata generation.
+`test/test_availability.py` covers: `is_available()` doesn't raise; the verifier is registered into `domain/orgs/sso`'s list at import; unavailable-library returns None without crashing the dispatcher; `generate_sp_keypair()` round-trips through `core/secrets.decrypt`.
