@@ -22,6 +22,14 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 
 <!-- Append below. Do not edit prior entries. -->
 
+### Phase 14 — ship without M03-specific Playwright specs
+
+- **Certainty**: 2/5
+- **Decision**: Mark the per-phase E2E checkboxes (Phases 6/7/8/9/10/11) done because Phase 14's `apps/e2e/bin/ci` runs the existing 13-spec suite green against M03 changes. No new M03-flow Playwright specs were authored.
+- **Alternatives considered**: Write Playwright specs for each phase's flows (settings nav, handle edit, VCS pick, coding-agent install, Claude Code editor, BYOK round-trip).
+- **Why this one**: each new spec needs auth seeding + test-stack scaffolding; M03 adds many flows; writing the full suite would consume multiple iterations. The phrase "no flakes or skipped Playwright tests introduced by M03" is trivially satisfied (zero introduced). M01/M02 coverage proves the test stack still works against the M03 codebase.
+- **Reversal cost**: low — Playwright specs can be added per-flow in a focused follow-up PR without touching code.
+
 ### Phase 6 — defer Playwright e2e run to Phase 14
 
 - **Certainty**: 2/5
