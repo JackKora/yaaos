@@ -53,6 +53,44 @@ Polling (5s / 3s) remains as a safety net.
 3. Per call: `plugins/github` signs a short-lived RS256 App JWT, exchanges it at `POST /app/installations/{id}/access_tokens` for an installation token (~1h TTL, in-memory).
 4. Installation token used as Bearer for REST and `GIT_ASKPASS`-style for `git clone`.
 
+### MCP context for reviewer agents (M04)
+
+Per-org, per-review pipeline. Coding-agent CLIs call hosted MCP servers (Linear, Notion) through a yaaos-owned proxy so authorization happens in one place + every JSON-RPC method writes an audit row.
+
+```
+reviewer.queue                                 plugins/claude_code               proxy                upstream MCP
+─────────────                                 ──────────────────              ──────                ──────────
+mint_token(review_id)
+  └─ secrets.token_urlsafe(32) → sha256 → mcp_review_tokens
+_build_mcp_payload(review_id, org_id)
+  └─ walks integrations.known_providers()
+     filters enabled + last_refresh_status != "failed"
+     ──────►  agent_config["mcp"] = {token, base_url, servers}
+                                              materialize .mcp.json
+                                              (workspace.write_text, refuses overwrite)
+                                              cli --allowed-tools=…,mcp__<srv>__<tool>,…
+                                              └─ calls mcp__linear__get_issue
+                                                                                 POST /api/mcp/{review_id}/linear
+                                                                                  ├─ sha256 bearer → mcp_review_tokens
+                                                                                  ├─ resolve org_id from review row
+                                                                                  ├─ load mcp_credentials
+                                                                                  ├─ enforce allowlist (write tools)
+                                                                                  ├─ decrypt access_token
+                                                                                  ├─ forward Authorization: Bearer ─►
+                                                                                  └─ audit mcp.linear.dispatched
+revoke_token(review_id) BEFORE workspace teardown
+```
+
+**Single org service account.** Each org connects one upstream OAuth identity per provider. Audit rows always carry `upstream_account="org_service_account"`. The triggering identity (User vs System) lives on `actor_kind`. Reviews fire reads/writes uniformly as the bot — never as the developer who triggered them.
+
+**Attribution.** Manual UI review → `actor_kind=user`, the user's `user_id`. Webhook review → `actor_kind=system`, no IDs. The proxy preserves whichever the review was scheduled with — the row says who *triggered* the work, the `upstream_account` says who *executed* it.
+
+**Refresh serialization (deferred).** When implemented, `domain/integrations.refresh(org_id, provider)` will use `pg_advisory_xact_lock(hashtext('mcp:' || org_id || ':' || provider))` so concurrent reviewers don't double-spend a refresh token. Until then the proxy surfaces `broken_creds` on token expiry and the hourly health-check + email notify the operator to reconnect.
+
+**Audit shape.** One row per JSON-RPC method: `{kind: "mcp.<provider>.dispatched", payload: {provider, method, tool, args_hash, result_summary, upstream_account}}`. Never the full upstream response — it can contain customer data.
+
+**Broken-creds surfacing (six layers).** Health-check flips `last_refresh_status`; audit row `mcp.<provider>.token_refresh_failed`; email to Owners (24h dedup); `/api/auth/me`'s `broken_integrations` per org; red banner in the app shell; warning block on Coding Agents → Claude Code; review-output prefix when the agent hit `broken_creds`/`not_connected` mid-run.
+
 ### Test stack
 
 `docker-compose.test.yml` brings up Postgres + `apps/fake-github` + backend with `GITHUB_API_BASE_URL=http://fake-github:8080` and `YAAOS_CODING_AGENT_STUB=1`. Plugins stubbed via `app/testing/`. E2E specs drive preconditions via `POST /api/testing/reset` + `seed/*`.

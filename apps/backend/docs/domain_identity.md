@@ -62,7 +62,7 @@ Unverified emails never reach the orchestrator — the callback handler enforces
 
 ### Provider registry
 
-`providers.register_provider(p)` keys by `p.provider_id` and overwrites on re-register (plugin bootstraps may run multiple times in tests). The HTTP layer reads by id via `get_provider` and enumerates via `list_providers` for the "which providers can I sign in with" endpoint. Plugins: [`plugins/oauth_github`](plugins_oauth_github.md), [`plugins/oauth_test`](plugins_oauth_test.md).
+`providers.register_provider(p)` keys by `p.provider_id` and overwrites on re-register (plugin bootstraps may run multiple times in tests). The HTTP layer reads by id via `get_provider` and enumerates via `list_providers` for the "which providers can I sign in with" endpoint. Plugins: [`plugins/github`](plugins_github.md) (M04 collapsed the M02 `plugins/oauth_github` here), [`plugins/oauth_test`](plugins_oauth_test.md).
 
 ### Periodic cleanup
 

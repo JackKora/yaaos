@@ -45,10 +45,11 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 
 | Module | Responsibility |
 |---|---|
-| [plugins_github](plugins_github.md) | `VCSPlugin` for GitHub: App auth, HMAC, REST, Manifest Flow, catch-up poller. |
+| [plugins_github](plugins_github.md) | `VCSPlugin` + `Provider` for GitHub: App auth, HMAC, REST, Manifest Flow, catch-up poller, OAuth login (M04 collapsed `plugins/oauth_github` here). |
 | [plugins_claude_code](plugins_claude_code.md) | `CodingAgentPlugin` wrapping the Claude Code CLI. |
 | [plugins_in_process_workspace](plugins_in_process_workspace.md) | `WorkspaceProvider` using tempdir + git clone (POC). |
-| [plugins_oauth_github](plugins_oauth_github.md) | `Provider` for GitHub OAuth. Authorization-code flow + userinfo. |
+| [plugins_linear](plugins_linear.md) | `IntegrationProvider` for Linear (hosted MCP via `domain/integrations`). |
+| [plugins_notion](plugins_notion.md) | `IntegrationProvider` for Notion (hosted MCP via `domain/integrations`). |
 | [plugins_oauth_test](plugins_oauth_test.md) | Test-only `Provider` stub; refuses to load outside `YAAOS_ENV=test`. |
 
 ### Testing — scaffolding, stripped from prod wheels

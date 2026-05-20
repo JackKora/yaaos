@@ -17,8 +17,8 @@ Shared vocabulary across backend and frontend. These terms appear in code, URLs,
 | **Verdict** | Terminal state of a posted review: `APPROVED` / `CHANGES_REQUESTED` / `COMMENT`. Decided by the CLI; returned in `ReviewResult.state`. |
 | **Skip reason** | Why a job didn't run: `fork`, `bot_author`, `trivial_diff`, `too_large`, `secrets_detected`, `ui_cancel`, `superseded`. Recorded on the row and rendered in UI. |
 | **Audit entry** | One row in `audit_log`. Append-only. Kind is `<entity>.<verb_past>`. Payload is a Pydantic model owned by the writing module. |
-| **Actor** | Who initiated an action — `{kind: "github_user" | "agent" | "system", login?, agent_id?}`. Required on every audit entry. Defined in `core/primitives`. |
-| **Onboarding** | Dashboard's pre-ready state. Two checks: GitHub App installed + Anthropic API key set (validated by live probe). Computed by `domain/settings.get_onboarding_status()`. |
+| **Actor** | Who initiated an action — `{kind: "github_user" | "agent" | "system" | "user" | "workspace" | "sso", login?, agent_id?, user_id?, workspace_id?}`. Required on every audit entry. Defined in `core/audit_log` (relocated from `core/primitives` in M04 Phase 6a). |
+| **Onboarding** | Dashboard's pre-ready state. Two checks: GitHub App installed + Anthropic API key set (validated by live probe). Computed by `domain/orgs.get_onboarding_status()`. |
 | **User** | A human identity. UUID PK, soft-deletable via `deactivated_at`. Distinct from `actor_kind=github_user` which is the GitHub-as-VCS actor on legacy rows. Owned by `domain/identity`. |
 | **Membership** | Link between a `User` and an `Org`. Composite PK `(user_id, org_id)`. Carries a per-org `handle` and one of three `Role`s. Same user can be `@jack` in one org and `@jkora` in another. |
 | **Role** | `owner ≥ admin ≥ member`. Compared via `role.covers(required)` only. Action-to-role minimums declared at `Depends(require(Action.X))` call sites. |
@@ -34,3 +34,11 @@ Shared vocabulary across backend and frontend. These terms appear in code, URLs,
 | **Orchestrator** | The single parent Claude Code session that dispatches sub-agents via the Task tool and synthesizes their findings. One per `claude_code` install; configured under Org Settings > Coding Agents > Claude Code. |
 | **Sub-agent** | A focused review pass run as its own Claude Code session, dispatched by the orchestrator. 1..8 per `claude_code` install. Names must be unique within an install (enforced by Pydantic at the API boundary). |
 | **BYOK** | Bring-your-own-key per `(org_id, provider)`. M03 ships `anthropic` only. Plaintext lives only inbound on POST + outbound from `core/byok.get/.validate`; the DB stores Fernet ciphertext via `core/secrets`. |
+| **MCP** | Model Context Protocol — the JSON-RPC-over-HTTP shape that hosted integrations (Linear, Notion) speak to coding-agent CLIs. yaaos proxies every MCP request from a review through `domain/mcp_proxy` so authorization + audit happen in one place. |
+| **MCP review token** | Per-review opaque bearer that authenticates the coding-agent CLI to the yaaos proxy. Minted at review start (sha256 hex persisted in `mcp_review_tokens`, raw returned once), revoked before workspace teardown, swept hourly. 2h absolute TTL. |
+| **Integration** | The yaaos record of a connected hosted provider for an org: encrypted OAuth tokens, per-tool allowlist, status. Owned by `domain/integrations`; one row per `(org_id, provider)`. |
+| **Hosted MCP** | An MCP server that lives at a provider (mcp.linear.app, mcp.notion.com) rather than running locally. yaaos's proxy forwards to whichever URL the provider's `ProviderConfig.mcp_url` declares. |
+| **Org service account** | The single upstream OAuth identity an org has connected per provider. Audit rows always tag MCP dispatch with `upstream_account="org_service_account"` — reviews never run as the developer who triggered them. |
+| **Allowlist** | Per-`(org_id, provider)` list of write tools the proxy will forward. Read tools are always allowed; write tools are opt-in (empty = read-only). |
+| **Broken-creds** | Status state for an integration whose `last_refresh_status == "failed"`. Surfaces in six places (banner, email, audit, settings badge, Claude Code warning, review-output prefix). |
+| **Upstream identity** | Display string (email / handle / org name) the OAuth flow returned for the connected account. Stored on `mcp_credentials.upstream_identity` for UI; never used as an auth principal. |

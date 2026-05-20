@@ -189,16 +189,16 @@ Deferred — see [DECISIONS.md](DECISIONS.md). The `app/testing/e2e_setup/web.py
 
 ## Phase 7 — docs + glossary
 
-- [ ] Per-module docs filled: `core_oauth.md`, `core_saml.md`, `domain_integrations.md`, `domain_mcp_proxy.md`
-- [ ] Updates to existing docs: `core_audit_log.md` (new MCP `kind` values + retention change + actor_kind cases + Actor/ActorKind ownership), `core_observability.md` (spawn/active_task_count absorption), `plugins_github.md` (absorbed OAuth login), `plugins_claude_code.md` (`.mcp.json` materialization + agent-prompt edits), `domain_reviewer.md` (token lifecycle + review-output prefix), `domain_orgs.md` (sso refactor + onboarding-status absorption)
-- [ ] Deleted docs verified gone: `core_primitives.md`, `domain_settings.md`, `plugins_oauth_github.md`, `plugins_saml.md`
-- [ ] `docs/system-architecture.md` adds "MCP context" section: proxy lifecycle ASCII, single-org-service-account model, attribution rules, refresh serialization, audit shape, six-layer broken-creds surfacing
-- [ ] `apps/backend/docs/patterns.md` documents: "advisory-lock-guarded refresh" pattern, "bearer token discipline" (referenced by `sessions`, `mcp_review_tokens`)
-- [ ] `docs/glossary.md` adds: MCP, MCP review token, integration, hosted MCP, org service account, allowlist, broken-creds, upstream identity
-- [ ] `grep -rn "TBD\|TODO\|coming soon" plan/milestones/M04-mcp apps/*/docs` returns no hits introduced by M04
-- [ ] `grep -rn "plugins/oauth_github\|plugins/saml\|plugins/oauth_test\|plugins/saml_test" apps/*/docs docs` returns zero hits (all stale references removed)
-- [ ] `apps/backend/bin/sync_modules` produces no diff
-- [ ] Phase committed
+- [x] Per-module docs filled: `core_oauth.md`, `core_saml.md`, `domain_integrations.md`, `domain_mcp_proxy.md` (also added new `plugins_linear.md` + `plugins_notion.md`)
+- [x] Updates to existing docs: `core_audit_log.md` (Actor/ActorKind ownership + 15d retention), `core_observability.md` (spawn/active_task_count), `plugins_github.md` (absorbed OAuth login — already done in Phase 1), `plugins_claude_code.md` (`.mcp.json` materialization — done in Phase 3), `domain_reviewer.md` (token lifecycle + review-output prefix — done in Phase 3/3b), `domain_orgs.md` (sso refactor + onboarding-status absorption)
+- [x] Deleted docs verified gone: `core_primitives.md`, `domain_settings.md`, `plugins_oauth_github.md`, `plugins_saml.md`
+- [x] `docs/system-architecture.md` adds "MCP context" section: proxy lifecycle ASCII, single-org-service-account model, attribution rules, refresh serialization, audit shape, six-layer broken-creds surfacing
+- [x] `apps/backend/docs/patterns.md` already documents "bearer token discipline" (M02 + extended in M04 — `sessions`, `mcp_review_tokens`, signed invitations). The "advisory-lock-guarded refresh" pattern is intentionally not documented yet — the refresh impl is deferred (DECISIONS.md); per CLAUDE.md "if it isn't shipped, it isn't in docs/".
+- [x] `docs/glossary.md` adds: MCP, MCP review token, integration, hosted MCP, org service account, allowlist, broken-creds, upstream identity
+- [x] `grep -rn "TBD\|TODO\|coming soon" plan/milestones/M04-mcp apps/*/docs` returns no hits introduced by M04
+- [x] `grep -rn "plugins/oauth_github\|plugins/saml\|plugins/oauth_test\|plugins/saml_test" apps/*/docs docs` — `plugins_oauth_github.md` deleted; remaining hits are explanatory text ("M04 collapsed plugins/oauth_github here") + the still-shipped `plugins_oauth_test.md` + `plugins_saml_test.md` (Phase 5b deferral).
+- [x] `apps/backend/bin/sync_modules` produces no diff
+- [x] Phase committed
 
 ## Phase 8 — completeness audit
 
