@@ -22,7 +22,7 @@ Provider plugins register their `IntegrationProvider` (`ProviderConfig` + `valid
 
 ## Module architecture
 
-Skeleton at Phase 0; the service surface and HTTP routes land in Phase 1 (Linear) and Phase 1b (Notion).
+Skeleton at Phase 0; the service surface and HTTP routes land in Phase 1 (Linear) and Phase 1b (Notion). Phase 3b adds an hourly health-check loop (`scheduler.run_scheduler_loop`) spawned via the module's `on_startup` hook — it iterates enabled credentials, calls each provider's `validate(access_token)`, flips `last_refresh_status`, audits `mcp.<provider>.token_refresh_failed` on flip-to-failed, and emails the org's Owners (dedup once per 24h via `last_failure_notified_at`). The same loop runs `domain/mcp_proxy.sweep_expired()` so expired review-tokens get reaped without a second scheduler.
 
 ## Data owned
 

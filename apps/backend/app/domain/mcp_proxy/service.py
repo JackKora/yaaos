@@ -107,6 +107,22 @@ async def revoke_token(
         return n
 
 
+# Per-review tracker for broken_creds / not_connected observations. The
+# reviewer drains this at review-end to prefix the PR comment with a yellow
+# warning block listing affected providers. Process-local — reviews finish
+# within minutes and a restart kills the in-flight reviewer task anyway.
+_broken_creds_observed: dict[UUID, set[str]] = {}
+
+
+def record_broken_creds(review_id: UUID, provider: str) -> None:
+    _broken_creds_observed.setdefault(review_id, set()).add(provider)
+
+
+def consume_broken_creds(review_id: UUID) -> set[str]:
+    """Return providers observed broken for `review_id` and clear the entry."""
+    return _broken_creds_observed.pop(review_id, set())
+
+
 async def sweep_expired(*, session: AsyncSession | None = None) -> int:
     """Periodic-cleanup helper. Drops rows past TTL; returns the count."""
 

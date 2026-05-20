@@ -1,5 +1,6 @@
 import { Sidebar } from "@core/sidebar";
 import { Outlet, useRouterState } from "@tanstack/react-router";
+import { BrokenIntegrationsBanner } from "./broken-integrations-banner";
 import { Topbar } from "./topbar";
 
 const CRUMB_BY_PATH: Record<string, string> = {
@@ -32,6 +33,7 @@ export function AppShell() {
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
         <Topbar crumb={crumb} />
+        <BrokenIntegrationsBanner />
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>

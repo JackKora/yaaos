@@ -46,7 +46,7 @@ from app.core.secrets import SecretsDecryptError, decrypt
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.integrations import service as integ
 from app.domain.integrations.types import get_provider
-from app.domain.mcp_proxy.service import lookup_token
+from app.domain.mcp_proxy.service import lookup_token, record_broken_creds
 from app.domain.reviewer.models import ReviewRow
 
 log = structlog.get_logger("mcp_proxy.web")
@@ -138,10 +138,12 @@ async def dispatch(
 
         credential = await integ.get(s, org_id, server)
         if credential is None or not credential.enabled:
+            record_broken_creds(review_id, server)
             return JSONResponse(
                 _rpc_error(rpc_id, *_RPC_ERR_NOT_CONNECTED, f"{server} not connected for org")
             )
         if credential.last_refresh_status == "failed":
+            record_broken_creds(review_id, server)
             return JSONResponse(
                 _rpc_error(rpc_id, *_RPC_ERR_BROKEN_CREDS, f"{server} credentials need reconnect")
             )
@@ -149,6 +151,7 @@ async def dispatch(
             # Refresh path is deferred (see DECISIONS.md). For now we
             # surface broken_creds; Phase 3b's hourly health check will
             # flip last_refresh_status="failed" so the UI surfaces it.
+            record_broken_creds(review_id, server)
             return JSONResponse(
                 _rpc_error(
                     rpc_id,

@@ -183,6 +183,23 @@ class _AdmissionDropsPayload(BaseModel):
     drops: list[dict[str, Any]]
 
 
+def _prefix_broken_creds_warning(body: str | None, providers: list[str]) -> str | None:
+    """Prefix the PR review summary with a yellow GitHub callout listing any
+    MCP providers that returned `broken_creds`/`not_connected` during this
+    review. No-op when nothing was observed."""
+    if not providers:
+        return body
+    names = ", ".join(providers)
+    note = (
+        "> [!WARNING]\n"
+        f"> The following MCP integrations returned errors during this review "
+        f"and were skipped: **{names}**. Reconnect them in Org Settings → Integrations.\n"
+    )
+    if not body:
+        return note
+    return f"{note}\n{body}"
+
+
 async def _build_mcp_payload(review_id: UUID, *, org_id: UUID) -> dict[str, Any] | None:
     """Collect connected MCP providers for the org and mint a per-review bearer.
 
@@ -768,10 +785,12 @@ async def _run_review_job_inner(input: ReviewJobInput) -> None:
 
             # Translate admitted RawFindings back to vcs.Finding for posting.
             posted_vcs_findings = _raw_to_vcs_findings(raw, new_findings)
+            broken_providers = sorted(mcp_proxy.consume_broken_creds(job_id))
+            summary_body = _prefix_broken_creds_warning(result.summary_body, broken_providers)
             review_obj = Review(
                 agent_tag=_REVIEWER_TAG,
                 state=result.state or "COMMENT",
-                summary_body=result.summary_body,
+                summary_body=summary_body,
                 findings=posted_vcs_findings,
             )
             post_result = await vcs_plugin.post_review(ctx.pr_external_id, review_obj)

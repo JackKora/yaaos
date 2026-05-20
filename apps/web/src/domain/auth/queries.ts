@@ -1,11 +1,17 @@
 import { apiFetch } from "@core/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+export interface BrokenIntegration {
+  provider: string;
+  last_refresh_failed_at: string | null;
+}
+
 export interface MembershipSummary {
   slug: string;
   display_name: string;
   role: "owner" | "admin" | "member";
   handle: string;
+  broken_integrations: BrokenIntegration[];
 }
 
 export interface EmailSummary {

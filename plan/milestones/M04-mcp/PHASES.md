@@ -102,15 +102,15 @@
 
 ## Phase 3b — Broken-credential surfacing (health-check + notifications + banner + warning block)
 
-- [ ] Scheduled health-check job in existing scheduler runs **hourly**. Iterates `mcp_credentials WHERE enabled = true`. Calls each row's provider `validate()`. Success → update `last_validated_at`, ensure `last_refresh_status = "ok"`, clear `last_refresh_failed_at`. Failure → set status to `"failed"`, set `last_refresh_failed_at = now()`, enqueue email-notification job.
-- [ ] Email-notification job: looks up Owners for the org, composes "[yaaos] {provider} integration disconnected — action required" with deep link, sends via M02's SMTP path. Dedup via `last_failure_notified_at`: skip if null OR within 24h of now; else send and set `last_failure_notified_at = now()`.
-- [ ] `GET /api/auth/me` extended with `broken_integrations: [{provider, last_refresh_failed_at}, ...]` for the current org. Owners + Admins only; empty array for Members.
-- [ ] App-shell banner in `apps/web/src/core/layout` renders a red banner when `broken_integrations` is non-empty. Click deep-links to `/orgs/{slug}/settings/integrations`.
-- [ ] Coding Agents > Claude Code page shows warning block at top when any enabled MCP provider for the org has `last_refresh_status = "failed"`
-- [ ] Review-output warning block: `domain/reviewer` records which providers returned `broken_creds` during the review; if non-empty at review-end, the PR comment posted to GitHub is prefixed with a yellow warning block listing affected providers
-- [ ] Tests: refresh failure flips status + enqueues email + dedups within 24h; scheduled health-check catches breakage without a review running; `/api/auth/me` exposes `broken_integrations` correctly; banner shows for Owners/Admins, hidden for Members; review-output prefix appears when MCP errors recorded
-- [ ] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
-- [ ] Phase committed
+- [x] Scheduled health-check job in existing scheduler runs **hourly**. Iterates `mcp_credentials WHERE enabled = true`. Calls each row's provider `validate()`. Success → update `last_validated_at`, ensure `last_refresh_status = "ok"`, clear `last_refresh_failed_at`. Failure → set status to `"failed"`, set `last_refresh_failed_at = now()`, enqueue email-notification job. (lives in `domain/integrations/scheduler.py`; runs on the same loop as `mcp_review_tokens` sweep)
+- [x] Email-notification job: looks up Owners for the org, composes "[yaaos] {provider} integration disconnected — action required" with deep link, sends via M02's SMTP path. Dedup via `last_failure_notified_at`: skip if null OR within 24h of now; else send and set `last_failure_notified_at = now()`.
+- [x] `GET /api/auth/me` extended with `broken_integrations: [{provider, last_refresh_failed_at}, ...]` for the current org. Owners + Admins only; empty array for Members.
+- [x] App-shell banner in `apps/web/src/core/layout` renders a red banner when `broken_integrations` is non-empty. Click deep-links to `/orgs/{slug}/settings/integrations`. (Phase 4's settings route lands the actual page; for now the link resolves to a 404 if Phase 4 hasn't shipped — banner copy directs the operator regardless.)
+- [x] Coding Agents > Claude Code page shows warning block at top when any enabled MCP provider for the org has `last_refresh_status = "failed"`
+- [x] Review-output warning block: `domain/reviewer` records which providers returned `broken_creds` during the review; if non-empty at review-end, the PR comment posted to GitHub is prefixed with a yellow warning block listing affected providers (via `domain/mcp_proxy.record_broken_creds` + `consume_broken_creds`)
+- [x] Tests: refresh failure flips status + enqueues email + dedups within 24h; scheduled health-check catches breakage without a review running; `/api/auth/me` exposes `broken_integrations` correctly; banner shows for Owners/Admins, hidden for Members; review-output prefix appears when MCP errors recorded (banner role-hiding is structural: the backend zeros the array for Members so the banner has nothing to render — covered by `test_me_exposes_broken_integrations_for_admins`)
+- [x] `apps/backend/bin/ci` + `apps/web/bin/ci` exit 0
+- [x] Phase committed
 
 ## Phase 4 — Org Settings > Integrations UI
 

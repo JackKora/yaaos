@@ -38,11 +38,12 @@ from app.core.auth.types import Action
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.oauth import OAuthError, build_authorize_url
-from app.core.primitives import Actor
+from app.core.primitives import Actor, spawn
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.auth.dependencies import current_actor, require
 from app.domain.integrations import service as integ
 from app.domain.integrations.models import McpCredentialRow
+from app.domain.integrations.scheduler import run_scheduler_loop
 from app.domain.integrations.types import (
     IntegrationNotConnectedError,
     ProviderNotRegisteredError,
@@ -269,4 +270,15 @@ async def clear_endpoint(provider: str) -> dict[str, bool]:
     return {"removed": removed}
 
 
-register_routes(RouteSpec(module_name="integrations", router=router, url_prefix="/api/integrations"))
+async def _start_scheduler() -> None:
+    spawn("integrations.scheduler", run_scheduler_loop())
+
+
+register_routes(
+    RouteSpec(
+        module_name="integrations",
+        router=router,
+        url_prefix="/api/integrations",
+        on_startup=[_start_scheduler],
+    )
+)

@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     # M02 — session lifetime + cleanup cadence.
     yaaos_session_lifetime_seconds: int = 60 * 60 * 24 * 14  # 14 days
     yaaos_auth_cleanup_interval_seconds: int = 60 * 60  # 1 hour
+    yaaos_integrations_health_check_interval_seconds: int = 60 * 60  # 1 hour
 
     # M02 — OAuth GitHub credentials. Required in `prod`; defaults let `dev`
     # boot without provisioning. Tests override via env at fixture time.

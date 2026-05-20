@@ -1,3 +1,4 @@
+import { useCurrentUser } from "@domain/auth";
 import { Badge, Button, Card, CardContent, CardHeader } from "@shared/components";
 import { useEffect, useState } from "react";
 import {
@@ -89,6 +90,7 @@ function Editor({
 
   return (
     <div className="flex flex-col gap-4">
+      <BrokenIntegrationsNotice />
       <Card>
         <CardHeader>
           <h2 className="text-[16px] font-semibold">Claude Code</h2>
@@ -132,6 +134,27 @@ function Editor({
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Warning block atop the Claude Code page when any enabled MCP provider for
+ *  the current org has `last_refresh_status="failed"`. Reads from `/api/auth/me`'s
+ *  `broken_integrations` since the page can't directly query integrations without
+ *  the appropriate role context anyway. */
+function BrokenIntegrationsNotice() {
+  const { data } = useCurrentUser();
+  if (!data) return null;
+  const currentOrg = data.orgs.find((o) => o.slug === data.current_org_slug);
+  if (!currentOrg || currentOrg.broken_integrations.length === 0) return null;
+  const providers = currentOrg.broken_integrations.map((b) => b.provider).join(", ");
+  return (
+    <div
+      className="rounded border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900"
+      data-testid="cc-broken-integrations"
+    >
+      <span className="font-semibold">Reviews will receive `broken_creds` errors</span> from:{" "}
+      {providers}. Reconnect in Org Settings → Integrations.
     </div>
   );
 }
