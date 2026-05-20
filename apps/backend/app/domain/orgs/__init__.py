@@ -25,6 +25,11 @@ from app.domain.orgs.models import (
     OrgRow,
     SsoConfigRow,
 )
+from app.domain.orgs.onboarding import (
+    OnboardingStatus,
+    get_onboarding_status,
+    register_onboarding_contributor,
+)
 from app.domain.orgs.service import (
     InsufficientRoleError,
     Invitation,
@@ -61,6 +66,7 @@ __all__ = [
     "Membership",
     "MembershipNotFoundError",
     "MembershipRow",
+    "OnboardingStatus",
     "Org",
     "OrgCodingAgentRow",
     "OrgNotFoundError",
@@ -72,10 +78,12 @@ __all__ = [
     "accept_invitation",
     "change_role",
     "clear_vcs",
+    "get_onboarding_status",
     "get_vcs",
     "install_coding_agent",
     "invite",
     "list_coding_agents",
+    "register_onboarding_contributor",
     "remove_member",
     "set_vcs",
     "uninstall_coding_agent",

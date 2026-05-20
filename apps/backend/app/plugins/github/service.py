@@ -755,7 +755,7 @@ async def _onboarding_github_app_installed(org_id: UUID) -> bool:
 
 
 def bootstrap() -> None:
-    from app.domain.settings import register_onboarding_contributor  # noqa: PLC0415
+    from app.domain.orgs import register_onboarding_contributor  # noqa: PLC0415
 
     register_vcs_plugin(_plugin)
     register_onboarding_contributor("github_app_installed", _onboarding_github_app_installed)

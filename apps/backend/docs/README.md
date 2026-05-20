@@ -37,9 +37,8 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [domain_tickets](domain_tickets.md) | Lifecycle `open → in_review → complete`. |
 | [domain_reviewer](domain_reviewer.md) | `ReviewJob` aggregate, per-PR queue, workflow. |
 | [domain_intake](domain_intake.md) | Inbound VCS event router; filters drafts/forks/bots. |
-| [domain_settings](domain_settings.md) | Onboarding-status aggregator + plugin discovery. |
 | [domain_identity](domain_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP (M02). |
-| [domain_orgs](domain_orgs.md) | Orgs, memberships, roles, invitations, SSO config (M02). |
+| [domain_orgs](domain_orgs.md) | Orgs, memberships, roles, invitations, SSO config, onboarding-status aggregator (M02+). |
 | [domain_auth](domain_auth.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints (M02). |
 
 ### Plugins — vendor-specific implementations

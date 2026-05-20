@@ -1200,7 +1200,7 @@ async def bootstrap_anthropic_env() -> None:
 
 def bootstrap() -> None:
     from app.core.byok import register_validator as _byok_register_validator  # noqa: PLC0415
-    from app.domain.settings import register_onboarding_contributor  # noqa: PLC0415
+    from app.domain.orgs import register_onboarding_contributor  # noqa: PLC0415
     from app.plugins.claude_code.byok_validator import validate_anthropic_key  # noqa: PLC0415
     from app.plugins.claude_code.installer import install_subagents  # noqa: PLC0415
 

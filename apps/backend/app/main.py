@@ -34,6 +34,7 @@ from app.domain import auth as _domain_auth  # noqa: F401, E402
 # `orgs/__init__`.
 from app.domain.identity import account_web as _identity_account_web  # noqa: F401, E402
 from app.domain.orgs import audit_web as _orgs_audit_web  # noqa: F401, E402
+from app.domain.orgs import onboarding_web as _orgs_onboarding_web  # noqa: F401, E402
 from app.domain.orgs import sso_web as _orgs_sso_web  # noqa: F401, E402
 from app.domain.orgs import web as _orgs_web  # noqa: F401, E402
 
@@ -47,7 +48,6 @@ from app.domain import pull_requests  # noqa: F401, E402
 from app.domain import tickets  # noqa: F401, E402
 from app.domain import reviewer  # noqa: F401, E402
 from app.domain import intake  # noqa: F401, E402
-from app.domain import settings  # noqa: F401, E402
 from app.domain import plugins as _domain_plugins  # noqa: F401, E402
 from app.domain.plugins import web as _domain_plugins_web  # noqa: F401, E402
 from app.domain.byok import web as _domain_byok_web  # noqa: F401, E402

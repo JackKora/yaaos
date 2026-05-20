@@ -174,18 +174,18 @@ Deferred — see [DECISIONS.md](DECISIONS.md). The `app/testing/e2e_setup/web.py
 
 ## Phase 6b — `domain/settings` dissolution
 
-- [ ] `list_plugins()` aggregation logic inlined at the M03 `/api/plugins/available?type=...` endpoint. The endpoint walks the three registries directly (`_VCS_PLUGINS`, `_CODING_AGENT_PLUGINS`, `_WORKSPACE_PROVIDERS`).
-- [ ] `get_onboarding_status()` function + `_CONTRIBUTORS` registry + `register_onboarding_contributor()` moved into `domain/orgs`
-- [ ] Plugins that register contributors (`plugins/github`, `plugins/claude_code`) updated to import `register_onboarding_contributor` from `domain/orgs` instead of `domain/settings`
-- [ ] Existing onboarding-status web endpoint (in `domain/settings/web.py`) moved to be served by `domain/orgs/web.py`
-- [ ] `apps/backend/app/domain/settings/` directory deleted
-- [ ] `apps/backend/docs/domain_settings.md` deleted
-- [ ] `domain/orgs` docs updated to mention onboarding-status absorption
-- [ ] `grep -rn "domain.settings\|from app.domain.settings" apps/backend` returns zero hits
-- [ ] `apps/backend/bin/sync_modules` produces no diff
-- [ ] Tests stay green; existing onboarding-status endpoint behavior unchanged
-- [ ] `apps/backend/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `list_plugins()` aggregation logic inlined at `/api/settings/plugins` in the new `domain/orgs/onboarding_web.py` — walks the three registries directly (`_VCS_PLUGINS`, `_CODING_AGENT_PLUGINS`, `_WORKSPACE_PROVIDERS`). The M03 picker endpoint `/api/plugins/available?type=...` (lives in `domain/plugins`) already walked them per-type; the legacy aggregator stays so the M01 plugin-health card keeps working.
+- [x] `get_onboarding_status()` function + `_CONTRIBUTORS` registry + `register_onboarding_contributor()` moved into `domain/orgs/onboarding.py`
+- [x] Plugins that register contributors (`plugins/github`, `plugins/claude_code`) updated to import `register_onboarding_contributor` from `domain/orgs` instead of `domain/settings`
+- [x] Existing onboarding-status web endpoint (in `domain/settings/web.py`) moved to be served by `domain/orgs/onboarding_web.py` — same URLs (`/api/settings/onboarding`, `/api/settings/plugins`), new home
+- [x] `apps/backend/app/domain/settings/` directory deleted
+- [x] `apps/backend/docs/domain_settings.md` deleted
+- [x] `domain/orgs` docs updated to mention onboarding-status absorption
+- [x] `grep -rn "domain.settings\|from app.domain.settings" apps/backend` returns zero hits
+- [x] `apps/backend/bin/sync_modules` produces no diff
+- [x] Tests stay green; existing onboarding-status endpoint behavior unchanged (530 backend tests passing)
+- [x] `apps/backend/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 7 — docs + glossary
 
