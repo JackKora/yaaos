@@ -29,6 +29,30 @@ services:
       timeout: 2s
       retries: 30
 
+  fake-linear:
+    build:
+      context: ..
+      dockerfile: apps/fake-linear/Dockerfile
+    ports:
+      - "58082:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/docs').status == 200 else 1)\""]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  fake-notion:
+    build:
+      context: ..
+      dockerfile: apps/fake-notion/Dockerfile
+    ports:
+      - "58083:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/docs').status == 200 else 1)\""]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
   yaaos:
     build:
       context: ..
@@ -38,6 +62,22 @@ services:
       YAAOS_ENCRYPTION_KEY: vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI=
       YAAOS_ENV: test
       GITHUB_API_BASE_URL: http://fake-github:8080
+      # M04 — Linear + Notion fakes. Production URLs are the real upstreams;
+      # tests override here so the autonomous suite needs no external OAuth.
+      LINEAR_OAUTH_AUTHORIZE_URL: http://fake-linear:8080/oauth/authorize
+      LINEAR_OAUTH_TOKEN_URL: http://fake-linear:8080/oauth/token
+      LINEAR_OAUTH_REFRESH_URL: http://fake-linear:8080/oauth/token
+      LINEAR_MCP_URL: http://fake-linear:8080/sse
+      LINEAR_API_BASE_URL: http://fake-linear:8080
+      YAAOS_OAUTH_LINEAR_CLIENT_ID: fake-linear-client-id
+      YAAOS_OAUTH_LINEAR_CLIENT_SECRET: fake-linear-client-secret
+      NOTION_OAUTH_AUTHORIZE_URL: http://fake-notion:8080/v1/oauth/authorize
+      NOTION_OAUTH_TOKEN_URL: http://fake-notion:8080/v1/oauth/token
+      NOTION_OAUTH_REFRESH_URL: http://fake-notion:8080/v1/oauth/token
+      NOTION_MCP_URL: http://fake-notion:8080/mcp
+      NOTION_API_BASE_URL: http://fake-notion:8080
+      YAAOS_OAUTH_NOTION_CLIENT_ID: fake-notion-client-id
+      YAAOS_OAUTH_NOTION_CLIENT_SECRET: fake-notion-client-secret
       YAAOS_CODING_AGENT_STUB: "1"
       YAAOS_REVIEWER_CLASSIFIER_STUB: "1"
       YAAOS_REVIEW_DEBOUNCE_SECONDS: "0"
@@ -48,6 +88,10 @@ services:
       postgres:
         condition: service_healthy
       fake-github:
+        condition: service_started
+      fake-linear:
+        condition: service_started
+      fake-notion:
         condition: service_started
     ports:
       - "58080:8080"

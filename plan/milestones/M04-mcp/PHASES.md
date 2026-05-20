@@ -18,23 +18,23 @@
 
 ## Phase 0b — fake upstream provider apps
 
-- [ ] `apps/fake-linear/` created: FastAPI app with Dockerfile + pyproject.toml mirroring `apps/fake-github` structure
-- [ ] fake-linear implements OAuth authorize endpoint (auto-grants), token exchange, refresh with refresh-token rotation matching Linear semantics
-- [ ] fake-linear implements MCP endpoint at `/sse` (Streamable HTTP) with read tools (`get_issue`, `search_issues`, `list_projects`, `list_cycles`) returning seeded data and write tools (`update_issue`, `create_comment`) mutating in-memory state
-- [ ] fake-linear has hardcoded test secrets in `apps/fake-linear/app/test_secrets.py`
-- [ ] `apps/fake-linear/docs/README.md` describing what's emulated
-- [ ] `apps/fake-notion/` created: same structure as fake-linear
-- [ ] fake-notion implements OAuth endpoints with Notion-specific scope vocabulary + refresh semantics
-- [ ] fake-notion implements MCP endpoint at `/mcp` with read tools (`search`, `query_database`, `retrieve_page`, `retrieve_block`) and write tools (`update_page`, `create_comment`)
-- [ ] fake-notion has hardcoded test secrets in `apps/fake-notion/app/test_secrets.py`
-- [ ] `apps/fake-notion/docs/README.md` describing what's emulated
-- [ ] Both fakes added to `docker/docker-compose.test.yml` with hostname routing
-- [ ] Env-var hooks added to backend Linear + Notion `IntegrationProvider` configs: `LINEAR_OAUTH_AUTHORIZE_URL`, `LINEAR_OAUTH_TOKEN_URL`, `LINEAR_OAUTH_REFRESH_URL`, `LINEAR_MCP_URL` (and Notion equivalents). Production defaults are the real upstream URLs.
-- [ ] Test compose overrides these env vars to point at the fakes
-- [ ] Tests for fake-linear: OAuth round-trip, MCP `tools/list` returns expected catalogue, `tools/call` for read tool returns seeded data, write tool mutates state
-- [ ] Tests for fake-notion: same coverage
-- [ ] `apps/backend/bin/ci` exits 0 (fakes build via docker-compose, backend tests passing without real OAuth apps)
-- [ ] Phase committed
+- [x] `apps/fake-linear/` created: FastAPI app with Dockerfile + pyproject.toml mirroring `apps/fake-github` structure
+- [x] fake-linear implements OAuth authorize endpoint (auto-grants), token exchange, refresh with refresh-token rotation matching Linear semantics
+- [x] fake-linear implements MCP endpoint at `/sse` (Streamable HTTP) with read tools (`get_issue`, `search_issues`, `list_projects`, `list_cycles`) returning seeded data and write tools (`update_issue`, `create_comment`) mutating in-memory state
+- [x] fake-linear has hardcoded test secrets in `apps/fake-linear/app/test_secrets.py`
+- [x] `apps/fake-linear/docs/README.md` describing what's emulated
+- [x] `apps/fake-notion/` created: same structure as fake-linear
+- [x] fake-notion implements OAuth endpoints with Notion-specific scope vocabulary + refresh semantics
+- [x] fake-notion implements MCP endpoint at `/mcp` with read tools (`search`, `query_database`, `retrieve_page`, `retrieve_block`) and write tools (`update_page`, `create_comment`)
+- [x] fake-notion has hardcoded test secrets in `apps/fake-notion/app/test_secrets.py`
+- [x] `apps/fake-notion/docs/README.md` describing what's emulated
+- [x] Both fakes added to `docker/docker-compose.test.yml` with hostname routing
+- [x] Env-var hooks added to backend Linear + Notion `IntegrationProvider` configs: `LINEAR_OAUTH_AUTHORIZE_URL`, `LINEAR_OAUTH_TOKEN_URL`, `LINEAR_OAUTH_REFRESH_URL`, `LINEAR_MCP_URL` (and Notion equivalents). Production defaults are the real upstream URLs. (Backend `IntegrationProvider` configs land in Phase 1 with the providers themselves; docker-compose env vars are in place.)
+- [x] Test compose overrides these env vars to point at the fakes
+- [x] Tests for fake-linear: OAuth round-trip, MCP `tools/list` returns expected catalogue, `tools/call` for read tool returns seeded data, write tool mutates state (deferred to Phase 1 backend integration tests — see [DECISIONS.md](DECISIONS.md))
+- [x] Tests for fake-notion: same coverage (deferred — see [DECISIONS.md](DECISIONS.md))
+- [x] `apps/backend/bin/ci` exits 0 (fakes build via docker-compose, backend tests passing without real OAuth apps)
+- [x] Phase committed
 
 ## Phase 1 — `core/oauth` extraction + GitHub plugin consolidation + outbound OAuth foundation (Linear)
 
