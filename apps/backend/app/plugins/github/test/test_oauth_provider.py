@@ -12,7 +12,7 @@ import pytest
 
 from app.core.config import get_settings
 from app.domain.identity.providers import ProviderError
-from app.plugins.oauth_github.service import GitHubOAuthProvider
+from app.plugins.github.oauth import GitHubOAuthProvider
 
 
 def test_authorization_url_contains_required_params(monkeypatch) -> None:

@@ -1,15 +1,11 @@
-"""GitHub OAuth Provider.
+"""GitHub OAuth login provider.
 
-Implements the `domain/identity.Provider` Protocol against GitHub's OAuth 2.0
-authorization-code flow. The userinfo step queries `/user` for the stable id +
-display name, then `/user/emails` for the primary verified address — GitHub
-only returns `email_verified` via the emails endpoint, and the primary email
-on `/user` is `null` when the user hides their address.
+M04: previously lived in `apps/backend/app/plugins/oauth_github/`. Folded
+into `plugins/github` because the GitHub App (webhooks + install) + GitHub
+OAuth login are the same upstream, the same credentials story, and the
+same test stack — splitting them across two plugins was an M02 artifact.
 
-Endpoint URLs are settings-driven so the test stack (and the future SaaS
-self-hosted variant) can swap in a fake GitHub. Authlib provides the OAuth
-URL builder + token-exchange shape; the userinfo plumbing is direct httpx
-so the test suite can mock it with `pytest-httpx`.
+Implements `domain/identity.Provider` against GitHub's OAuth 2.0 flow.
 """
 
 from __future__ import annotations
@@ -22,13 +18,12 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 
 from app.core.config import get_settings
 from app.domain.identity.providers import (
-    Provider,
     ProviderError,
     ProviderProfile,
     register_provider,
 )
 
-log = structlog.get_logger("plugins.oauth_github")
+log = structlog.get_logger("plugins.github.oauth")
 
 
 _USERINFO_SCOPE = "read:user user:email"
@@ -119,19 +114,16 @@ def _pick_primary_email(emails: list[dict]) -> dict | None:
     return None
 
 
-def bootstrap() -> None:
+def bootstrap_oauth() -> None:
     """Register the singleton Provider in the in-process registry.
 
     Skipped when client_id / client_secret are unset: registering anyway would
-    advertise GitHub login on /api/auth/providers and then 404 at GitHub with
-    `client_id=`. The LoginPage renders an empty list as "no providers
-    configured", which is the correct surface for a misconfigured server.
+    advertise GitHub login on `/api/auth/providers` and then 404 at GitHub
+    with `client_id=`. The LoginPage renders an empty list as "no providers
+    configured".
     """
     s = get_settings()
     if not s.yaaos_oauth_github_client_id or not s.yaaos_oauth_github_client_secret:
         log.info("oauth_github.skipped_unconfigured")
         return
     register_provider(GitHubOAuthProvider())
-
-
-__all__ = ["GitHubOAuthProvider", "Provider", "bootstrap"]

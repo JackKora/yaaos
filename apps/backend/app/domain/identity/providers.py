@@ -1,6 +1,6 @@
 """OAuth `Provider` Protocol + in-process registry.
 
-Each provider plugin (`plugins/oauth_github`, `plugins/oauth_test`) implements
+Each provider plugin (`plugins/github`, `plugins/oauth_test`) implements
 this Protocol and registers itself at import time via `register_provider`.
 The login endpoint (`/api/auth/login`) and callback endpoint
 (`/api/auth/callback/{provider}`) consume providers by id through

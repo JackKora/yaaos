@@ -55,9 +55,16 @@ from app.domain.orgs import coding_agents_web as _orgs_coding_agents_web  # noqa
 from app.domain.orgs import org_settings_web as _orgs_org_settings_web  # noqa: F401, E402
 from app.domain.orgs import vcs_web as _orgs_vcs_web  # noqa: F401, E402
 
+# 6b. domain/integrations — must load before its provider plugins so the
+# registry exists at the time plugins/linear etc. call register_provider.
+from app.domain import integrations as _domain_integrations  # noqa: F401, E402
+
 # 7. Plugins.
-from app.plugins import in_process_workspace, claude_code, github  # noqa: F401, E402
-from app.plugins import oauth_github  # noqa: F401, E402
+from app.plugins import in_process_workspace, claude_code, github, linear  # noqa: F401, E402
+
+# M04: GitHub OAuth identity provider lives inside `plugins/github` now —
+# `plugins/oauth_github` was deleted. The github plugin's __init__ calls
+# both bootstrap() (VCS) and bootstrap_oauth() (identity).
 from app.plugins import saml as _plugins_saml  # noqa: F401, E402
 from app.core.config import get_settings  # noqa: E402
 
