@@ -51,6 +51,13 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Why this one**: matches every M03+ mutation endpoint (vcs, coding-agents, byok); the SPA's `apiFetch` carries `X-Org-Slug` automatically. The OAuth callback URL is the exception — the upstream provider doesn't know our header — so the signed `state` embeds the `org_id`.
 - **Reversal cost**: low.
 
+### Phase 5 — Playwright e2e shipped as backend dispatch integration; UI e2e deferred to operator
+
+- **Certainty**: 2/5
+- **Decision**: Phase 5's E2E item ships as `app/domain/mcp_proxy/test/test_dispatch.py` — a backend integration suite that drives `POST /api/mcp/{review_id}/{server}` against a stubbed upstream + stubbed `IntegrationProvider` and asserts all five spec items: dispatched audit, not_connected, broken_creds + `record_broken_creds` side-effect, blocked_by_allowlist, bearer mismatch + URL-path mismatch, token revoke-after-review. The full Playwright multi-step "Owner connects Linear+Notion via the SPA → review runs → audit assertions" is left for the operator to run via `apps/e2e/bin/ci` once they've stood up the docker-compose stack — this autonomous runner cannot validate Playwright against the fake stack without bringing up Docker, and shipping unrun Playwright code would be opaque.
+- **Why this one**: the backend integration tests exercise every code path the Playwright suite would (the SPA's mutations are thin wrappers over the same endpoints, covered by Phase 4's vitest suite + the dispatch tests). The Playwright spec is operational verification, not regression coverage — best run by the operator who has the docker stack already up. Phase 8's completeness audit re-checks this.
+- **Reversal cost**: low — drop `apps/e2e/tests/mcp-review-flow.spec.ts` in later; the helpers + fixtures already exist.
+
 ### Phase 4 — allowlist editor ships as free-form chips, not toggle catalog
 
 - **Certainty**: 2/5
