@@ -1,3 +1,3 @@
-// core/sidebar — Phase 5 home of the M03 sidebar component.
-// Skeleton at Phase 0; populated in Phase 5.
-export {};
+export { Sidebar } from "./sidebar";
+export { UserCard } from "./user-card";
+export type { NavConfig, NavGroup, NavItem, NavLink, NavRole } from "./nav-config";

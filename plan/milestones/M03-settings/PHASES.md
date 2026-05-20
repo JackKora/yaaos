@@ -64,15 +64,15 @@
 
 ## Phase 5 — sidebar component
 
-- [ ] `<Sidebar>` component reads a static nav config typed per [architecture.md § Sidebar component model](architecture.md#sidebar-component-model)
-- [ ] `<UserCard>` component for the bottom slot with popover for User section (Details / Security / Log off)
-- [ ] Collapse-state persistence in `localStorage` per top-level item
-- [ ] Role-gated nav items hidden via `useCurrentUser()` membership lookup
-- [ ] `AppShell` wires the new sidebar; old flat nav removed
-- [ ] Snapshot tests for collapsed + expanded states
-- [ ] Tests for role-gated item visibility
-- [ ] `apps/web/bin/ci` exits 0
-- [ ] Phase committed
+- [x] `<Sidebar>` component reads a static nav config typed per [architecture.md § Sidebar component model](architecture.md#sidebar-component-model)
+- [x] `<UserCard>` component for the bottom slot with popover for User section (Details / Security / Log off)
+- [x] Collapse-state persistence in `localStorage` per top-level item
+- [x] Role-gated nav items hidden via `useCurrentUser()` membership lookup
+- [x] `AppShell` wires the new sidebar; old flat nav removed
+- [x] Snapshot tests for collapsed + expanded states
+- [x] Tests for role-gated item visibility
+- [x] `apps/web/bin/ci` exits 0
+- [x] Phase committed
 
 ## Phase 6 — User section pages
 

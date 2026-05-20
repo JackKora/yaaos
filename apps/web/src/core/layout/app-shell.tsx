@@ -1,5 +1,5 @@
+import { Sidebar } from "@core/sidebar";
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 
 const CRUMB_BY_PATH: Record<string, string> = {
