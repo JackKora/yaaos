@@ -1,5 +1,19 @@
-"""core/oauth — generic OAuth 2.0 authorization-code + refresh primitives.
+"""core/oauth — generic OAuth 2.0 authorization-code + refresh primitives."""
 
-Skeleton at Phase 0; concrete `build_authorize_url`, `exchange_code`, and
-`refresh_access_token` ship in Phase 1.
-"""
+from app.core.oauth.service import (
+    OAuthError,
+    ProviderConfig,
+    Tokens,
+    build_authorize_url,
+    exchange_code,
+    refresh_access_token,
+)
+
+__all__ = [
+    "OAuthError",
+    "ProviderConfig",
+    "Tokens",
+    "build_authorize_url",
+    "exchange_code",
+    "refresh_access_token",
+]
