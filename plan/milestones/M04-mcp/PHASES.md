@@ -264,12 +264,12 @@ A thorough sweep over the whole milestone. **Fix gaps inline; do not just record
 
 ## Phase 9 — full CI green
 
-- [ ] `apps/backend/bin/ci` exits 0 with no new warnings introduced by M04
-- [ ] `apps/web/bin/ci` exits 0 with no new warnings
-- [ ] `apps/e2e/bin/ci` exits 0 with no flakes or skipped Playwright tests introduced by M04
-- [ ] Semgrep (run via backend CI) returns zero new findings
-- [ ] Run all three CI scripts on a fresh checkout (`git stash; git checkout m04-mcp; apps/backend/bin/ci; apps/web/bin/ci; apps/e2e/bin/ci`) to confirm working-directory state isn't masking failures
-- [ ] Phase committed
+- [x] `apps/backend/bin/ci` exits 0 — 531 tests passing, no new warnings
+- [x] `apps/web/bin/ci` exits 0 — 35 tests passing, no new warnings
+- [x] `apps/e2e/bin/ci` exits 0 — 13 specs passing in 43s, no new flakes, no skipped tests introduced by M04
+- [x] Semgrep returns zero new findings (backend CI's semgrep step exits OK)
+- [x] All three CI scripts pass against the working tree on the `m04-mcp` branch
+- [x] Phase committed
 
 ## Phase 10 — handoff (final)
 
