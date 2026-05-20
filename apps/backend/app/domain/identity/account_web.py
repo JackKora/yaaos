@@ -162,6 +162,7 @@ async def account_me() -> _AccountMeResponse:
                 continue
             orgs_view.append(
                 {
+                    "org_id": str(org.id),
                     "slug": org.slug,
                     "display_name": org.display_name,
                     "role": m.role,

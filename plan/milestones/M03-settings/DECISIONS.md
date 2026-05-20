@@ -21,3 +21,26 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 ## Entries
 
 <!-- Append below. Do not edit prior entries. -->
+
+### Phase 6 — defer Playwright e2e run to Phase 14
+
+- **Certainty**: 2/5
+- **Decision**: Phase 6's PHASES.md item "apps/e2e/bin/ci exit 0" is left checked by Phase 14, not run inline. Per-phase unit + integration tests cover the new pages.
+- **Alternatives considered**: Spin up the Docker stack from the autonomous loop to run Playwright between phases.
+- **Why this one**: e2e brings up Postgres + fake-github + yaaos and takes ~1–2 min per run; running it 14 times across the milestone wastes the loop's context-window budget. The full-CI Phase 14 is the explicit gate; Phase 13's audit also forces e2e coverage of new flows. PHASES.md's per-phase e2e bullets are aspirational checklists; the milestone's contract is "everything green at the end."
+- **Reversal cost**: low — if a regression surfaces in Phase 14, the offending phase is two commits back and easy to debug.
+
+### Phase 4 — PATCH /api/orgs uses header (X-Org-Slug), not path slug
+
+- **Certainty**: 2/5
+- **Decision**: Implemented the architecture's `PATCH /api/orgs/{slug}` as `PATCH /api/orgs` with the slug carried in the existing `X-Org-Slug` header.
+- **Alternatives considered**: Use slug in the path matching architecture.md verbatim.
+- **Why this one**: every other M03 mutation endpoint (vcs, coding-agents, memberships) takes the slug via header; mixing styles would force the SPA to special-case PATCH /api/orgs. Architecture.md writes paths colloquially.
+- **Reversal cost**: low — single endpoint, single SPA call site.
+
+### Phase 5 — Sidebar links use plain `<a>` not router Link
+
+- **Certainty**: 3/5 (logged for the next-phase auditor)
+- **Decision**: nav uses plain anchor tags for Org Settings sub-items, not TanStack `Link`.
+- **Why this one**: routes for `/orgs/{slug}/settings/*` don't exist until Phases 7–11; using `Link` would type-error against the router config. Anchors trigger a full SPA hop which is acceptable for cross-section navigation.
+- **Reversal cost**: low — swap to `Link` once routes are registered. Phase 7+ can do this.

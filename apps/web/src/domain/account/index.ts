@@ -1,3 +1,9 @@
-// domain/account — Phase 6 home of /account/details + /account/security pages.
-// Skeleton at Phase 0; populated in Phases 3 + 6.
-export {};
+export { DetailsPage } from "./DetailsPage";
+export { SecurityPage } from "./SecurityPage";
+export type { AccountEmail, AccountMe, AccountOrg } from "./queries";
+export {
+  useAccountMe,
+  useClearGithubUsername,
+  useUpdateDisplayName,
+  useUpdateOrgHandle,
+} from "./queries";

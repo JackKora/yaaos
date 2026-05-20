@@ -1,6 +1,7 @@
 import { setCurrentOrgSlug } from "@core/api";
 import { AppShell } from "@core/layout";
-import { AccountPage, LoginPage } from "@domain/auth";
+import { DetailsPage, SecurityPage } from "@domain/account";
+import { LoginPage } from "@domain/auth";
 import { DashboardPage } from "@domain/dashboard";
 import { MemoryPage } from "@domain/memory";
 import { AuditPage, MembersPage, SsoConfigPage } from "@domain/orgs";
@@ -39,14 +40,27 @@ const loginRoute = createRoute({
   },
 });
 
-const accountRoute = createRoute({
+const accountRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/account",
-  component: AccountPage,
   beforeLoad: () => {
-    // /account is user-scoped — no org context.
     setCurrentOrgSlug(null);
+    throw redirect({ to: "/account/details" });
   },
+});
+
+const accountDetailsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account/details",
+  component: DetailsPage,
+  beforeLoad: () => setCurrentOrgSlug(null),
+});
+
+const accountSecurityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account/security",
+  component: SecurityPage,
+  beforeLoad: () => setCurrentOrgSlug(null),
 });
 
 const orgScopeRoute = createRoute({
@@ -156,7 +170,9 @@ const legacySettingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
-  accountRoute,
+  accountRedirectRoute,
+  accountDetailsRoute,
+  accountSecurityRoute,
   legacyDashboardRoute,
   legacyTicketsRoute,
   legacyTicketDetailRoute,

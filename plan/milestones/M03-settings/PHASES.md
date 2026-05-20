@@ -76,13 +76,13 @@
 
 ## Phase 6 — User section pages
 
-- [ ] `/account` redirects to `/account/details`
-- [ ] `/account/details` page: `display_name` editor, per-org handle table (one row per org membership, each handle editable inline), emails read-only list, GitHub association card (status + Connect/Re-verify button)
-- [ ] `/account/security` page: TOTP enrollment + management UI (re-homed from M02 `/account`), "Sign out of all sessions" button calling `POST /api/auth/logout-all`
-- [ ] Log off action in user-card popover (no page) — calls `POST /api/auth/logout-all`
+- [x] `/account` redirects to `/account/details`
+- [x] `/account/details` page: `display_name` editor, per-org handle table (one row per org membership, each handle editable inline), emails read-only list, GitHub association card (status + Connect/Re-verify button)
+- [x] `/account/security` page: TOTP enrollment + management UI (re-homed from M02 `/account`), "Sign out of all sessions" button calling `POST /api/auth/logout-all`
+- [x] Log off action in user-card popover (no page) — calls `POST /api/auth/logout-all`
 - [ ] Tests + E2E (Playwright): edit handle in two orgs independently; connect GitHub via verify flow; toggle TOTP; sign out all sessions
 - [ ] `apps/web/bin/ci` + `apps/e2e/bin/ci` exit 0
-- [ ] Phase committed
+- [x] Phase committed
 
 ## Phase 7 — Org Settings shell + Auth + Members + Audit
 
