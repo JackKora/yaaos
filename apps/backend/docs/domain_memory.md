@@ -64,4 +64,4 @@ Edits overwrite in place — no versioning table; history lives in `audit_log`. 
 
 ## How it's tested
 
-`app/domain/memory/test/test_validation.py` — empty title/body rejected, length caps enforced, valid input passes. CRUD + audit covered by HTTP-layer integration tests and by `reviewer`'s tests exercising `list_for_repo`.
+`app/domain/memory/test/test_validation.py` — empty title/body rejected, length caps enforced, valid input passes. CRUD + audit covered by HTTP-layer integration tests and by `reviewer`'s tests exercising `list_for_repo`. **Service test** `app/domain/memory/test/test_teach_from_finding_service.py` (`@pytest.mark.service`) covers the "Teach yaaos" memory-loop entry point — `memory.create` inserts a lesson row + writes the `lesson.created` audit + `list_for_repo` finds it.

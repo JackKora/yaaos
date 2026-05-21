@@ -147,6 +147,40 @@ async def seed_lesson(*, repo_external_id: str, title: str, body: str) -> UUID:
     return lesson_id
 
 
+async def seed_broken_integration(*, org_slug: str, provider: str = "linear") -> None:
+    """Seed an `mcp_credentials` row with `last_refresh_status="failed"` so e2e
+    specs can exercise the broken-creds banner + Integrations settings page
+    against a known org. Encrypts placeholder tokens via `core/secrets`."""
+    from datetime import UTC, datetime, timedelta  # noqa: PLC0415
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.core.secrets import encrypt  # noqa: PLC0415
+    from app.domain.integrations.models import McpCredentialRow  # noqa: PLC0415
+    from app.domain.orgs.models import OrgRow  # noqa: PLC0415
+
+    async with db_session() as s:
+        org = (await s.execute(select(OrgRow).where(OrgRow.slug == org_slug))).scalar_one_or_none()
+        if org is None:
+            raise ValueError(f"org {org_slug!r} not found — seed it first via bootstrap_owner")
+        s.add(
+            McpCredentialRow(
+                org_id=org.id,
+                provider=provider,
+                encrypted_access_token=encrypt("stub-access").decode(),
+                encrypted_refresh_token=None,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                scopes=["read"],
+                allowed_tools=[],
+                enabled=True,
+                upstream_identity=f"{provider}-bot",
+                last_refresh_status="failed",
+                last_refresh_failed_at=datetime.now(UTC),
+            )
+        )
+        await s.commit()
+
+
 def is_dev_env() -> bool:
     """Gate used by every `/api/testing/*` route. Centralised so the rule
     `non-prod-only routes` lives in one place, not per-handler. True for

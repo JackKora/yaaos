@@ -66,6 +66,20 @@ async def seed_lesson(req: _LessonRequest) -> dict[str, str]:
     return {"status": "seeded", "lesson_id": str(lesson_id)}
 
 
+class _BrokenIntegrationRequest(BaseModel):
+    org_slug: str = Field(..., min_length=1)
+    provider: str = Field(default="linear", min_length=1)
+
+
+@router.post("/seed/broken_integration")
+async def seed_broken_integration(req: _BrokenIntegrationRequest) -> dict[str, str]:
+    """Seed an `mcp_credentials` row with `last_refresh_status="failed"` so the
+    broken-creds banner + Integrations settings badge surface in e2e specs."""
+    _guard_dev()
+    await service.seed_broken_integration(org_slug=req.org_slug, provider=req.provider)
+    return {"status": "seeded"}
+
+
 # ── M02 — auth-flow helpers ──────────────────────────────────────────────
 
 

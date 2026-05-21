@@ -55,3 +55,29 @@ test("PR open → reviewer posts; ticket detail renders findings", async ({ page
   const comments = await postedComments();
   expect(comments.length).toBeGreaterThanOrEqual(1);
 });
+
+/**
+ * SSE-driven state transitions: open ticket-detail before the review starts;
+ * the review-card flips to `posted` WITHOUT a manual reload (the contract
+ * `review_job_status_changed` events drive in `apps/web`).
+ *
+ * Folded in from the standalone `sse-step-progress-live.spec.ts` so we
+ * don't pay the docker-compose bring-up twice for the same backend flow.
+ */
+test("review card state transitions live via SSE without reload", async ({ page }) => {
+  // Land on the tickets list FIRST so the SSE subscriber is mounted before
+  // any events fly.
+  await page.goto("/tickets");
+  await dispatchWebhook({
+    event: "pull_request",
+    payload: prPayload({ repo: "acme/web", number: 55, title: "Live SSE check" }),
+  });
+  await expect(page.getByText("Live SSE check")).toBeVisible({ timeout: 20_000 });
+  await page.getByText("Live SSE check").click();
+  // Terminal `posted` state arrives via SSE without a page reload.
+  await expect
+    .poll(() => page.locator('[data-testid^="agent-card-"][data-state="posted"]').count(), {
+      timeout: 30_000,
+    })
+    .toBe(1);
+});
