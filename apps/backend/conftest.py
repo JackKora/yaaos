@@ -31,6 +31,27 @@ def _quiet_pydantic_warnings() -> None:
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic.*")
 
 
+@pytest.fixture(autouse=True)
+def _ensure_plugin_registries_populated(request):
+    """Defensively re-bootstrap plugin registries before each service test.
+
+    Some unit tests (e.g. `test_coding_agent/test_registry.py`) call
+    `_reset_plugins_for_tests()` in teardown, which clears the global
+    registries and leaks empty state to subsequent tests. Service tests that
+    drive `reviewer.schedule_review` / `intake.handle_vcs_events` need the
+    real plugins registered (then wrapped by the testing stubs); without
+    this fixture, ordering controls whether they pass.
+
+    Idempotent + cheap. Only fires for tests carrying `@pytest.mark.service`
+    so the broader unit suite isn't affected.
+    """
+    if request.node.get_closest_marker("service") is None:
+        return
+    from app.testing.service_test_setup import ensure_plugins_registered  # noqa: PLC0415
+
+    ensure_plugins_registered()
+
+
 @pytest_asyncio.fixture(scope="session")
 async def _migrated_schema() -> AsyncIterator[None]:
     """Run schema migrations once per session against the test DB.

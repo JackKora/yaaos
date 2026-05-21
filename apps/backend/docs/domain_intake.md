@@ -87,4 +87,4 @@ None. Writes through `tickets`, `pull_requests`, `reviewer`, and `core/audit_log
 
 ## How it's tested
 
-`app/domain/intake/test/test_parsing.py` covers `parse_rereview` and `is_skippable_path` exhaustively (every agent variant, case-insensitivity, negatives, every skippable category). Dispatch + handler logic covered by backend integration tests in `app/test/` — drive real `VCSEvent` instances through `handle_vcs_events` and assert ticket / PR / review_job rows and audit entries.
+`app/domain/intake/test/test_parsing.py` covers `parse_rereview` and `is_skippable_path` exhaustively (every agent variant, case-insensitivity, negatives, every skippable category). Dispatch + handler logic covered by backend integration tests in `app/test/` — drive real `VCSEvent` instances through `handle_vcs_events` and assert ticket / PR / review_job rows and audit entries. **Service test** `app/domain/intake/test/test_pr_resync_service.py` (`@pytest.mark.service`) drives the `pull_request.synchronize` path — after an initial review posts, a synchronize event with a new head SHA triggers an incremental review (`sequence_number=2`, `scope_kind="incremental"`).

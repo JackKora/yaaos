@@ -42,5 +42,6 @@ Skeleton at Phase 0; the service surface and HTTP routes land in Phase 1 (Linear
 
 - `app/domain/integrations/test/test_service.py` round-trips `connect_callback` / `clear` / `validate` / `update_allowlist` against a stubbed `IntegrationProvider` registered into `_REGISTRY`.
 - `app/domain/integrations/test/test_endpoints.py` drives every HTTP route (incl. auth triplet: 401 / 403 / 404 / success).
-- `app/domain/integrations/test/test_scheduler.py` covers the hourly health-check: success keeps status `"ok"`; failure flips status + audits + emails owners; 24h dedup suppresses repeat emails; post-window resend fires again.
-- E2E for the Owner-connects-Linear/Notion flow is deferred to operator pre-flight — see `plan/milestones/M04-mcp/DECISIONS.md`.
+- `app/domain/integrations/test/test_scheduler.py` covers the hourly health-check: success keeps status `"ok"`; failure flips status + audits + emails owners; 24h dedup suppresses repeat emails; post-window resend fires again (also `@pytest.mark.service`).
+- **Service test** `app/domain/integrations/test/test_broken_creds_chain_service.py` (`@pytest.mark.service`) drives the cross-module chain end-to-end: scheduler flips a credential to `"failed"`, audits, emails the Owner; the next review's proxy dispatch returns `broken_creds` and the reviewer's `_prefix_broken_creds_warning` composes the GitHub callout.
+- E2E for the Owner-connects-Linear/Notion flow ships in `apps/e2e/tests/integrations-and-multi-org.spec.ts` (broken-creds banner → deep-link to Integrations settings page).
