@@ -47,13 +47,13 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 
 ## Phase 0c — OTel SDK wiring (no exporter)
 
-- [ ] Install `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-asyncpg`.
-- [ ] Extend `core/observability.configure()`: `TracerProvider` (no exporter), `TraceContextTextMapPropagator` set as global.
-- [ ] FastAPI + asyncpg auto-instrumentation wired through `core/observability`.
-- [ ] structlog processor injects `trace_id` + `span_id` onto every log record.
-- [ ] In-memory `SpanExporter` fixture for tests.
-- [ ] `apps/backend/docs/core_observability.md` documents the conventions + the "no exporter in prod yet" note.
-- [ ] All existing CI green.
+- [x] Install `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-asyncpg`. _(SDK + FastAPI already installed in M04; using existing `opentelemetry-instrumentation-sqlalchemy` instead of asyncpg — SQLAlchemyInstrumentor covers the same DB-call spans via the async engine and is already a dep.)_
+- [x] Extend `core/observability.configure()`: `TracerProvider` (no exporter), `TraceContextTextMapPropagator` set as global.
+- [x] FastAPI + asyncpg auto-instrumentation wired through `core/observability`. _(SQLAlchemy instrumentor, not asyncpg — same reason as above.)_
+- [x] structlog processor injects `trace_id` + `span_id` onto every log record.
+- [x] In-memory `SpanExporter` fixture for tests.
+- [x] `apps/backend/docs/core_observability.md` documents the conventions + the "no exporter in prod yet" note.
+- [x] All existing CI green.
 
 ## Phase 1 — `core/workflow` engine (async event-driven model)
 
