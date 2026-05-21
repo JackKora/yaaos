@@ -149,7 +149,7 @@ All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secret
 
 ### Settings surface (M03)
 
-`/orgs/{slug}/settings/{section}` consolidates every per-org knob into one shell with six sub-pages: `auth` (SSO + session-timeout override), `members`, `vcs`, `coding-agents`, `byok`, `audit`. Member role sees only the Members tab; Owner+Admin see all. The shell + tab nav live in [`apps/web/src/domain/org_settings`](../apps/web/src/domain/org_settings/).
+`/orgs/{slug}/settings/{section}` consolidates every per-org knob into one shell with six sub-pages: `auth` (SSO + session-timeout override), `members`, `vcs`, `coding-agents`, `byok`, `audit`. Member role sees only the Members tab; Owner+Admin see all. The shell + tab nav live in `apps/web/src/domain/org_settings/`.
 
 - **VCS**: one plugin per org, state on `orgs.vcs_plugin_id` + `orgs.vcs_settings`. The picker hits `GET /api/plugins/available?type=vcs`. When a plugin's `install_url(org_id)` is non-None (today: `github`'s `/api/github/install`), the SPA navigates there and the existing M02 handshake callback writes back via `domain/orgs.set_vcs`. All mutations audit.
 - **Coding Agents**: many installs per org in `org_coding_agents` keyed by `(org_id, plugin_id)`. The generic shell handles install/uninstall + the picker; per-plugin settings dispatch via a frontend registry (`coding_agents/plugin_registry.ts`). The `claude_code` plugin ships a bespoke settings UI (orchestrator + 1..8 sub-agents) reading defaults from `GET /api/claude_code/defaults` (request-time imports, never cached).
