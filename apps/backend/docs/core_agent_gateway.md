@@ -51,9 +51,14 @@ HTTP routes mounted under `/api/v1/` (architecture's `/v1/` namespace nested und
 
 ### Phase boundaries
 
-- **Phase 5 (this commit)** ships the wire shape: OpenAPI spec, Pydantic mirror, in-memory per-agent FIFO with long-poll, heartbeat reconciliation, terminal-event routing, stale-claim guard, placeholder bearer verifier.
-- **Phase 7** adds the real STS-replay verifier and `workspace_agents` row persistence.
-- **Phase 8b** ships the bidirectional `WSS /api/v1/agents/{id}/activity` for high-frequency ActivityEvents.
+- **Phase 5** shipped the wire shape: OpenAPI spec, Pydantic mirror, in-memory per-agent FIFO with long-poll, heartbeat reconciliation, terminal-event routing, stale-claim guard, placeholder bearer verifier.
+- **Phase 7 (foundations)** added the `RemoteAgentWorkspaceProvider`, `workspace_agents` table + `ensure_agent_row()`, and the org-side `workspace_provider` + `registered_iam_arn` settings. Real STS-replay verifier in the Phase 7 follow-on.
+- **Phase 8b (this commit)** shipped the bidirectional `WSS /api/v1/agents/{id}/activity`:
+  - Auth on upgrade — placeholder `Bearer <token>` (Phase 7 verifier swaps in transparently). Missing / empty → close with `4401`.
+  - **Agent → backend** `activity_batch` messages publish each event to `activity:{workflow_execution_id}` via [`core/sse_pubsub`](core_sse_pubsub.md).
+  - **Backend → agent** `subscribe` / `unsubscribe` messages, dispatched by `SubscriberRegistry` on `0 → 1` / `1 → 0` UI-subscriber-count transitions. Demand-pull: no activity flows when nobody's watching.
+  - `SubscriberRegistry` is process-local; multi-instance variant rides on the same swap point as the Redis `core/sse_pubsub` backend.
+- **Phase 8b follow-on** wires uvicorn `--ws-ping-interval=30 --ws-ping-timeout=10` (ALB idle-timeout survival), the per-workflow SSE endpoint that consumes `activity:{id}` channels, the WS reconnect handler that re-derives subscriptions, the `domain/coding_agent` trust-boundary audit (metadata only, no source content), and the in-memory provider's direct publish path that bypasses the WebSocket wire.
 
 ## Data owned
 

@@ -24,6 +24,15 @@ from app.core.agent_gateway.service import (
     record_heartbeat,
     record_workspace_event,
 )
+from app.core.agent_gateway.subscribers import (
+    SubscriberRegistry,
+)
+from app.core.agent_gateway.subscribers import (
+    _reset_for_tests as _reset_subscriber_registry_for_tests,
+)
+from app.core.agent_gateway.subscribers import (
+    get_registry as get_subscriber_registry,
+)
 from app.core.agent_gateway.types import (
     TERMINAL_EVENT_KINDS,
     AgentCommand,
@@ -71,14 +80,17 @@ __all__ = [
     "RefreshWorkspaceAuthCommand",
     "RepoRef",
     "StaleClaimError",
+    "SubscriberRegistry",
     "UnauthorizedError",
     "WorkspaceEvent",
     "WorkspaceEventKind",
     "WriteFilesCommand",
     "WriteFilesEntry",
     "_reset_queues_for_tests",
+    "_reset_subscriber_registry_for_tests",
     "claim_next",
     "enqueue_command",
+    "get_subscriber_registry",
     "queue_depth",
     "record_agent_event",
     "record_heartbeat",
