@@ -25,11 +25,11 @@ from pydantic import BaseModel
 from sqlalchemy import func as sa_func
 from sqlalchemy import select, update
 
-from app.core.audit_log import audit_for_review_job
+from app.core.audit_log import Actor, audit_for_review_job
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.events import Event, publish
-from app.core.primitives import Actor, spawn
+from app.core.observability import spawn
 from app.core.workspace import (
     NetworkPolicy,
     RepoRefForSpec,
@@ -37,7 +37,16 @@ from app.core.workspace import (
     WorkspaceSpec,
     with_workspace,
 )
-from app.domain import coding_agent, memory, pull_requests, tickets
+from app.domain import (
+    coding_agent,
+    mcp_proxy,
+    memory,
+    pull_requests,
+    tickets,
+)
+from app.domain import (
+    integrations as mcp_integrations,
+)
 from app.domain.coding_agent import ActivityEvent, FindingDraft, InvocationStatus, ReviewContext
 from app.domain.reviewer.aggregate import RawFinding
 from app.domain.reviewer.anchor import make_anchor
@@ -172,6 +181,64 @@ class _AdmissionDropsPayload(BaseModel):
     """Audit payload for plan §10.5 admission drops (one row per review)."""
 
     drops: list[dict[str, Any]]
+
+
+def _prefix_broken_creds_warning(body: str | None, providers: list[str]) -> str | None:
+    """Prefix the PR review summary with a yellow GitHub callout listing any
+    MCP providers that returned `broken_creds`/`not_connected` during this
+    review. No-op when nothing was observed."""
+    if not providers:
+        return body
+    names = ", ".join(providers)
+    note = (
+        "> [!WARNING]\n"
+        f"> The following MCP integrations returned errors during this review "
+        f"and were skipped: **{names}**. Reconnect them in Org Settings → Integrations.\n"
+    )
+    if not body:
+        return note
+    return f"{note}\n{body}"
+
+
+async def _build_mcp_payload(review_id: UUID, *, org_id: UUID) -> dict[str, Any] | None:
+    """Collect connected MCP providers for the org and mint a per-review bearer.
+
+    Returns None when no providers are connected (or all are broken/disabled) —
+    the reviewer still runs, just without MCP context. The bearer + provider
+    catalogue are threaded into the agent via `ReviewContext.agent_config["mcp"]`;
+    `plugins/claude_code` materializes the workspace `.mcp.json` from it.
+    """
+    servers: list[dict[str, Any]] = []
+    async with db_session() as s:
+        for provider_id in mcp_integrations.known_providers():
+            row = await mcp_integrations.get(s, org_id, provider_id)
+            if row is None or not row.enabled:
+                continue
+            if row.last_refresh_status == "failed":
+                log.warning(
+                    "review.mcp.broken_creds_skipped",
+                    provider=provider_id,
+                    org_id=str(org_id),
+                )
+                continue
+            prov = mcp_integrations.get_provider(provider_id)
+            servers.append(
+                {
+                    "provider": provider_id,
+                    "allowed_tools": list(row.allowed_tools),
+                    "known_read_tools": list(prov.config.known_read_tools) if prov else [],
+                    "known_write_tools": list(prov.config.known_write_tools) if prov else [],
+                }
+            )
+    if not servers:
+        log.info("review.mcp.no_connected_providers", org_id=str(org_id))
+        return None
+    raw_token = await mcp_proxy.mint_token(review_id)
+    return {
+        "token": raw_token,
+        "base_url": f"{get_settings().yaaos_app_base_url}/api/mcp/{review_id}",
+        "servers": servers,
+    }
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -487,8 +554,8 @@ async def _run_review_job_with_context(input: ReviewJobInput) -> None:
     """Phase 9: wrap `_run_review_job_inner` in `org_context(...)` so
     background audit rows + structlog lines carry the correct org +
     workspace actor."""
+    from app.core.audit_log import ActorKind  # noqa: PLC0415
     from app.core.auth import org_context  # noqa: PLC0415
-    from app.core.primitives import ActorKind  # noqa: PLC0415
 
     async with org_context(input.org_id, ActorKind.WORKSPACE):
         await _run_review_job_inner(input)
@@ -602,6 +669,11 @@ async def _run_review_job_inner(input: ReviewJobInput) -> None:
             language=language,
         )
 
+        # MCP context (Phase 3): per-review bearer + per-org connected providers.
+        # Token minted before the workspace so we can fail fast on DB errors;
+        # revoked in `finally` below, BEFORE workspace teardown.
+        mcp_payload = await _build_mcp_payload(job_id, org_id=org_id)
+
         await _set_step(job_id, "provisioning_workspace", pr_id=pr.id)
         async with with_workspace(
             "in_process",
@@ -617,57 +689,66 @@ async def _run_review_job_inner(input: ReviewJobInput) -> None:
             ),
             org_id=org_id,
         ) as ws:
-            review_ctx = ReviewContext(
-                pr=ctx.vcs_pr,
-                diff=ctx.diff,
-                lessons=ctx.lessons,
-                language_hint=ctx.language,
-                prior_yaaos_comment_bodies=ctx.prior_bodies,
-                agent_config={},
-            )
-            prompt_hash = hashlib.sha256(review_ctx.model_dump_json().encode()).hexdigest()
-            lesson_ids = [lesson.id for lesson in ctx.lessons]
-
-            async with db_session() as s:
-                await s.execute(
-                    update(ReviewRow)
-                    .where(ReviewRow.id == job_id)
-                    .values(prompt_hash=prompt_hash, lessons_applied=lesson_ids)
-                )
-                await s.commit()
-
-            await audit_for_review_job(
-                job_id,
-                "review_job.prompt_sent",
-                _PromptSentPayload(
-                    prompt_hash=prompt_hash,
-                    lessons_count=len(ctx.lessons),
-                    lessons_applied=lesson_ids,
-                    checkout_sha=ctx.vcs_pr.head_sha,
+            try:
+                review_ctx = ReviewContext(
+                    pr=ctx.vcs_pr,
+                    diff=ctx.diff,
+                    lessons=ctx.lessons,
                     language_hint=ctx.language,
-                ),
-                actor=Actor.system(),
-                org_id=org_id,
-            )
+                    prior_yaaos_comment_bodies=ctx.prior_bodies,
+                    agent_config={"mcp": mcp_payload} if mcp_payload is not None else {},
+                )
+                prompt_hash = hashlib.sha256(review_ctx.model_dump_json().encode()).hexdigest()
+                lesson_ids = [lesson.id for lesson in ctx.lessons]
 
-            await _set_step(job_id, "invoking_agent", pr_id=pr.id)
-            result = await coding_agent.review(
-                plugin_id=_CODING_AGENT_PLUGIN_ID,
-                workspace=ws,
-                context=review_ctx,
-                on_activity=_on_activity,
-            )
+                async with db_session() as s:
+                    await s.execute(
+                        update(ReviewRow)
+                        .where(ReviewRow.id == job_id)
+                        .values(prompt_hash=prompt_hash, lessons_applied=lesson_ids)
+                    )
+                    await s.commit()
 
-            # Plan §2.3: pre-load file contents for each draft's anchor while
-            # the workspace is still mounted; anchor + fingerprint hashes need
-            # real file content (NOT the body text).
-            draft_file_contents: dict[str, list[str] | None] = {}
-            for draft in result.findings or []:
-                fp = draft.anchor.file_path
-                if fp in draft_file_contents:
-                    continue
-                text = await ws.read_text(fp)
-                draft_file_contents[fp] = None if text is None else text.splitlines()
+                await audit_for_review_job(
+                    job_id,
+                    "review_job.prompt_sent",
+                    _PromptSentPayload(
+                        prompt_hash=prompt_hash,
+                        lessons_count=len(ctx.lessons),
+                        lessons_applied=lesson_ids,
+                        checkout_sha=ctx.vcs_pr.head_sha,
+                        language_hint=ctx.language,
+                    ),
+                    actor=Actor.system(),
+                    org_id=org_id,
+                )
+
+                await _set_step(job_id, "invoking_agent", pr_id=pr.id)
+                result = await coding_agent.review(
+                    plugin_id=_CODING_AGENT_PLUGIN_ID,
+                    workspace=ws,
+                    context=review_ctx,
+                    on_activity=_on_activity,
+                )
+
+                # Plan §2.3: pre-load file contents for each draft's anchor while
+                # the workspace is still mounted; anchor + fingerprint hashes need
+                # real file content (NOT the body text).
+                draft_file_contents: dict[str, list[str] | None] = {}
+                for draft in result.findings or []:
+                    fp = draft.anchor.file_path
+                    if fp in draft_file_contents:
+                        continue
+                    text = await ws.read_text(fp)
+                    draft_file_contents[fp] = None if text is None else text.splitlines()
+            finally:
+                # Revoke BEFORE the workspace context exits (and tears down the
+                # tempdir). Idempotent — sweep handles anything we miss.
+                if mcp_payload is not None:
+                    try:
+                        await mcp_proxy.revoke_token(job_id)
+                    except Exception:
+                        log.exception("review_job.mcp_revoke_failed", review_job_id=str(job_id))
 
         if result.status != InvocationStatus.SUCCESS:
             await _transition_failed(
@@ -704,10 +785,12 @@ async def _run_review_job_inner(input: ReviewJobInput) -> None:
 
             # Translate admitted RawFindings back to vcs.Finding for posting.
             posted_vcs_findings = _raw_to_vcs_findings(raw, new_findings)
+            broken_providers = sorted(mcp_proxy.consume_broken_creds(job_id))
+            summary_body = _prefix_broken_creds_warning(result.summary_body, broken_providers)
             review_obj = Review(
                 agent_tag=_REVIEWER_TAG,
                 state=result.state or "COMMENT",
-                summary_body=result.summary_body,
+                summary_body=summary_body,
                 findings=posted_vcs_findings,
             )
             post_result = await vcs_plugin.post_review(ctx.pr_external_id, review_obj)

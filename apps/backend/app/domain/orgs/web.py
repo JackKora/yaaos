@@ -135,7 +135,7 @@ async def accept_invitation(
         if session is None:
             raise _err(401, "unauthenticated")
         user_id = session
-        from app.core.primitives import Actor  # noqa: PLC0415
+        from app.core.audit_log import Actor  # noqa: PLC0415
 
         actor = Actor.user(user_id=user_id)
         try:
@@ -161,6 +161,43 @@ async def remove_member(request: Request, target_user_id: UUID) -> dict[str, str
         await inv.remove_member(s, org_id=org_id, user_id=target_user_id, actor=actor)
         await s.commit()
     return {"ok": "removed"}
+
+
+class _PatchOwnHandleRequest(BaseModel):
+    handle: str
+
+
+@router.patch("/me/{org_id}", dependencies=[Depends(require(Action.ACCOUNT_UPDATE_SELF))])
+@limiter.limit(MUTATE_LIMIT)
+async def patch_own_membership_handle(
+    request: Request,
+    org_id: UUID,
+    body: _PatchOwnHandleRequest,
+) -> Membership:
+    """Self-update one's `@handle` in the org named by the path param.
+    Enforces `UNIQUE(org_id, handle)` via the existing M02 partial index —
+    duplicate handles surface as 409. The path `org_id` may differ from
+    `X-Org-Slug` (which the middleware still requires for the prefix gate)."""
+    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+
+    self_user_id = user_id_var.get()
+    if self_user_id is None:
+        raise _err(401, "unauthenticated")
+    handle = body.handle.strip()
+    if not handle or len(handle) > 64:
+        raise _err(422, "invalid_handle")
+    async with db_session() as s:
+        membership_row = await orgs_repo.get_membership(s, user_id=self_user_id, org_id=org_id)
+        if membership_row is None:
+            raise _err(404, "membership_not_found")
+        membership_row.handle = handle
+        try:
+            await s.flush()
+        except IntegrityError as exc:
+            raise _err(409, "handle_taken") from exc
+        await s.commit()
+        await s.refresh(membership_row)
+    return Membership.from_row(membership_row)
 
 
 @router.patch("/{target_user_id}", dependencies=[Depends(require(Action.MEMBERS_CHANGE_ROLE))])

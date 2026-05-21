@@ -101,3 +101,48 @@ async def test_logout_all_revokes_every_session(db_session) -> None:
 
         await cleanup.execute(delete(UserRow).where(UserRow.id == user.id))
         await cleanup.commit()
+
+
+@pytest.mark.asyncio
+async def test_me_exposes_broken_integrations_for_admins(db_session) -> None:
+    """Admins (and Owners) see the org's broken MCP integrations; Members don't."""
+    from datetime import UTC, datetime, timedelta  # noqa: PLC0415
+
+    from app.domain.integrations.models import McpCredentialRow  # noqa: PLC0415
+
+    admin = await identity_repo.insert_user(db_session, display_name="A")
+    member = await identity_repo.insert_user(db_session, display_name="M")
+    org = await orgs_repo.insert_org(db_session, slug="brokens-org")
+    await orgs_repo.insert_membership(
+        db_session, user_id=admin.id, org_id=org.id, role=Role.ADMIN, handle="adm"
+    )
+    await orgs_repo.insert_membership(
+        db_session, user_id=member.id, org_id=org.id, role=Role.MEMBER, handle="mem"
+    )
+    db_session.add(
+        McpCredentialRow(
+            org_id=org.id,
+            provider="linear",
+            encrypted_access_token="enc",
+            encrypted_refresh_token=None,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+            scopes=["read"],
+            allowed_tools=[],
+            enabled=True,
+            upstream_identity="bot",
+            last_refresh_status="failed",
+            last_refresh_failed_at=datetime.now(UTC),
+        )
+    )
+    a_sess = await session_lifecycle.create(db_session, user_id=admin.id, workspace_id=None)
+    m_sess = await session_lifecycle.create(db_session, user_id=member.id, workspace_id=None)
+    await db_session.commit()
+
+    async with _client() as c:
+        a_resp = await c.get("/api/auth/me", cookies={"yaaos_session": a_sess.raw_token})
+        m_resp = await c.get("/api/auth/me", cookies={"yaaos_session": m_sess.raw_token})
+
+    a_org = next(o for o in a_resp.json()["orgs"] if o["slug"] == "brokens-org")
+    m_org = next(o for o in m_resp.json()["orgs"] if o["slug"] == "brokens-org")
+    assert [b["provider"] for b in a_org["broken_integrations"]] == ["linear"]
+    assert m_org["broken_integrations"] == []

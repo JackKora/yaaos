@@ -16,7 +16,7 @@ No HTTP routes — the audit-log tab reads via a domain endpoint that delegates 
 
 ### `AuditEntry` shape
 
-Carries `id`, `org_id`, `entity_kind`, `entity_id`, `kind`, `payload` (already-serialized via `model_dump(mode="json")`), `actor` (reconstructed from five DB columns), `created_at`. `Actor` is imported from `core/primitives`. The columns `actor_kind`, `actor_login`, `actor_agent_id`, `actor_user_id`, `actor_workspace_id` are recombined into one `Actor` at read time via `AuditEntry.from_row`. M02 added the two `actor_*_id` columns to round-trip the additive `user` / `workspace` actor kinds; `sso` populates only `actor_login` (the IdP-asserted email).
+Carries `id`, `org_id`, `entity_kind`, `entity_id`, `kind`, `payload` (already-serialized via `model_dump(mode="json")`), `actor` (reconstructed from five DB columns), `created_at`. `Actor` is owned by this module (`core/audit_log/actor.py`) and re-exported from the package — the row's `actor` column is what defines its shape, so the type lives where it's used. The columns `actor_kind`, `actor_login`, `actor_agent_id`, `actor_user_id`, `actor_workspace_id` are recombined into one `Actor` at read time via `AuditEntry.from_row`. M02 added the two `actor_*_id` columns to round-trip the additive `user` / `workspace` actor kinds; `sso` populates only `actor_login` (the IdP-asserted email).
 
 ### Write API
 
@@ -44,7 +44,7 @@ Optional `session` joins the caller's transaction (helper adds + flushes; caller
 
 `get(entry_id, *, org_id)` returns one entry or raises `AuditEntryNotFoundError`. Used for deep-linking.
 
-`purge_older_than(cutoff)` deletes rows with `created_at < cutoff`. The daily retention task in `domain/identity.scheduler` calls this with `datetime.now(UTC) - AUDIT_LOG_RETENTION` (`AUDIT_LOG_RETENTION = timedelta(days=30)` from `core/constants.py`).
+`purge_older_than(cutoff)` deletes rows with `created_at < cutoff`. The daily retention task in `domain/identity.scheduler` calls this with `datetime.now(UTC) - AUDIT_LOG_RETENTION` (`AUDIT_LOG_RETENTION = timedelta(days=15)`, exported from `core/audit_log`). Lowered from 30d in M04 — MCP dispatch writes one audit row per JSON-RPC method and is the dominant volume contributor; 15d keeps the storage envelope bounded for the POC.
 
 ### What it does not do
 
@@ -52,7 +52,7 @@ Optional `session` joins the caller's transaction (helper adds + flushes; caller
 - Does not validate payload shape beyond "must be Pydantic".
 - Does not publish events — `core/events` is separate; callers wanting both call both.
 - Does not enforce FK on `entity_id` — loose ref; entities can be deleted and the row survives.
-- Does prune as of M02 — `purge_older_than(cutoff)` plus the daily scheduler call in `domain/identity.scheduler` keeps `audit_entries` within `AUDIT_LOG_RETENTION` (30 days).
+- Does prune as of M02 — `purge_older_than(cutoff)` plus the daily scheduler call in `domain/identity.scheduler` keeps `audit_entries` within `AUDIT_LOG_RETENTION` (15 days, lowered from 30d in M04 Phase 6 to absorb MCP dispatch volume).
 
 ## Data owned
 

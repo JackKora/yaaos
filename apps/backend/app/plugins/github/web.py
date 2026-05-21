@@ -380,7 +380,7 @@ async def _start_catchup() -> None:
     initializing. The poller sleeps for `yaaos_catchup_delay_seconds` first
     and then refreshes open-PR metadata across each install's visible repos.
     """
-    from app.core.primitives import spawn  # noqa: PLC0415
+    from app.core.observability import spawn  # noqa: PLC0415
 
     spawn("github.catchup", run_catchup_loop())
 
@@ -487,8 +487,8 @@ async def github_install_callback(request: Request) -> RedirectResponse:
         if first_bind:
             from pydantic import BaseModel as _BaseModel  # noqa: PLC0415
 
+            from app.core.audit_log import Actor as _Actor  # noqa: PLC0415
             from app.core.audit_log import audit as _audit  # noqa: PLC0415
-            from app.core.primitives import Actor as _Actor  # noqa: PLC0415
 
             class _InstallAuditPayload(_BaseModel):
                 installation_id: int
@@ -501,6 +501,21 @@ async def github_install_callback(request: Request) -> RedirectResponse:
                 _Actor(kind="system"),
                 org_id=org_id,
                 session=s,
+            )
+
+        # M03: register the github plugin as the org's VCS on first bind. The
+        # picker UI delegates the install handshake to this endpoint; this is
+        # where the org's VCS choice is durably recorded.
+        if first_bind:
+            from app.core.audit_log import Actor as _Actor2  # noqa: PLC0415
+            from app.domain.orgs import set_vcs as _set_vcs  # noqa: PLC0415
+
+            await _set_vcs(
+                s,
+                org_id=org_id,
+                plugin_id="github",
+                settings={"installation_id": int(installation_id)},
+                actor=_Actor2(kind="system"),
             )
         await s.commit()
 

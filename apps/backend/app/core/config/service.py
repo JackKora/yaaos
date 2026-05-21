@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     # M02 — session lifetime + cleanup cadence.
     yaaos_session_lifetime_seconds: int = 60 * 60 * 24 * 14  # 14 days
     yaaos_auth_cleanup_interval_seconds: int = 60 * 60  # 1 hour
+    yaaos_integrations_health_check_interval_seconds: int = 60 * 60  # 1 hour
 
     # M02 — OAuth GitHub credentials. Required in `prod`; defaults let `dev`
     # boot without provisioning. Tests override via env at fixture time.
@@ -84,6 +85,26 @@ class Settings(BaseSettings):
     # empty; `domain/identity.totp` falls back to `yaaos_encryption_key` when
     # unset so dev/test only need one key. Production must set this.
     yaaos_totp_master_key: str = ""
+
+    # M04 — Linear OAuth + hosted MCP. Defaults point at the real upstreams;
+    # the test compose overrides to fake-linear hostnames.
+    yaaos_oauth_linear_client_id: str = ""
+    yaaos_oauth_linear_client_secret: str = ""
+    linear_oauth_authorize_url: str = "https://linear.app/oauth/authorize"
+    linear_oauth_token_url: str = "https://api.linear.app/oauth/token"
+    linear_oauth_refresh_url: str = "https://api.linear.app/oauth/token"
+    linear_mcp_url: str = "https://mcp.linear.app/sse"
+    linear_api_base_url: str = "https://api.linear.app"
+
+    # M04 — Notion OAuth + hosted MCP. Same shape; Notion uses HTTP Basic
+    # on the token endpoint, encoded in the provider config rather than here.
+    yaaos_oauth_notion_client_id: str = ""
+    yaaos_oauth_notion_client_secret: str = ""
+    notion_oauth_authorize_url: str = "https://api.notion.com/v1/oauth/authorize"
+    notion_oauth_token_url: str = "https://api.notion.com/v1/oauth/token"
+    notion_oauth_refresh_url: str = "https://api.notion.com/v1/oauth/token"
+    notion_mcp_url: str = "https://mcp.notion.com/mcp"
+    notion_api_base_url: str = "https://api.notion.com"
 
     # M02 — invitations + dev SMTP (Mailpit).
     yaaos_invitation_token_secret: str = "dev-only-invitation-secret"

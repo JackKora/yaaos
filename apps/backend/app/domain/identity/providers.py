@@ -1,6 +1,6 @@
 """OAuth `Provider` Protocol + in-process registry.
 
-Each provider plugin (`plugins/oauth_github`, `plugins/oauth_test`) implements
+Each provider plugin (`plugins/github`, `plugins/oauth_test`) implements
 this Protocol and registers itself at import time via `register_provider`.
 The login endpoint (`/api/auth/login`) and callback endpoint
 (`/api/auth/callback/{provider}`) consume providers by id through
@@ -41,6 +41,10 @@ class ProviderProfile(BaseModel):
     email_verified: bool
     display_name: str
     mfa_satisfied: bool = False
+    # Provider-specific login/handle (e.g. GitHub `login`). Surfaced so the
+    # `oauth_github` callback path can persist it as `users.github_username`.
+    # Other providers may leave it `None`.
+    provider_login: str | None = None
 
 
 class ProviderError(RuntimeError):

@@ -16,7 +16,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.primitives import PluginMeta
+from app.core.plugin_meta import PluginMeta
 
 # Per-line callback used by `run_coding_agent_cli` to stream stdout in real
 # time. When provided, the provider invokes it for each newline-terminated
@@ -139,6 +139,13 @@ class Workspace(Protocol):
         """
         ...
 
+    async def write_text(self, path: str, content: str) -> None:
+        """Write `content` to a workspace-relative path. Refuses if a file
+        already exists at that path — callers materializing review-time
+        artefacts (e.g. `.mcp.json`) must not collide with repo files.
+        """
+        ...
+
 
 class WorkspaceProvider(Protocol):
     """Plugin contract. Provision returns opaque plugin_state; `run_coding_agent_cli`
@@ -160,6 +167,7 @@ class WorkspaceProvider(Protocol):
         on_stream_line: OnStreamLine | None = None,
     ) -> CodingAgentCliResult: ...
     async def read_text(self, plugin_state: dict[str, Any], path: str) -> str | None: ...
+    async def write_text(self, plugin_state: dict[str, Any], path: str, content: str) -> None: ...
     async def destroy(self, plugin_state: dict[str, Any]) -> None: ...
     async def health_check(self) -> HealthStatus: ...
 

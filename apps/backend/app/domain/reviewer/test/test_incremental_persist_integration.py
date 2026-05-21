@@ -27,11 +27,15 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.core.primitives import Actor
+from app.core.audit_log import Actor
 from app.domain.coding_agent import FindingAnchor, FindingDraft
 from app.domain.reviewer.queue import _findingdrafts_to_raw, _raw_to_vcs_findings
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.service import dispatch_audits, dispatch_events
+
+# Drives the durable-findings persist + admission + audit + event chain
+# across reviewer aggregate ↔ repository ↔ audit_log ↔ events. Service tier.
+pytestmark = pytest.mark.service
 
 
 async def _seed_pr_and_review(

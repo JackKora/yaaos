@@ -23,7 +23,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.core.primitives import Actor
+from app.core.audit_log import Actor
 from app.domain.reviewer.llm import ClassifyReplyOutput
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.service import (
@@ -31,6 +31,10 @@ from app.domain.reviewer.service import (
     dispatch_audits,
     dispatch_events,
 )
+
+# Cross-module persist + audit + event chain (reviewer aggregate ↔ repository ↔
+# audit_log ↔ core/events bus). Service tier.
+pytestmark = pytest.mark.service
 
 
 async def _seed_pr_review_and_finding(

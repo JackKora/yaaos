@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel
 
+from app.core.audit_log import Actor
 from app.core.audit_log import audit as audit_write
 from app.core.auth.cookies import (
     CSRF_COOKIE_NAME,
@@ -42,7 +43,6 @@ from app.core.auth.cookies import (
 from app.core.auth.rate_limit import AUTH_LIMIT, MUTATE_LIMIT, limiter
 from app.core.config import get_settings
 from app.core.database import session as db_session
-from app.core.primitives import Actor
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.auth.dependencies import public_route
 from app.domain.identity import sessions as session_lifecycle
@@ -315,8 +315,12 @@ async def me(
     is known; on success the SPA picks an org and sets `X-Org-Slug` on
     subsequent calls. 401 when there's no session.
     """
+    from sqlalchemy import select as _select  # noqa: PLC0415
+
     from app.domain.identity import repository as identity_repo  # noqa: PLC0415
+    from app.domain.integrations.models import McpCredentialRow  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
+    from app.domain.orgs.types import Role as _Role  # noqa: PLC0415
 
     if not yaaos_session:
         return JSONResponse(status_code=401, content={"error": "unauthenticated"})
@@ -332,12 +336,38 @@ async def me(
             org = await orgs_repo.get_org(s, m.org_id)
             if org is None:
                 continue
+            broken: list[dict[str, str | None]] = []
+            # Owners + Admins see broken integrations; Members get an empty list.
+            if _Role(m.role).covers(_Role.ADMIN):
+                broken_rows = (
+                    (
+                        await s.execute(
+                            _select(McpCredentialRow).where(
+                                McpCredentialRow.org_id == org.id,
+                                McpCredentialRow.enabled.is_(True),
+                                McpCredentialRow.last_refresh_status == "failed",
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                broken = [
+                    {
+                        "provider": r.provider,
+                        "last_refresh_failed_at": (
+                            r.last_refresh_failed_at.isoformat() if r.last_refresh_failed_at else None
+                        ),
+                    }
+                    for r in broken_rows
+                ]
             orgs_view.append(
                 {
                     "slug": org.slug,
                     "display_name": org.display_name,
                     "role": m.role,
                     "handle": m.handle,
+                    "broken_integrations": broken,
                 }
             )
     primary_email = next((e.email for e in emails if e.is_primary), emails[0].email if emails else None)

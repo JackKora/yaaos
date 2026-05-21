@@ -48,7 +48,7 @@ No "service classes". A module-level `async def` is the right shape for business
 
 Don't catch where raised. Let them propagate. Catch only at top-level boundaries:
 - HTTP middleware (converts to 500 JSON).
-- `core/primitives.spawn()` wrapper (logs the failure; the coro is responsible for marking its row failed before raising).
+- `core/observability.spawn()` wrapper (logs the failure; the coro is responsible for marking its row failed before raising).
 - Thin retry wrapper around vendor SDK calls.
 - Tests.
 
@@ -68,7 +68,7 @@ Exceptions: `core/database` (Postgres connections), `core/observability` (log fi
 
 ## Background work
 
-### `core/primitives.spawn()`
+### `core/observability.spawn()`
 
 Every fire-and-forget background coroutine goes through this single helper. Behaviour:
 - Wraps the coro in an OTel span `spawn:{name}`.
@@ -146,9 +146,24 @@ Handlers triggered by external events MUST be idempotent under retry.
 
 ## Secrets
 
-- Stored encrypted at rest in the owning plugin's settings table. Encryption key is `YAAOS_ENCRYPTION_KEY` (32 bytes URL-safe base64).
+- Single Fernet wrapper in [`core/secrets`](core_secrets.md); master key from `YAAOS_TOTP_MASTER_KEY` (fallback `YAAOS_ENCRYPTION_KEY` in non-prod). Callers `encrypt(plaintext)` / `decrypt(ciphertext)` — never construct `Fernet` directly.
 - Decrypted only at the call site. No "decrypted credentials" cache; no passing across module boundaries when not needed.
 - Never logged, echoed in errors, or placed in audit payloads. Redact before logging if an exception message could contain a secret.
+- Per-(org, provider) API keys go through [`core/byok`](core_byok.md); provider plugins register their `validate(key) -> bool` callable via `byok.register_validator(provider, callable)` at bootstrap so `core/byok` stays free of plugin imports.
+
+## Bearer token discipline
+
+Every yaaos-issued bearer follows the same shape — adopted in M02 for sessions, in M02 again for signed invitations, and extended in M04 for MCP review tokens:
+
+- **Mint** with `secrets.token_urlsafe(32)` (32 random bytes, URL-safe base64). Return the raw token to the caller exactly once.
+- **Store** `sha256(raw_token)` as the primary key. Raw tokens never persist.
+- **Lookup** by hashing the inbound bearer + selecting by hash + checking `expires_at > now()`. Constant-time-safe because the hash is the PK.
+- **Own one table per consumer.** `sessions`, `mcp_review_tokens`, and (via sha256-on-write) `invitations.token_hash` are separate; one bearer can't be substituted for another.
+- **Expire by absolute time.** Each consumer owns its TTL — sessions 14d, MCP review tokens 2h, invitations 7d. The periodic cleanup task in `domain/identity/scheduler` (or a domain-local equivalent) deletes expired rows; production code also checks `expires_at` on every read.
+
+## Route security declarations
+
+Every `/api/*` route declares its security via `Depends(require(action))` (org-scoped, role-gated) or `Depends(public_route)` (no org context required). The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset — the gate is at the route, not the docs. Action → minimum-role map lives in `app/domain/auth/dependencies.py:_REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new protected URL prefix requires extending `app/core/auth/types.py:M02_PROTECTED_PREFIXES` so the middleware forces `X-Org-Slug` resolution before any route logic runs.
 
 ## Testing
 
@@ -156,15 +171,33 @@ Handlers triggered by external events MUST be idempotent under retry.
 
 | Category | Where | What | External deps |
 |---|---|---|---|
-| Unit | `<module>/test/test_*.py` | Pure logic. Used sparingly. | None |
+| Unit | `<module>/test/test_*.py` | Pure logic, one function/class. Used sparingly. | None |
 | Integration | `<module>/test/test_*.py` | Module's public interface end-to-end. **Primary form.** | Real Postgres (transactional rollback); `apps/fake-github`; coding-agent CLI stub. |
-| E2E | `apps/e2e/` | Full stack via browser. | `docker-compose.test.yml`. |
+| Service | `<module>/test/test_*_service.py` | Cross-module flow (3+ modules) driven from an entry point, in-process. | Real Postgres; stub plugins. |
+| E2E | `apps/e2e/` | Browser-visible behavior — SSE updates, cookies, OAuth redirects, route navigation. | `docker-compose.test.yml`. |
+
+### Service tests
+
+When a backend flow crosses **3+ modules** (e.g. webhook → intake → reviewer → vcs.post_review → audit), write ONE service test that drives the entry-point function or HTTP route end-to-end and asserts the durable state across every module it touches. Service tests are the **default** for backend-only flows; reach for Playwright only when the contract is browser-visible.
+
+Mechanics:
+
+- **Real Postgres via `db_session`.** Transactional rollback per test — production code's `session()` hits the override; inner `commit()` calls become SAVEPOINT releases; outer transaction rolls back on teardown. Empty DB at start of each test.
+- **Stub plugins from `app/testing/`.** `YAAOS_CODING_AGENT_STUB=1` (set by `conftest.py`) wraps registered coding-agent plugins with `StubCodingAgentPlugin` that returns a canned `ReviewResult`. `app.testing.stub_workspace.wrap_all_registered_workspace_providers()` swaps the workspace providers for flows that provision a workspace.
+- **HTTP routes via `httpx.ASGITransport`.** Drive endpoints in-process without a network listener. The pattern is already used by `app/domain/integrations/test/test_endpoints.py`, `app/domain/mcp_proxy/test/test_dispatch.py`, etc.
+- **Seed helpers from `app/testing/e2e_setup/`.** `seed_credentials_and_install`, `seed_lesson`, etc. are HTTP shims around the same domain calls a Playwright spec would hit — reuse them from pytest.
+
+Naming: `test_<flow>_service.py` in the owning module's `test/` directory. Owner is whichever module holds the entry-point function (the one you `await` first in the test body).
+
+Marker: every service test is decorated `@pytest.mark.service`. Run only the service tier with `pytest -m service`; run the fast unit-only loop with `pytest -m "not service"`. The default `bin/ci` invocation runs both — the marker is for developer ergonomics, not a CI skip.
+
+Assert on the **durable state production reads** — audit rows by kind, posted-comment count via the stub vcs plugin, finding state in the aggregate, `last_refresh_status`, the test inbox (`get_test_inbox()`), event-bus publications. Don't assert on intermediate log lines unless the log is the contract.
 
 ### Integration test pattern
 
 - Exercise public interface, not internals.
 - Real Postgres. Each test runs inside a transaction rolled back at teardown. Empty DB at start.
-- Inbound HTTP: `fastapi.testclient.TestClient` in-process.
+- Inbound HTTP: `fastapi.testclient.TestClient` or `httpx.ASGITransport` in-process.
 - Outbound HTTP: routed to `apps/fake-github` via `GITHUB_API_BASE_URL`. Real plugin code paths run.
 - Coding-agent: `YAAOS_CODING_AGENT_STUB=1` swaps in `testing/stub_coding_agent`.
 
@@ -212,7 +245,7 @@ Don't wrap every domain function — noise hurts more than detail helps.
 `app/main.py` is load-bearing. If steps 3–4 swap with 6 you'll mount a router before its module has registered or subscribe to an event before the bus exists. Don't reorder.
 
 1. Load environment — `app.core.config`.
-2. Configure core infra — `app.core.database`, `app.core.observability`, `app.core.primitives`.
+2. Configure core infra — `app.core.database`, `app.core.observability`.
 3. Initialize events bus — `app.core.events` *before any domain subscribes*.
 4. Import webserver registry — `app.core.webserver` *before any module registers routes*.
 5. Core modules with plugin Protocols — `app.core.audit_log`, `app.core.workspace`.

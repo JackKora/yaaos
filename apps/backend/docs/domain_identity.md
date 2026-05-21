@@ -17,17 +17,23 @@ Exported from `app/domain/identity/__init__.py`:
 - Provider Protocol — `providers.Provider`, `providers.ProviderProfile`, `providers.ProviderError`, `providers.register_provider`, `providers.get_provider`, `providers.list_providers`.
 - Sessions namespace — `sessions.create`, `sessions.lookup`, `sessions.touch`, `sessions.revoke`, `sessions.revoke_all_for_user`, `sessions.rotate`, `sessions.mark_sso_satisfied`, `sessions.is_sso_satisfied`, `sessions.cleanup_expired`, `sessions.CreatedSession`, `sessions.SSO_TTL`.
 
-HTTP routes for login + callback + logout live in [`domain/auth`](domain_auth.md) (`/api/auth/*`). Account-management routes (`/api/account/*`) land in Phase 7. The Phase 3 skeleton wires an `on_startup` hook that spawns the periodic cleanup loop.
+HTTP routes for login + callback + logout live in [`domain/auth`](domain_auth.md) (`/api/auth/*`). Account-management routes live under `/api/account/*` in `account_web.py`: emails (M02), plus `GET/PATCH /api/account/me` for the user profile + `GET /api/account/github/verify[/callback]` for the verify-only GitHub OAuth flow. The Phase 3 skeleton wires an `on_startup` hook that spawns the periodic cleanup loop.
+
+### Verify-only GitHub flow
+
+A user already authenticated to yaaos can prove ownership of a GitHub account *without* creating an `oauth_identities` row or issuing a session. `GET /api/account/github/verify` mints a `(user_id)`-bound signed state and 303s to GitHub's authorization URL via the same `Provider` interface as login. The callback at `GET /api/account/github/verify/callback` verifies the signature, cross-checks state-user against session-user, calls `Provider.exchange_code()`, and writes `profile.provider_login` into `users.github_username` via `repository.set_user_github_username`. No row is added to `oauth_identities`; no new session cookie is set. The signed-state salt is `yaaos-github-verify` (10-minute TTL), separate from the login-flow salt so a login state can't be replayed at the verify callback.
+
+`ProviderProfile.provider_login` is the field providers populate when they have a username/handle to surface (the GitHub plugin sets it from the `/user` response's `login`). Generic OIDC providers may leave it `None`.
 
 ## Module architecture
 
 ### Entities
 
-- **User** — UUID PK. Never keyed by email. Soft-deleted via `deactivated_at`.
+- **User** — UUID PK. Never keyed by email. Soft-deleted via `deactivated_at`. Carries `github_username` (verified GitHub login): written by the OAuth-github callback on every successful login and by the verify-only flow described below.
 - **UserEmail** — N per user. `is_primary` marks the canonical address; `verified_at` distinguishes provider-confirmed addresses from claimed-but-unverified ones. Sign-in matches any verified email.
 - **OAuthIdentity** — N per user. `(provider, external_subject)` is globally unique. Account-linking creates additional rows for the same `user_id`.
 - **Session** — one per active browser. PK is the sha256 hex of the raw token; raw tokens never live in the DB. Carries `user_id` xor `workspace_id`, the per-session CSRF token, and optional `sso_satisfied_for_org_id` + timestamp for the 8-hour SSO TTL.
-- **UserTotpSecret** — at most one per user. Fernet-encrypted base32 seed; `verified_at` set only after the user proves possession.
+- **UserTotpSecret** — at most one per user. Base32 seed encrypted via [core/secrets](core_secrets.md); `verified_at` set only after the user proves possession.
 - **GithubInstallation** — links a GitHub App installation id to the org that owns it. Inserted by the install callback (Phase 10).
 
 ### Key value objects
@@ -56,7 +62,7 @@ Unverified emails never reach the orchestrator — the callback handler enforces
 
 ### Provider registry
 
-`providers.register_provider(p)` keys by `p.provider_id` and overwrites on re-register (plugin bootstraps may run multiple times in tests). The HTTP layer reads by id via `get_provider` and enumerates via `list_providers` for the "which providers can I sign in with" endpoint. Plugins: [`plugins/oauth_github`](plugins_oauth_github.md), [`plugins/oauth_test`](plugins_oauth_test.md).
+`providers.register_provider(p)` keys by `p.provider_id` and overwrites on re-register (plugin bootstraps may run multiple times in tests). The HTTP layer reads by id via `get_provider` and enumerates via `list_providers` for the "which providers can I sign in with" endpoint. Plugins: [`plugins/github`](plugins_github.md) (M04 collapsed the M02 `plugins/oauth_github` here), [`plugins/oauth_test`](plugins_oauth_test.md).
 
 ### Periodic cleanup
 

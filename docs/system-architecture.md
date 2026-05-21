@@ -53,6 +53,44 @@ Polling (5s / 3s) remains as a safety net.
 3. Per call: `plugins/github` signs a short-lived RS256 App JWT, exchanges it at `POST /app/installations/{id}/access_tokens` for an installation token (~1h TTL, in-memory).
 4. Installation token used as Bearer for REST and `GIT_ASKPASS`-style for `git clone`.
 
+### MCP context for reviewer agents (M04)
+
+Per-org, per-review pipeline. Coding-agent CLIs call hosted MCP servers (Linear, Notion) through a yaaos-owned proxy so authorization happens in one place + every JSON-RPC method writes an audit row.
+
+```
+reviewer.queue                                 plugins/claude_code               proxy                upstream MCP
+─────────────                                 ──────────────────              ──────                ──────────
+mint_token(review_id)
+  └─ secrets.token_urlsafe(32) → sha256 → mcp_review_tokens
+_build_mcp_payload(review_id, org_id)
+  └─ walks integrations.known_providers()
+     filters enabled + last_refresh_status != "failed"
+     ──────►  agent_config["mcp"] = {token, base_url, servers}
+                                              materialize .mcp.json
+                                              (workspace.write_text, refuses overwrite)
+                                              cli --allowed-tools=…,mcp__<srv>__<tool>,…
+                                              └─ calls mcp__linear__get_issue
+                                                                                 POST /api/mcp/{review_id}/linear
+                                                                                  ├─ sha256 bearer → mcp_review_tokens
+                                                                                  ├─ resolve org_id from review row
+                                                                                  ├─ load mcp_credentials
+                                                                                  ├─ enforce allowlist (write tools)
+                                                                                  ├─ decrypt access_token
+                                                                                  ├─ forward Authorization: Bearer ─►
+                                                                                  └─ audit mcp.linear.dispatched
+revoke_token(review_id) BEFORE workspace teardown
+```
+
+**Single org service account.** Each org connects one upstream OAuth identity per provider. Audit rows always carry `upstream_account="org_service_account"`. The triggering identity (User vs System) lives on `actor_kind`. Reviews fire reads/writes uniformly as the bot — never as the developer who triggered them.
+
+**Attribution.** Manual UI review → `actor_kind=user`, the user's `user_id`. Webhook review → `actor_kind=system`, no IDs. The proxy preserves whichever the review was scheduled with — the row says who *triggered* the work, the `upstream_account` says who *executed* it.
+
+**Refresh serialization (deferred).** When implemented, `domain/integrations.refresh(org_id, provider)` will use `pg_advisory_xact_lock(hashtext('mcp:' || org_id || ':' || provider))` so concurrent reviewers don't double-spend a refresh token. Until then the proxy surfaces `broken_creds` on token expiry and the hourly health-check + email notify the operator to reconnect.
+
+**Audit shape.** One row per JSON-RPC method: `{kind: "mcp.<provider>.dispatched", payload: {provider, method, tool, args_hash, result_summary, upstream_account}}`. Never the full upstream response — it can contain customer data.
+
+**Broken-creds surfacing (six layers).** Health-check flips `last_refresh_status`; audit row `mcp.<provider>.token_refresh_failed`; email to Owners (24h dedup); `/api/auth/me`'s `broken_integrations` per org; red banner in the app shell; warning block on Coding Agents → Claude Code; review-output prefix when the agent hit `broken_creds`/`not_connected` mid-run.
+
 ### Test stack
 
 `docker-compose.test.yml` brings up Postgres + `apps/fake-github` + backend with `GITHUB_API_BASE_URL=http://fake-github:8080` and `YAAOS_CODING_AGENT_STUB=1`. Plugins stubbed via `app/testing/`. E2E specs drive preconditions via `POST /api/testing/reset` + `seed/*`.
@@ -104,10 +142,20 @@ GitHub  GET /api/auth/callback/github
 
 **Contextvar propagation:** HTTP middleware sets `org_id_var` / `user_id_var` / `actor_kind_var` / `actor_id_var` per request; background jobs open `with org_context(...)`. `require_org_context()` raises in functions that read org-scoped tables without context. OTel spans + structlog log lines carry `yaaos.org_id` + `yaaos.actor_kind` everywhere.
 
-Per-module deep dives: [`core_auth`](../apps/backend/docs/core_auth.md), [`domain_identity`](../apps/backend/docs/domain_identity.md), [`domain_orgs`](../apps/backend/docs/domain_orgs.md), [`plugins_oauth_github`](../apps/backend/docs/plugins_oauth_github.md), [`plugins_saml`](../apps/backend/docs/plugins_saml.md).
+Per-module deep dives: [`core_auth`](../apps/backend/docs/core_auth.md), [`domain_identity`](../apps/backend/docs/domain_identity.md), [`domain_orgs`](../apps/backend/docs/domain_orgs.md), [`plugins_github`](../apps/backend/docs/plugins_github.md), [`core_saml`](../apps/backend/docs/core_saml.md).
 
 ### Secrets at rest
-Plugin credentials encrypted in their plugin's settings table via `cryptography.Fernet` keyed by `YAAOS_ENCRYPTION_KEY`. Decrypt only at the call site. Never logged, echoed in errors, or placed in audit payloads.
+All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secrets.md) — a single Fernet wrapper resolving the master key from `YAAOS_TOTP_MASTER_KEY` (fallback `YAAOS_ENCRYPTION_KEY` in non-prod). Callers: `domain/identity/totp`, `domain/orgs/sso`, [`core/byok`](../apps/backend/docs/core_byok.md), and legacy plugin-settings tables. Plaintext crosses the boundary only at write (caller → encrypt) and at the specific call site that needs the decrypted value; never logged, never echoed in errors, never placed in audit payloads.
+
+### Settings surface (M03)
+
+`/orgs/{slug}/settings/{section}` consolidates every per-org knob into one shell with six sub-pages: `auth` (SSO + session-timeout override), `members`, `vcs`, `coding-agents`, `byok`, `audit`. Member role sees only the Members tab; Owner+Admin see all. The shell + tab nav live in [`apps/web/src/domain/org_settings`](../apps/web/src/domain/org_settings/).
+
+- **VCS**: one plugin per org, state on `orgs.vcs_plugin_id` + `orgs.vcs_settings`. The picker hits `GET /api/plugins/available?type=vcs`. When a plugin's `install_url(org_id)` is non-None (today: `github`'s `/api/github/install`), the SPA navigates there and the existing M02 handshake callback writes back via `domain/orgs.set_vcs`. All mutations audit.
+- **Coding Agents**: many installs per org in `org_coding_agents` keyed by `(org_id, plugin_id)`. The generic shell handles install/uninstall + the picker; per-plugin settings dispatch via a frontend registry (`coding_agents/plugin_registry.ts`). The `claude_code` plugin ships a bespoke settings UI (orchestrator + 1..8 sub-agents) reading defaults from `GET /api/claude_code/defaults` (request-time imports, never cached).
+- **BYOK**: `core/byok` owns `byok_keys` per `(org_id, provider)`; plaintext is encrypted via `core/secrets`. Plugins register validators at boot (`core/byok.register_validator`) so `/api/byok/{provider}/validate` dispatches without `core/byok` importing plugins. The Anthropic key surfaces twice — once on the BYOK page and once embedded in the Claude Code settings page — both writing the same row.
+- **Session-timeout override**: nullable `orgs.session_timeout_override` (minutes). The `require()` dep checks `last_seen_at + override` (falls back to `SESSION_IDLE_TIMEOUT` = 12h) on every org-scoped request and 401's `session_idle_expired` past the window.
+- **Verified GitHub username**: `users.github_username` populated by the OAuth-github login callback or by a separate verify-only flow at `/api/account/github/verify` that runs the OAuth handshake without creating an identity row or issuing a session.
 
 ### Dumb frontend
 SPA renders data and dispatches actions. It does not compute verdicts, derive status, hold permissions, or own any rule the backend doesn't also enforce. FE validation is for UX immediacy; backend re-validates. See [`apps/web/docs/patterns.md`](../apps/web/docs/patterns.md).

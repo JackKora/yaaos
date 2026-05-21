@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import session as db_session
-from app.core.primitives import PluginMeta
+from app.core.plugin_meta import PluginMeta
 from app.domain.vcs import (
     Comment,
     Diff,
@@ -27,6 +27,7 @@ from app.domain.vcs import (
     VCSAuthError,
     VCSNotFoundError,
     VCSPullRequest,
+    VCSValidationError,
     register_vcs_plugin,
 )
 from app.plugins.github.models import (
@@ -87,6 +88,23 @@ class GitHubPlugin:
     @property
     def base_url(self) -> str:
         return get_settings().github_api_base_url
+
+    def install_url(self, org_id: UUID) -> str | None:
+        """The picker sends the user to the existing M02 install-handshake
+        endpoint, which signs `state=<org_id>` and redirects on to GitHub's
+        `apps/{slug}/installations/new`. Settings live in `github_settings`.
+        Always returns a relative URL — the SPA navigates to it."""
+        del org_id
+        return "/api/github/install"
+
+    def validate_settings(self, settings: dict[str, object]) -> dict[str, object]:
+        """The github plugin's settings are populated by the install handshake;
+        the picker form has nothing the user types. Accept an empty dict;
+        reject unknown keys to keep callers honest."""
+        unknown = set(settings.keys()) - {"installation_id"}
+        if unknown:
+            raise VCSValidationError(f"unknown github settings keys: {sorted(unknown)}")
+        return dict(settings)
 
     async def _get_settings_row(self, org_id: UUID) -> GitHubSettingsRow | None:
         async with db_session() as s:
@@ -612,8 +630,8 @@ async def run_catchup_loop() -> None:
             .scalars()
             .all()
         )
+    from app.core.audit_log import ActorKind  # noqa: PLC0415
     from app.core.auth import org_context  # noqa: PLC0415
-    from app.core.primitives import ActorKind  # noqa: PLC0415
 
     seen_orgs: set[UUID] = set()
     for row in installs:
@@ -737,7 +755,7 @@ async def _onboarding_github_app_installed(org_id: UUID) -> bool:
 
 
 def bootstrap() -> None:
-    from app.domain.settings import register_onboarding_contributor  # noqa: PLC0415
+    from app.domain.orgs import register_onboarding_contributor  # noqa: PLC0415
 
     register_vcs_plugin(_plugin)
     register_onboarding_contributor("github_app_installed", _onboarding_github_app_installed)

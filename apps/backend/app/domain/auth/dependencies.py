@@ -12,6 +12,7 @@ from typing import Annotated
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request
 
+from app.core.audit_log import Actor, ActorKind
 from app.core.auth.context import (
     actor_id_var,
     actor_kind_var,
@@ -21,7 +22,6 @@ from app.core.auth.context import (
 )
 from app.core.auth.types import Action
 from app.core.database import session as db_session
-from app.core.primitives import Actor, ActorKind
 from app.domain.identity import repository as identity_repo
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.service import Membership
@@ -42,6 +42,15 @@ _REQUIRED_ROLE: dict[Action, Role] = {
     Action.SSO_CONFIGURE: Role.OWNER,
     Action.GITHUB_APP_LINK: Role.OWNER,
     Action.REVIEW_TRIGGER: Role.MEMBER,
+    Action.VCS_READ: Role.ADMIN,
+    Action.VCS_WRITE: Role.ADMIN,
+    Action.CODING_AGENT_READ: Role.ADMIN,
+    Action.CODING_AGENT_WRITE: Role.ADMIN,
+    Action.BYOK_READ: Role.ADMIN,
+    Action.BYOK_WRITE: Role.ADMIN,
+    Action.ORG_SETTINGS_WRITE: Role.ADMIN,
+    Action.INTEGRATIONS_READ: Role.ADMIN,
+    Action.INTEGRATIONS_WRITE: Role.ADMIN,
 }
 
 
@@ -117,6 +126,26 @@ def require(action: Action) -> Callable[..., None]:
         role = Role(membership_row.role)
         if not role.covers(required):
             raise _err(403, "insufficient_role")
+
+        # Idle-session timeout — per-org override, falls back to the global
+        # constant. Session is treated as expired when it hasn't been touched
+        # within the effective window. Honored by every org-scoped endpoint.
+        from datetime import UTC as _UTC  # noqa: PLC0415
+        from datetime import datetime as _datetime  # noqa: PLC0415
+        from datetime import timedelta as _timedelta  # noqa: PLC0415
+
+        from app.core.auth.types import SESSION_IDLE_TIMEOUT  # noqa: PLC0415
+
+        token = request.cookies.get("yaaos_session")
+        if token:
+            token_hash = identity_repo.hash_token(token)
+            async with db_session() as s:
+                sess_row = await identity_repo.get_session_by_hash(s, token_hash)
+            if sess_row is not None and sess_row.last_seen_at is not None:
+                minutes = org_row.session_timeout_override
+                idle = _timedelta(minutes=minutes) if minutes else SESSION_IDLE_TIMEOUT
+                if sess_row.last_seen_at + idle < _datetime.now(_UTC):
+                    raise _err(401, "session_idle_expired")
         # SSO satisfaction: if the org has SSO enabled, the session must
         # have `sso_satisfied_for_org_id == org_id` within the 8h TTL.
         # Break-glass: the exempt Owner bypasses this AND must have a
@@ -145,8 +174,7 @@ def require(action: Action) -> Callable[..., None]:
                         # distinct audit row so abuse is visible.
                         from pydantic import BaseModel  # noqa: PLC0415
 
-                        from app.core.audit_log import audit  # noqa: PLC0415
-                        from app.core.primitives import Actor  # noqa: PLC0415
+                        from app.core.audit_log import Actor, audit  # noqa: PLC0415
 
                         class _BreakGlassPayload(BaseModel):
                             break_glass: bool = True

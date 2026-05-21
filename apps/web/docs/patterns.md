@@ -18,11 +18,23 @@ Every shipped module has one `apps/web/docs/<layer>_<module>.md` following this 
 
 Discipline still applies: terse, bullets, no code snippets, no `Decisions` section, link don't repeat. Modules with no state machines just omit that sub-section.
 
-## Auth + tenancy (M02)
+## Auth + tenancy (M02 + M03)
 
-- **API client auto-injects `X-Org-Slug`** — `apps/web/src/core/api/org-context.ts` holds the current slug. The `/orgs/$slug` router scope writes to it in `beforeLoad`; `/login` and `/account` clear it. `apiFetch` reads the slug and adds the header unless the caller already supplied one. Domain hooks stay org-agnostic at the call site.
+- **API client auto-injects `X-Org-Slug`** — `apps/web/src/core/api/org-context.ts` holds the current slug. The `/orgs/$slug` router scope writes to it in `beforeLoad`; `/login` and `/account/*` clear it. `apiFetch` reads the slug and adds the header unless the caller already supplied one. Domain hooks stay org-agnostic at the call site.
 - **Use `RequireMembership` for role gates** — `<RequireMembership orgSlug="..." role="admin">` renders children only when the current user has at least `role` in that org. UI hint only; the backend's `require(action)` is the source of truth.
-- **Route → org slug** — `/orgs/$slug/...` is the canonical shape for every domain page. `/`, `/login`, `/account` stay user-scoped. The `/` route probes `/api/auth/me` and redirects to `/orgs/<first-slug>/dashboard` or `/login`.
+- **Route → org slug** — `/orgs/$slug/...` is the canonical shape for every domain page. `/`, `/login`, `/account/*` stay user-scoped. The `/` route probes `/api/auth/me` and redirects to `/orgs/<first-slug>/dashboard` or `/login`.
+
+## Sidebar nav config (M03)
+
+- **Typed nav, no per-route hardcoding** — `apps/web/src/core/sidebar/nav-config.ts` defines the `NavConfig` type (`link | group`). The Sidebar renders the static config; route paths inside the group are *relative* (`/dashboard`, `/settings/auth`) and prefixed with `/orgs/{slug}` by the renderer.
+- **Per-item role gates** — `role: "admin"` on a `link` or `group` hides it for `member`-role users. The group itself is hidden when no child survives the filter (matches the backend's per-action gate).
+- **Per-group collapse state in `localStorage`** — `use-collapse-state.ts` persists `{ [groupId]: collapsed }` and syncs across tabs via the `storage` event.
+
+## Org Settings shell (M03)
+
+- **One shell, six tabs** — `OrgSettingsLayout` at `/orgs/$slug/settings/$section`. Per-tab role gating mirrors the sidebar: Members is the only tab a non-admin can hit; Auth/VCS/Coding Agents/BYOK/Audit are Owner+Admin only.
+- **Bespoke React per plugin via the registry** — Coding-agent plugin settings dispatch through `apps/web/src/domain/org_settings/coding_agents/plugin_registry.ts`. First-party plugins register components at module load via a side-effect import (today: `claude_code`); unregistered plugins land on the built-in placeholder. No generic JSON-schema renderer in M03.
+- **Plugin picker is shared** — `apps/web/src/shared/plugin_picker/PluginPicker` is used by both the VCS empty-state and the Coding Agents Add flow. Backed by `useAvailablePlugins(type)` which hits `GET /api/plugins/available?type=...`.
 
 ## Dumb frontend
 

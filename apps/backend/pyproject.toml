@@ -84,6 +84,14 @@ exclude = ["app/testing", "app/testing/**"]
 asyncio_mode = "auto"
 testpaths = ["app"]
 python_files = ["test_*.py"]
+markers = [
+    # Cross-module flow tests that drive a backend entry-point (function or
+    # HTTP route via ASGITransport) against real Postgres + stub plugins.
+    # Use `pytest -m service` to run only the service tier;
+    # `pytest -m "not service"` for the fast unit-only loop.
+    # See apps/backend/docs/patterns.md § Testing → Service tests.
+    "service: cross-module backend flow test (real DB, stub plugins)",
+]
 
 [tool.ruff]
 extend = "../../pyproject.toml"

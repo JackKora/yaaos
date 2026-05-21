@@ -1,22 +1,20 @@
 """Per-org SSO config + middleware-side enforcement.
 
 Owns the `sso_configs` table on the write side and the `sso_satisfied_for_org_id`
-session-row column on the read side. The SP private key is per-org and Fernet-
-encrypted with the same master key as TOTP (`yaaos_totp_master_key`, falls
-back to `yaaos_encryption_key` in non-prod).
+session-row column on the read side. The SP private key is per-org and encrypted
+via `core/secrets` (same master key as TOTP).
 """
 
 from __future__ import annotations
 
-import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.core.saml import generate_sp_keypair as _generate_sp_keypair
+from app.core.saml import verify_assertion as _core_verify_assertion
 from app.domain.orgs.models import SsoConfigRow
 
 log = structlog.get_logger("orgs.sso")
@@ -28,20 +26,6 @@ class SsoConfigError(ValueError):
 
 class ExemptOwnerWithoutTotpError(SsoConfigError):
     """Tried to set an exempt-Owner who hasn't enrolled + verified TOTP."""
-
-
-def _fernet() -> Fernet:
-    s = get_settings()
-    key = s.yaaos_totp_master_key or s.yaaos_encryption_key
-    return Fernet(key.encode())
-
-
-def _generate_sp_keypair() -> tuple[bytes, str]:
-    """Mint a placeholder SP keypair for the org. Production deployments
-    swap this for real RSA via `cryptography.hazmat`; the POC uses a
-    random secret so the schema and Fernet round-trip are exercised."""
-    raw = secrets.token_bytes(64)
-    return _fernet().encrypt(raw), "POC-PLACEHOLDER-CERT"
 
 
 async def upsert_config(
@@ -149,3 +133,11 @@ def run_assertion_verifier(saml_response: str, idp_metadata_xml: str) -> dict | 
         if out is not None:
             return out
     return None
+
+
+# Register the core/saml production verifier at module load. Test stubs
+# (`plugins/saml_test`) register their own verifier into the same list at
+# boot; first non-None wins. When the production library can't load
+# (missing libxmlsec1 in some local-dev environments) `_core_verify_assertion`
+# returns None and the next verifier in the list gets a turn.
+register_assertion_verifier(_core_verify_assertion)

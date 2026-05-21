@@ -1,9 +1,19 @@
 import { setCurrentOrgSlug } from "@core/api";
 import { AppShell } from "@core/layout";
-import { AccountPage, LoginPage } from "@domain/auth";
+import { DetailsPage, SecurityPage } from "@domain/account";
+import { LoginPage } from "@domain/auth";
 import { DashboardPage } from "@domain/dashboard";
 import { MemoryPage } from "@domain/memory";
-import { AuditPage, MembersPage, SsoConfigPage } from "@domain/orgs";
+import {
+  AuditSettingsPage,
+  AuthSettingsPage,
+  BYOKSettingsPage,
+  CodingAgentSettingsPage,
+  CodingAgentsSettingsPage,
+  IntegrationsSettingsPage,
+  MembersSettingsPage,
+  VcsSettingsPage,
+} from "@domain/org_settings";
 import { SettingsPage } from "@domain/settings";
 import { TicketDetailPage, TicketsPage } from "@domain/tickets";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
@@ -39,14 +49,27 @@ const loginRoute = createRoute({
   },
 });
 
-const accountRoute = createRoute({
+const accountRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/account",
-  component: AccountPage,
   beforeLoad: () => {
-    // /account is user-scoped — no org context.
     setCurrentOrgSlug(null);
+    throw redirect({ to: "/account/details" });
   },
+});
+
+const accountDetailsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account/details",
+  component: DetailsPage,
+  beforeLoad: () => setCurrentOrgSlug(null),
+});
+
+const accountSecurityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account/security",
+  component: SecurityPage,
+  beforeLoad: () => setCurrentOrgSlug(null),
 });
 
 const orgScopeRoute = createRoute({
@@ -95,28 +118,69 @@ const orgMemoryRoute = createRoute({
   component: MemoryPage,
 });
 
-const orgSettingsRoute = createRoute({
+// M03: /orgs/$slug/settings → /orgs/$slug/settings/auth. The shell + per-tab
+// pages live under /settings/{section}; the bare /settings path redirects so
+// older bookmarks don't 404 silently.
+const orgSettingsIndexRoute = createRoute({
   getParentRoute: () => orgScopeRoute,
   path: "/settings",
-  component: SettingsPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/orgs/$slug/settings/auth",
+      params: { slug: params.slug },
+    });
+  },
 });
 
-const orgMembersRoute = createRoute({
+const orgSettingsAuthRoute = createRoute({
   getParentRoute: () => orgScopeRoute,
-  path: "/members",
-  component: MembersPage,
+  path: "/settings/auth",
+  component: AuthSettingsPage,
 });
 
-const orgAuditRoute = createRoute({
+const orgSettingsMembersRoute = createRoute({
   getParentRoute: () => orgScopeRoute,
-  path: "/audit",
-  component: AuditPage,
+  path: "/settings/members",
+  component: MembersSettingsPage,
 });
 
-const orgSsoRoute = createRoute({
+const orgSettingsAuditRoute = createRoute({
   getParentRoute: () => orgScopeRoute,
-  path: "/sso",
-  component: SsoConfigPage,
+  path: "/settings/audit",
+  component: AuditSettingsPage,
+});
+
+const orgSettingsVcsRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/settings/vcs",
+  component: VcsSettingsPage,
+});
+
+const orgSettingsCodingAgentsRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/settings/coding-agents",
+  component: CodingAgentsSettingsPage,
+});
+
+const orgSettingsCodingAgentDetailRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/settings/coding-agents/$pluginId",
+  component: function CodingAgentDetailRoute() {
+    const { pluginId } = orgSettingsCodingAgentDetailRoute.useParams();
+    return <CodingAgentSettingsPage pluginId={pluginId} />;
+  },
+});
+
+const orgSettingsByokRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/settings/byok",
+  component: BYOKSettingsPage,
+});
+
+const orgSettingsIntegrationsRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/settings/integrations",
+  component: IntegrationsSettingsPage,
 });
 
 // Legacy aliases — M01-era links + e2e specs target `/dashboard`,
@@ -156,7 +220,9 @@ const legacySettingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
-  accountRoute,
+  accountRedirectRoute,
+  accountDetailsRoute,
+  accountSecurityRoute,
   legacyDashboardRoute,
   legacyTicketsRoute,
   legacyTicketDetailRoute,
@@ -168,10 +234,15 @@ const routeTree = rootRoute.addChildren([
     orgTicketsRoute,
     orgTicketDetailRoute,
     orgMemoryRoute,
-    orgSettingsRoute,
-    orgMembersRoute,
-    orgAuditRoute,
-    orgSsoRoute,
+    orgSettingsIndexRoute,
+    orgSettingsAuthRoute,
+    orgSettingsMembersRoute,
+    orgSettingsAuditRoute,
+    orgSettingsVcsRoute,
+    orgSettingsCodingAgentsRoute,
+    orgSettingsCodingAgentDetailRoute,
+    orgSettingsByokRoute,
+    orgSettingsIntegrationsRoute,
   ]),
 ]);
 

@@ -12,7 +12,7 @@ import structlog
 from sqlalchemy import select, update
 
 from app.core.database import session as get_session
-from app.core.primitives import spawn
+from app.core.observability import spawn
 from app.core.workspace.models import WorkspaceRow
 from app.core.workspace.types import (
     CodingAgentCliResult,
@@ -86,6 +86,9 @@ class _WorkspaceImpl:
 
     async def read_text(self, path: str) -> str | None:
         return await self._provider.read_text(self._plugin_state, path)
+
+    async def write_text(self, path: str, content: str) -> None:
+        await self._provider.write_text(self._plugin_state, path, content)
 
 
 def _utcnow() -> datetime:

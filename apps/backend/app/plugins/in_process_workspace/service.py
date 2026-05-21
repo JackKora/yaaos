@@ -20,10 +20,11 @@ import tempfile
 import time
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import structlog
 
-from app.core.primitives import PluginMeta
+from app.core.plugin_meta import PluginMeta
 from app.core.workspace import (
     CodingAgentCliResult,
     HealthStatus,
@@ -111,6 +112,17 @@ class InProcessWorkspaceProvider:
         display_name="In-Process Workspace",
         description="Host tempdir + git clone. POC only — no isolation; M02+ adds Docker workspaces.",
     )
+
+    def install_url(self, org_id: UUID) -> str | None:
+        """Workspace plugins are infra — no user-facing install flow."""
+        del org_id
+        return None
+
+    def validate_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
+        """No user-tunable settings for the in-process workspace."""
+        if settings:
+            raise ValueError(f"in_process workspace takes no settings, got: {sorted(settings.keys())}")
+        return {}
 
     async def provision(self, spec: WorkspaceSpec) -> dict[str, Any]:
         """Create a tempdir + git clone the repo at spec.sha.
@@ -324,6 +336,23 @@ class InProcessWorkspaceProvider:
                 return fh.read()
         except (FileNotFoundError, IsADirectoryError, PermissionError, UnicodeDecodeError):
             return None
+
+    async def write_text(self, plugin_state: dict[str, Any], path: str, content: str) -> None:
+        """Write to a workspace-relative file. Refuses to overwrite an existing
+        file — callers must not collide with repo content. Path-traversal guarded
+        the same way `read_text` is."""
+        working_dir = plugin_state.get("working_dir")
+        if not working_dir or not os.path.isdir(working_dir):
+            raise WorkspaceExecError(f"in_process_workspace state missing working_dir: {working_dir!r}")
+        clean = path.lstrip("/\\")
+        target = os.path.realpath(os.path.join(working_dir, clean))
+        if not target.startswith(os.path.realpath(working_dir) + os.sep):
+            raise WorkspaceExecError(f"path traversal blocked: {path!r}")
+        if os.path.exists(target):
+            raise WorkspaceExecError(f"workspace file already exists: {path!r}")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(content)
 
     async def destroy(self, plugin_state: dict[str, Any]) -> None:
         working_dir = plugin_state.get("working_dir")

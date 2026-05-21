@@ -28,7 +28,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import session as db_session
-from app.core.primitives import PluginMeta
+from app.core.plugin_meta import PluginMeta
 from app.core.workspace import Workspace, WorkspaceExecError
 from app.domain.coding_agent import (
     ActivityEvent,
@@ -161,8 +161,26 @@ def _load_prompt(name: str) -> str:
 _PARENT_PROMPT_HEADER = _load_prompt("full_review")
 
 
+_MCP_BROKEN_CREDS_ADDENDUM = (
+    "If an MCP tool returns `not_connected` or `broken_creds`, note the missing "
+    "context in your review and continue."
+)
+
+
 def _assemble_review_prompt(ctx: ReviewContext) -> str:
     parts: list[str] = [_PARENT_PROMPT_HEADER, ""]
+    mcp = ctx.agent_config.get("mcp") if isinstance(ctx.agent_config, dict) else None
+    if mcp and mcp.get("servers"):
+        provider_names = sorted(s["provider"] for s in mcp["servers"])
+        parts.extend(
+            [
+                "## MCP context servers",
+                "The following MCP servers are connected for this review and may be "
+                f"called via the `mcp__<server>__<tool>` toolset: {', '.join(provider_names)}.",
+                _MCP_BROKEN_CREDS_ADDENDUM,
+                "",
+            ]
+        )
     if ctx.language_hint:
         parts.extend(
             [
@@ -545,6 +563,28 @@ class ClaudeCodePlugin:
         docs_url="https://docs.claude.com/en/docs/claude-code",
     )
 
+    def install_url(self, org_id: UUID) -> str | None:
+        """No out-of-band install — Claude Code settings are pure form. The
+        bespoke settings page (Phase 10) handles it."""
+        del org_id
+        return None
+
+    def validate_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
+        """Full Pydantic validation: orchestrator + agents shape, enums on
+        model/version/effort, agent count 1..8, name uniqueness within
+        agents. See `settings_schema.validate_settings`. Accepts an empty
+        dict and substitutes defaults so the picker's `POST /api/coding-
+        agents` install path doesn't have to pre-populate settings."""
+        from app.plugins.claude_code.defaults import get_defaults  # noqa: PLC0415
+        from app.plugins.claude_code.settings_schema import (  # noqa: PLC0415
+            validate_settings as _validate,
+        )
+
+        if not settings:
+            d = get_defaults()
+            settings = {"orchestrator": d["orchestrator"], "agents": d["agents"]}
+        return _validate(settings)
+
     async def _load_settings_for_invocation(self) -> tuple[str | None, str | None]:
         """Returns (decrypted_api_key, cli_path). Timeout is a constant — see
         `_DEFAULT_TIMEOUT_SECONDS`. Per-call override via `agent_config["timeout_seconds"]`."""
@@ -567,7 +607,8 @@ class ClaudeCodePlugin:
         context: ReviewContext,
         on_activity: OnActivity | None = None,
     ) -> ReviewResult:
-        prep = await self._prepare_invocation(context.agent_config)
+        mcp_tools = await _materialize_mcp_config(workspace, context.agent_config.get("mcp"))
+        prep = await self._prepare_invocation(context.agent_config, extra_allowed_tools=mcp_tools)
         if isinstance(prep, ReviewResult):
             return prep
         argv, env, timeout = prep
@@ -620,6 +661,7 @@ class ClaudeCodePlugin:
         agent_config: dict[str, Any],
         *,
         allowed_tools_override: str | None = None,
+        extra_allowed_tools: list[str] | None = None,
     ) -> tuple[list[str], dict[str, str], int] | ReviewResult:
         """Load settings, build argv + env. Returns ReviewResult on early failure.
 
@@ -674,7 +716,8 @@ class ClaudeCodePlugin:
                     "Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),"
                     "Bash(git ls-files:*),Bash(git rev-parse:*),Bash(git status)"
                 )
-            ),
+            )
+            + ("," + ",".join(extra_allowed_tools) if extra_allowed_tools else ""),
         ]
         return argv, env, timeout
 
@@ -981,6 +1024,46 @@ class ClaudeCodePlugin:
 _plugin = ClaudeCodePlugin()
 
 
+_MCP_CONFIG_FILE = ".mcp.json"
+
+
+async def _materialize_mcp_config(
+    workspace: Workspace,
+    mcp_payload: dict[str, Any] | None,
+) -> list[str]:
+    """Write a Claude-Code `.mcp.json` into the workspace from the reviewer's
+    MCP payload. Returns the per-server `mcp__<server>__<tool>` allowed-tools
+    additions (defense in depth — the proxy is the actual gate).
+
+    Returns an empty list when no payload is provided.
+    """
+    if not mcp_payload or not mcp_payload.get("servers"):
+        return []
+    token = mcp_payload["token"]
+    base_url = mcp_payload["base_url"]
+    config = {
+        "mcpServers": {
+            s["provider"]: {
+                "type": "http",
+                "url": f"{base_url}/{s['provider']}",
+                "headers": {"Authorization": f"Bearer {token}"},
+            }
+            for s in mcp_payload["servers"]
+        }
+    }
+    await workspace.write_text(_MCP_CONFIG_FILE, json.dumps(config, indent=2))
+    extras: list[str] = []
+    for s in mcp_payload["servers"]:
+        provider = s["provider"]
+        allowed = set(s.get("allowed_tools") or [])
+        for tool in s.get("known_read_tools", []):
+            extras.append(f"mcp__{provider}__{tool}")
+        for tool in s.get("known_write_tools", []):
+            if tool in allowed:
+                extras.append(f"mcp__{provider}__{tool}")
+    return extras
+
+
 # ── Anthropic auth probe ──────────────────────────────────────────────────────
 # Keyed by sha256(key) so cache survives across re-reads of the same value and
 # automatically resets when the key changes. `_set_anthropic_key` also flushes
@@ -1116,11 +1199,16 @@ async def bootstrap_anthropic_env() -> None:
 
 
 def bootstrap() -> None:
-    from app.domain.settings import register_onboarding_contributor  # noqa: PLC0415
+    from app.core.byok import register_validator as _byok_register_validator  # noqa: PLC0415
+    from app.domain.orgs import register_onboarding_contributor  # noqa: PLC0415
+    from app.plugins.claude_code.byok_validator import validate_anthropic_key  # noqa: PLC0415
     from app.plugins.claude_code.installer import install_subagents  # noqa: PLC0415
 
     register_coding_agent_plugin(_plugin)
     register_onboarding_contributor("anthropic_key_set", _onboarding_anthropic_key_set)
+    # M03 BYOK: the `/api/byok/anthropic/validate` endpoint dispatches to this
+    # callable so core/byok stays free of provider-specific HTTP.
+    _byok_register_validator("anthropic", validate_anthropic_key)
     # Install yaaos-* subagent definitions so the parent reviewer can dispatch
     # them via the Task tool. Static files, idempotent — fine to run on every
     # backend startup. M02+ Docker-workspace isolation will move this per-
