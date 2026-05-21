@@ -34,6 +34,18 @@ Reads `settings.log_level` and `settings.yaaos_env`. Processor chain: `merge_con
 
 The boot path always sets up the SDK so M05 wire-protocol code (`traceparent` propagation, structlog correlation, ActivityEvent linkage) can rely on it without flags. Adding a real exporter in prod later (Datadog / Honeycomb / Tempo) is a single env-var flip — no code change.
 
+### Wire-protocol trace propagation (Phase 8)
+
+Three helpers bridge the in-process OTel SDK and the `traceparent` strings the wire protocol carries:
+
+- `current_traceparent() -> str | None` — serializes the active span context as a W3C `traceparent`. Returns `None` outside any span.
+- `restore_traceparent_context(traceparent) -> Context | None` — parses a `traceparent` and returns the OTel `Context` whose active span points at the remote span.
+- `with_remote_parent_span(tracer, name, traceparent)` — context manager that emits a span sharing the trace id of `traceparent`. Falls back to a fresh trace when `traceparent` is None / malformed.
+
+`domain/intake/web.post_intake` records `current_traceparent()` when a webhook arrives and passes it into `core/workflow.get_engine().start(traceparent=...)`. The workflow execution row stamps `otel_trace_context`; downstream tasks restore that context when they emit work-spans. The architecture's "one trace_id covers webhook → ... → terminal outcome" property rides on this thread.
+
+Task-body span emission (per-`start_step`, per-`route_workflow`, per-`handle_agent_event` work spans) lands in the Phase 8 follow-on; the helpers are in place and unit-tested today.
+
 ### Idempotency
 
 Module-level `_initialized` flag guards repeat `configure()` calls. The OTel SDK has its own global state — a second `set_tracer_provider` is a no-op; the instrument-once try/except in `_configure_otel` absorbs the duplicate-instrumentation exceptions raised by FastAPI/SQLAlchemy instrumentors on test reload.

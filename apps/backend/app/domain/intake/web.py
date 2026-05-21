@@ -89,10 +89,16 @@ async def post_intake(request: Request, type: str = Path(...)) -> JSONResponse:
                 content={"status": "duplicate", "ticket_id": str(ticket_id)},
             )
 
+        # Snapshot the active OTel trace context so the workflow can stamp
+        # `otel_trace_context` on its execution row + propagate the same
+        # trace id across every downstream task hop (Phase 8).
+        from app.core.observability import current_traceparent  # noqa: PLC0415
+
         engine = get_engine()
         workflow_execution_id = await engine.start(
             workflow_name=handler.workflow_name,
             ticket_id=str(ticket_id),
+            traceparent=current_traceparent(),
             session=s,
         )
         from uuid import UUID  # noqa: PLC0415
