@@ -57,25 +57,25 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 
 ## Phase 1 — `core/workflow` engine (async event-driven model)
 
-- [ ] `Workflow` + `Step` Pydantic data structures.
-- [ ] `WorkflowCommand` interface with `category` (Workspace/Local/HITL), `execute()` returning `Outcome`.
-- [ ] `Outcome` types: success-with-outputs, failure-with-reason, hitl-pending-with-question.
-- [ ] `append_steps` mechanism.
-- [ ] `WorkflowEngine` class with registries + `start()`.
-- [ ] **Three `core/tasks` tasks:** `start_step`, `handle_agent_event`, `route_workflow`.
-- [ ] `start_step` branches on Command category: Workspace dispatches + exits (`state=awaiting_agent`); Local runs inline; HITL writes pending decision.
-- [ ] `handle_agent_event` triggered by `core/agent_gateway`; validates `pending_agent_command_id` match; enqueues `route_workflow`.
-- [ ] `route_workflow` persists outcome, applies retry budget, evaluates transitions.
-- [ ] State machine includes `awaiting_agent` state + `pending_agent_command_id` column on `workflow_executions`.
-- [ ] Event-to-workflow lookup chain in `core/agent_gateway` (`agent_command_id → workspaces → current_holder_workflow_id`).
-- [ ] Atomic state transitions + outbox enqueue in single Postgres transaction.
-- [ ] Tier-2 retry per step policy.
-- [ ] Tier-3 transition on retry exhaustion.
-- [ ] Cancellation (Floor 2): `cancel_requested` check; cancel during `awaiting_agent` waits for event then routes cleanup.
-- [ ] HITL pause + resume API.
-- [ ] OTel span propagation: workflow span + child spans per task.
-- [ ] Tests: Local-only workflow; Workspace step async cycle; failure + retry; HITL pause + resume; append_steps; backend restart with `awaiting_agent` workflows; cancellation during `awaiting_agent`; idempotent duplicate event handling.
-- [ ] **Async-model load test:** 100 simultaneous workflows dispatching long-running AgentCommands all dispatch within < 1s wall time (verifies workers don't block).
+- [x] `Workflow` + `Step` Pydantic data structures.
+- [x] `WorkflowCommand` interface with `category` (Workspace/Local/HITL), `execute()` returning `Outcome`.
+- [x] `Outcome` types: success-with-outputs, failure-with-reason, hitl-pending-with-question.
+- [x] `append_steps` mechanism.
+- [x] `WorkflowEngine` class with registries + `start()`.
+- [x] **Three `core/tasks` tasks:** `start_step`, `handle_agent_event`, `route_workflow`.
+- [x] `start_step` branches on Command category: Workspace dispatches + exits (`state=awaiting_agent`); Local runs inline; HITL writes pending decision. _(Workspace branch sets `state=awaiting_agent` + synthesizes `pending_agent_command_id`; real `core/workspace.dispatch` wiring lands in Phase 3.)_
+- [x] `handle_agent_event` triggered by `core/agent_gateway`; validates `pending_agent_command_id` match; enqueues `route_workflow`. _(Body shipped; `core/agent_gateway` enqueue site lands in Phase 5.)_
+- [x] `route_workflow` persists outcome, applies retry budget, evaluates transitions.
+- [x] State machine includes `awaiting_agent` state + `pending_agent_command_id` column on `workflow_executions`.
+- [ ] Event-to-workflow lookup chain in `core/agent_gateway` (`agent_command_id → workspaces → current_holder_workflow_id`). _(Lives in `core/agent_gateway`, Phase 5.)_
+- [x] Atomic state transitions + outbox enqueue in single Postgres transaction.
+- [x] Tier-2 retry per step policy.
+- [x] Tier-3 transition on retry exhaustion.
+- [x] Cancellation (Floor 2): `cancel_requested` check; cancel during `awaiting_agent` waits for event then routes cleanup.
+- [x] HITL pause + resume API.
+- [ ] OTel span propagation: workflow span + child spans per task. _(traceparent threaded through task args; span emission lands alongside the wire-protocol span work in Phase 8.)_
+- [x] Tests: Local-only workflow; Workspace step async cycle; failure + retry; HITL pause + resume; append_steps; backend restart with `awaiting_agent` workflows; cancellation during `awaiting_agent`; idempotent duplicate event handling. _(Backend-restart resume relies on the broker re-delivering pending tasks; full e2e restart test lands once `apps/backend/bin/worker` wires the broker in Phase 1 cont'd.)_
+- [ ] **Async-model load test:** 100 simultaneous workflows dispatching long-running AgentCommands all dispatch within < 1s wall time (verifies workers don't block). _(Defer until the broker + worker entry are wired; in-memory dispatch in the unit tests doesn't exercise the worker-blocking property the load test targets.)_
 
 ## Phase 2 — extend `domain/tickets` + `domain/intake`
 
