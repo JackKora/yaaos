@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: yaaos WorkspaceAgent wire protocol
+  version: 0.0.1
+  summary: |
+    HTTPS long-poll + WebSocket protocol between WorkspaceAgent (customer-deployed
+    Go binary in `apps/agent/`) and the yaaos control plane (`core/agent_gateway`).
+
+    M05 Phase 0b: skeleton only. The full spec lands in Phase 5 (long-poll
+    endpoints, identity exchange, AgentCommand union, AgentEvent schemas,
+    traceparent propagation). Phase 8b adds the bidirectional activity-stream
+    WebSocket.
+
+    Backend Pydantic models codegen from this file via `bin/sync_modules`;
+    Go types codegen via `oapi-codegen`. Both regenerations run in CI.
+
+servers:
+  - url: https://agent.yaaos.dev
+    description: production
+  - url: http://localhost:8080
+    description: local dev
+
+paths: {}
+
+components:
+  schemas: {}

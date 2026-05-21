@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Agent CI: go vet + go build. Phase 0b: skeleton — flesh out with tests in
+# M05 Phase 6.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "==> go vet"
+go vet ./...
+
+echo "==> go build"
+go build ./...
+
+echo "OK"

@@ -79,8 +79,12 @@ After bootstrap, sign in via the GitHub OAuth provider button on the login page.
 
 From the repo root:
 
-- `docker compose -f docker/docker-compose.yml --env-file .env up -d --build` brings up Postgres + the yaaos backend (which serves the API on `:8080` and the bundled SPA).
+- `docker compose -f docker/docker-compose.yml --env-file .env up -d --build` brings up Postgres + Redis + the yaaos backend (which serves the API on `:8080` and the bundled SPA).
 - Visit `http://localhost:8080`. The dashboard renders the onboarding stepper because no GitHub App is installed and no Anthropic key is set.
+
+### M05 dev story (in progress)
+
+M05 adds a separate worker process (`apps/backend/bin/worker`) that runs taskiq workers + the outbox drain in a single Python process against Redis. Local dev uses the in-memory `WorkspaceProvider` so no Go `apps/agent/` container is required; remote-agent provisioning is exercised in the test stack only. Wire-up lands across Phases 0b–9 — until then, the worker process and Go agent are scaffolds and review work still runs in-process via the legacy reviewer queue.
 
 ## 3. Create the GitHub App (Manifest Flow)
 

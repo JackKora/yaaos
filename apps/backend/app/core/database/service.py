@@ -137,6 +137,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("011_drop_claude_code_default_timeout_seconds", "drop_claude_code_default_timeout_seconds"),
     ("012_create_all_m03", "create_all_m03"),
     ("013_create_all_m04", "create_all_m04"),
+    ("014_create_outbox_entries", "create_outbox_entries"),
 )
 
 
@@ -465,6 +466,20 @@ async def _apply_create_all_m04(conn) -> None:  # type: ignore[no-untyped-def]
     await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
 
 
+async def _apply_create_outbox_entries(conn) -> None:  # type: ignore[no-untyped-def]
+    """M05 Phase 0b — DB-atomic outbound message queue table.
+
+    Backs `core/outbox.write()` + the drain loop in `apps/backend/bin/worker`.
+    Future M05 phases add their own migrations as more tables come online
+    (see plan/milestones/M05-workspace-agent/DECISIONS.md). Idempotent.
+    """
+    import importlib  # noqa: PLC0415
+
+    importlib.import_module("app.core.outbox.models")
+    new_tables = [Base.metadata.tables["outbox_entries"]]
+    await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
+
+
 async def _apply_create_all_m03(conn) -> None:  # type: ignore[no-untyped-def]
     """M03 — settings + sidebar restructure.
 
@@ -545,6 +560,8 @@ async def migrate() -> None:
                 await _apply_create_all_m03(conn)
             elif kind == "create_all_m04":
                 await _apply_create_all_m04(conn)
+            elif kind == "create_outbox_entries":
+                await _apply_create_outbox_entries(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

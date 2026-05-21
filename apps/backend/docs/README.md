@@ -9,7 +9,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 
 ## Module map
 
-27 modules: **10 core · 10 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections.
+33 modules: **15 core · 10 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections. M05 scaffolding adds 5 core modules (`tasks`, `outbox`, `workflow`, `agent_gateway`, `sse_pubsub`) — most are skeletons in Phase 0b, fleshed out in later phases.
 
 ### Core — infrastructure, no business logic
 
@@ -25,6 +25,11 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [core_plugin_meta](core_plugin_meta.md) | `PluginMeta` + `PluginType` — self-description every plugin exposes. |
 | [core_llm](core_llm.md) | Direct LLM call mechanics: `FilePrompt`, `PromptRunnable`, gateway routing. |
 | [core_auth](core_auth.md) | M02 default-deny middleware, contextvars, `Action` enum, `org_context()`. |
+| [core_tasks](core_tasks.md) | `@task` decorator + atomic-in-session `enqueue()` over taskiq + Redis (M05 scaffold). |
+| [core_outbox](core_outbox.md) | DB-atomic outbound message queue backing `core/tasks` (M05 scaffold). |
+| [core_workflow](core_workflow.md) | Workflow engine — typed workflows + WorkflowCommand categories (M05 skeleton). |
+| [core_agent_gateway](core_agent_gateway.md) | Wire protocol to customer-deployed WorkspaceAgents (M05 skeleton). |
+| [core_sse_pubsub](core_sse_pubsub.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers (M05 skeleton). |
 
 ### Domain — business logic, vendor-neutral
 

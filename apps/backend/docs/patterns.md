@@ -130,6 +130,22 @@ Rules:
 
 Alembic CLI is only used for `alembic revision --autogenerate -m "..."`. Direct `alembic upgrade` is forbidden.
 
+## Durable tasks via `core/tasks` + `core/outbox`
+
+Use [`core/tasks`](core_tasks.md) when work must survive backend restarts, has retry policy, or participates in a workflow. Use [`core/observability.spawn()`](core_observability.md) for fire-and-forget request-scoped background work without durability needs.
+
+`@task` registers a body; `enqueue(task_ref, args, *, session)` writes a `taskiq_enqueue` row to `outbox_entries` in the caller's session. The drain (`apps/backend/bin/worker`, Phase 1+) pushes outbox rows to Redis after commit. The atomic-in-session contract: task is durable iff the caller's transaction commits.
+
+Task bodies must be idempotent — a drain crash between dispatch and `dispatched_at` stamp can redispatch. Bodies look up state from DB (don't carry "do this once" semantics in the args).
+
+## WorkflowCommand interface (M05 Phase 1+)
+
+Engine in [`core/workflow`](core_workflow.md). Workflows are typed data structures registered at startup; commands fall into three categories — Workspace, Local, HITL — with a single `execute()` returning a typed `Outcome`. See [plan/milestones/M05-workspace-agent/architecture.md § Workflow + WorkflowCommand model](../../../plan/milestones/M05-workspace-agent/architecture.md#workflow--workflowcommand-model) for the full design. Phase 0b ships the empty module skeleton; this section expands when Phase 1 lands.
+
+## WorkspaceProvider contract (M05 Phase 3+)
+
+[`core/workspace`](core_workspace.md) declares the `WorkspaceProvider` Protocol; two implementations ship in M05: `InMemoryWorkspaceProvider` (existing plugin, evolves) and `RemoteAgentWorkspaceProvider` (dispatches via [`core/agent_gateway`](core_agent_gateway.md)). The Protocol is the single seam between control plane and provider — both implementations enforce the same invariants (single-flight per workspace, failure-report-precedes-disposal, recovery policies). Phase 3 expands this section.
+
 ## Audit log discipline
 
 Three sinks — one event may legitimately appear in all three:
