@@ -100,15 +100,15 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 
 ## Phase 4 — `domain/coding_agent` + `domain/reviewer` evolution (ALL five task modes as WorkflowCommands)
 
-- [ ] `domain/coding_agent` builds the `invocation` block of `InvokeClaudeCode` AgentCommand payloads; per-mode prompt configuration.
-- [ ] `domain/reviewer/admission.py` — extract gate logic from `queue.py:769-834` + `aggregate.py:post_process_raw_findings` into a single pure function.
-- [ ] **Workspace WorkflowCommands (5):** `CodeReview`, `IncrementalReview`, `VerifyFix`, `StaleCheck`, `AnswerQuestion`. Each invokes the matching coding_agent method.
-- [ ] **Local WorkflowCommands:** `CheckShouldReview`, `PostFindings`, `ResolveFinding`, `ArchiveStaleFindings`, `PostReply`.
-- [ ] **Five workflow definitions in `domain/reviewer/workflows/`:** `pr_review_v1`, `incremental_review_v1`, `verify_fix_v1`, `stale_check_v1`, `answer_question_v1`.
-- [ ] All workflows + commands register with `core/workflow` at startup.
-- [ ] **`domain/reviewer/queue.py` dismantled:** `schedule_review`, `_run_review_job_inner`, `_inflight_tasks`, `cancel_pending`, inline admission filters — all removed. File deleted at end of phase. No spawn()-based reviewer code remains.
-- [ ] `review_jobs` table dropped (per Topic 2 lock).
-- [ ] Tests: E2E for each of the 5 workflows against `InMemoryWorkspaceProvider`. Span linkage assertion. Admission gates tested. Cross-review fingerprint dedup test.
+- [ ] `domain/coding_agent` builds the `invocation` block of `InvokeClaudeCode` AgentCommand payloads; per-mode prompt configuration. _(Methods already exist; the wiring through Workspace command bodies lands in the follow-on Phase 4 iteration.)_
+- [ ] `domain/reviewer/admission.py` — extract gate logic from `queue.py:769-834` + `aggregate.py:post_process_raw_findings` into a single pure function. _(Follow-on iteration; admission still flows through `queue.py` until the dismantle.)_
+- [ ] **Workspace WorkflowCommands (5):** `CodeReview`, `IncrementalReview`, `VerifyFix`, `StaleCheck`, `AnswerQuestion`. Each invokes the matching coding_agent method. _(Stub classes registered in `domain/reviewer/commands/`; bodies wired in the follow-on iteration.)_
+- [ ] **Local WorkflowCommands:** `CheckShouldReview`, `PostFindings`, `ResolveFinding`, `ArchiveStaleFindings`, `PostReply`. _(Stub classes registered; bodies wired in the follow-on iteration.)_
+- [x] **Five workflow definitions in `domain/reviewer/workflows/`:** `pr_review_v1`, `incremental_review_v1`, `verify_fix_v1`, `stale_check_v1`, `answer_question_v1`.
+- [x] All workflows + commands register with `core/workflow` at startup.
+- [ ] **`domain/reviewer/queue.py` dismantled:** `schedule_review`, `_run_review_job_inner`, `_inflight_tasks`, `cancel_pending`, inline admission filters — all removed. File deleted at end of phase. No spawn()-based reviewer code remains. _(Follow-on iteration; queue.py still drives reviews until the new command bodies are wired.)_
+- [ ] `review_jobs` table dropped (per Topic 2 lock). _(Drops alongside the queue.py dismantle.)_
+- [ ] Tests: E2E for each of the 5 workflows against `InMemoryWorkspaceProvider`. Span linkage assertion. Admission gates tested. Cross-review fingerprint dedup test. _(5 registration tests shipped (workflows registered, every step's command_kind resolves, lifecycle + Workspace + Local commands present). E2E rides on the command-body wiring.)_
 
 ## Phase 5 — `core/agent_gateway` + wire protocol
 
