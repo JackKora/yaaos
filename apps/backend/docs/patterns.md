@@ -171,15 +171,33 @@ Every `/api/*` route declares its security via `Depends(require(action))` (org-s
 
 | Category | Where | What | External deps |
 |---|---|---|---|
-| Unit | `<module>/test/test_*.py` | Pure logic. Used sparingly. | None |
+| Unit | `<module>/test/test_*.py` | Pure logic, one function/class. Used sparingly. | None |
 | Integration | `<module>/test/test_*.py` | Module's public interface end-to-end. **Primary form.** | Real Postgres (transactional rollback); `apps/fake-github`; coding-agent CLI stub. |
-| E2E | `apps/e2e/` | Full stack via browser. | `docker-compose.test.yml`. |
+| Service | `<module>/test/test_*_service.py` | Cross-module flow (3+ modules) driven from an entry point, in-process. | Real Postgres; stub plugins. |
+| E2E | `apps/e2e/` | Browser-visible behavior — SSE updates, cookies, OAuth redirects, route navigation. | `docker-compose.test.yml`. |
+
+### Service tests
+
+When a backend flow crosses **3+ modules** (e.g. webhook → intake → reviewer → vcs.post_review → audit), write ONE service test that drives the entry-point function or HTTP route end-to-end and asserts the durable state across every module it touches. Service tests are the **default** for backend-only flows; reach for Playwright only when the contract is browser-visible.
+
+Mechanics:
+
+- **Real Postgres via `db_session`.** Transactional rollback per test — production code's `session()` hits the override; inner `commit()` calls become SAVEPOINT releases; outer transaction rolls back on teardown. Empty DB at start of each test.
+- **Stub plugins from `app/testing/`.** `YAAOS_CODING_AGENT_STUB=1` (set by `conftest.py`) wraps registered coding-agent plugins with `StubCodingAgentPlugin` that returns a canned `ReviewResult`. `app.testing.stub_workspace.wrap_all_registered_workspace_providers()` swaps the workspace providers for flows that provision a workspace.
+- **HTTP routes via `httpx.ASGITransport`.** Drive endpoints in-process without a network listener. The pattern is already used by `app/domain/integrations/test/test_endpoints.py`, `app/domain/mcp_proxy/test/test_dispatch.py`, etc.
+- **Seed helpers from `app/testing/e2e_setup/`.** `seed_credentials_and_install`, `seed_lesson`, etc. are HTTP shims around the same domain calls a Playwright spec would hit — reuse them from pytest.
+
+Naming: `test_<flow>_service.py` in the owning module's `test/` directory. Owner is whichever module holds the entry-point function (the one you `await` first in the test body).
+
+Marker: every service test is decorated `@pytest.mark.service`. Run only the service tier with `pytest -m service`; run the fast unit-only loop with `pytest -m "not service"`. The default `bin/ci` invocation runs both — the marker is for developer ergonomics, not a CI skip.
+
+Assert on the **durable state production reads** — audit rows by kind, posted-comment count via the stub vcs plugin, finding state in the aggregate, `last_refresh_status`, the test inbox (`get_test_inbox()`), event-bus publications. Don't assert on intermediate log lines unless the log is the contract.
 
 ### Integration test pattern
 
 - Exercise public interface, not internals.
 - Real Postgres. Each test runs inside a transaction rolled back at teardown. Empty DB at start.
-- Inbound HTTP: `fastapi.testclient.TestClient` in-process.
+- Inbound HTTP: `fastapi.testclient.TestClient` or `httpx.ASGITransport` in-process.
 - Outbound HTTP: routed to `apps/fake-github` via `GITHUB_API_BASE_URL`. Real plugin code paths run.
 - Coding-agent: `YAAOS_CODING_AGENT_STUB=1` swaps in `testing/stub_coding_agent`.
 
