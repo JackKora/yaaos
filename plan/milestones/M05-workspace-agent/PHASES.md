@@ -134,11 +134,11 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 
 ## Phase 7 — `RemoteAgentWorkspaceProvider` + identity exchange
 
-- [ ] `RemoteAgentWorkspaceProvider` in `core/workspace`: dispatches via `core/agent_gateway`.
-- [ ] Real STS verifier in `core/agent_gateway`: replays signed STS, extracts ARN, looks up registered customer.
-- [ ] Customer ARN registration UI in Org Settings (provider type selection + ARN entry).
-- [ ] Provisioning policy: least-loaded reachable agent.
-- [ ] Tests: same E2E as Phase 4, against `RemoteAgentWorkspaceProvider` (docker-compose with Go agent + fake STS).
+- [x] `RemoteAgentWorkspaceProvider` in `core/workspace`: dispatches via `core/agent_gateway`. _(Provider class + dispatch helpers shipped. Synchronous `run_coding_agent_cli` raises — the remote model is async event-driven and the Phase 4 Workspace WorkflowCommands enqueue AgentCommands directly.)_
+- [ ] Real STS verifier in `core/agent_gateway`: replays signed STS, extracts ARN, looks up registered customer. _(Phase 7 follow-on. The substrate is in place: `orgs.registered_iam_arn` column, `ensure_agent_row()` ready to receive verified ARN, placeholder verifier in `web.py` documents the swap point.)_
+- [ ] Customer ARN registration UI in Org Settings (provider type selection + ARN entry). _(Backend endpoints shipped — `PATCH /api/orgs` accepts `workspace_provider` + `registered_iam_arn`; `GET /api/workspaces/connection_status` returns the banner state. UI lands in `apps/web/` in the Phase 7 follow-on.)_
+- [ ] Provisioning policy: least-loaded reachable agent. _(`pick_agent_for_org()` returns the most-recently-heartbeated reachable pod; least-loaded counting in-flight commands lands with multi-pod deployments.)_
+- [ ] Tests: same E2E as Phase 4, against `RemoteAgentWorkspaceProvider` (docker-compose with Go agent + fake STS). _(12 unit tests cover the provider + dispatch + heartbeat + connection-status. Docker-compose E2E rides on the Phase 6 follow-on workspace subcommand body + the Phase 4 command-body wiring.)_
 
 ## Phase 8 — span propagation across the wire
 
