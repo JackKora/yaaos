@@ -29,7 +29,7 @@ from app.core.auth.types import Action
 from app.core.byok.models import ByokKeyRow
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
-from app.domain.auth.dependencies import current_actor, require
+from app.domain.sessions.dependencies import current_actor, require
 
 log = structlog.get_logger("byok.web")
 

@@ -1,4 +1,4 @@
-"""HTTP wiring for `domain/auth` — `/api/auth/*` endpoints.
+"""HTTP wiring for `domain/sessions` — `/api/auth/*` endpoints.
 
 `GET  /api/auth/login?provider=<id>&next=<path>` → 302 to the provider's
   authorization URL with a signed `state` carrying the optional post-login
@@ -44,7 +44,6 @@ from app.core.auth.rate_limit import AUTH_LIMIT, MUTATE_LIMIT, limiter
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
-from app.domain.auth.dependencies import public_route
 from app.domain.identity import sessions as session_lifecycle
 from app.domain.identity.providers import (
     ProviderError,
@@ -58,6 +57,7 @@ from app.domain.identity.service import (
     login_via_oauth,
 )
 from app.domain.identity.types import LinkChallengeRequiredError as _LCRE  # noqa: F401
+from app.domain.sessions.dependencies import public_route
 
 log = structlog.get_logger("auth.web")
 
@@ -556,7 +556,7 @@ async def _emit_logout_audit(s, *, user_id, kind: str = "logout") -> None:
         )
 
 
-register_routes(RouteSpec(module_name="auth", router=router))
+register_routes(RouteSpec(module_name="sessions", router=router))
 
 
 __all__ = ["LINK_PENDING_COOKIE", "router"]

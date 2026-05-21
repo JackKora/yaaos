@@ -92,7 +92,7 @@ Operational endpoints, unauthenticated (documented POC limitation; tightened whe
 
 ### POC limits
 
-- `in_process_workspace` ignores `ResourceCaps` and `NetworkPolicy` — the CLI runs with the same permissions as the yaaos process.
+- `in_memory_workspace` ignores `ResourceCaps` and `NetworkPolicy` — the CLI runs with the same permissions as the yaaos process.
 - Admin endpoints unauthenticated.
 - Each review job gets its own workspace (three reviewers on one PR = three workspaces). Wasteful but coordination-free; acceptable at POC scale.
 

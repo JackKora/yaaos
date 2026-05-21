@@ -163,7 +163,7 @@ Every yaaos-issued bearer follows the same shape — adopted in M02 for sessions
 
 ## Route security declarations
 
-Every `/api/*` route declares its security via `Depends(require(action))` (org-scoped, role-gated) or `Depends(public_route)` (no org context required). The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset — the gate is at the route, not the docs. Action → minimum-role map lives in `app/domain/auth/dependencies.py:_REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new protected URL prefix requires extending `app/core/auth/types.py:M02_PROTECTED_PREFIXES` so the middleware forces `X-Org-Slug` resolution before any route logic runs.
+Every `/api/*` route declares its security via `Depends(require(action))` (org-scoped, role-gated) or `Depends(public_route)` (no org context required). The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset — the gate is at the route, not the docs. Action → minimum-role map lives in `app/domain/sessions/dependencies.py:_REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new protected URL prefix requires extending `app/core/auth/types.py:M02_PROTECTED_PREFIXES` so the middleware forces `X-Org-Slug` resolution before any route logic runs.
 
 ## Testing
 
@@ -250,6 +250,6 @@ Don't wrap every domain function — noise hurts more than detail helps.
 4. Import webserver registry — `app.core.webserver` *before any module registers routes*.
 5. Core modules with plugin Protocols — `app.core.audit_log`, `app.core.workspace`.
 6. Domain modules in dependency order — types first (vcs, memory), then coding_agent, then leaf domain modules, then dependents.
-7. Plugins — `in_process_workspace`, `claude_code`, `github`.
+7. Plugins — `in_memory_workspace`, `claude_code`, `github`.
 8. Test-mode wrapping (conditional) — when `YAAOS_CODING_AGENT_STUB=1`, import `app.testing.stub_*` and call `wrap_all_registered_*()`. When `yaaos_env == "dev"`, import `app.testing.e2e_setup` so `/api/testing/*` mounts.
 9. Build the FastAPI app — `webserver.create_app()`.

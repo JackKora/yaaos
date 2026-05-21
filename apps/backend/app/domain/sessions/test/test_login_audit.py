@@ -9,11 +9,11 @@ from fastapi import FastAPI
 
 from app.core.audit_log import list_for_org
 from app.core.auth import AuthMiddleware
-from app.domain.auth import web as _auth_web  # noqa: F401
 from app.domain.identity import repository as identity_repo
 from app.domain.identity.providers import ProviderProfile
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.types import Role
+from app.domain.sessions import web as _auth_web  # noqa: F401
 from app.plugins.oauth_test import set_next_profile
 
 
@@ -22,7 +22,7 @@ def _app() -> FastAPI:
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["auth"]
+    spec = _specs["sessions"]
     app.include_router(spec.router, prefix=spec.url_prefix or "/api/auth")
     return app
 
@@ -92,7 +92,7 @@ async def test_logout_all_emits_audit(db_session, seeded) -> None:
     # path (which has subtle transactional-fixture interaction inside the
     # `async with db_session()` re-entry that lookups the freshly-inserted
     # SessionRow inconsistently across the test client boundary).
-    from app.domain.auth.web import _emit_logout_audit  # noqa: PLC0415
+    from app.domain.sessions.web import _emit_logout_audit  # noqa: PLC0415
 
     await _emit_logout_audit(db_session, user_id=seeded["user"].id, kind="logout_all")
     await db_session.commit()

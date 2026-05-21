@@ -11,12 +11,12 @@ import pytest
 from fastapi import FastAPI
 
 from app.core.auth import AuthMiddleware
-from app.domain.auth import web as auth_web  # noqa: F401 — ensures /api/auth routes register
 from app.domain.identity import repository as repo
 from app.domain.identity.providers import ProviderProfile
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.models import InvitationRow
 from app.domain.orgs.types import Role
+from app.domain.sessions import web as auth_web  # noqa: F401 — ensures /api/auth routes register
 from app.plugins.oauth_test import set_next_profile
 
 
@@ -25,7 +25,7 @@ def _app() -> FastAPI:
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["auth"]
+    spec = _specs["sessions"]
     app.include_router(spec.router, prefix=spec.url_prefix or "/api/auth", tags=["auth"])
     return app
 

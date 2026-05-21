@@ -36,7 +36,7 @@ from app.core.workspace import (
 )
 from app.domain import vcs
 
-log = structlog.get_logger("in_process_workspace")
+log = structlog.get_logger("in_memory_workspace")
 
 
 _ASKPASS_CONTENT = """#!/bin/sh
@@ -105,7 +105,7 @@ async def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
         pass
 
 
-class InProcessWorkspaceProvider:
+class InMemoryWorkspaceProvider:
     meta = PluginMeta(
         id="in_process",
         type="workspace",
@@ -203,7 +203,7 @@ class InProcessWorkspaceProvider:
             raise
         except Exception as e:
             shutil.rmtree(working_dir, ignore_errors=True)
-            raise WorkspaceProvisionError(f"in_process_workspace.provision failed: {e}") from e
+            raise WorkspaceProvisionError(f"in_memory_workspace.provision failed: {e}") from e
         finally:
             if askpass_path:
                 try:
@@ -250,7 +250,7 @@ class InProcessWorkspaceProvider:
         working_dir = plugin_state.get("working_dir")
         if not working_dir or not os.path.isdir(working_dir):
             raise WorkspaceExecError(
-                f"in_process_workspace state missing working_dir or dir gone: {working_dir!r}"
+                f"in_memory_workspace state missing working_dir or dir gone: {working_dir!r}"
             )
 
         start = time.monotonic()
@@ -343,7 +343,7 @@ class InProcessWorkspaceProvider:
         the same way `read_text` is."""
         working_dir = plugin_state.get("working_dir")
         if not working_dir or not os.path.isdir(working_dir):
-            raise WorkspaceExecError(f"in_process_workspace state missing working_dir: {working_dir!r}")
+            raise WorkspaceExecError(f"in_memory_workspace state missing working_dir: {working_dir!r}")
         clean = path.lstrip("/\\")
         target = os.path.realpath(os.path.join(working_dir, clean))
         if not target.startswith(os.path.realpath(working_dir) + os.sep):
@@ -379,7 +379,7 @@ class InProcessWorkspaceProvider:
         if plugin_id == "github":
             return f"https://github.com/{external_id}.git"
         raise WorkspaceProvisionError(
-            f"in_process_workspace: no clone URL pattern for plugin_id={plugin_id!r}"
+            f"in_memory_workspace: no clone URL pattern for plugin_id={plugin_id!r}"
         )
 
     @staticmethod
@@ -447,7 +447,7 @@ class InProcessWorkspaceProvider:
             )
 
 
-_provider = InProcessWorkspaceProvider()
+_provider = InMemoryWorkspaceProvider()
 
 
 def bootstrap() -> None:
@@ -455,5 +455,5 @@ def bootstrap() -> None:
     register_workspace_provider(_provider)
 
 
-def get_provider() -> InProcessWorkspaceProvider:
+def get_provider() -> InMemoryWorkspaceProvider:
     return _provider

@@ -1,4 +1,4 @@
-# plugins/in_process_workspace
+# plugins/in_memory_workspace
 
 > Tempdir-backed `WorkspaceProvider`. Clones repos onto the host filesystem and runs coding-agent CLIs in-process. POC only — no isolation.
 
@@ -8,7 +8,7 @@ The only concrete `core/workspace.WorkspaceProvider` in M01. Implements `provisi
 
 ## Public interface
 
-- Singleton `InProcessWorkspaceProvider` registered into `core/workspace` at `bootstrap()`.
+- Singleton `InMemoryWorkspaceProvider` registered into `core/workspace` at `bootstrap()`.
 - Side-effect import of `web.py` mounts routes (prefix `/api/in_process`):
   - `GET /health` — `{healthy, message, checked_at}`. Tempdir is always available; returns healthy unconditionally.
 - Domain code goes through `core/workspace`'s registry and the abstract `Workspace` handle.
@@ -78,7 +78,7 @@ None. Per-workspace state is the tempdir plus the `{"working_dir": ...}` dict th
 
 ## How it's tested
 
-Unit tests in `app/plugins/in_process_workspace/test/`:
+Unit tests in `app/plugins/in_memory_workspace/test/`:
 
 - `test_provider.py` — fake `VCSPlugin` + a **local bare git repo** as the clone source so the full `git clone` → `fetch` → `checkout` path runs without network. Also covers `run_coding_agent_cli` against trivial `/bin/sh -c` subprocesses (exit codes, stdin piping, timeout-triggered SIGKILL) and `destroy` idempotency.
 

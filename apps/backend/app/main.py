@@ -26,10 +26,10 @@ from app.core import audit_log, workspace  # noqa: F401, E402
 # `Depends(public_route)` so the contextvars + middleware classes exist.
 from app.domain import identity, orgs  # noqa: F401, E402
 from app.core import auth  # noqa: F401, E402
-from app.domain import auth as _domain_auth  # noqa: F401, E402
+from app.domain import sessions as _domain_sessions  # noqa: F401, E402
 
 # Register `/api/memberships/*` and `/api/audit/*` after both `domain.orgs`
-# and `domain.auth` are loaded — `orgs.web` imports `domain.auth.dependencies`,
+# and `domain.sessions` are loaded — `orgs.web` imports `domain.sessions.dependencies`,
 # which imports back into `domain.orgs`, so the cycle must break here, not in
 # `orgs/__init__`.
 from app.domain.identity import account_web as _identity_account_web  # noqa: F401, E402
@@ -50,7 +50,7 @@ from app.domain import reviewer  # noqa: F401, E402
 from app.domain import intake  # noqa: F401, E402
 from app.domain import plugins as _domain_plugins  # noqa: F401, E402
 from app.domain.plugins import web as _domain_plugins_web  # noqa: F401, E402
-from app.domain.byok import web as _domain_byok_web  # noqa: F401, E402
+from app.domain.orgs import byok_routes as _orgs_byok_routes  # noqa: F401, E402
 from app.domain.integrations import web as _domain_integrations_web  # noqa: F401, E402
 from app.domain.mcp_proxy import web as _domain_mcp_proxy_web  # noqa: F401, E402
 from app.domain.orgs import coding_agents_web as _orgs_coding_agents_web  # noqa: F401, E402
@@ -62,7 +62,7 @@ from app.domain.orgs import vcs_web as _orgs_vcs_web  # noqa: F401, E402
 from app.domain import integrations as _domain_integrations  # noqa: F401, E402
 
 # 7. Plugins.
-from app.plugins import in_process_workspace, claude_code, github, linear, notion  # noqa: F401, E402
+from app.plugins import in_memory_workspace, claude_code, github, linear, notion  # noqa: F401, E402
 
 # M04: GitHub OAuth identity provider lives inside `plugins/github` now —
 # `plugins/oauth_github` was deleted. The github plugin's __init__ calls

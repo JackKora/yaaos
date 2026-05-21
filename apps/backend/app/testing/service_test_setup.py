@@ -33,7 +33,7 @@ def ensure_plugins_registered() -> None:
 
         _gh()
     if "in_process" not in _WS:
-        from app.plugins.in_process_workspace.service import bootstrap as _ws  # noqa: PLC0415
+        from app.plugins.in_memory_workspace.service import bootstrap as _ws  # noqa: PLC0415
 
         _ws()
 

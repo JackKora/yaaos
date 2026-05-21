@@ -22,11 +22,11 @@ import pytest
 from app.core.plugin_meta import PluginMeta
 from app.core.workspace import RepoRefForSpec, WorkspaceProvisionError, WorkspaceSpec
 from app.domain import vcs
-from app.plugins.in_process_workspace import get_provider
+from app.plugins.in_memory_workspace import get_provider
 
 
 class _FakeGitHubPlugin:
-    """Minimal VCSPlugin satisfying just what in_process_workspace needs."""
+    """Minimal VCSPlugin satisfying just what in_memory_workspace needs."""
 
     meta = PluginMeta(id="github", type="vcs", display_name="GitHub (fake)")
 

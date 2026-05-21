@@ -1,4 +1,4 @@
-"""HTTP routes owned by the in_process_workspace plugin.
+"""HTTP routes owned by the in_memory_workspace plugin.
 
 Plugin-owned URL namespace per `plan/milestones/M01-code-review/backend.md` §
 2026-05-16 — each plugin exposes its health check under `/api/<plugin>/...`.
@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import public_route
 from app.core.webserver import RouteSpec, register_routes
-from app.plugins.in_process_workspace.service import get_provider
+from app.plugins.in_memory_workspace.service import get_provider
 
 router = APIRouter(dependencies=[Depends(public_route)])
 

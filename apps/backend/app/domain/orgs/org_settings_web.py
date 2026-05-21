@@ -21,8 +21,8 @@ from app.core.auth.context import org_id_var
 from app.core.auth.types import Action
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
-from app.domain.auth.dependencies import require
 from app.domain.orgs.models import OrgRow
+from app.domain.sessions.dependencies import require
 
 log = structlog.get_logger("orgs.settings.web")
 

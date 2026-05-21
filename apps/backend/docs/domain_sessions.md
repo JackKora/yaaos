@@ -1,4 +1,4 @@
-# domain/auth
+# domain/sessions
 
 > FastAPI dependency factories that wire the [`core/auth`](core_auth.md) middleware into identity + orgs lookups.
 
@@ -8,7 +8,7 @@
 
 ## Public interface
 
-Exported from `app/domain/auth/__init__.py`:
+Exported from `app/domain/sessions/__init__.py`:
 
 - `require(action)` — dependency factory. Resolves `X-Org-Slug` → org → membership → role check. Sets the identity contextvars + `route_security_resolved = "membership"`. Returns the `Membership` so handlers that want it can `Depends(require(...))` directly.
 - `public_route` — dependency for routes that intentionally have no auth requirement. Sets `route_security_resolved = "public"`. Using this where a role check should live is the bug the post-response guard catches.
