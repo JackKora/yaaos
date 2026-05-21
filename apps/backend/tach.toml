@@ -6,7 +6,7 @@ exclude = [".venv", "test"]
 
 [[modules]]
 path = "app.core.agent_gateway"
-depends_on = []
+depends_on = ["app.core.auth", "app.core.database", "app.core.tasks", "app.core.webserver", "app.core.workflow", "app.core.workspace"]
 
 [[modules]]
 path = "app.core.audit_log"

@@ -21,6 +21,11 @@ from app.core import webserver  # noqa: E402
 # 5. Core modules whose plugins are domain-facing.
 from app.core import audit_log, workspace  # noqa: F401, E402
 
+# 5a. M05 workflow engine + agent gateway. Workflow engine registers the
+# three taskiq task names at import; agent_gateway registers `/v1/*` routes.
+from app.core import workflow as _core_workflow  # noqa: F401, E402
+from app.core import agent_gateway as _core_agent_gateway  # noqa: F401, E402
+
 # 5b. Identity + tenancy + auth middleware (M02). Must be imported before
 # any domain module that declares `Depends(require(...))` or
 # `Depends(public_route)` so the contextvars + middleware classes exist.

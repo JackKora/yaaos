@@ -1,9 +1,86 @@
-"""core/agent_gateway — wire protocol to WorkspaceAgents (Phase 5+ flesh-out).
+"""core/agent_gateway — wire protocol to WorkspaceAgents.
 
-M05 Phase 0b ships an empty skeleton so the layered dependency graph
-(`tach.toml`) and per-module doc structure are in place before later phases
-add the long-poll endpoint, identity exchange, and event ingestion. No
-public symbols yet.
+Five HTTPS endpoints under `/v1/`: identity-exchange, heartbeat,
+commands/claim (long-poll), commands/{id}/events, workspaces/{id}/events.
+The WebSocket activity stream lands in Phase 8b.
+
+Phase 5 ships:
+- Hand-written Pydantic wire types (mirror of `apps/backend/openapi/agent-api.yaml`).
+- Per-agent in-memory dispatch FIFO + async long-poll.
+- Heartbeat reconciliation (control-plane returns workspaces the agent
+  should forget).
+- Event ingestion with the stale-claim guard (`410 Gone` on mismatch).
+- Placeholder identity verifier (accepts any non-empty bearer); real
+  STS-replay verifier lands in Phase 7.
 """
 
-__all__: list[str] = []
+from app.core.agent_gateway import web  # noqa: F401 — registers /v1/* routes
+from app.core.agent_gateway.service import (
+    _reset_queues_for_tests,
+    claim_next,
+    enqueue_command,
+    queue_depth,
+    record_agent_event,
+    record_heartbeat,
+    record_workspace_event,
+)
+from app.core.agent_gateway.types import (
+    TERMINAL_EVENT_KINDS,
+    AgentCommand,
+    AgentCommandKind,
+    AgentEvent,
+    AgentEventKind,
+    AuthBlock,
+    CleanupWorkspaceCommand,
+    CreateWorkspaceCommand,
+    GatewayError,
+    HeartbeatRequest,
+    HeartbeatResponse,
+    HeartbeatWorkspaceEntry,
+    IdentityExchangeRequest,
+    IdentityExchangeResponse,
+    InvokeClaudeCodeCommand,
+    InvokeClaudeCodeLimits,
+    RefreshWorkspaceAuthCommand,
+    RepoRef,
+    StaleClaimError,
+    UnauthorizedError,
+    WorkspaceEvent,
+    WorkspaceEventKind,
+    WriteFilesCommand,
+    WriteFilesEntry,
+)
+
+__all__ = [
+    "TERMINAL_EVENT_KINDS",
+    "AgentCommand",
+    "AgentCommandKind",
+    "AgentEvent",
+    "AgentEventKind",
+    "AuthBlock",
+    "CleanupWorkspaceCommand",
+    "CreateWorkspaceCommand",
+    "GatewayError",
+    "HeartbeatRequest",
+    "HeartbeatResponse",
+    "HeartbeatWorkspaceEntry",
+    "IdentityExchangeRequest",
+    "IdentityExchangeResponse",
+    "InvokeClaudeCodeCommand",
+    "InvokeClaudeCodeLimits",
+    "RefreshWorkspaceAuthCommand",
+    "RepoRef",
+    "StaleClaimError",
+    "UnauthorizedError",
+    "WorkspaceEvent",
+    "WorkspaceEventKind",
+    "WriteFilesCommand",
+    "WriteFilesEntry",
+    "_reset_queues_for_tests",
+    "claim_next",
+    "enqueue_command",
+    "queue_depth",
+    "record_agent_event",
+    "record_heartbeat",
+    "record_workspace_event",
+]
