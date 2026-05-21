@@ -79,11 +79,11 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 
 ## Phase 2 — extend `domain/tickets` + `domain/intake`
 
-- [ ] `domain/tickets` extensions: add `type` column (default `'pr_review'` for existing rows), `idempotency_key text unique`, `current_workflow_execution_id uuid` nullable FK. Reconcile state machine (existing `in_review|complete|abandoned` mapped to new `running|done|cancelled`; new `pending` + `failed` added). New method `create(type, payload, idempotency_key)`.
-- [ ] Intake type registry (internal to `domain/intake`).
-- [ ] `github_pr` intake type registered.
-- [ ] Webhook endpoint `POST /api/intake/{type}` — verifies, dedups, creates ticket, starts workflow, returns 200.
-- [ ] Tests: signature failure → 401; duplicate → idempotent 200; happy path → ticket + workflow execution + enqueued task.
+- [x] `domain/tickets` extensions: add `type` column (default `'pr_review'` for existing rows), `idempotency_key text unique`, `current_workflow_execution_id uuid` nullable FK. Reconcile state machine (existing `in_review|complete|abandoned` mapped to new `running|done|cancelled`; new `pending` + `failed` added). New method `create(type, payload, idempotency_key)`. _(Schema + new methods shipped. State-vocab convergence (rename legacy values) deferred to Phase 4 alongside the queue.py dismantle — both code paths run in parallel until then.)_
+- [x] Intake type registry (internal to `domain/intake`).
+- [x] `github_pr` intake type registered. _(Lives in `plugins/github` and self-registers at bootstrap so domain doesn't import plugin.)_
+- [x] Webhook endpoint `POST /api/intake/{type}` — verifies, dedups, creates ticket, starts workflow, returns 200.
+- [x] Tests: signature failure → 401; duplicate → idempotent 200; happy path → ticket + workflow execution + enqueued task.
 
 ## Phase 3 — `core/workspace` extensions + `InMemoryWorkspaceProvider`
 
