@@ -31,19 +31,19 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 
 ## Phase 0b — scaffolding
 
-- [ ] Migration `0XX_create_all_m05` registered. taskiq uses Redis (no Postgres tables for queue itself; only our `outbox_entries` table needs migration).
-- [ ] Tables created: `tickets` (with new `type` column), `workflow_executions` (with `pending_agent_command_id` + `cancel_requested`), `pending_human_decisions`, `workspaces` (extended schema), `workspace_agents`, `outbox_entries`, `reviews`, `findings` (simplified). `review_jobs` dropped.
-- [ ] **Redis service added** to `docker/docker-compose.yml` and `docker/docker-compose.test.yml`. CI brings Redis up; tests assume Redis available (no mocking).
-- [ ] New backend modules skeletoned: `core/agent_gateway`, `core/workflow`, `core/tasks`, `core/outbox`, `core/sse_pubsub`, `domain/intake` (extended), `domain/tickets` (extended).
-- [ ] `core/tasks` scaffold: taskiq broker configured with Redis (`REDIS_URL` from settings); `@task` decorator wrapping taskiq; `enqueue(task, args, *, session)` routes through `core/outbox` for atomic-in-session enqueue; `TaskContext` dataclass; worker entrypoint at `apps/backend/bin/worker` (runs taskiq workers + outbox drain in same process).
-- [ ] `apps/backend/docs/core_tasks.md` doc skeleton.
-- [ ] Per-module doc skeletons in `apps/backend/docs/` for each new module.
-- [ ] `core/workspace` extended skeleton: `WorkspaceProvider` Protocol declared / refined.
-- [ ] `apps/agent/` Go module skeletoned (`cmd/agent/`, `internal/supervisor/`, `internal/workspace/`, `internal/ipc/`, `internal/identity/`).
-- [ ] `apps/backend/openapi/agent-api.yaml` skeleton.
-- [ ] `docs/setup.md` updated with M05 dev-story note (agent + worker process).
-- [ ] `apps/backend/docs/patterns.md` updated with new patterns (WorkflowCommand interface, workspace provider contract, `core/tasks` usage).
-- [ ] `apps/backend/bin/ci` exits 0; tach happy with new modules.
+- [x] Migration `0XX_create_all_m05` registered. taskiq uses Redis (no Postgres tables for queue itself; only our `outbox_entries` table needs migration). _(Shipped as `014_create_outbox_entries` — see [DECISIONS.md](DECISIONS.md). Other M05 tables land in their owning module's phase.)_
+- [ ] Tables created: `tickets` (with new `type` column), `workflow_executions` (with `pending_agent_command_id` + `cancel_requested`), `pending_human_decisions`, `workspaces` (extended schema), `workspace_agents`, `outbox_entries`, `reviews`, `findings` (simplified). `review_jobs` dropped. _(Only `outbox_entries` in Phase 0b; remaining tables in later phases.)_
+- [x] **Redis service added** to `docker/docker-compose.yml` and `docker/docker-compose.test.yml`. CI brings Redis up; tests assume Redis available (no mocking).
+- [x] New backend modules skeletoned: `core/agent_gateway`, `core/workflow`, `core/tasks`, `core/outbox`, `core/sse_pubsub`, `domain/intake` (extended), `domain/tickets` (extended). _(`domain/intake` + `domain/tickets` extensions deferred to Phase 2 per implementation-plan.)_
+- [x] `core/tasks` scaffold: taskiq broker configured with Redis (`REDIS_URL` from settings); `@task` decorator wrapping taskiq; `enqueue(task, args, *, session)` routes through `core/outbox` for atomic-in-session enqueue; `TaskContext` dataclass; worker entrypoint at `apps/backend/bin/worker` (runs taskiq workers + outbox drain in same process). _(Decorator + enqueue + TaskContext + Redis setting shipped. Broker wiring + `bin/worker` entrypoint land in Phase 1.)_
+- [x] `apps/backend/docs/core_tasks.md` doc skeleton.
+- [x] Per-module doc skeletons in `apps/backend/docs/` for each new module.
+- [ ] `core/workspace` extended skeleton: `WorkspaceProvider` Protocol declared / refined. _(Existing Protocol satisfies Phase 0b needs; M05-specific extensions ship in Phase 3.)_
+- [x] `apps/agent/` Go module skeletoned (`cmd/agent/`, `internal/supervisor/`, `internal/workspace/`, `internal/ipc/`, `internal/identity/`).
+- [x] `apps/backend/openapi/agent-api.yaml` skeleton.
+- [x] `docs/setup.md` updated with M05 dev-story note (agent + worker process).
+- [x] `apps/backend/docs/patterns.md` updated with new patterns (WorkflowCommand interface, workspace provider contract, `core/tasks` usage).
+- [x] `apps/backend/bin/ci` exits 0; tach happy with new modules.
 
 ## Phase 0c — OTel SDK wiring (no exporter)
 
