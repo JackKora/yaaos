@@ -149,16 +149,16 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 
 ## Phase 8b — Activity streaming (CodingAgent → UI) with demand-pull
 
-- [ ] **Bidirectional WebSocket endpoint** `WSS /v1/agents/{id}/activity` on `core/agent_gateway`.
-- [ ] uvicorn ping/pong configured (`--ws-ping-interval=30 --ws-ping-timeout=10`) for ALB idle-timeout survival.
-- [ ] Auth on WebSocket upgrade: bearer in `Authorization` header; `4401` close on invalid.
-- [ ] WebSocket message protocol implemented: `subscribe`/`unsubscribe` from backend; `activity_batch` from agent.
-- [ ] WorkspaceAgent supervisor maintains `subscribed_workspaces: Set` in-memory; batches events at ~250ms.
-- [ ] `core/agent_gateway` tracks `subscriber_counts: Map[workflow_execution_id, int]`; SSE handler `0→1` triggers subscribe, `1→0` triggers unsubscribe.
-- [ ] WebSocket reconnect handler re-derives + re-sends subscriptions for active SSE subscribers.
-- [ ] `domain/coding_agent` ActivityEvent pre-renderer audited: metadata only, no source content.
-- [ ] In-memory provider: taskiq worker publishes directly to `core/sse_pubsub` (no WebSocket wire).
-- [ ] Tests: activity stream end-to-end against both providers; demand-pull (no events without subscriber); WebSocket reconnect; trust-boundary (no source content in ActivityEvent payloads).
+- [x] **Bidirectional WebSocket endpoint** `WSS /v1/agents/{id}/activity` on `core/agent_gateway`. _(Mounted at `WSS /api/v1/agents/{id}/activity` per the project's `/api/` prefix convention.)_
+- [ ] uvicorn ping/pong configured (`--ws-ping-interval=30 --ws-ping-timeout=10`) for ALB idle-timeout survival. _(Deployment configuration; lands with `docs/setup.md` updates in the Phase 8b follow-on.)_
+- [x] Auth on WebSocket upgrade: bearer in `Authorization` header; `4401` close on invalid. _(Placeholder bearer check shipped; real STS-verified bearer swaps in transparently from Phase 7.)_
+- [x] WebSocket message protocol implemented: `subscribe`/`unsubscribe` from backend; `activity_batch` from agent.
+- [ ] WorkspaceAgent supervisor maintains `subscribed_workspaces: Set` in-memory; batches events at ~250ms. _(Go-side; lands in the Phase 6 follow-on workspace subcommand body.)_
+- [x] `core/agent_gateway` tracks `subscriber_counts: Map[workflow_execution_id, int]`; SSE handler `0→1` triggers subscribe, `1→0` triggers unsubscribe. _(`SubscriberRegistry` shipped + tested. SSE handler that calls into it lands in the follow-on alongside the SPA-side activity-stream UI.)_
+- [ ] WebSocket reconnect handler re-derives + re-sends subscriptions for active SSE subscribers. _(Phase 8b follow-on — needs the SSE handler shipped first.)_
+- [ ] `domain/coding_agent` ActivityEvent pre-renderer audited: metadata only, no source content. _(Phase 8b follow-on; payload-shape audit + trust-boundary tests.)_
+- [ ] In-memory provider: taskiq worker publishes directly to `core/sse_pubsub` (no WebSocket wire). _(Phase 8b follow-on — wires alongside Phase 4 follow-on Workspace command bodies.)_
+- [ ] Tests: activity stream end-to-end against both providers; demand-pull (no events without subscriber); WebSocket reconnect; trust-boundary (no source content in ActivityEvent payloads). _(15 unit tests cover pub/sub fan-out, subscriber registry semantics, WS auth + activity_batch fan-out + no-subscriber no-op. End-to-end provider parity rides on Phase 4 + Phase 6 follow-ons.)_
 
 ## Phase 9 — packaging + release
 
