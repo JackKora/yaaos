@@ -6,13 +6,13 @@
 
 ## Phase 0a — module-naming hygiene
 
-- [ ] Rename `domain/auth` → `domain/sessions`. Update all import sites.
-- [ ] Merge `domain/byok` into `domain/orgs/byok_routes.py`. Delete `domain/byok` directory. Update ~5 import sites. URLs unchanged.
-- [ ] Rename `plugins/in_process_workspace` → `plugins/in_memory_workspace`. Update all import sites.
-- [ ] Rename `apps/backend/docs/domain_auth.md` → `domain_sessions.md`; move BYOK doc content into `domain_orgs.md`; delete `domain_byok.md`; rename `plugins_in_process_workspace.md` → `plugins_in_memory_workspace.md`.
-- [ ] Add "no module-name collisions across core/domain/plugins" rule to `apps/backend/docs/modularity.md`.
-- [ ] Run `apps/backend/bin/sync_modules`; tach happy.
-- [ ] All existing CI green.
+- [x] Rename `domain/auth` → `domain/sessions`. Update all import sites.
+- [x] Merge `domain/byok` into `domain/orgs/byok_routes.py`. Delete `domain/byok` directory. Update ~5 import sites. URLs unchanged.
+- [x] Rename `plugins/in_process_workspace` → `plugins/in_memory_workspace`. Update all import sites.
+- [x] Rename `apps/backend/docs/domain_auth.md` → `domain_sessions.md`; move BYOK doc content into `domain_orgs.md`; delete `domain_byok.md`; rename `plugins_in_process_workspace.md` → `plugins_in_memory_workspace.md`.
+- [x] Add "no module-name collisions across core/domain/plugins" rule to `apps/backend/docs/modularity.md`.
+- [x] Run `apps/backend/bin/sync_modules`; tach happy.
+- [x] All existing CI green.
 
 ## Phase 0 — required-session pattern + refactor existing code
 
