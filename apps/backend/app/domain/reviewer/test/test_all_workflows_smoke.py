@@ -251,3 +251,119 @@ async def test_workflow_reaches_done(db_session, _engine_with_stubs, workflow) -
         f"workflow {workflow.name} ended in state={wfx.state!r}, expected done"
     )
     assert wfx.pending_agent_command_id is None
+
+
+# ── trace linkage parity across the 5 workflows ──────────────────────────
+
+
+_ALL_FIVE_WORKFLOWS = [
+    answer_question_v1,
+    incremental_review_v1,
+    stale_check_v1,
+    verify_fix_v1,
+]
+
+
+@pytest.fixture
+def _in_memory_spans():
+    """Wire an in-memory span exporter onto the global TracerProvider so
+    the parametrized trace-linkage test can inspect emitted spans."""
+    from opentelemetry import trace as _trace  # noqa: PLC0415
+    from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: PLC0415
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: PLC0415
+        InMemorySpanExporter,
+    )
+
+    provider = _trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        _trace.set_tracer_provider(provider)
+    exporter = InMemorySpanExporter()
+    processor = SimpleSpanProcessor(exporter)
+    provider.add_span_processor(processor)
+    yield exporter
+    processor.shutdown()
+
+
+@pytest.mark.parametrize("workflow", _ALL_FIVE_WORKFLOWS, ids=lambda w: w.name)
+async def test_all_workflows_share_upstream_trace_id(  # type: ignore[no-untyped-def]
+    db_session, _engine_with_stubs, _in_memory_spans, workflow
+):
+    """**Provider-parity trace audit for the 4 non-pr_review_v1 reviewer
+    workflows.** Each workflow walks to DONE end-to-end and every emitted
+    workflow task-body span (`workflow.start_step` / `workflow.route_workflow`
+    / `workflow.handle_agent_event`) shares the upstream trace_id. The
+    fifth workflow (pr_review_v1) has its own trace audit in
+    `test_trace_linkage.py`; this parametrized test covers the other four.
+
+    Closes the audit row "one trace ID covers webhook → terminal outcome
+    for all five workflows" against the in-memory provider. The Go-subprocess
+    side rides on the Phase 6 follow-on env-passing of `TRACEPARENT`.
+    """
+    from opentelemetry import trace as _trace  # noqa: PLC0415
+
+    from app.core.observability import current_traceparent  # noqa: PLC0415
+    from app.domain.tickets import create as create_ticket  # noqa: PLC0415
+
+    _engine_with_stubs.register_workflow(workflow)
+
+    org_id = uuid4()
+    ticket_id, _ = await create_ticket(
+        type="github_pr",
+        payload={
+            "is_draft": False,
+            "is_fork": False,
+            "labels": [],
+            "author_login": "alice",
+            "head_sha": "deadbeef",
+            "base_sha": "babecafe",
+        },
+        idempotency_key=f"trace-smoke-{workflow.name}-{uuid4()}",
+        org_id=org_id,
+        title="t",
+        source="github_pr",
+        source_external_id="42",
+        plugin_id="github",
+        repo_external_id="me/repo",
+        session=db_session,
+    )
+    await db_session.commit()
+
+    tracer = _trace.get_tracer("trace-all-workflows")
+    with tracer.start_as_current_span("intake-upstream") as upstream:
+        upstream_trace_id = upstream.get_span_context().trace_id
+        wfx_id = await _engine_with_stubs.start(
+            workflow_name=workflow.name,
+            ticket_id=str(ticket_id),
+            workspace_provider="in_memory",
+            traceparent=current_traceparent(),
+            ticket_payload={
+                "head_sha": "deadbeef",
+                "base_sha": "babecafe",
+                "finding_id": str(uuid4()),
+                "finding_ids": [str(uuid4())],
+                "question_body": "test question",
+            },
+            session=db_session,
+        )
+        await db_session.commit()
+
+    await _drain_workflow_outbox(db_session)
+
+    wfx = await db_session.get(WorkflowExecutionRow, UUID(wfx_id))
+    assert wfx.state == WorkflowState.DONE.value
+
+    workflow_span_names = {
+        "workflow.start_step",
+        "workflow.route_workflow",
+        "workflow.handle_agent_event",
+    }
+    emitted = [s for s in _in_memory_spans.get_finished_spans() if s.name in workflow_span_names]
+    assert len(emitted) >= 2, (
+        f"expected workflow task-body spans for {workflow.name}, got {[s.name for s in emitted]}"
+    )
+    for span in emitted:
+        assert span.context.trace_id == upstream_trace_id, (
+            f"{workflow.name}: span {span.name!r} broke trace continuity"
+        )
