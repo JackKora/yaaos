@@ -42,7 +42,8 @@ Exports `Workflow`, `Step`, `RetryPolicy`, `WorkflowCommand`, `Outcome`, `Outcom
 | From | Event | To |
 |---|---|---|
 | `pending` | engine starts | `running` |
-| `running` | Workspace step dispatched | `awaiting_agent` |
+| `running` | Workspace step dispatched (remote_agent provider) | `awaiting_agent` |
+| `running` | Workspace step run inline (in_memory provider) | stays `running` |
 | `running` | HITL step pauses | `awaiting_human` |
 | `running` | terminal action (`complete_workflow` / `fail_workflow`) | `done` / `failed` |
 | `awaiting_agent` | terminal AgentEvent arrives | `running` |
@@ -61,6 +62,15 @@ Exports `Workflow`, `Step`, `RetryPolicy`, `WorkflowCommand`, `Outcome`, `Outcom
 ### Why three tasks (not two)
 
 Workspace commands can issue long-running AgentCommands. `start_step` exits after dispatch; `handle_agent_event` is enqueued when the terminal event arrives at `core/agent_gateway`; `route_workflow` does the routing. Workers stay free during the wait. See [architecture.md § Why three tasks (not two)](../../../plan/milestones/M05-workspace-agent/architecture.md#why-three-tasks-not-two).
+
+### Workspace dispatch — in_memory vs remote_agent
+
+`engine.start(..., workspace_provider=...)` stashes the org's provider on `step_state["__workspace_provider__"]`. `start_step`'s Workspace branch reads it:
+
+- **`in_memory`** — runs the command inline (same path as Local). The command body owns the workspace lifecycle calls (`core/workspace.create_workspace` / `close_workspace`) and any in-process subprocess work. No wire round-trip; `pending_agent_command_id` stays null.
+- **`remote_agent`** — dispatches the AgentCommand to `core/agent_gateway` and parks the workflow in `awaiting_agent` until the Go agent reports the terminal event. Real `core/workspace.dispatch()` lands alongside the Go workspace subcommand body in the Phase 6 follow-on; current code synthesizes the command id so the state-machine gate behaves end-to-end.
+
+Default when the caller omits the parameter or passes `None`: `in_memory` (matches the default org configuration).
 
 ## Data owned
 

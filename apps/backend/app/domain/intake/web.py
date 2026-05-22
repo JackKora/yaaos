@@ -23,6 +23,7 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from app.core.auth.context import public_route
 from app.core.database import session as db_session
@@ -93,12 +94,19 @@ async def post_intake(request: Request, type: str = Path(...)) -> JSONResponse:
         # `otel_trace_context` on its execution row + propagate the same
         # trace id across every downstream task hop (Phase 8).
         from app.core.observability import current_traceparent  # noqa: PLC0415
+        from app.domain.orgs.models import OrgRow  # noqa: PLC0415
+
+        # Resolve the org's workspace provider so the engine routes Workspace
+        # commands correctly. Null/missing → in_memory (POC default).
+        org_row = (await s.execute(select(OrgRow).where(OrgRow.id == prepared.org_id))).scalar_one_or_none()
+        workspace_provider = (org_row.workspace_provider if org_row is not None else None) or "in_memory"
 
         engine = get_engine()
         workflow_execution_id = await engine.start(
             workflow_name=handler.workflow_name,
             ticket_id=str(ticket_id),
             traceparent=current_traceparent(),
+            workspace_provider=workspace_provider,
             session=s,
         )
         from uuid import UUID  # noqa: PLC0415

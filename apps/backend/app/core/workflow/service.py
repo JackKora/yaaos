@@ -58,6 +58,21 @@ _APPEND_QUEUE_KEY = "__append_queue__"
 _APPENDED_POOL_KEY = "__appended_pool__"
 _AFTER_APPEND_KEY = "__after_append__"
 _ATTEMPTS_KEY = "__attempts__"
+_WORKSPACE_PROVIDER_KEY = "__workspace_provider__"
+
+# Provider values stashed by `engine.start()`. The intake layer passes the
+# org's `workspace_provider` setting (or "in_memory" when unset). The Workspace
+# branch of `start_step` consults this to decide whether to dispatch over the
+# wire (`remote_agent`) or run the command inline (`in_memory`). Default is
+# `in_memory` for tests + legacy rows that predate this routing.
+_PROVIDER_IN_MEMORY = "in_memory"
+_PROVIDER_REMOTE_AGENT = "remote_agent"
+
+
+def _get_workspace_provider(wfx: WorkflowExecutionRow) -> str:
+    """Read the stashed workspace provider for this workflow. Falls back to
+    in_memory when unset (preserves behavior for legacy + test-stub rows)."""
+    return str(wfx.step_state.get(_WORKSPACE_PROVIDER_KEY) or _PROVIDER_IN_MEMORY)
 
 
 # ── The three taskiq task bodies ────────────────────────────────────────
@@ -144,16 +159,40 @@ async def start_step(
         wfx.current_step_id = step_id
 
         if command.category == CommandCategory.WORKSPACE:
-            # Phase 3 will replace this with real
-            # `core/workspace.dispatch(workspace_id, payload)` which writes
-            # the AgentCommand through the outbox AND assigns the new
-            # command id. The state-machine fields below are exactly what
-            # that future call sets — kept here so Phase 1 tests can verify
-            # the await-agent gate end-to-end.
+            provider = _get_workspace_provider(wfx)
+            if provider == _PROVIDER_IN_MEMORY:
+                # In-memory provider: no wire protocol to wait on. Run the
+                # command inline like a Local command — its body owns the
+                # workspace lifecycle calls (`core/workspace.create_workspace`
+                # / `close_workspace`) and any in-process subprocess work.
+                # This collapses the architecture's `awaiting_agent` round
+                # trip into an in-process function call. The remote_agent
+                # path below preserves the async wire-protocol behavior.
+                outcome = await _safe_execute(command, inputs, cmd_ctx)
+                _persist_attempt(wfx, step_id, attempt)
+                await enqueue(
+                    ROUTE_WORKFLOW,
+                    args={
+                        "workflow_execution_id": workflow_execution_id,
+                        "completed_step_id": step_id,
+                        "outcome_label": outcome.label,
+                        "outputs": _outcome_payload(outcome),
+                        "traceparent": traceparent,
+                    },
+                    session=s,
+                )
+                await s.commit()
+                return
+
+            # remote_agent: dispatch over the wire and wait for the
+            # terminal AgentEvent. Real `core/workspace.dispatch()` lands
+            # alongside the Go workspace subcommand body in the Phase 6
+            # follow-on; for now we synthesize the command id so the
+            # state-machine gate behaves end-to-end.
             wfx.pending_agent_command_id = uuid4()
             wfx.state = WorkflowState.AWAITING_AGENT.value
-            log.warning(
-                "workflow.start_step.workspace_dispatch_stubbed_until_phase3",
+            log.info(
+                "workflow.start_step.workspace_remote_dispatch_stub",
                 workflow_execution_id=workflow_execution_id,
                 command_kind=step.command_kind,
             )
@@ -732,15 +771,27 @@ class WorkflowEngine:
         ticket_id: str,
         version: int | None = None,
         traceparent: str | None = None,
+        workspace_provider: str | None = None,
         session: AsyncSession,
     ) -> str:
         """Create a `workflow_executions` row in `pending` state, enqueue
         the initial `route_workflow` task (which decides the first step),
         and return the new execution id. Required `session` — the caller
-        commits and the outbox drain delivers the task post-commit."""
+        commits and the outbox drain delivers the task post-commit.
+
+        `workspace_provider`: the org's workspace provider id (set on the
+        `orgs` row in Phase 7). When `in_memory` (or unset), Workspace
+        commands run inline in the engine. When `remote_agent`, they
+        dispatch over the wire and pause the workflow in `awaiting_agent`
+        until the terminal AgentEvent arrives. Callers that don't know the
+        org's setting can pass None — the engine defaults to in_memory."""
         wf = self.get_workflow(workflow_name, version=version)
         for step in wf.steps:
             self.get_command(step.command_kind)
+
+        initial_state: dict[str, Any] = {}
+        if workspace_provider is not None:
+            initial_state[_WORKSPACE_PROVIDER_KEY] = workspace_provider
 
         row = WorkflowExecutionRow(
             ticket_id=ticket_id,
@@ -749,7 +800,7 @@ class WorkflowEngine:
             state=WorkflowState.PENDING.value,
             current_step_id=None,
             pending_agent_command_id=None,
-            step_state={},
+            step_state=initial_state,
             cancel_requested=False,
             otel_trace_context=traceparent,
         )

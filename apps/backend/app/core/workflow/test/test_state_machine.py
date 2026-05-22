@@ -374,7 +374,14 @@ async def test_workspace_step_transitions_to_awaiting_agent(db_session) -> None:
         entry_step_id="do",
     )
     eng = _engine_with(ws, workflow=wf)
-    exec_id = await eng.start(workflow_name="ws-1", ticket_id=_ticket_id(), session=db_session)
+    # remote_agent provider: Workspace branch dispatches over the wire and
+    # parks the workflow in awaiting_agent until the terminal AgentEvent.
+    exec_id = await eng.start(
+        workflow_name="ws-1",
+        ticket_id=_ticket_id(),
+        workspace_provider="remote_agent",
+        session=db_session,
+    )
     await db_session.commit()
     await _drain_workflow_outbox(db_session)
 
@@ -382,6 +389,39 @@ async def test_workspace_step_transitions_to_awaiting_agent(db_session) -> None:
     assert wfx.state == WorkflowState.AWAITING_AGENT.value
     assert wfx.pending_agent_command_id is not None
     assert wfx.current_step_id == "do"
+
+
+@pytest.mark.asyncio
+async def test_in_memory_workspace_step_runs_inline_to_done(db_session) -> None:
+    """In-memory provider: the Workspace branch collapses into an inline
+    `execute()` call (no wire round-trip). Workflow advances straight to
+    the next step or terminal state without ever entering awaiting_agent."""
+    ws = _WorkspaceStub()
+    wf = Workflow(
+        name="ws-inline-1",
+        version=1,
+        steps=(
+            Step(
+                id="do",
+                command_kind="DoOnAgent",
+                transitions={"success": TerminalAction.COMPLETE_WORKFLOW},
+            ),
+        ),
+        entry_step_id="do",
+    )
+    eng = _engine_with(ws, workflow=wf)
+    exec_id = await eng.start(
+        workflow_name="ws-inline-1",
+        ticket_id=_ticket_id(),
+        workspace_provider="in_memory",
+        session=db_session,
+    )
+    await db_session.commit()
+    await _drain_workflow_outbox(db_session)
+
+    wfx = await db_session.get(WorkflowExecutionRow, exec_id)
+    assert wfx.state == WorkflowState.DONE.value
+    assert wfx.pending_agent_command_id is None
 
 
 @pytest.mark.asyncio
@@ -398,7 +438,12 @@ async def test_handle_agent_event_advances_workflow(db_session) -> None:
         entry_step_id="do",
     )
     eng = _engine_with(ws, workflow=wf)
-    exec_id = await eng.start(workflow_name="ws-then-done", ticket_id=_ticket_id(), session=db_session)
+    exec_id = await eng.start(
+        workflow_name="ws-then-done",
+        ticket_id=_ticket_id(),
+        workspace_provider="remote_agent",
+        session=db_session,
+    )
     await db_session.commit()
     await _drain_workflow_outbox(db_session)
 
@@ -443,7 +488,12 @@ async def test_stale_handle_agent_event_is_noop(db_session) -> None:
         entry_step_id="do",
     )
     eng = _engine_with(ws, workflow=wf)
-    exec_id = await eng.start(workflow_name="ws-stale", ticket_id=_ticket_id(), session=db_session)
+    exec_id = await eng.start(
+        workflow_name="ws-stale",
+        ticket_id=_ticket_id(),
+        workspace_provider="remote_agent",
+        session=db_session,
+    )
     await db_session.commit()
     await _drain_workflow_outbox(db_session)
 
@@ -551,7 +601,12 @@ async def test_request_cancel_during_awaiting_agent_then_event(db_session) -> No
         entry_step_id="do",
     )
     eng = _engine_with(ws, workflow=wf)
-    exec_id = await eng.start(workflow_name="ws-cancel", ticket_id=_ticket_id(), session=db_session)
+    exec_id = await eng.start(
+        workflow_name="ws-cancel",
+        ticket_id=_ticket_id(),
+        workspace_provider="remote_agent",
+        session=db_session,
+    )
     await db_session.commit()
     await _drain_workflow_outbox(db_session)
 
