@@ -102,6 +102,36 @@ async def admit_raw_findings(
     )
     admitted, observations, drops = aggregate.post_process_raw_findings(review.id, raw, diff_files=diff_files)
     await repo.save(aggregate)
+
+    log.info(
+        "admission.done",
+        pr_id=str(pr_id),
+        org_id=str(org_id),
+        review_id=str(review.id),
+        raw_in=len(raw),
+        admitted=len(admitted),
+        dropped=len(drops),
+        trigger=trigger,
+        scope=scope,
+    )
+    if drops:
+        # Mirror queue.py's legacy `review_job.admission_drops` audit shape.
+        # Per-drop info goes to structured logs; durable audit-row emission
+        # rides on the future `audit_for_workflow_execution` helper.
+        log.info(
+            "admission.drops",
+            pr_id=str(pr_id),
+            review_id=str(review.id),
+            drops=[
+                {
+                    "rule_id": d.rule_id,
+                    "reason": d.reason,
+                    "severity": d.severity,
+                    "confidence": d.confidence,
+                }
+                for d in drops
+            ],
+        )
     return AdmissionResult(admitted=admitted, observations=observations, drops=drops)
 
 
