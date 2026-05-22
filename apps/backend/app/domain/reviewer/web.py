@@ -89,13 +89,51 @@ async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
 
 @router.post("/cancel")
 async def cancel_jobs(ticket_id: UUID) -> dict[str, int]:
-    """Cancel queued/running review jobs for a ticket."""
+    """Cancel queued/running review jobs AND any non-terminal workflow_executions
+    for this ticket.
+
+    Dual-write during the M05 transition: the legacy `cancel_pending` path
+    flips `review_jobs` rows and cancels in-process asyncio tasks; the new
+    `workflow.request_cancel` path sets the `cancel_requested` flag on
+    `workflow_executions` so the engine transitions the workflow to
+    `cancelled` at its next step boundary. Once the legacy review_jobs path
+    is retired this collapses to the engine call only.
+    """
     try:
         await tickets.get(ticket_id, org_id=M01_ORG_ID)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
     n = await cancel_pending(ticket_id, actor=Actor.system(), org_id=M01_ORG_ID, reason="ui_cancel")
-    return {"cancelled_count": n}
+
+    # Cancel any non-terminal workflow executions for the same ticket.
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.core.workflow import (  # noqa: PLC0415
+        TERMINAL_STATES,
+        WorkflowExecutionRow,
+        WorkflowState,
+        request_cancel,
+    )
+
+    workflow_cancelled = 0
+    async with session() as s:
+        rows = (
+            await s.execute(
+                select(WorkflowExecutionRow.id, WorkflowExecutionRow.state).where(
+                    WorkflowExecutionRow.ticket_id == ticket_id,
+                    WorkflowExecutionRow.state.notin_([st.value for st in TERMINAL_STATES]),
+                )
+            )
+        ).all()
+        for wfx_id, state in rows:
+            if WorkflowState(state) in TERMINAL_STATES:
+                continue
+            if await request_cancel(str(wfx_id), session=s):
+                workflow_cancelled += 1
+        if workflow_cancelled:
+            await s.commit()
+
+    return {"cancelled_count": n + workflow_cancelled}
 
 
 @router.get("/jobs/by-ticket/{ticket_id}")
