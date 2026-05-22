@@ -223,6 +223,57 @@ async def test_progress_event_does_not_enqueue_workflow(db_session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_progress_event_publishes_to_sse_pubsub(db_session) -> None:
+    """Slice 77: progress AgentEvents posted via HTTP get republished to
+    the `activity:{workflow_execution_id}` SSE channel so the SPA's
+    live-tail picks them up alongside batched WebSocket events."""
+    from app.core.sse_pubsub import _reset_for_tests, channel_for, subscribe  # noqa: PLC0415
+
+    _reset_for_tests()
+
+    ws = await _seed_workspace(db_session)
+    cmd_id = ws.__dict__["_test_seeded_command_id"]
+    wfx_id = ws.__dict__["_test_seeded_workflow_id"]
+
+    # Open an SSE subscriber BEFORE posting the event so the in-memory
+    # pubsub buffers the publish on the channel.
+    channel = channel_for(str(wfx_id))
+    sub = subscribe(channel)
+    received: list[dict] = []
+
+    async def _drain() -> None:
+        async for evt in sub:
+            received.append(evt)
+            if len(received) >= 1:
+                return
+
+    drainer = asyncio.create_task(_drain())
+    # Yield once so the subscriber registers before the publish fires.
+    await asyncio.sleep(0)
+
+    event = AgentEvent(
+        command_id=cmd_id,
+        kind=AgentEventKind.PROGRESS,
+        outputs={"stream_line": '{"type":"tool_use"}'},
+        reported_at=datetime.now(UTC),
+        traceparent="00-aabbccdd-1122-01",
+    )
+    await record_agent_event(event, session=db_session)
+    await db_session.commit()
+    try:
+        await asyncio.wait_for(drainer, timeout=2.0)
+    except TimeoutError as exc:
+        drainer.cancel()
+        raise AssertionError("progress event never reached the SSE channel") from exc
+
+    assert len(received) == 1, f"expected one event on the channel, got {received}"
+    got = received[0]
+    assert got["kind"] == "progress"
+    assert got["command_id"] == str(cmd_id)
+    assert got["outputs"]["stream_line"] == '{"type":"tool_use"}'
+
+
+@pytest.mark.asyncio
 async def test_stale_command_id_raises(db_session) -> None:
     """An event whose command_id doesn't match any workspace's current
     claim raises StaleClaimError so the endpoint can map to 410."""

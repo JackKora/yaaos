@@ -207,14 +207,23 @@ async def record_agent_event(
         raise StaleClaimError(f"workspace {ws.id} has no current_holder_workflow_id")
 
     if not event.is_terminal():
-        # Non-terminal events (progress) are just observed for now. Phase 8b
-        # routes activity events via the WebSocket; here we only act on
-        # terminal events that advance the workflow state machine.
+        # Non-terminal events (progress) skip workflow-engine resumption —
+        # only `completed_*` events resume the workflow state machine.
+        # Republish to `activity:{workflow_execution_id}` so the SPA's
+        # SSE live-tail picks them up. Same channel the slice-8b
+        # WebSocket batch handler uses, so the HTTP path (slice 76) and
+        # the future WS-batch path (slice 8b) deliver progress events
+        # through one unified subscriber surface.
         log.info(
             "agent.event.progress",
             workspace_id=str(ws.id),
             command_id=str(event.command_id),
         )
+        from app.core.sse_pubsub import channel_for  # noqa: PLC0415
+        from app.core.sse_pubsub import publish as sse_publish  # noqa: PLC0415
+
+        channel = channel_for(str(ws.current_holder_workflow_id))
+        await sse_publish(channel, event.model_dump(mode="json"))
         return
 
     # Terminal — enqueue the workflow handler. The outbox row goes in the
