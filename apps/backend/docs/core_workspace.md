@@ -102,7 +102,7 @@ The recovery-policy registry (`register_recovery_policy(failure_label=, command_
 
 - `CleanupWorkspace` has a real body: reads `workspace_id` from inputs and calls `close_workspace()`. Idempotent — missing/invalid/unknown ids return success so partial-failure workflows still drain.
 - `ProvisionWorkspace` has a real body: fetches the ticket context via the registered `WorkflowContextProvider` (see [Workflow-context callback](#workflow-context-callback)), builds a `WorkspaceSpec`, calls `create_workspace()`, returns `workspace_id` in outputs. Fails cleanly when no provider is registered, the ticket isn't found, or the underlying create fails.
-- `RefreshWorkspaceAuth` remains a stub pending the VCS-auth-refresh substrate.
+- `RefreshWorkspaceAuth` has a real body: a no-op-success for the in_memory provider (in-process provider re-fetches a fresh installation token on each git fetch/clone, so there's no stored credential to refresh). For the remote_agent provider, a future iteration will dispatch a `RefreshWorkspaceAuth` AgentCommand over the wire.
 
 ### Workflow-context callback
 

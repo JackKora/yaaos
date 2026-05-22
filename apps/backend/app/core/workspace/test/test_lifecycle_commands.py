@@ -156,6 +156,18 @@ async def test_provision_fails_when_ticket_not_found() -> None:
     assert "not found" in (outcome.failure_reason or "")
 
 
+async def test_refresh_workspace_auth_is_noop_success_in_memory() -> None:
+    """For the in_memory provider there's no stored credential to refresh —
+    the next git fetch in the in-process provider re-pulls a fresh token.
+    The body returns success so the engine's recovery insertion (per
+    `register_recovery_policy(auth_expired → RefreshWorkspaceAuth)`)
+    cleanly hands off back to the original command's re-dispatch."""
+    from app.core.workspace.commands import RefreshWorkspaceAuth  # noqa: PLC0415
+
+    outcome = await RefreshWorkspaceAuth().execute({}, _ctx())
+    assert outcome.label == "success"
+
+
 async def test_provision_creates_workspace_with_spec(db_session, _stub_workspace_plugin) -> None:  # type: ignore[no-untyped-def]
     ticket_id = uuid4()
     org_id = uuid4()

@@ -158,11 +158,30 @@ class CleanupWorkspace(_LifecycleCommand):
 
 class RefreshWorkspaceAuth(_LifecycleCommand):
     """Recovery command bound to `auth_expired` failures via
-    `core/workspace.register_recovery_policy`. Refreshes the workspace's
-    VCS auth credentials and re-dispatches the original command. Body
-    lands alongside the VCS-auth substrate."""
+    `core/workspace.register_recovery_policy`. The engine inserts this
+    command before re-dispatching the originally-failing AgentCommand.
+
+    For the **in_memory** provider this is a no-op: the in-process
+    provider fetches a fresh installation token on each `git fetch`/clone
+    (see `plugins/in_memory_workspace/service.py`), so there's no stored
+    credential to refresh. Returning success lets the engine append the
+    re-dispatch step cleanly.
+
+    For the **remote_agent** provider, a future iteration will issue a
+    `RefreshWorkspaceAuth` AgentCommand over the wire so the Go agent
+    can rotate its checkout's auth header before the retry.
+    """
 
     kind = "RefreshWorkspaceAuth"
+
+    async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
+        del inputs
+        log.info(
+            "refresh_workspace_auth.no_op_in_memory",
+            workflow_execution_id=ctx.workflow_execution_id,
+            ticket_id=ctx.ticket_id,
+        )
+        return Outcome.success()
 
 
 ALL_LIFECYCLE_COMMANDS: tuple[_LifecycleCommand, ...] = (
