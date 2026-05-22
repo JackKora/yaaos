@@ -52,4 +52,121 @@ See [`apps/backend/openapi/agent-api.yaml`](../../backend/openapi/agent-api.yaml
 - **Phase 6 foundations (this)** — IPC framing library, wire-protocol Go types + HTTP client, supervisor identity-exchange + claim + heartbeat loops, command-routing stub. Tests for IPC + protocol decoding + client + an httptest-driven end-to-end against a fake backend.
 - **Phase 6 follow-on** — workspace OS-process spawning, IPC reader/writer in the workspace process, repo clone + Claude Code invocation, wall-clock timeout, disk janitor, OTel SDK wiring (`go.opentelemetry.io/otel` with `propagation.TraceContext` + in-memory exporter for tests + traceparent extraction into child spans).
 - **Phase 7** — real SigV4-signed STS verifier on the backend side; `RemoteAgentWorkspaceProvider` integration.
-- **Phase 9** — Dockerfile, image registry, deployment guide.
+- **Phase 9 (this commit)** — multi-stage Dockerfile producing a distroless static image at `ghcr.io/yaaos/yaaos-agent`. Deployment guide below.
+
+## Packaging
+
+### Build
+
+```bash
+docker build -f apps/agent/Dockerfile -t yaaos-agent:dev apps/agent
+```
+
+The build is a two-stage `golang:1.22-alpine` → `gcr.io/distroless/static-debian12:nonroot`. Final image is ~25 MB, runs as UID 65532, has no shell. The agent process is PID 1 — `SIGTERM` from ECS reaches it directly without an init wrapper. `CGO_ENABLED=0` + `-trimpath` + `-ldflags='-s -w'` produce a fully-static, stripped binary with no host-path leakage.
+
+### Registry + tagging
+
+Published to **`ghcr.io/yaaos/yaaos-agent`** (decision logged in [plan/milestones/M05-workspace-agent/DECISIONS.md](../../../plan/milestones/M05-workspace-agent/DECISIONS.md)). Tags:
+
+- `vX.Y.Z` — immutable release tag. Customer ECS task definitions pin this.
+- `latest` — most recent stable release. Getting-started flows only; production pins to a `vX.Y.Z`.
+- `sha-<short>` — every CI build. For incident bisection / rollback to a non-released build.
+
+Multi-arch: `linux/amd64` + `linux/arm64` (built with `docker buildx`; CI wiring lands alongside the GHCR push workflow).
+
+## Deployment (ECS Fargate)
+
+The agent is designed for ECS Fargate at customer scale ~1–10 tasks. Each task is one supervisor pod that handles `Concurrency` workspaces in parallel.
+
+### IAM role trust policy
+
+The agent authenticates to the yaaos control plane via SigV4-signed STS `GetCallerIdentity` (Phase 7 follow-on). The IAM role attached to the ECS task must have:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "sts:GetCallerIdentity",
+    "Resource": "*"
+  }]
+}
+```
+
+…and a trust policy that allows the ECS task role to assume it:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+    "Action": "sts:AssumeRole"
+  }]
+}
+```
+
+Register the role's ARN in yaaos at `PATCH /api/orgs` with `{workspace_provider: "remote_agent", registered_iam_arn: "arn:aws:iam::ACCOUNT:role/..."}`. Phase 7 follow-on adds the matching org-settings UI.
+
+### Task definition template
+
+```json
+{
+  "family": "yaaos-agent",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT:role/yaaos-agent",
+  "containerDefinitions": [{
+    "name": "agent",
+    "image": "ghcr.io/yaaos/yaaos-agent:vX.Y.Z",
+    "essential": true,
+    "command": ["supervisor"],
+    "environment": [
+      {"name": "YAAOS_BACKEND_URL", "value": "https://yaaos.example.com"},
+      {"name": "YAAOS_AGENT_VERSION", "value": "X.Y.Z"}
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/yaaos/agent",
+        "awslogs-region": "us-east-1",
+        "awslogs-stream-prefix": "agent"
+      }
+    },
+    "mountPoints": [{
+      "sourceVolume": "workspaces",
+      "containerPath": "/var/agent/workspaces"
+    }]
+  }],
+  "volumes": [{
+    "name": "workspaces",
+    "host": {}
+  }]
+}
+```
+
+Scale `cpu` / `memory` with `Concurrency` (default 4 workspaces per pod). A standard 1 vCPU / 2 GB task handles ~4 concurrent reviews comfortably.
+
+### CloudWatch log group
+
+Create the log group once before the first deploy:
+
+```bash
+aws logs create-log-group --log-group-name /yaaos/agent
+aws logs put-retention-policy --log-group-name /yaaos/agent --retention-in-days 30
+```
+
+The agent logs to stdout in structured plain text today (line-per-event). JSON structured logs land alongside the Phase 6 follow-on OTel wiring.
+
+### Health + scaling
+
+- ECS service auto-scales tasks above sustained load.
+- Backend tracks per-pod liveness via the `workspace_agents.last_heartbeat_at` column (Phase 7); `GET /api/workspaces/connection_status` returns `{state, pod_count, latest_heartbeat_at}` aggregated for an org.
+- Pod silently > 90s = backend marks `state='unreachable'`; in-flight AgentCommands fail with `agent_lost` recovery label.
+
+## Local dev
+
+Local `docker compose up` brings up the backend + a dev-mode agent against the placeholder identity-exchange verifier (any non-empty `YAAOS_SIGNED_STS_REQUEST` works). See [`docs/setup.md`](../../../docs/setup.md) § M05 dev story.

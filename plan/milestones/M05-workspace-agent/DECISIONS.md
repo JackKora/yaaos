@@ -22,6 +22,14 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 
 <!-- Append below. Do not edit prior entries. -->
 
+### Phase 9 — image registry: GHCR with semver+latest+sha tagging
+
+- **Certainty**: 2/5
+- **Decision**: Publish the WorkspaceAgent image to GitHub Container Registry (`ghcr.io/yaaos/yaaos-agent`). Tag strategy: each release tagged `vX.Y.Z`, the latest stable also re-tagged `latest`, every CI build tagged `sha-<short>` for traceability. Customers consume the immutable `vX.Y.Z` tag in their ECS task definition; `latest` exists for getting-started flows.
+- **Alternatives considered**: (a) Docker Hub — wider familiarity but rate-limited pulls hit customer ECS task launches; (b) ECR Public — AWS-native but requires customers to authenticate the otherwise-public-image case; (c) per-customer-private registry — too much friction for a free OSS-first POC.
+- **Why this one**: GHCR is free for public images, has no anonymous pull rate limits, ships with GitHub Actions, supports OCI image manifests for multi-arch (`linux/amd64` + `linux/arm64`). Migrating is a registry rename if we ever change our minds.
+- **Reversal cost**: low — image URL lives in ECS task definitions; customers re-pin on next deploy.
+
 ### Phase 0b — split `014_create_all_m05` into per-phase migrations
 
 - **Certainty**: 3/5
