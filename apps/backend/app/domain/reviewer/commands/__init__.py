@@ -289,15 +289,15 @@ class PostFindings(_LocalReviewCommand):
             read_file=file_contents.get,
         )
 
-        # 3. Persist via admission. workflow_execution_id doubles as the
-        # review_id for observation tracking until the queue.py dismantle
-        # replaces it with a proper Review row.
+        # 3. Persist via admission. The wrapper opens a new Review row so
+        # the findings FK to `reviews` is satisfied; the workflow_execution_id
+        # is stamped onto the trace context for cross-system correlation.
         async with db_session() as s:
             result = await admit_raw_findings(
                 pr_id=ticket_ctx.pr_id,
                 org_id=ticket_ctx.org_id,
-                review_id=UUID(ctx.workflow_execution_id),
                 raw=raw,
+                commit_sha=commit_sha,
                 session=s,
             )
             await s.commit()

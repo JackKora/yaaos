@@ -47,8 +47,8 @@ async def test_empty_raw_returns_empty_result(db_session) -> None:  # type: igno
     result = await admit_raw_findings(
         pr_id=uuid4(),
         org_id=uuid4(),
-        review_id=uuid4(),
         raw=[],
+        commit_sha="deadbeef",
         session=db_session,
     )
     assert result.admitted == []
@@ -58,12 +58,60 @@ async def test_empty_raw_returns_empty_result(db_session) -> None:  # type: igno
 
 async def test_short_scenario_finding_dropped(db_session) -> None:  # type: ignore[no-untyped-def]
     """The aggregate's schema gate drops findings with too-short scenarios.
-    Wrapper threads that drop through to `result.drops`."""
+    Wrapper threads that drop through to `result.drops`. Even drops trigger
+    a Review row INSERT (so the run is auditable), so the test needs a
+    real PR row to satisfy the FK."""
+    from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+    from app.domain.tickets.models import TicketRow  # noqa: PLC0415
+
+    org_id = uuid4()
+    ticket_id = uuid4()
+    db_session.add(
+        TicketRow(
+            id=ticket_id,
+            org_id=org_id,
+            source="github_pr",
+            source_external_id="x",
+            title="t",
+            status="pending",
+            plugin_id="github",
+            repo_external_id="me/repo",
+            type="github_pr",
+            idempotency_key=f"k-{uuid4()}",
+            payload={},
+        )
+    )
+    await db_session.flush()
+    pr_id = uuid4()
+    db_session.add(
+        PullRequestRow(
+            id=pr_id,
+            org_id=org_id,
+            plugin_id="github",
+            external_id=f"pr-{uuid4()}",
+            repo_external_id="me/repo",
+            ticket_id=ticket_id,
+            number=1,
+            title="t",
+            body=None,
+            author_login="a",
+            author_type="user",
+            base_branch="main",
+            head_branch="b",
+            base_sha="0",
+            head_sha="1",
+            is_draft=False,
+            is_fork=False,
+            state="open",
+            html_url="http://test",
+        )
+    )
+    await db_session.commit()
     result = await admit_raw_findings(
-        pr_id=uuid4(),
-        org_id=uuid4(),
-        review_id=uuid4(),
+        pr_id=pr_id,
+        org_id=org_id,
         raw=[_short_scenario_raw()],
+        commit_sha="deadbeef",
         session=db_session,
     )
     assert result.admitted == []

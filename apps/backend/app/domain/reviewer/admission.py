@@ -53,26 +53,45 @@ async def admit_raw_findings(
     *,
     pr_id: UUID,
     org_id: UUID,
-    review_id: UUID,
     raw: list[RawFinding],
+    commit_sha: str,
+    trigger: str = "scheduled_full",
+    scope: str = "full",
     diff_files: set[str] | None = None,
     session: AsyncSession,
 ) -> AdmissionResult:
-    """Load the PR's review aggregate, run admission against `raw`, persist
-    the survivors, and return the structured result. Required `session` —
-    caller commits; aggregate writes are flushed but not committed here.
+    """Load the PR's review aggregate, open a new `Review` row, run
+    admission against `raw`, persist the survivors, return the structured
+    result. Required `session` — caller commits; aggregate writes are
+    flushed but not committed here.
 
-    `review_id` is the identifier of the review run that produced `raw`.
-    The aggregate attaches each `FindingObservation` to this id so future
-    queries can trace which run first surfaced each finding.
+    Opening a review (rather than accepting a pre-built review_id) keeps
+    relational integrity automatic: the `findings` table's FK to `reviews`
+    is satisfied by the row this function inserts. The aggregate emits
+    the matching `ReviewRequested` event.
 
+    `commit_sha`: head_sha at review start; stored on the Review row.
+    `trigger`: `coding_agent.ReviewTrigger` literal (default `scheduled_full`
+    matches the legacy `schedule_review` path).
+    `scope`: `coding_agent.ReviewScope` literal (default `full`).
     `diff_files`: when supplied, the gate drops findings whose anchor file
     isn't in the set (plan §10.9 off-diff suppression). Pass None for
     full-PR review paths that don't have a narrow diff scope.
     """
+    if not raw:
+        # No drafts to admit → no review needed. Skip the start_review +
+        # save so callers without a real pr_id row (smoke tests, empty
+        # CodeReview output) don't trip the FK.
+        return AdmissionResult(admitted=[], observations=[], drops=[])
+
     repo = SqlAlchemyAggregateRepository(session)
     aggregate = await repo.load(pr_id=pr_id, org_id=org_id)
-    admitted, observations, drops = aggregate.post_process_raw_findings(review_id, raw, diff_files=diff_files)
+    review = aggregate.start_review(
+        trigger=trigger,  # type: ignore[arg-type]
+        scope=scope,  # type: ignore[arg-type]
+        commit_sha=commit_sha,
+    )
+    admitted, observations, drops = aggregate.post_process_raw_findings(review.id, raw, diff_files=diff_files)
     await repo.save(aggregate)
     return AdmissionResult(admitted=admitted, observations=observations, drops=drops)
 
