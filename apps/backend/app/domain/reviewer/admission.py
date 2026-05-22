@@ -33,7 +33,16 @@ from app.domain.reviewer.aggregate import AdmissionDrop, RawFinding
 from app.domain.reviewer.anchor import make_anchor
 from app.domain.reviewer.fingerprint import compute_fingerprint
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
-from app.domain.reviewer.types import Finding, FindingObservation
+from app.domain.reviewer.types import Finding, FindingObservation, Severity
+
+# Severity tier collapse: plan §10.1's four reviewer severities mapped onto
+# the legacy three-tier vcs.Finding enum the GitHub plugin posts as.
+_SEVERITY_TO_VCS: dict[Severity, str] = {
+    "blocker": "must-fix",
+    "major": "must-fix",
+    "minor": "suggestion",
+    "nit": "nit",
+}
 
 log = structlog.get_logger("reviewer.admission")
 
@@ -164,4 +173,47 @@ def findingdrafts_to_raw(
     return out
 
 
-__all__ = ["AdmissionResult", "admit_raw_findings", "findingdrafts_to_raw"]
+def raw_to_vcs_findings(
+    raw: list[RawFinding],
+    admitted: list[Finding],
+):  # type: ignore[no-untyped-def]
+    """Map admitted `RawFinding`s back into `vcs.Finding` payloads for
+    posting to GitHub (or whichever VCS plugin owns the PR).
+
+    Only admitted findings (post-aggregate-gate) translate; rejected ones
+    never reach the VCS plugin. Severity collapses plan §10.1's four tiers
+    onto the legacy VCS three-tier enum via `_SEVERITY_TO_VCS`.
+
+    Used today by the legacy `queue.py:_run_review_job_inner`; will be used
+    by the future `PostFindings` GitHub-posting follow-on slice.
+    """
+    from app.domain.vcs import Finding as VcsFinding  # noqa: PLC0415
+
+    out: list[VcsFinding] = []
+    admitted_fps = {f.fingerprint.hash for f in admitted}
+    for r in raw:
+        if r.fingerprint.hash not in admitted_fps:
+            continue
+        out.append(
+            VcsFinding(
+                file=r.anchor.file_path,
+                line_start=r.anchor.line_start,
+                line_end=r.anchor.line_end,
+                severity=_SEVERITY_TO_VCS.get(r.severity, "suggestion"),
+                title=r.title,
+                body=r.body,
+                rationale=r.rationale,
+                snippet=None,
+                applied_lesson_ids=[],
+                source_agent=r.source_agent,
+            )
+        )
+    return out
+
+
+__all__ = [
+    "AdmissionResult",
+    "admit_raw_findings",
+    "findingdrafts_to_raw",
+    "raw_to_vcs_findings",
+]

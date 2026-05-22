@@ -53,9 +53,6 @@ from app.domain.reviewer.lock import acquire_pr_lock
 from app.domain.reviewer.models import ReviewRow
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.service import dispatch_audits, dispatch_events
-from app.domain.reviewer.types import (
-    Severity,
-)
 from app.domain.vcs import Diff, Review, VCSPullRequest
 from app.domain.vcs import (
     get_plugin as get_vcs_plugin,
@@ -1108,12 +1105,9 @@ def _detect_language(diff: Any) -> str | None:
     return max(counts.items(), key=lambda kv: kv[1])[0]
 
 
-_SEVERITY_TO_VCS: dict[Severity, str] = {
-    "blocker": "must-fix",
-    "major": "must-fix",
-    "minor": "suggestion",
-    "nit": "nit",
-}
+# Severity tier-collapse moved to `admission._SEVERITY_TO_VCS`. Imported
+# transitively via the shim below; legacy queue.py code never referenced the
+# constant directly.
 
 
 def _findingdrafts_to_raw(
@@ -1139,34 +1133,14 @@ def _findingdrafts_to_raw(
 
 
 def _raw_to_vcs_findings(raw: list[RawFinding], new_findings: list[Any]) -> list[Any]:
-    """Map admitted RawFinding back into vcs.Finding payloads for posting.
+    """Thin shim — real implementation now lives in
+    `domain/reviewer/admission.raw_to_vcs_findings`. Kept here for the
+    legacy `_run_review_job_inner` callsite + the incremental.py callsite;
+    the M05 `PostFindings` GitHub-post follow-on imports from `admission`
+    directly."""
+    from app.domain.reviewer.admission import raw_to_vcs_findings  # noqa: PLC0415
 
-    Only admitted findings (post-aggregate-gate) translate; rejected ones
-    never reach the VCS plugin. Severity collapses plan §10.1's four tiers
-    onto the legacy VCS three-tier enum.
-    """
-    from app.domain.vcs import Finding as VcsFinding  # noqa: PLC0415
-
-    out: list[Any] = []
-    admitted_fps = {f.fingerprint.hash for f in new_findings}
-    for r in raw:
-        if r.fingerprint.hash not in admitted_fps:
-            continue
-        out.append(
-            VcsFinding(
-                file=r.anchor.file_path,
-                line_start=r.anchor.line_start,
-                line_end=r.anchor.line_end,
-                severity=_SEVERITY_TO_VCS.get(r.severity, "suggestion"),
-                title=r.title,
-                body=r.body,
-                rationale=r.rationale,
-                snippet=None,
-                applied_lesson_ids=[],
-                source_agent=r.source_agent,
-            )
-        )
-    return out
+    return raw_to_vcs_findings(raw, new_findings)
 
 
 async def startup_recovery() -> None:
