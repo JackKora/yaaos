@@ -22,6 +22,7 @@ package supervisor
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -37,6 +38,11 @@ type Config struct {
 	Concurrency       int           // claim-loop workers; defaults to 4
 	HeartbeatInterval time.Duration // defaults to 30s
 	ClaimWaitSeconds  int           // long-poll horizon per claim; defaults to 30
+
+	// Spawn creates a workspace runner. Defaults to `ExecSpawn(os.Args[0], 5s, log)`
+	// — fork+exec of the agent binary's `workspace` subcommand. Tests
+	// inject `InProcessSpawn(handler)` so they don't need an OS process.
+	Spawn SpawnFunc
 }
 
 // Logger is the minimal logging surface the supervisor needs. Real
@@ -61,11 +67,12 @@ type Supervisor struct {
 	client  *protocol.Client
 	log     Logger
 	agentID string
+	pool    *Pool
 
-	// In-memory workspace inventory the heartbeat reports. Phase 6
-	// foundations: every command we route gets an entry while it executes;
-	// the entry is dropped after the terminal event is reported. The full
-	// implementation tracks real OS processes.
+	// In-memory workspace inventory the heartbeat reports. Each entry
+	// tracks the workspace_id, the currently in-flight command_id (if any),
+	// and a `running` / `exited` status. The pool's spawn/close path keeps
+	// this in lock-step with the live runner set.
 	mu        sync.Mutex
 	inventory map[string]protocol.HeartbeatWorkspaceEntry
 }
@@ -85,11 +92,15 @@ func New(cfg Config, client *protocol.Client, log Logger) *Supervisor {
 	if cfg.ClaimWaitSeconds <= 0 {
 		cfg.ClaimWaitSeconds = 30
 	}
+	if cfg.Spawn == nil {
+		cfg.Spawn = ExecSpawn(os.Args[0], 5*time.Second, log)
+	}
 	return &Supervisor{
 		cfg:       cfg,
 		client:    client,
 		log:       log,
 		inventory: make(map[string]protocol.HeartbeatWorkspaceEntry),
+		pool:      NewPool(cfg.Spawn, log),
 	}
 }
 
@@ -118,6 +129,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		s.heartbeatLoop(ctx)
 	}()
 	wg.Wait()
+	// Reap any still-running workspace subprocesses on shutdown. Each
+	// runner gets SIGTERM → grace → SIGKILL via its own Close.
+	s.pool.CloseAll(context.Background())
 	return nil
 }
 
@@ -191,23 +205,20 @@ func (s *Supervisor) sendHeartbeat(ctx context.Context) {
 	}
 }
 
-// routeCommand is the Phase 6 stub. Each branch of the discriminator
-// would normally drive a workspace OS process; for now we just emit the
-// terminal event so the backend's workflow engine can advance. The full
-// implementation lands alongside the workspace subcommand work.
+// routeCommand dispatches an AgentCommand into the per-workspace pool +
+// forwards the resulting event back to the control plane. The pool spawns
+// a workspace subprocess on the first command for a given workspace_id,
+// reuses it for subsequent commands, and reaps it after CleanupWorkspace.
+//
+// On runner I/O error / context cancel, the pool emits a synthetic
+// `completed_failure` event so the workflow-engine on the backend always
+// sees an outcome (it never silently hangs waiting for our reply).
 func (s *Supervisor) routeCommand(ctx context.Context, cmd *protocol.AgentCommand) {
 	header := cmd.Header()
 	s.recordInventory(header.WorkspaceID, header.CommandID, "running")
 	defer s.clearInventory(header.WorkspaceID)
 
-	event := protocol.AgentEvent{
-		CommandID:    header.CommandID,
-		Kind:         protocol.EventCompletedSuccess,
-		OutcomeLabel: "success",
-		Outputs:      map[string]any{"workspace_id": header.WorkspaceID, "stubbed": true},
-		Traceparent:  header.Traceparent,
-		ReportedAt:   time.Now().UTC(),
-	}
+	event := s.pool.Dispatch(ctx, cmd)
 	if err := s.client.PostCommandEvent(ctx, header.CommandID, event); err != nil {
 		if err == protocol.ErrStaleClaim {
 			s.log.Info("supervisor.event_stale_claim", "command_id", header.CommandID)

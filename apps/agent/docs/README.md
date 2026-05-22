@@ -8,7 +8,7 @@ M05 Phase 6 (foundations) ships the wire-protocol layer + supervisor skeleton:
 
 - `internal/ipc/` — JSON-newline framing for supervisor↔workspace pipes (with partial-read tolerance + concurrency-safe encoder).
 - `internal/protocol/` — Go mirror of the OpenAPI spec at [`apps/backend/openapi/agent-api.yaml`](../../backend/openapi/agent-api.yaml) + HTTP client for the five backend endpoints.
-- `internal/supervisor/` — identity exchange, N concurrent claim-loop workers, heartbeat loop. Command-routing stub emits `completed_success` for every command kind so the backend's workflow engine can advance end-to-end; real workspace OS-process spawning + Claude Code invocation lands in the follow-on iteration.
+- `internal/supervisor/` — identity exchange, N concurrent claim-loop workers, heartbeat loop, per-workspace runner `Pool`. Each AgentCommand routes through `pool.Dispatch` which spawns a workspace subprocess on the first command, reuses it for subsequent commands, and reaps it after `CleanupWorkspace`. Production uses `ExecSpawn(os.Args[0])` for OS-process spawning + SIGTERM→SIGKILL cleanup; tests inject `InProcessSpawn(handler)` which runs `workspace.Run` in a goroutine over `io.Pipe` pairs. Pool drops failed/cancelled runners so a subsequent CreateWorkspace can respawn.
 - `internal/workspace/` — per-workspace child-process dispatcher. `Run(ctx, in, out, handler, opts)` reads framed AgentCommands from stdin, dispatches by `kind` to the `Handler` interface, writes framed AgentEvents back to stdout. Slice 62 ships the dispatch loop + `StubHandler`; real bodies (clone, WriteFiles, Claude Code subprocess, cleanup) replace the stub on the same interface in later slices.
 - `cmd/agent/main.go` — `agent supervisor` runs the full long-poll loop against `YAAOS_BACKEND_URL`. `agent workspace` runs the dispatch loop mounted against `workspace.StubHandler`.
 
@@ -51,7 +51,8 @@ See [`apps/backend/openapi/agent-api.yaml`](../../backend/openapi/agent-api.yaml
 - **Phase 0b** — directory + go.mod + skeleton package files + `bin/ci`.
 - **Phase 5** — backend's `core/agent_gateway` implements the five HTTPS endpoints + placeholder bearer issuer.
 - **Phase 6 foundations** — IPC framing library, wire-protocol Go types + HTTP client, supervisor identity-exchange + claim + heartbeat loops, command-routing stub. Tests for IPC + protocol decoding + client + an httptest-driven end-to-end against a fake backend.
-- **Phase 6 follow-on slice 62 (this)** — workspace dispatch loop (`workspace.Run` + `Handler`) wired into `cmd/agent`. `StubHandler` returns success outputs for every command kind; supervisor-side OS-process spawning + real handler bodies (clone, WriteFiles, Claude Code subprocess, cleanup) + wall-clock timeout + disk janitor + OTel SDK land in later slices.
+- **Phase 6 follow-on slice 62** — workspace dispatch loop (`workspace.Run` + `Handler`) wired into `cmd/agent`. `StubHandler` returns success outputs for every command kind.
+- **Phase 6 follow-on slice 63 (this)** — supervisor `Pool` + `WorkspaceRunner` interface, production `ExecSpawn` (`os/exec` of `os.Args[0] workspace` with stdin/stdout pipes + process-group SIGTERM→SIGKILL on close), test `InProcessSpawn` (in-goroutine `workspace.Run` over `io.Pipe`). `routeCommand` rewritten to dispatch through the pool. Real handler bodies (clone, WriteFiles, Claude Code subprocess, cleanup) + wall-clock timeout + disk janitor + OTel SDK still pending.
 - **Phase 7** — real SigV4-signed STS verifier on the backend side; `RemoteAgentWorkspaceProvider` integration.
 - **Phase 9 (this commit)** — multi-stage Dockerfile producing a distroless static image at `ghcr.io/yaaos/yaaos-agent`. Deployment guide below.
 
