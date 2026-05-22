@@ -109,6 +109,50 @@ async def test_patch_org_member_forbidden(seeded) -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_org_settings_returns_current_values(seeded, db_session) -> None:
+    """GET /api/orgs returns the current org's top-level settings so the SPA
+    can show what's set before the user edits."""
+    # Seed some non-default values to assert they round-trip.
+    org_row = (await db_session.execute(select(OrgRow).where(OrgRow.id == seeded["org"].id))).scalar_one()
+    org_row.session_timeout_override = 42
+    org_row.workspace_provider = "remote_agent"
+    org_row.registered_iam_arn = "arn:aws:iam::123456789012:role/yaaos-agent"
+    await db_session.commit()
+
+    sess = seeded["admin_sess"]
+    async with _patch_client() as c:
+        r = await c.get(
+            "/api/orgs",
+            cookies={"yaaos_session": sess.raw_token, "yaaos_csrf": sess.csrf_token},
+            headers={"X-Org-Slug": seeded["org"].slug},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["slug"] == seeded["org"].slug
+    assert body["session_timeout_override"] == 42
+    assert body["workspace_provider"] == "remote_agent"
+    assert body["registered_iam_arn"] == "arn:aws:iam::123456789012:role/yaaos-agent"
+
+
+@pytest.mark.asyncio
+async def test_get_org_settings_defaults_when_unset(seeded) -> None:
+    """A freshly seeded org has no workspace_provider / registered_iam_arn /
+    session_timeout_override set — GET returns nulls."""
+    sess = seeded["admin_sess"]
+    async with _patch_client() as c:
+        r = await c.get(
+            "/api/orgs",
+            cookies={"yaaos_session": sess.raw_token, "yaaos_csrf": sess.csrf_token},
+            headers={"X-Org-Slug": seeded["org"].slug},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["session_timeout_override"] is None
+    assert body["workspace_provider"] is None
+    assert body["registered_iam_arn"] is None
+
+
+@pytest.mark.asyncio
 async def test_patch_org_admin_can_set_override(seeded, db_session) -> None:
     sess = seeded["admin_sess"]
     async with _patch_client() as c:

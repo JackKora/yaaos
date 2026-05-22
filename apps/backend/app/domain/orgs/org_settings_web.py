@@ -2,6 +2,7 @@
 
 | Method | Path        | Action               |
 |--------|-------------|----------------------|
+| GET    | `/api/orgs` | `ORG_SETTINGS_READ` — return current top-level settings (`session_timeout_override`, `workspace_provider`, `registered_iam_arn`). |
 | PATCH  | `/api/orgs` | `ORG_SETTINGS_WRITE` — Owner/Admin can update `session_timeout_override`, `workspace_provider`, `registered_iam_arn`. |
 
 Org identified by `X-Org-Slug` header (M02 pattern). Architecture.md documents
@@ -53,6 +54,23 @@ class _OrgSettingsResponse(BaseModel):
 
 def _err(status: int, code: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"error": code})
+
+
+@router.get("", dependencies=[Depends(require(Action.ORG_SETTINGS_READ))])
+async def get_org_settings() -> _OrgSettingsResponse:
+    """Return the current org's top-level settings. Lets the SPA's Settings
+    page show what's actually set before the user edits."""
+    org_id = org_id_var.get()
+    if org_id is None:
+        raise _err(400, "no_org_context")
+    async with db_session() as s:
+        row = (await s.execute(select(OrgRow).where(OrgRow.id == org_id))).scalar_one()
+    return _OrgSettingsResponse(
+        slug=row.slug,
+        session_timeout_override=row.session_timeout_override,
+        workspace_provider=row.workspace_provider,
+        registered_iam_arn=row.registered_iam_arn,
+    )
 
 
 @router.patch("", dependencies=[Depends(require(Action.ORG_SETTINGS_WRITE))])
