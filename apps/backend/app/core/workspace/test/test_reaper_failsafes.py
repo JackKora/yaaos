@@ -28,7 +28,12 @@ from app.core.workspace import (
     register_workspace_provider,
 )
 from app.core.workspace.models import WorkspaceRow
-from app.core.workspace.service import _attempt_destroy, _reaper_sweep_once, close_workspace
+from app.core.workspace.service import (
+    _attempt_destroy,
+    _reaper_sweep_once,
+    close_workspace,
+    startup_recovery,
+)
 from app.core.workspace.types import WorkspaceStatus
 
 
@@ -287,3 +292,37 @@ async def test_close_workspace_no_row_is_silent(db_session) -> None:  # type: ig
     existed) doesn't raise — close_workspace is fully idempotent."""
     _ = db_session
     await close_workspace(uuid4())  # must not raise
+
+
+# ── startup_recovery (orphan-row recovery from prior process crash) ─────
+
+
+async def test_startup_recovery_flips_orphan_rows_to_expired(db_session) -> None:  # type: ignore[no-untyped-def]
+    """A prior process crashed mid-workflow leaving rows in non-terminal
+    states (CREATING / ACTIVE / DESTROYING). `startup_recovery()` runs at
+    FastAPI lifespan start and flips them all to EXPIRED so the reaper
+    picks them up — no stuck workspaces survive a restart. This is the
+    Python side of failsafe #4 (startup reconciliation)."""
+    rows = [
+        _make_row(status=WorkspaceStatus.CREATING, provider_id="good"),
+        _make_row(status=WorkspaceStatus.ACTIVE, provider_id="good"),
+        _make_row(status=WorkspaceStatus.DESTROYING, provider_id="good"),
+        # Already-terminal rows must NOT be re-flipped.
+        _make_row(status=WorkspaceStatus.DESTROYED, provider_id="good"),
+        _make_row(status=WorkspaceStatus.DESTROY_FAILED, provider_id="good"),
+    ]
+    for row in rows:
+        db_session.add(row)
+    await db_session.commit()
+
+    await startup_recovery()
+
+    refreshed = (await db_session.execute(select(WorkspaceRow).order_by(WorkspaceRow.id))).scalars().all()
+    by_id = {r.id: r for r in refreshed}
+    # Three orphans flipped.
+    assert by_id[rows[0].id].status == WorkspaceStatus.EXPIRED.value
+    assert by_id[rows[1].id].status == WorkspaceStatus.EXPIRED.value
+    assert by_id[rows[2].id].status == WorkspaceStatus.EXPIRED.value
+    # Terminal rows untouched.
+    assert by_id[rows[3].id].status == WorkspaceStatus.DESTROYED.value
+    assert by_id[rows[4].id].status == WorkspaceStatus.DESTROY_FAILED.value
