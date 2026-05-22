@@ -136,7 +136,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 ## Phase 5 — `core/agent_gateway` + wire protocol
 
 - [x] OpenAPI spec finalized: five endpoints + AgentCommand union + AgentEvent schemas + `traceparent` + errors.
-- [ ] Pydantic codegen on backend side; oapi-codegen on Go side. CI regenerates both. _(Hand-written mirror in `core/agent_gateway/types.py` today; codegen automation deferred to a follow-on iteration. The OpenAPI spec is the contract.)_
+- [ ] Pydantic codegen on backend side; oapi-codegen on Go side. CI regenerates both. _(Hand-written mirror in `core/agent_gateway/types.py` today; codegen automation deferred to a follow-on iteration. Slice 66 adds a drift-detection test — `app/core/agent_gateway/test/test_openapi_mirror_drift.py` walks the spec, resolves allOf/$ref, asserts every YAML property name + every enum value (`AgentCommandKind`, `AgentEventKind`, `WorkspaceEventKind`) has a Python mirror. Catches the common add/rename/remove drift without committing to full codegen tooling. The Go-side equivalent is the next slice.)_
 - [x] `core/agent_gateway` implementation: per-agent in-memory queue, long-poll, identity exchange (placeholder verifier), heartbeat with inventory ingestion, event ingestion.
 - [x] Stale-claim guard: `410 Gone` on attempt mismatch.
 - [x] Tests: long-poll 204 / 200; heartbeat reconciliation; event routing.

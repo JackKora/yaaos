@@ -20,7 +20,9 @@ info:
     M05 Phase 5: hand-written. Future codegen (Pydantic on the backend,
     oapi-codegen on the Go side) consumes this file; until then the
     in-tree types under `app/core/agent_gateway/types.py` are the
-    canonical Pydantic mirror.
+    canonical Pydantic mirror. A drift-detection test
+    (`app/core/agent_gateway/test/test_openapi_mirror_drift.py`, slice 66)
+    catches add/rename/remove between this spec and the Pydantic mirror.
 
 servers:
   - url: https://agent.yaaos.dev
