@@ -469,7 +469,16 @@ def _render_activity(event: dict[str, Any]) -> ActivityEvent | None:
                     ts=ts,
                     kind="tool_call_started",
                     message=f"{tool}: {target}" if target else tool,
-                    detail={"tool": tool, "tool_use_id": block.get("id"), "input": inp},
+                    # Trust-boundary: ActivityEvents cross from the customer's
+                    # workspace to yaaos' control plane. `inp` for Edit / Write
+                    # tools carries the full source content the agent is about
+                    # to commit; we MUST NOT leak it across the boundary. Only
+                    # metadata fields (paths, command summaries) are kept.
+                    detail={
+                        "tool": tool,
+                        "tool_use_id": block.get("id"),
+                        "input_summary": _safe_tool_input(tool, inp),
+                    },
                 )
             if btype == "text":
                 text = (block.get("text") or "").strip()
@@ -487,21 +496,30 @@ def _render_activity(event: dict[str, Any]) -> ActivityEvent | None:
         for block in msg.get("content", []) or []:
             if block.get("type") != "tool_result":
                 continue
+            # Trust-boundary: a tool_result is the raw output of running a
+            # tool inside the customer's workspace (file body for Read,
+            # stdout for Bash, match lines for Grep). It must NOT cross
+            # into the activity feed — only the size + error flag may.
             content = block.get("content")
             if isinstance(content, list):
-                summary = " ".join(str(c.get("text", c)) if isinstance(c, dict) else str(c) for c in content)
+                size_bytes = sum(
+                    len(str(c.get("text", c))) if isinstance(c, dict) else len(str(c)) for c in content
+                )
             else:
-                summary = str(content or "")
-            excerpt = summary.strip()
-            if len(excerpt) > 200:
-                excerpt = excerpt[:197] + "…"
+                size_bytes = len(str(content or ""))
+            is_error = bool(block.get("is_error", False))
+            if is_error:
+                message = "→ error"
+            else:
+                message = f"→ ok ({size_bytes} bytes)" if size_bytes else "→ ok (empty)"
             return ActivityEvent(
                 ts=ts,
                 kind="tool_call_finished",
-                message=f"→ {excerpt}" if excerpt else "→ (empty result)",
+                message=message,
                 detail={
                     "tool_use_id": block.get("tool_use_id"),
-                    "is_error": block.get("is_error", False),
+                    "is_error": is_error,
+                    "size_bytes": size_bytes,
                 },
             )
         return None
@@ -516,6 +534,51 @@ def _render_activity(event: dict[str, Any]) -> ActivityEvent | None:
             },
         )
     return None
+
+
+# Tool names whose `input` dicts may carry full source content (file bodies,
+# diff hunks) that must NOT cross the activity-stream trust boundary into the
+# yaaos control plane. The pre-renderer keeps only metadata fields for these.
+_CONTENT_BEARING_TOOLS: frozenset[str] = frozenset({"Edit", "MultiEdit", "Write", "NotebookEdit"})
+
+
+def _safe_tool_input(tool: str, inp: dict[str, Any]) -> dict[str, Any]:
+    """Metadata-only projection of a tool_use's input dict, safe to ship in
+    an `ActivityEvent.detail` across the workspace → control-plane trust
+    boundary.
+
+    - Edit/Write tools: keep only `file_path` (target identity); the body
+      / new_string / content fields stay inside the workspace.
+    - Read/Glob/LS/NotebookRead: keep `file_path` or `path` (target only).
+    - Bash: keep a 120-char prefix of the command (caller already summarized
+      it for `message`; `detail` mirrors that prefix without expansion).
+    - Grep: keep `pattern` + `path`.
+    - WebFetch/WebSearch: keep `url` / `query`.
+    - TodoWrite: keep `len(todos)` only.
+    - Unknown tools: return empty dict — better to drop than leak.
+    """
+    if tool in _CONTENT_BEARING_TOOLS:
+        path = inp.get("file_path") or inp.get("path")
+        return {"file_path": str(path)} if path else {}
+    if tool in ("Read", "Glob", "LS", "NotebookRead"):
+        path = inp.get("file_path") or inp.get("path") or inp.get("pattern")
+        return {"target": str(path)} if path else {}
+    if tool == "Bash":
+        cmd = str(inp.get("command") or "")
+        return {"command_prefix": cmd if len(cmd) < 120 else cmd[:117] + "…"}
+    if tool == "Grep":
+        return {
+            "pattern": str(inp.get("pattern") or ""),
+            "path": str(inp.get("path") or ""),
+        }
+    if tool == "WebFetch":
+        return {"url": str(inp.get("url") or "")}
+    if tool == "WebSearch":
+        return {"query": str(inp.get("query") or "")}
+    if tool == "TodoWrite":
+        todos = inp.get("todos") or []
+        return {"todo_count": len(todos) if isinstance(todos, list) else 0}
+    return {}
 
 
 def _summarize_tool_input(tool: str, inp: dict[str, Any]) -> str:
