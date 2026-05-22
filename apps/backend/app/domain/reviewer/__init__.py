@@ -54,10 +54,6 @@ from app.domain.reviewer.models import (
 )
 from app.domain.reviewer.queue import (
     cancel_pending,
-    get_review_job,
-    list_in_flight,
-    list_review_jobs_for_pr,
-    metrics_summary,
     schedule_review,
     startup_recovery,
 )
@@ -70,6 +66,12 @@ from app.domain.reviewer.repository_protocol import AggregateRepository
 from app.domain.reviewer.review_job import (
     ReviewJob,
     ReviewJobInput,
+)
+from app.domain.reviewer.review_job_queries import (
+    get_review_job,
+    list_in_flight,
+    list_review_jobs_for_pr,
+    metrics_summary,
 )
 from app.domain.reviewer.service import (
     VERIFY_ACT_THRESHOLD,

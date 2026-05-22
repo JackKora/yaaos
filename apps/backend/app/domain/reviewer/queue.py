@@ -78,7 +78,7 @@ from app.domain.reviewer.queue_events import (
     ReviewJobStepProgress,
 )
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
-from app.domain.reviewer.review_job import ReviewJob, ReviewJobInput
+from app.domain.reviewer.review_job import ReviewJobInput
 from app.domain.reviewer.secrets_detection import detect_secrets as _detect_secrets
 from app.domain.reviewer.secrets_detection import (
     secrets_warning_review as _secrets_warning_review,
@@ -325,70 +325,10 @@ async def cancel_pending(
 # See top-of-file: `ReviewJob` is imported from `domain/reviewer/review_job.py`.
 
 
-async def get_review_job(review_job_id: UUID, *, org_id: UUID) -> ReviewJob:
-    async with db_session() as s:
-        row = (
-            await s.execute(
-                select(ReviewRow).where(ReviewRow.id == review_job_id, ReviewRow.org_id == org_id)
-            )
-        ).scalar_one_or_none()
-    if row is None:
-        raise LookupError(str(review_job_id))
-    return ReviewJob.from_row(row)
-
-
-async def list_review_jobs_for_pr(pr_id: UUID, *, org_id: UUID) -> list[ReviewJob]:
-    async with db_session() as s:
-        rows = (
-            (
-                await s.execute(
-                    select(ReviewRow)
-                    .where(ReviewRow.pr_id == pr_id, ReviewRow.org_id == org_id)
-                    .order_by(ReviewRow.created_at.desc())
-                )
-            )
-            .scalars()
-            .all()
-        )
-    return [ReviewJob.from_row(r) for r in rows]
-
-
-async def list_in_flight(*, org_id: UUID) -> list[ReviewJob]:
-    async with db_session() as s:
-        rows = (
-            (
-                await s.execute(
-                    select(ReviewRow).where(
-                        ReviewRow.org_id == org_id,
-                        ReviewRow.status.in_(["queued", "running"]),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-    return [ReviewJob.from_row(r) for r in rows]
-
-
-async def metrics_summary(*, org_id: UUID) -> dict[str, Any]:
-    """Aggregate counters for the basic-metrics requirement."""
-    async with db_session() as s:
-        rows = (await s.execute(select(ReviewRow).where(ReviewRow.org_id == org_id))).scalars().all()
-    statuses: dict[str, int] = {}
-    posted = 0
-    failed = 0
-    for r in rows:
-        statuses[r.status] = statuses.get(r.status, 0) + 1
-        if r.status == "posted":
-            posted += 1
-        if r.status == "failed":
-            failed += 1
-    return {
-        "review_jobs_by_status": statuses,
-        "total_reviews_posted": posted,
-        "failure_count": failed,
-        "failure_rate": (failed / (posted + failed)) if (posted + failed) > 0 else 0.0,
-    }
+# `get_review_job`, `list_review_jobs_for_pr`, `list_in_flight`, and
+# `metrics_summary` moved to `domain/reviewer/review_job_queries.py`
+# (slice 44). Re-imported at the top of the file under the same names so
+# in-flight callers don't break.
 
 
 # ── Handler ───────────────────────────────────────────────────────────────────
