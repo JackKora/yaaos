@@ -63,6 +63,15 @@ func TestRealHandler_CreateWorkspace_AllocatesTempDir(t *testing.T) {
 	if out["repo"] != "acme/web" {
 		t.Errorf("repo: want acme/web got %v", out["repo"])
 	}
+	// Startup-reconciliation manifest is written for the supervisor to
+	// find on restart (slice 71).
+	manifest, err := os.ReadFile(filepath.Join(path, ".workspace-id"))
+	if err != nil {
+		t.Errorf("manifest read: %v", err)
+	}
+	if string(manifest) != "ws-1" {
+		t.Errorf("manifest contents: want ws-1 got %q", string(manifest))
+	}
 }
 
 func TestRealHandler_CreateWorkspace_CloneFailureTearsDownTempDir(t *testing.T) {

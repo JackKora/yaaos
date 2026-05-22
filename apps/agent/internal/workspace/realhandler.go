@@ -150,11 +150,28 @@ func (h *RealHandler) CreateWorkspace(ctx context.Context, cmd *protocol.CreateW
 	}
 
 	// Clone outside the mutex so concurrent CreateWorkspace calls for
-	// different workspace_ids don't serialize on the slot map.
+	// different workspace_ids don't serialize on the slot map. The
+	// tempdir is empty at this point (manifest write happens *after*
+	// the clone) — `git clone` refuses non-empty destinations.
 	if err := h.cfg.CloneFunc(ctx, path, cmd.Repo, cmd.Auth, cmd.History); err != nil {
 		// Tear down the empty tempdir on clone failure so we don't leak.
 		_ = os.RemoveAll(path)
 		return nil, fmt.Errorf("git clone: %w", err)
+	}
+
+	// Startup-reconciliation manifest: write the workspace_id to a
+	// well-known file inside the tempdir so the supervisor can find +
+	// reattribute orphans when it restarts mid-flight (see
+	// supervisor.scanOrphanWorkspaces). The file content is the
+	// workspace_id verbatim; no header / encoding to keep it
+	// language-agnostic. Written AFTER clone so the clone target stays
+	// empty.
+	manifestPath := filepath.Join(path, ".workspace-id")
+	if err := os.WriteFile(manifestPath, []byte(cmd.WorkspaceID), 0o600); err != nil {
+		// Manifest is best-effort; CreateWorkspace shouldn't fail
+		// because of it. An orphan workspace without manifest is
+		// merely invisible to reconciliation, not broken.
+		_ = err
 	}
 
 	h.mu.Lock()

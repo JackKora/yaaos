@@ -58,6 +58,7 @@ func runSupervisor() error {
 		AgentPodID:       envOr("YAAOS_AGENT_POD_ID", randomPodID()),
 		Version:          envOr("YAAOS_AGENT_VERSION", "0.0.0-dev"),
 		SignedSTSRequest: envOr("YAAOS_SIGNED_STS_REQUEST", "placeholder-phase-7-wires-real-sts"),
+		WorkspaceRoot:    envOr("YAAOS_WORKSPACE_ROOT", ""),
 	}
 	httpClient := &http.Client{Timeout: 0} // no global timeout — long-poll needs to wait
 	cli := protocol.NewClient(cfg.BaseURL, httpClient)

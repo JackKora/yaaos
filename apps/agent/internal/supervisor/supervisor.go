@@ -46,6 +46,14 @@ type Config struct {
 	// — fork+exec of the agent binary's `workspace` subcommand. Tests
 	// inject `InProcessSpawn(handler)` so they don't need an OS process.
 	Spawn SpawnFunc
+
+	// WorkspaceRoot is the parent directory the workspace process clones
+	// repos into. On startup the supervisor scans this for orphan
+	// workspaces from a previous run and reports them as
+	// `status="unknown"` in the first heartbeat. Empty disables
+	// reconciliation; production usually sets it from
+	// `YAAOS_WORKSPACE_ROOT`.
+	WorkspaceRoot string
 }
 
 // Logger is the minimal logging surface the supervisor needs. Real
@@ -117,6 +125,19 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	s.agentID = resp.AgentID
 	s.client.SetBearer(resp.Bearer)
 	s.log.Info("supervisor.identity_exchanged", "agent_id", s.agentID)
+
+	// Startup reconciliation: any workspace directory left over from a
+	// previous run gets pre-loaded into the inventory as
+	// `status="unknown"` so the first heartbeat reports it. The backend
+	// decides whether to reclaim or signal cleanup.
+	if orphans := scanOrphanWorkspaces(s.cfg.WorkspaceRoot, s.log); len(orphans) > 0 {
+		s.mu.Lock()
+		for _, o := range orphans {
+			s.inventory[o.WorkspaceID] = o
+		}
+		s.mu.Unlock()
+		s.log.Info("supervisor.reconciliation_orphans", "count", len(orphans))
+	}
 
 	var wg sync.WaitGroup
 	for i := 0; i < s.cfg.Concurrency; i++ {
