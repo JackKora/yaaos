@@ -59,7 +59,7 @@ Ten matching `WorkflowCommand`s ship as stubs in `domain/reviewer/commands/`:
 
 The three workspace-lifecycle commands (`ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`) ship in [`core/workspace.commands`](core_workspace.md) and register through the reviewer bootstrap so any workflow can reference them.
 
-**Phase 4 foundations boundary:** command bodies are stubs returning `Outcome.success()`. The follow-on iteration wires them to `domain/coding_agent` + admission, dismantles `queue.py`, and drops the `review_jobs` table.
+**Phase 4 boundary:** `CheckShouldReview` ships with a real body — reads `is_draft` / `is_fork` / `labels` / `author_login` from the ticket payload and returns `Outcome.success(label="skip", outputs={"reason": ...})` on any first-match signal (`draft`, `fork`, `label:<name>`, `bot_author`). Skip labels: `yaaos-skip`, `no-review`, `wip` (case-insensitive). The bot-author check matches `*[bot]` / `*-bot` suffixes. Other command bodies remain stubs until the `queue.py` dismantle wires them to `domain/coding_agent` + admission and drops the `review_jobs` table.
 
 ### Entities
 

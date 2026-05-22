@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
@@ -257,6 +257,16 @@ async def get(ticket_id: UUID, *, org_id: UUID) -> Ticket:
                 t.author_login = pr.author_login
                 t.is_draft = pr.is_draft
     return t
+
+
+async def get_payload(ticket_id: UUID, *, session: AsyncSession) -> dict[str, Any]:
+    """Return the ticket's intake payload dict. Required session — read-only,
+    no commits. M05 reviewer commands read admission signals (`is_draft`,
+    `is_fork`, `labels`, etc.) from here without re-fetching from GitHub."""
+    row = (await session.execute(select(TicketRow).where(TicketRow.id == ticket_id))).scalar_one_or_none()
+    if row is None:
+        raise TicketNotFoundError(str(ticket_id))
+    return dict(row.payload or {})
 
 
 async def get_by_pr(pr_id: UUID, *, org_id: UUID) -> Ticket | None:

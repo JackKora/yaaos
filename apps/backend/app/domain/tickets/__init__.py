@@ -16,6 +16,7 @@ from app.domain.tickets.service import (
     create_for_pr,
     get,
     get_by_pr,
+    get_payload,
     list_tickets,
 )
 
@@ -34,5 +35,6 @@ __all__ = [
     "create_for_pr",
     "get",
     "get_by_pr",
+    "get_payload",
     "list_tickets",
 ]

@@ -16,19 +16,28 @@ Five **Local** commands handle the control-plane side:
 - `ArchiveStaleFindings` — mark stale findings archived.
 - `PostReply` — post a reply on a finding's thread.
 
-Phase 4 (foundations) ships stub bodies (returning `Outcome.success()`) so
-the engine's registry is complete and the five reviewer workflows can
-register cleanly. Real bodies — wired to `domain/coding_agent` +
-`domain/reviewer.admission` (extracted from `queue.py`) — land in the
-follow-on Phase 4 iteration that dismantles `queue.py` and drops
-`review_jobs`.
+`CheckShouldReview` ships with a real body that reads admission signals
+(is_draft / is_fork / labels) from the ticket payload. The other four Local
+commands and all five Workspace commands ship as stubs pending the queue.py
+dismantle that wires the existing reviewer pipeline through them.
 """
 
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
+import structlog
+
+from app.core.database import session as db_session
 from app.core.workflow import CommandCategory, CommandContext, Outcome
+from app.domain.tickets import get_payload as get_ticket_payload
+
+log = structlog.get_logger("domain.reviewer.commands")
+
+# Labels whose presence on a PR force-skips the review. Matches the legacy
+# `queue.py` behavior so the cutover is a straight swap. Case-insensitive.
+SKIP_LABELS: frozenset[str] = frozenset({"yaaos-skip", "no-review", "wip"})
 
 # ── Workspace commands (5) ──────────────────────────────────────────────
 
@@ -77,12 +86,49 @@ class _LocalReviewCommand:
         return Outcome.success()
 
 
-class CheckShouldReview(_LocalReviewCommand):
+class CheckShouldReview:
     """Admission gate before provisioning. Returns `Outcome.success(label='skip')`
-    when the PR is draft / fork / bot-authored / skip-labelled / off org config;
-    workflow then terminates without spinning up a workspace."""
+    when the PR is draft / fork / bot-authored / skip-labelled; workflow
+    then terminates without spinning up a workspace. The PR payload (set by
+    `plugins/github/intake_type`) carries `is_draft`, `is_fork`, `labels`,
+    `author_login`."""
 
     kind = "CheckShouldReview"
+    category = CommandCategory.LOCAL
+    restart_safe = True
+
+    async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
+        del inputs
+        async with db_session() as s:
+            payload = await get_ticket_payload(UUID(ctx.ticket_id), session=s)
+
+        reason = _decide_skip(payload)
+        if reason is not None:
+            log.info(
+                "checkshouldreview.skip",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+                reason=reason,
+            )
+            return Outcome.success(label="skip", outputs={"reason": reason})
+
+        return Outcome.success(outputs={"pr_external_id": payload.get("pr_external_id")})
+
+
+def _decide_skip(payload: dict[str, Any]) -> str | None:
+    """First-match-wins admission. Returns a skip reason string or None for go."""
+    if payload.get("is_draft"):
+        return "draft"
+    if payload.get("is_fork"):
+        return "fork"
+    labels = {str(label).lower() for label in (payload.get("labels") or [])}
+    forced = labels & {label.lower() for label in SKIP_LABELS}
+    if forced:
+        return f"label:{sorted(forced)[0]}"
+    author = (payload.get("author_login") or "").lower()
+    if author.endswith("[bot]") or author.endswith("-bot"):
+        return "bot_author"
+    return None
 
 
 class PostFindings(_LocalReviewCommand):
@@ -109,7 +155,7 @@ ALL_WORKSPACE_COMMANDS: tuple[_WorkspaceReviewCommand, ...] = (
     AnswerQuestion(),
 )
 
-ALL_LOCAL_COMMANDS: tuple[_LocalReviewCommand, ...] = (
+ALL_LOCAL_COMMANDS: tuple[object, ...] = (
     CheckShouldReview(),
     PostFindings(),
     ResolveFinding(),

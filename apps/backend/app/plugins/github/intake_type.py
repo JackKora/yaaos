@@ -96,6 +96,16 @@ class GithubPrIntakeType:
         title = pr.get("title")
         body_text = pr.get("body")
 
+        # Admission signals: CheckShouldReview reads these to decide whether
+        # to provision a workspace at all. Keeping them on the ticket payload
+        # means the engine doesn't have to re-fetch the PR from GitHub before
+        # the first gate.
+        head_repo = (pr.get("head") or {}).get("repo") or {}
+        base_repo = (pr.get("base") or {}).get("repo") or {}
+        is_draft = bool(pr.get("draft", False))
+        is_fork = (head_repo.get("full_name") or "") != (base_repo.get("full_name") or "")
+        labels = [str((label or {}).get("name") or "") for label in (pr.get("labels") or [])]
+
         if not pr_external_id:
             raise IntakeRejectedError("bad_request", "missing pull_request.id")
 
@@ -121,6 +131,9 @@ class GithubPrIntakeType:
                 "head_sha": (pr.get("head") or {}).get("sha"),
                 "base_sha": (pr.get("base") or {}).get("sha"),
                 "author_login": (pr.get("user") or {}).get("login"),
+                "is_draft": is_draft,
+                "is_fork": is_fork,
+                "labels": labels,
             },
         )
 
