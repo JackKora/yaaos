@@ -77,13 +77,19 @@ func runSupervisor() error {
 func runWorkspace() error {
 	// The supervisor spawns this process with stdin = command pipe and
 	// stdout = event pipe. Run reads commands, dispatches via the Handler,
-	// writes events back. Today we mount the stub Handler — real bodies
-	// (clone, WriteFiles, Claude Code invocation, cleanup) replace it in
-	// later slices.
+	// writes events back.
+	//
+	// Mounts the RealHandler: tempdir lifecycle + file writes + auth
+	// refresh + cleanup all do real work. CreateWorkspace's git clone
+	// step and InvokeClaudeCode's subprocess wiring are still follow-on
+	// slices — see workspace/realhandler.go's doc.
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	handler := workspace.NewRealHandler(workspace.RealHandlerConfig{
+		Root: envOr("YAAOS_WORKSPACE_ROOT", ""),
+	})
 	log.Printf("workspace.starting")
-	if err := workspace.Run(ctx, os.Stdin, os.Stdout, workspace.StubHandler{}, workspace.Options{}); err != nil {
+	if err := workspace.Run(ctx, os.Stdin, os.Stdout, handler, workspace.Options{}); err != nil {
 		return err
 	}
 	log.Printf("workspace.stopped")
