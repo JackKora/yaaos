@@ -67,6 +67,14 @@ The three workspace-lifecycle commands (`ProvisionWorkspace`, `CleanupWorkspace`
 
 `PostFindings`, `PostReply`, and the five Workspace bodies remain stubs until the `queue.py` dismantle wires them to `domain/coding_agent` + admission and drops the `review_jobs` table.
 
+The five Workspace reviewer commands (`CodeReview`, `IncrementalReview`, `VerifyFix`, `StaleCheck`, `AnswerQuestion`) share a base `_WorkspaceReviewCommand` that on every invocation:
+
+1. Resolves `workspace_id` from inputs → live `Workspace` handle (failure on missing/invalid/unresolvable).
+2. Fetches the ticket's `WorkspaceTicketContext` (org_id, plugin_id, repo, payload, pr_id) via the registered provider (failure on missing provider / missing ticket).
+3. Forwards `(workspace, ticket_ctx, inputs, ctx)` to subclass `_run_in_workspace`.
+
+Subclass bodies just override `_run_in_workspace` and call the matching `domain/coding_agent.<method>` — they don't repeat the resolution boilerplate.
+
 ### Entities
 
 - `ReviewJob` — generation-1 run-level state per `(PR x run)`: status, heartbeat, model, effort, JSONB findings, JSONB activity log. Identity = `id` UUID.

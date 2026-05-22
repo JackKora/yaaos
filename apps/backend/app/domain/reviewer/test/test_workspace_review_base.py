@@ -23,8 +23,10 @@ import pytest
 from app.core.plugin_meta import PluginMeta
 from app.core.workflow import CommandContext, Outcome
 from app.core.workspace import (
-    Workspace,
+    WorkspaceTicketContext,
     _reset_providers_for_tests,
+    _reset_workflow_context_provider_for_tests,
+    register_workflow_context_provider,
     register_workspace_provider,
 )
 from app.core.workspace.models import WorkspaceRow
@@ -56,12 +58,38 @@ class _StubProvider:
         return None
 
 
+class _StaticContextProvider:
+    """Returns a fixed WorkspaceTicketContext for the base's ticket_ctx
+    fetch. Tests that don't care about ticket fields can omit the
+    registration; the unresolvable / missing-provider paths cover those."""
+
+    def __init__(self, context: WorkspaceTicketContext | None) -> None:
+        self._context = context
+
+    async def get_workspace_ticket_context(self, ticket_id):  # type: ignore[no-untyped-def]
+        del ticket_id
+        return self._context
+
+
+def _default_ticket_ctx() -> WorkspaceTicketContext:
+    return WorkspaceTicketContext(
+        org_id=uuid4(),
+        plugin_id="github",
+        repo_external_id="me/repo",
+        payload={},
+        pr_id=None,
+    )
+
+
 @pytest.fixture
 def _stub_provider():
     _reset_providers_for_tests()
+    _reset_workflow_context_provider_for_tests()
     register_workspace_provider(_StubProvider())
+    register_workflow_context_provider(_StaticContextProvider(_default_ticket_ctx()))
     yield
     _reset_providers_for_tests()
+    _reset_workflow_context_provider_for_tests()
 
 
 def _ctx() -> CommandContext:
@@ -111,15 +139,75 @@ async def test_happy_path_forwards_workspace_to_subclass(db_session, _stub_provi
     )
     await db_session.commit()
 
-    captured: dict[str, Workspace] = {}
+    captured: dict[str, object] = {}
 
     class _CodeReviewSpy(CodeReview):
-        async def _run_in_workspace(self, workspace, inputs, ctx):  # type: ignore[no-untyped-def]
+        async def _run_in_workspace(self, workspace, ticket_ctx, inputs, ctx):  # type: ignore[no-untyped-def]
             captured["ws"] = workspace
+            captured["ticket_ctx"] = ticket_ctx
             captured["inputs"] = inputs
             return Outcome.success(outputs={"draft_findings": []})
 
     outcome = await _CodeReviewSpy().execute({"workspace_id": str(ws_id)}, _ctx())
     assert outcome.label == "success"
-    assert captured["ws"].id == str(ws_id)
-    assert captured["inputs"]["workspace_id"] == str(ws_id)
+    assert captured["ws"].id == str(ws_id)  # type: ignore[union-attr]
+    assert isinstance(captured["ticket_ctx"], WorkspaceTicketContext)
+    assert captured["inputs"]["workspace_id"] == str(ws_id)  # type: ignore[index]
+
+
+async def test_no_context_provider_returns_failure(db_session) -> None:  # type: ignore[no-untyped-def]
+    """Workspace resolves but no WorkflowContextProvider is registered →
+    Outcome.failure. Domain bootstrap is expected to install the provider;
+    a missing one is a deployment misconfig, not a workflow input error."""
+    _reset_providers_for_tests()
+    _reset_workflow_context_provider_for_tests()
+    register_workspace_provider(_StubProvider())
+    ws_id = uuid4()
+    db_session.add(
+        WorkspaceRow(
+            id=ws_id,
+            org_id=uuid4(),
+            provider_id="in_process",
+            spec={"sha": "x"},
+            status=WorkspaceStatus.ACTIVE.value,
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            plugin_state={"sha": "x"},
+        )
+    )
+    await db_session.commit()
+    try:
+        outcome = await CodeReview().execute({"workspace_id": str(ws_id)}, _ctx())
+        assert outcome.label == "failure"
+        assert "no workflow_context provider" in (outcome.failure_reason or "")
+    finally:
+        _reset_providers_for_tests()
+
+
+async def test_ticket_not_found_returns_failure(db_session) -> None:  # type: ignore[no-untyped-def]
+    """Workspace + provider both resolve but provider returns None for the
+    ticket → Outcome.failure. The workflow can't proceed without ticket
+    context."""
+    _reset_providers_for_tests()
+    _reset_workflow_context_provider_for_tests()
+    register_workspace_provider(_StubProvider())
+    register_workflow_context_provider(_StaticContextProvider(context=None))
+    ws_id = uuid4()
+    db_session.add(
+        WorkspaceRow(
+            id=ws_id,
+            org_id=uuid4(),
+            provider_id="in_process",
+            spec={"sha": "x"},
+            status=WorkspaceStatus.ACTIVE.value,
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            plugin_state={"sha": "x"},
+        )
+    )
+    await db_session.commit()
+    try:
+        outcome = await CodeReview().execute({"workspace_id": str(ws_id)}, _ctx())
+        assert outcome.label == "failure"
+        assert "not found" in (outcome.failure_reason or "")
+    finally:
+        _reset_providers_for_tests()
+        _reset_workflow_context_provider_for_tests()

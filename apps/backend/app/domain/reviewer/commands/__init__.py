@@ -33,6 +33,7 @@ from app.core.database import session as db_session
 from app.core.workflow import CommandCategory, CommandContext, Outcome
 from app.core.workspace import (
     Workspace,
+    WorkspaceTicketContext,
     get_workflow_context_provider,
     get_workspace,
 )
@@ -48,16 +49,21 @@ SKIP_LABELS: frozenset[str] = frozenset({"yaaos-skip", "no-review", "wip"})
 
 
 class _WorkspaceReviewCommand:
-    """Workspace-category reviewer command. The base does two things on every
-    invocation:
+    """Workspace-category reviewer command. The base does three things on
+    every invocation:
 
     1. Reads `workspace_id` from inputs and resolves it to a live `Workspace`
        handle via `core/workspace.get_workspace()`. Missing or unresolved →
        `Outcome.failure` (the upstream `ProvisionWorkspace` step would have
        failed to write `workspace_id` into outputs, or the row was destroyed
        between provision and review).
-    2. Hands the live `workspace` + raw `inputs` + `ctx` to the subclass via
-       `_run_in_workspace(workspace, inputs, ctx)`.
+    2. Fetches the `WorkspaceTicketContext` (org_id, plugin_id, repo,
+       payload, pr_id) for the workflow's ticket via the registered
+       `WorkflowContextProvider`. Missing provider or missing ticket → also
+       `Outcome.failure` — the workflow can't proceed without org context
+       to look up plugins / build review context.
+    3. Hands the resolved (workspace, ticket_ctx, inputs, ctx) to the
+       subclass via `_run_in_workspace(...)`.
 
     Subclass bodies (`CodeReview`, `IncrementalReview`, `VerifyFix`,
     `StaleCheck`, `AnswerQuestion`) override `_run_in_workspace` to build
@@ -83,18 +89,36 @@ class _WorkspaceReviewCommand:
         if workspace is None:
             return Outcome.failure(reason=f"workspace {ws_id} not resolvable")
 
-        return await self._run_in_workspace(workspace, inputs, ctx)
+        provider = get_workflow_context_provider()
+        if provider is None:
+            return Outcome.failure(reason="no workflow_context provider registered")
+
+        try:
+            ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
+        except Exception as exc:
+            log.exception(
+                "workspace_review.context_fetch_failed",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+            )
+            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
+
+        if ticket_ctx is None:
+            return Outcome.failure(reason=f"ticket {ctx.ticket_id} not found")
+
+        return await self._run_in_workspace(workspace, ticket_ctx, inputs, ctx)
 
     async def _run_in_workspace(
         self,
         workspace: Workspace,
+        ticket_ctx: WorkspaceTicketContext,
         inputs: dict[str, Any],
         ctx: CommandContext,
     ) -> Outcome:
         """Override in subclasses to invoke the relevant `domain/coding_agent`
         method against the live workspace. Default body is success — keeps
         the engine workflow draining cleanly until each real body lands."""
-        del workspace, inputs, ctx
+        del workspace, ticket_ctx, inputs, ctx
         return Outcome.success()
 
 
