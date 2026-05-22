@@ -57,7 +57,10 @@ pr_review_v1 = Workflow(
         Step(
             id="post",
             command_kind="PostFindings",
-            inputs={"draft_findings": "$review.draft_findings"},
+            inputs={
+                "draft_findings": "$review.draft_findings",
+                "workspace_id": "$provision.workspace_id",
+            },
         ),
         Step(
             id="cleanup",
@@ -100,7 +103,10 @@ incremental_review_v1 = Workflow(
         Step(
             id="post",
             command_kind="PostFindings",
-            inputs={"draft_findings": "$review.draft_findings"},
+            inputs={
+                "draft_findings": "$review.draft_findings",
+                "workspace_id": "$provision.workspace_id",
+            },
         ),
         Step(
             id="cleanup",

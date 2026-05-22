@@ -200,7 +200,123 @@ def _decide_skip(payload: dict[str, Any]) -> str | None:
 
 
 class PostFindings(_LocalReviewCommand):
+    """Persist coding-agent findings through the admission pipeline.
+
+    Inputs:
+    - `draft_findings`: list of `FindingDraft`-shaped dicts (as the
+      upstream `CodeReview` Workspace step will emit them).
+    - `workspace_id`: the workspace the drafts were produced against.
+      Needed because `findingdrafts_to_raw` reads anchored file content
+      from the workspace to build stable fingerprints.
+
+    Flow: deserialize FindingDrafts → read referenced files from the
+    workspace → `findingdrafts_to_raw` → `admit_raw_findings`. Outputs
+    `admitted_count` + `dropped_count` so audit consumers can see the
+    admission ratio.
+
+    Defensive: empty/missing `draft_findings` → success-no-op (a stubbed
+    upstream review or a successful review with nothing to report). Missing
+    workspace or ticket context → failure. Bad FindingDraft schema in any
+    item → failure (caller should not have produced it).
+
+    NOT included yet: posting admitted findings to GitHub via
+    `vcs.post_review`. That's a separate slice that wires the vcs plugin
+    lookup + thread bookkeeping; admitted findings persist in the aggregate
+    today and become visible to future review runs.
+    """
+
     kind = "PostFindings"
+
+    async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
+        drafts_raw = inputs.get("draft_findings") or []
+        if not drafts_raw:
+            return Outcome.success(outputs={"admitted_count": 0, "dropped_count": 0})
+
+        ws_id_raw = inputs.get("workspace_id")
+        if not ws_id_raw:
+            return Outcome.failure(reason="missing workspace_id input")
+        try:
+            ws_id = UUID(str(ws_id_raw))
+        except (TypeError, ValueError):
+            return Outcome.failure(reason=f"invalid workspace_id: {ws_id_raw!r}")
+
+        workspace = await get_workspace(ws_id)
+        if workspace is None:
+            return Outcome.failure(reason=f"workspace {ws_id} not resolvable")
+
+        provider = get_workflow_context_provider()
+        if provider is None:
+            return Outcome.failure(reason="no workflow_context provider registered")
+
+        ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
+        if ticket_ctx is None or ticket_ctx.pr_id is None:
+            log.info(
+                "post_findings.no_pr_link",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+            )
+            return Outcome.success(outputs={"admitted_count": 0, "dropped_count": 0})
+
+        # Deferred imports — keep the commands module-import cheap for the
+        # engine registration path.
+        from app.domain.coding_agent import FindingDraft  # noqa: PLC0415
+        from app.domain.reviewer.admission import (  # noqa: PLC0415
+            admit_raw_findings,
+            findingdrafts_to_raw,
+        )
+
+        # 1. Deserialize FindingDrafts.
+        try:
+            drafts = [FindingDraft.model_validate(d) for d in drafts_raw]
+        except Exception as exc:
+            return Outcome.failure(reason=f"invalid FindingDraft payload: {exc}")
+
+        # 2. Pre-fetch file contents for each referenced anchor file. Using a
+        # dict.get matches the sync read_file signature `findingdrafts_to_raw`
+        # expects; the workspace's own read is async.
+        file_contents: dict[str, list[str] | None] = {}
+        for draft in drafts:
+            path = draft.anchor.file_path
+            if path in file_contents:
+                continue
+            text = await workspace.read_text(path)
+            file_contents[path] = text.splitlines() if text else None
+
+        commit_sha = str(ticket_ctx.payload.get("head_sha") or "")
+        raw = findingdrafts_to_raw(
+            drafts,
+            commit_sha=commit_sha,
+            read_file=file_contents.get,
+        )
+
+        # 3. Persist via admission. workflow_execution_id doubles as the
+        # review_id for observation tracking until the queue.py dismantle
+        # replaces it with a proper Review row.
+        async with db_session() as s:
+            result = await admit_raw_findings(
+                pr_id=ticket_ctx.pr_id,
+                org_id=ticket_ctx.org_id,
+                review_id=UUID(ctx.workflow_execution_id),
+                raw=raw,
+                session=s,
+            )
+            await s.commit()
+
+        log.info(
+            "post_findings.done",
+            workflow_execution_id=ctx.workflow_execution_id,
+            ticket_id=ctx.ticket_id,
+            drafts_in=len(drafts_raw),
+            drafts_after_read=len(raw),
+            admitted=len(result.admitted),
+            dropped=len(result.drops),
+        )
+        return Outcome.success(
+            outputs={
+                "admitted_count": len(result.admitted),
+                "dropped_count": len(result.drops),
+            }
+        )
 
 
 class ResolveFinding(_LocalReviewCommand):
