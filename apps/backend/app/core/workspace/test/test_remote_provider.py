@@ -169,6 +169,57 @@ async def test_pick_agent_returns_recent_pod(db_session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pick_agent_prefers_least_loaded_pod(db_session) -> None:
+    """Two reachable pods, both within the heartbeat cutoff. The one
+    with the smaller in-process queue depth wins, regardless of which
+    has the more recent heartbeat. Multi-pod load balancing."""
+    from app.core.agent_gateway import enqueue_command  # noqa: PLC0415
+    from app.core.agent_gateway.types import (  # noqa: PLC0415
+        AuthBlock,
+        CleanupWorkspaceCommand,
+    )
+
+    org_id = uuid4()
+    busy = await _seed_reachable_agent(db_session, org_id=org_id, heartbeat_age_seconds=5)
+    idle = await _seed_reachable_agent(db_session, org_id=org_id, heartbeat_age_seconds=15)
+
+    # Load up `busy` with two queued cleanup commands. `idle` stays at 0.
+    for _ in range(2):
+        await enqueue_command(
+            busy.id,
+            CleanupWorkspaceCommand(
+                command_id=uuid4(),
+                workspace_id=uuid4(),
+                traceparent="00-aabb-1122-01",
+                auth=AuthBlock(kind="github_installation", token="x"),
+            ),
+        )
+    assert queue_depth(busy.id) == 2
+    assert queue_depth(idle.id) == 0
+
+    picked = await pick_agent_for_org(org_id, session=db_session)
+    assert picked is not None
+    assert picked.id == idle.id, "least-loaded pod should win despite older heartbeat"
+
+
+@pytest.mark.asyncio
+async def test_pick_agent_tie_breaks_on_recent_heartbeat(db_session) -> None:
+    """Two idle reachable pods (queue depth 0 each): the more-recent
+    heartbeat wins. Stale-but-reachable pods lose to fresh ones at the
+    same load."""
+    org_id = uuid4()
+    stale = await _seed_reachable_agent(db_session, org_id=org_id, heartbeat_age_seconds=60)
+    fresh = await _seed_reachable_agent(db_session, org_id=org_id, heartbeat_age_seconds=2)
+
+    assert queue_depth(stale.id) == 0
+    assert queue_depth(fresh.id) == 0
+
+    picked = await pick_agent_for_org(org_id, session=db_session)
+    assert picked is not None
+    assert picked.id == fresh.id
+
+
+@pytest.mark.asyncio
 async def test_dispatch_create_workspace_enqueues_for_picked_agent(db_session) -> None:
     org_id = uuid4()
     seeded = await _seed_reachable_agent(db_session, org_id=org_id, heartbeat_age_seconds=5)

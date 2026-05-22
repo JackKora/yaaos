@@ -170,27 +170,53 @@ async def pick_agent_for_org(
     *,
     session: AsyncSession,
 ) -> WorkspaceAgentRow | None:
-    """Pick the most-recently-heartbeated reachable agent for `org_id`.
+    """Pick the least-loaded reachable agent for `org_id`.
+
+    "Load" is the in-process queue depth from
+    `core.agent_gateway.queue_depth(agent_id)` — how many AgentCommands
+    are waiting for that pod to claim. Among reachable agents (heartbeat
+    within the 90-second cutoff), the one with the smallest queue wins;
+    tie-break by most-recent heartbeat so a fresh pod beats a stale one
+    when both are idle.
+
     Returns None when no pod is reachable; caller should fail the
     provisioning step with a recoverable error.
 
-    Full least-loaded provisioning (counting in-flight commands per pod)
-    lands in the Phase 7 follow-on alongside multi-pod deployments."""
+    The queue is process-local in the M01 POC. Multi-pod backends will
+    swap the load signal for a cross-instance counter (Redis or a
+    distributed in_flight_commands count per agent_id) — the policy
+    here stays "least loaded → most recent heartbeat", just sourced
+    from a shared counter.
+    """
+    from app.core.agent_gateway import queue_depth  # noqa: PLC0415
+
     cutoff = datetime.now(UTC) - timedelta(seconds=90)
-    row = (
-        await session.execute(
-            select(WorkspaceAgentRow)
-            .where(
-                WorkspaceAgentRow.org_id == org_id,
-                WorkspaceAgentRow.state == "reachable",
-                WorkspaceAgentRow.last_heartbeat_at.is_not(None),
-                WorkspaceAgentRow.last_heartbeat_at >= cutoff,
+    rows = (
+        (
+            await session.execute(
+                select(WorkspaceAgentRow)
+                .where(
+                    WorkspaceAgentRow.org_id == org_id,
+                    WorkspaceAgentRow.state == "reachable",
+                    WorkspaceAgentRow.last_heartbeat_at.is_not(None),
+                    WorkspaceAgentRow.last_heartbeat_at >= cutoff,
+                )
+                .order_by(WorkspaceAgentRow.last_heartbeat_at.desc())
             )
-            .order_by(WorkspaceAgentRow.last_heartbeat_at.desc())
-            .limit(1)
         )
-    ).scalar_one_or_none()
-    return row
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return None
+    # Sort by (queue_depth ascending, last_heartbeat_at descending).
+    # Python's sort is stable, so passing in reverse heartbeat order
+    # already lets `min` ties resolve correctly on the secondary key
+    # — but be explicit with a tuple so the contract is grep-able.
+    return min(
+        rows,
+        key=lambda r: (queue_depth(r.id), -(r.last_heartbeat_at.timestamp() if r.last_heartbeat_at else 0)),
+    )
 
 
 async def dispatch_create_workspace(
