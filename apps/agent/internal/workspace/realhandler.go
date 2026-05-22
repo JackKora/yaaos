@@ -46,6 +46,7 @@ import (
 	"sync"
 
 	"github.com/yaaos/agent/internal/protocol"
+	"github.com/yaaos/agent/internal/secret"
 	"github.com/yaaos/agent/internal/tracing"
 )
 
@@ -86,11 +87,16 @@ type RealHandlerConfig struct {
 type CloneFunc func(ctx context.Context, dest string, repo protocol.RepoRef, auth protocol.AuthBlock, history int) error
 
 // realSlot tracks one workspace's state across the command sequence.
+//
+// `authTok` is a redacted-by-default `secret.Secret`. Every default
+// `fmt` / `log` / `json.Marshal` path involving this struct emits the
+// `[REDACTED]` placeholder; only explicit `.Value()` unwraps reveal the
+// token bytes. Greppable via `grep -rn '\.Value()' apps/agent`.
 type realSlot struct {
 	path     string // absolute filesystem path of the workspace tempdir
 	repo     protocol.RepoRef
-	authKind string // "github_installation" | "oauth"
-	authTok  string // raw token; never logged
+	authKind string        // "github_installation" | "oauth"
+	authTok  secret.Secret // never logged in cleartext
 }
 
 // RealHandler implements workspace.Handler for production. Construct
@@ -193,7 +199,7 @@ func (h *RealHandler) CreateWorkspace(ctx context.Context, cmd *protocol.CreateW
 		path:     path,
 		repo:     cmd.Repo,
 		authKind: cmd.Auth.Kind,
-		authTok:  cmd.Auth.Token,
+		authTok:  secret.New(cmd.Auth.Token),
 	}
 	return map[string]any{
 		"workspace_id": cmd.WorkspaceID,
@@ -238,7 +244,7 @@ func (h *RealHandler) RefreshWorkspaceAuth(_ context.Context, cmd *protocol.Refr
 	if !ok {
 		return nil, ErrUnknownWorkspace
 	}
-	slot.authTok = cmd.NewToken
+	slot.authTok = secret.New(cmd.NewToken)
 	return map[string]any{
 		"workspace_id": cmd.WorkspaceID,
 		"refreshed":    true,

@@ -188,8 +188,8 @@ func TestRealHandler_WriteFiles_RejectsPathEscape(t *testing.T) {
 func TestRealHandler_RefreshWorkspaceAuth_UpdatesToken(t *testing.T) {
 	h := realHandlerWithNoopClone(t)
 	h.CreateWorkspace(context.Background(), newCreate("ws-1"))
-	if h.slots["ws-1"].authTok != "tok-abc" {
-		t.Fatalf("initial token wrong: %q", h.slots["ws-1"].authTok)
+	if got := h.slots["ws-1"].authTok.Value(); got != "tok-abc" {
+		t.Fatalf("initial token wrong: got %q", got)
 	}
 
 	_, err := h.RefreshWorkspaceAuth(context.Background(), &protocol.RefreshWorkspaceAuthCommand{
@@ -199,7 +199,7 @@ func TestRealHandler_RefreshWorkspaceAuth_UpdatesToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	if got := h.slots["ws-1"].authTok; got != "tok-xyz" {
+	if got := h.slots["ws-1"].authTok.Value(); got != "tok-xyz" {
 		t.Errorf("token after refresh: want tok-xyz got %q", got)
 	}
 }
