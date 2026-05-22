@@ -211,3 +211,34 @@ async def test_ticket_not_found_returns_failure(db_session) -> None:  # type: ig
     finally:
         _reset_providers_for_tests()
         _reset_workflow_context_provider_for_tests()
+
+
+# ── Subclass contract — applies to all 5 Workspace reviewer commands ────
+
+
+from app.domain.reviewer.commands import (  # noqa: E402
+    AnswerQuestion,
+    IncrementalReview,
+    StaleCheck,
+    VerifyFix,
+)
+
+_ALL_WORKSPACE_REVIEWER_CMDS = [CodeReview, IncrementalReview, VerifyFix, StaleCheck, AnswerQuestion]
+
+
+@pytest.mark.parametrize("cmd_cls", _ALL_WORKSPACE_REVIEWER_CMDS)
+async def test_all_workspace_reviewers_fail_on_missing_workspace_id(cmd_cls) -> None:
+    """Every Workspace reviewer command inherits the workspace_id-required
+    contract from `_WorkspaceReviewCommand`. Regression guard: if someone
+    overrides `execute()` on a subclass and forgets to call super(), this
+    catches it."""
+    outcome = await cmd_cls().execute({}, _ctx())
+    assert outcome.label == "failure", f"{cmd_cls.__name__} accepted missing workspace_id"
+    assert "missing workspace_id" in (outcome.failure_reason or "")
+
+
+@pytest.mark.parametrize("cmd_cls", _ALL_WORKSPACE_REVIEWER_CMDS)
+async def test_all_workspace_reviewers_fail_on_invalid_workspace_id(cmd_cls) -> None:
+    outcome = await cmd_cls().execute({"workspace_id": "not-a-uuid"}, _ctx())
+    assert outcome.label == "failure", f"{cmd_cls.__name__} accepted invalid workspace_id"
+    assert "invalid workspace_id" in (outcome.failure_reason or "")
