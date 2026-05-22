@@ -4,6 +4,21 @@
 
 **Status:** preliminary. Phases are sketched from [implementation-plan.md](implementation-plan.md) but the decomposition will be refined once the strategic gaps in [requirements.md](requirements.md) are resolved. Do not begin autonomous execution against this ledger until those gaps are closed.
 
+## Reflection ritual
+
+Run at the close of **every** phase before ticking the phase's reflection item. The ritual is what stops "shipped foundations, deferred integration" from becoming silent debt — each phase's reflection forces an honest accounting of what the phase actually delivered against what was promised.
+
+For each axis, walk it concretely. **A `_(deferred — reason + which later phase owns it)_` annotation is acceptable; an unchecked-but-unannotated item is the bug this ritual catches.** Where the ritual finds a gap, either fix it before closing the phase OR add a new unchecked item under the appropriate phase (or under the current phase with explicit deferral text). Never close a phase silently leaving a checklist item without disposition.
+
+1. **Requirements.** Walk the relevant section of [requirements.md](requirements.md) for the phase. For each promised item: shipped (link to commit/file), or deferred-to-later-phase (which one, why). Add a follow-on PHASES.md item if neither.
+2. **Architecture conformance.** Walk the relevant section of [architecture.md](architecture.md). For each described component/contract/invariant: present in code (link), or annotated divergence in [DECISIONS.md](DECISIONS.md). A silent divergence is a gap.
+3. **Testing.** For every new module/endpoint/state-machine added: appropriate tier of test exists per [`apps/backend/CLAUDE.md` § testing](../../../CLAUDE.md) (unit for branchy logic, service for cross-3+-module flows, e2e for browser-visible). Mocks-instead-of-real-DB is a gap. Pure assertions of "compiles" without behavior coverage is a gap.
+4. **Observability.** For every new code path: structured logging at decision points; span emission where there's real work (DB writes, wire calls, subprocess spawns); `trace_id` propagation through the path; audit rows on every state transition. Stale `print()` / bare `logging` calls are gaps.
+5. **Security.** For every new attack surface: explicit defense (authz, signature verification, stale-claim guard, etc.). For every new secret: documented handling per [`docs/system-security.md`](../../../docs/system-security.md). For every new trust boundary: enforced contract. Missing entries in `docs/system-security.md` for shipped surfaces are gaps.
+6. **Docs sync.** Per [`CLAUDE.md` § documentation discipline](../../../CLAUDE.md): every code change updates the relevant docs in the same PR. Run `grep -rn '<renamed-or-removed-symbol>' apps/*/docs docs` for every symbol/concept the phase changed; should return zero stale references. The doc-link checker only catches broken markdown links — this step catches stale prose references.
+
+Tick the phase's `Reflection — verify …` item only after all six axes have been walked and any gaps either closed or explicitly added as new follow-on items with a named owning phase.
+
 ## Phase 0a — module-naming hygiene
 
 - [x] Rename `domain/auth` → `domain/sessions`. Update all import sites.
@@ -13,6 +28,7 @@
 - [x] Add "no module-name collisions across core/domain/plugins" rule to `apps/backend/docs/modularity.md`.
 - [x] Run `apps/backend/bin/sync_modules`; tach happy.
 - [x] All existing CI green.
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 0 — required-session pattern + refactor existing code
 
@@ -28,6 +44,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [x] Functions that legitimately own their own session (fire-and-forget maintenance, periodic tasks) are clearly named or live in entrypoint modules; documented in patterns.md.
 - [x] Tests updated to pass session fixtures explicitly.
 - [x] All existing CI green post-refactor: `apps/backend/bin/ci`, `apps/web/bin/ci`, `apps/e2e/bin/ci`.
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 0b — scaffolding
 
@@ -44,6 +61,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [x] `docs/setup.md` updated with M05 dev-story note (agent + worker process).
 - [x] `apps/backend/docs/patterns.md` updated with new patterns (WorkflowCommand interface, workspace provider contract, `core/tasks` usage).
 - [x] `apps/backend/bin/ci` exits 0; tach happy with new modules.
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 0c — OTel SDK wiring (no exporter)
 
@@ -54,6 +72,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [x] In-memory `SpanExporter` fixture for tests.
 - [x] `apps/backend/docs/core_observability.md` documents the conventions + the "no exporter in prod yet" note.
 - [x] All existing CI green.
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 1 — `core/workflow` engine (async event-driven model)
 
@@ -76,6 +95,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [ ] OTel span propagation: workflow span + child spans per task. _(traceparent threaded through task args; span emission lands alongside the wire-protocol span work in Phase 8.)_
 - [x] Tests: Local-only workflow; Workspace step async cycle; failure + retry; HITL pause + resume; append_steps; backend restart with `awaiting_agent` workflows; cancellation during `awaiting_agent`; idempotent duplicate event handling. _(Backend-restart resume relies on the broker re-delivering pending tasks; full e2e restart test lands once `apps/backend/bin/worker` wires the broker in Phase 1 cont'd.)_
 - [ ] **Async-model load test:** 100 simultaneous workflows dispatching long-running AgentCommands all dispatch within < 1s wall time (verifies workers don't block). _(Defer until the broker + worker entry are wired; in-memory dispatch in the unit tests doesn't exercise the worker-blocking property the load test targets.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 2 — extend `domain/tickets` + `domain/intake`
 
@@ -84,6 +104,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [x] `github_pr` intake type registered. _(Lives in `plugins/github` and self-registers at bootstrap so domain doesn't import plugin.)_
 - [x] Webhook endpoint `POST /api/intake/{type}` — verifies, dedups, creates ticket, starts workflow, returns 200.
 - [x] Tests: signature failure → 401; duplicate → idempotent 200; happy path → ticket + workflow execution + enqueued task.
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 3 — `core/workspace` extensions + `InMemoryWorkspaceProvider`
 
@@ -97,6 +118,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [x] Cleanup failsafes: TTL sweep, idle timeout, reconciliation hooks. _(TTL + idle-timeout sweeps shipped in the reaper; reconciliation hooks (cross-checking control-plane state against agent inventory) land with `core/agent_gateway` in Phase 5.)_
 - [x] Failure-report-precedes-disposal invariant enforced. _(`release_claim` preserves `current_holder_workflow_id` so the workflow link survives disposal; Phase 5 wires the wire-protocol side of the invariant.)_
 - [x] Tests: provision/use/cleanup; single-flight; recovery; failure-report; TTL expiry; cleanup idempotency. _(Claim + recovery covered here. End-to-end provision/use/cleanup against `InMemoryWorkspaceProvider` runs through Phase 4's reviewer workflows.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 4 — `domain/coding_agent` + `domain/reviewer` evolution (ALL five task modes as WorkflowCommands)
 
@@ -109,6 +131,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [ ] **`domain/reviewer/queue.py` dismantled:** `schedule_review`, `_run_review_job_inner`, `_inflight_tasks`, `cancel_pending`, inline admission filters — all removed. File deleted at end of phase. No spawn()-based reviewer code remains. _(Follow-on iteration; queue.py still drives reviews until the new command bodies are wired.)_
 - [ ] `review_jobs` table dropped (per Topic 2 lock). _(Drops alongside the queue.py dismantle.)_
 - [ ] Tests: E2E for each of the 5 workflows against `InMemoryWorkspaceProvider`. Span linkage assertion. Admission gates tested. Cross-review fingerprint dedup test. _(5 registration tests shipped (workflows registered, every step's command_kind resolves, lifecycle + Workspace + Local commands present). E2E rides on the command-body wiring.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 5 — `core/agent_gateway` + wire protocol
 
@@ -117,6 +140,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [x] `core/agent_gateway` implementation: per-agent in-memory queue, long-poll, identity exchange (placeholder verifier), heartbeat with inventory ingestion, event ingestion.
 - [x] Stale-claim guard: `410 Gone` on attempt mismatch.
 - [x] Tests: long-poll 204 / 200; heartbeat reconciliation; event routing.
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 6 — Go agent (supervisor + workspace processes)
 
@@ -131,6 +155,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [ ] Tests: IPC framing unit tests; integration test against fake backend running full CreateWorkspace → WriteFiles → InvokeClaudeCode → CleanupWorkspace cycle. _(11 Go unit tests shipped — IPC framing + protocol decode + HTTP client. Integration test rides on the workspace subcommand body in the follow-on.)_
 - [ ] **Go OTel SDK wired (no exporter):** `go.opentelemetry.io/otel`, `propagation.TraceContext` set globally, supervisor extracts `traceparent` from AgentCommand payloads + WebSocket messages, per-operation spans, workspace process inherits via env vars. _(Follow-on iteration; traceparent is already threaded through every wire type.)_
 - [ ] In-memory exporter for Go tests; trace-continuity test (supervisor extracts and emits child span). _(Follow-on iteration alongside the OTel SDK wiring.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 7 — `RemoteAgentWorkspaceProvider` + identity exchange
 
@@ -139,6 +164,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [ ] Customer ARN registration UI in Org Settings (provider type selection + ARN entry). _(Backend endpoints shipped — `PATCH /api/orgs` accepts `workspace_provider` + `registered_iam_arn`; `GET /api/workspaces/connection_status` returns the banner state. UI lands in `apps/web/` in the Phase 7 follow-on.)_
 - [ ] Provisioning policy: least-loaded reachable agent. _(`pick_agent_for_org()` returns the most-recently-heartbeated reachable pod; least-loaded counting in-flight commands lands with multi-pod deployments.)_
 - [ ] Tests: same E2E as Phase 4, against `RemoteAgentWorkspaceProvider` (docker-compose with Go agent + fake STS). _(12 unit tests cover the provider + dispatch + heartbeat + connection-status. Docker-compose E2E rides on the Phase 6 follow-on workspace subcommand body + the Phase 4 command-body wiring.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 8 — span propagation across the wire
 
@@ -146,6 +172,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [ ] Supervisor exports `TRACEPARENT` env to workspace process on spawn. _(Phase 6 follow-on — needs the workspace subcommand body.)_
 - [ ] Workspace process exports same env to Claude Code subprocess. _(Phase 6 follow-on alongside the workspace subprocess body.)_
 - [ ] E2E assertion: one trace ID covers `webhook → ... → terminal outcome` across both providers, for all five workflows. _(Helpers + unit tests verify span continuity across the in-process boundary today; full E2E rides on the Phase 4 follow-on command bodies + the Phase 6 follow-on Go subprocess work.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 8b — Activity streaming (CodingAgent → UI) with demand-pull
 
@@ -159,6 +186,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [ ] `domain/coding_agent` ActivityEvent pre-renderer audited: metadata only, no source content. _(Phase 8b follow-on; payload-shape audit + trust-boundary tests.)_
 - [ ] In-memory provider: taskiq worker publishes directly to `core/sse_pubsub` (no WebSocket wire). _(Phase 8b follow-on — wires alongside Phase 4 follow-on Workspace command bodies.)_
 - [ ] Tests: activity stream end-to-end against both providers; demand-pull (no events without subscriber); WebSocket reconnect; trust-boundary (no source content in ActivityEvent payloads). _(15 unit tests cover pub/sub fan-out, subscriber registry semantics, WS auth + activity_batch fan-out + no-subscriber no-op. End-to-end provider parity rides on Phase 4 + Phase 6 follow-ons.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 9 — packaging + release
 
@@ -167,6 +195,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [x] Image tagging strategy recorded. _(`vX.Y.Z` immutable + `latest` for getting-started + `sha-<short>` for build traceability; multi-arch amd64+arm64.)_
 - [x] `apps/agent/docs/README.md` with deployment guide.
 - [x] Local dev story documented: `docker-compose up` with backend + agent + fake STS. _(Compose service shipped + setup.md updated. "Fake STS" is the placeholder identity-exchange verifier — the real STS replay is the Phase 7 follow-on, at which point a fake STS service joins the test stack.)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Phase 10 — docs + completeness audit + CI green
 
@@ -181,6 +210,7 @@ Pure plumbing change. No behavior change. Lands before any new M05 modules so th
 - [ ] Trace-linkage audit: trace ID continuous from webhook to PR comment. _(Helpers + unit tests verify in-process continuity. End-to-end through to PR comment rides on the reviewer command bodies + Go workspace subprocess that emit spans in the wire path.)_
 - [ ] Cleanup-failsafes audit: fault-injection tests for each of the 7 failsafes. _(TTL sweep + idle-timeout sweep + release-claim ordering shipped + tested. Fault-injection coverage of all seven failsafes lands with the integration follow-on, when there's an end-to-end pipeline to inject faults into.)_
 - [ ] Full CI green: `apps/backend/bin/ci`, `apps/web/bin/ci`, `apps/agent/bin/ci`, `apps/e2e/bin/ci` all exit 0 on fresh checkout. _(`apps/backend/bin/ci` exits 0 with 638 tests; web + e2e weren't touched by M05 foundations so they remain green from M04. `apps/agent/bin/ci` runs `go vet/build/test` and verifies in the RWX CI image (Go not in the dev shell).)_
+- [ ] Reflection — verify requirements, architecture conformance, testing, observability, security, docs-sync per the ritual at the top of this file. Surface gaps as new follow-on items before ticking this.
 
 ## Handoff
 
