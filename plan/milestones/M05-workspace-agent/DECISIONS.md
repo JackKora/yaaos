@@ -30,6 +30,22 @@ Keep entries terse. The user reads this at the end of the run; volume = friction
 - **Why this one**: GHCR is free for public images, has no anonymous pull rate limits, ships with GitHub Actions, supports OCI image manifests for multi-arch (`linux/amd64` + `linux/arm64`). Migrating is a registry rename if we ever change our minds.
 - **Reversal cost**: low — image URL lives in ECS task definitions; customers re-pin on next deploy.
 
+### Phase 8b follow-on (slice 79) — extend `subscribe` payload with `workflow_execution_id`
+
+- **Certainty**: 2/5
+- **Decision**: `SubscriberRegistry` emits `{type: "subscribe", workspace_id, workflow_execution_id}` (both IDs). Agent caches the `workspace_id → workflow_execution_id` mapping at subscribe time so outbound `activity_batch` frames carry the right workflow id keyed by the workspace id it knows.
+- **Alternatives considered**: (a) Backend resolves `workspace_id → current_holder_workflow_id` from `WorkspaceRow` on every inbound `activity_batch`. (b) Send `subscribe` keyed solely on `workflow_execution_id`. (c) Add `workflow_execution_id` to `AgentCommand` so the agent knows it from claim time.
+- **Why this one**: (a) hits an asyncpg cross-loop issue under TestClient when the seeded data lives in the outer-test event loop and the WS handler runs in BlockingPortal's loop — pivoted away after the first attempt. (b) breaks the agent's existing workspace_id-keyed `SubscriptionSet`. (c) is a larger refactor of the claim contract for one keying concern. Extending the subscribe payload is local + cheap.
+- **Reversal cost**: low — bump the protocol once both halves drop the field.
+
+### Phase 8b follow-on (slice 82) — `github.com/coder/websocket@v1.8.13` for the agent's WS client
+
+- **Certainty**: 3/5
+- **Decision**: Adopt `github.com/coder/websocket` (the maintained fork of the archived `nhooyr.io/websocket`) for the agent's bidirectional activity stream. Pin to v1.8.13 — v1.8.14+ requires Go 1.23 and the agent stays on Go 1.22 per the Dockerfile.
+- **Alternatives considered**: (a) `gorilla/websocket` — long-standing standard but heavier. (b) `nhooyr.io/websocket` — archived. (c) Hand-roll RFC 6455 over `net/http` — way too much work for a POC.
+- **Why this one**: Context-first API matches the agent's existing context discipline; small dependency footprint (3 indirect deps); active maintenance under the coder fork; tests use the same package's `Accept` for server-side — no extra fixture cost.
+- **Reversal cost**: medium — `gorilla/websocket` swap is mechanical (similar API) but every Read/Send/Close site needs touch-up; pinned v1.8.13 means a future Go-toolchain bump is the natural trigger to revisit.
+
 ### Phase 0b — split `014_create_all_m05` into per-phase migrations
 
 - **Certainty**: 3/5
