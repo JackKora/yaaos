@@ -20,7 +20,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
-from pydantic import BaseModel
 from sqlalchemy import func as sa_func
 from sqlalchemy import select, update
 
@@ -75,10 +74,36 @@ from app.domain.reviewer.models import ReviewRow
 from app.domain.reviewer.queue_events import (
     ReviewJobActivity,
     ReviewJobStatusChanged,
-    ReviewJobStepProgress,
 )
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.review_job import ReviewJobInput
+from app.domain.reviewer.review_job_transitions import (
+    AdmissionDropsPayload as _AdmissionDropsPayload,
+)
+from app.domain.reviewer.review_job_transitions import (
+    CancelledPayload as _CancelledPayload,
+)
+from app.domain.reviewer.review_job_transitions import (
+    FailedPayload as _FailedPayload,
+)
+from app.domain.reviewer.review_job_transitions import (
+    PostedPayload as _PostedPayload,
+)
+from app.domain.reviewer.review_job_transitions import (
+    PromptSentPayload as _PromptSentPayload,
+)
+from app.domain.reviewer.review_job_transitions import (
+    ScheduledPayload as _ScheduledPayload,
+)
+from app.domain.reviewer.review_job_transitions import (
+    set_step as _set_step,
+)
+from app.domain.reviewer.review_job_transitions import (
+    transition_failed as _transition_failed,
+)
+from app.domain.reviewer.review_job_transitions import (
+    transition_skipped as _transition_skipped,
+)
 from app.domain.reviewer.secrets_detection import detect_secrets as _detect_secrets
 from app.domain.reviewer.secrets_detection import (
     secrets_warning_review as _secrets_warning_review,
@@ -108,52 +133,9 @@ def _register_inflight(job_id: UUID, task: asyncio.Task[None]) -> None:
     task.add_done_callback(lambda _t: _inflight_tasks.pop(job_id, None))
 
 
-# Audit payloads
-
-
-class _ScheduledPayload(BaseModel):
-    trigger_reason: str
-    debounce_seconds: int
-
-
-class _CancelledPayload(BaseModel):
-    reason: str
-
-
-class _PromptSentPayload(BaseModel):
-    """Frozen snapshot of what influenced this review run."""
-
-    prompt_hash: str
-    lessons_count: int
-    lessons_applied: list[UUID]
-    checkout_sha: str
-    language_hint: str | None = None
-
-
-class _PostedPayload(BaseModel):
-    verdict: str
-    finding_count: int
-    findings_by_agent: dict[str, int]
-    tokens_in: int | None
-    tokens_out: int | None
-    latency_ms: int
-    review_external_id: str
-
-
-class _FailedPayload(BaseModel):
-    invocation_status: str
-    error: str | None
-    raw_output_excerpt: str
-
-
-class _SkippedPayload(BaseModel):
-    skip_reason: str
-
-
-class _AdmissionDropsPayload(BaseModel):
-    """Audit payload for plan §10.5 admission drops (one row per review)."""
-
-    drops: list[dict[str, Any]]
+# Audit payloads moved to `domain/reviewer/review_job_transitions.py`
+# (slice 45). Rebound under the legacy underscore-prefixed names at the
+# top of the file.
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -764,65 +746,9 @@ async def _run_review_job_inner(input: ReviewJobInput) -> None:
 # Imported at the top of the file under the legacy underscore-prefixed name.
 
 
-async def _transition_failed(
-    job_id: UUID,
-    error: str,
-    *,
-    org_id: UUID,
-    invocation_status: str = "agent_error",
-    raw_output_excerpt: str = "",
-    activity_log: list[dict[str, Any]] | None = None,
-) -> None:
-    values: dict[str, Any] = {
-        "status": "failed",
-        "completed_at": _utcnow(),
-        "error_message": error,
-        "current_step": "failed",
-    }
-    if activity_log is not None:
-        values["activity_log"] = activity_log
-    async with db_session() as s:
-        await s.execute(update(ReviewRow).where(ReviewRow.id == job_id).values(**values))
-        await audit_for_review_job(
-            job_id,
-            "review_job.failed",
-            _FailedPayload(
-                invocation_status=invocation_status,
-                error=error,
-                raw_output_excerpt=raw_output_excerpt,
-            ),
-            actor=Actor.system(),
-            org_id=org_id,
-            session=s,
-        )
-        await s.commit()
-
-
-async def _transition_skipped(
-    job_id: UUID,
-    reason: str,
-    *,
-    org_id: UUID,
-    activity_log: list[dict[str, Any]] | None = None,
-) -> None:
-    values: dict[str, Any] = {
-        "status": "skipped",
-        "skip_reason": reason,
-        "completed_at": _utcnow(),
-    }
-    if activity_log is not None:
-        values["activity_log"] = activity_log
-    async with db_session() as s:
-        await s.execute(update(ReviewRow).where(ReviewRow.id == job_id).values(**values))
-        await audit_for_review_job(
-            job_id,
-            "review_job.skipped",
-            _SkippedPayload(skip_reason=reason),
-            actor=Actor.system(),
-            org_id=org_id,
-            session=s,
-        )
-        await s.commit()
+# `_transition_failed` + `_transition_skipped` moved to
+# `domain/reviewer/review_job_transitions.py` (slice 45). Rebound under
+# the legacy underscore-prefixed names at the top of the file.
 
 
 # `_is_skip_path` moved to `domain/reviewer/diff_utils.py` (slice 42).
@@ -831,15 +757,8 @@ async def _transition_skipped(
 # underscore-prefixed names.
 
 
-async def _set_step(job_id: UUID, step: str, *, pr_id: UUID) -> None:
-    async with db_session() as s:
-        await s.execute(
-            update(ReviewRow)
-            .where(ReviewRow.id == job_id)
-            .values(current_step=step, last_heartbeat_at=_utcnow())
-        )
-        await s.commit()
-    await publish(ReviewJobStepProgress(pr_id=pr_id, review_job_id=job_id, current_step=step))
+# `_set_step` moved to `domain/reviewer/review_job_transitions.py`
+# (slice 45). Rebound at top of file.
 
 
 # `_detect_language` moved to `domain/reviewer/diff_utils.py` (slice 42).

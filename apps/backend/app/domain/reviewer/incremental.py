@@ -62,7 +62,6 @@ from app.domain.reviewer.lock import acquire_pr_lock
 from app.domain.reviewer.models import ReviewRow
 from app.domain.reviewer.queue import (
     _detect_language,
-    _set_step,
     _ticket_skip_reason,
     _utcnow,
 )
@@ -71,6 +70,9 @@ from app.domain.reviewer.queue_events import (
     ReviewJobStatusChanged,
 )
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
+from app.domain.reviewer.review_job_transitions import (
+    set_step as _set_step,
+)
 from app.domain.reviewer.service import apply_stale_check_result, dispatch_audits, dispatch_events
 from app.domain.reviewer.trigger import (
     Debounce,
