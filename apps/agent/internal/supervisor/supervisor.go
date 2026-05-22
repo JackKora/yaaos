@@ -86,6 +86,15 @@ type Supervisor struct {
 	// this in lock-step with the live runner set.
 	mu        sync.Mutex
 	inventory map[string]protocol.HeartbeatWorkspaceEntry
+
+	// workspacePaths maps workspace_id → on-disk path for orphan
+	// directories the startup scan found. The disk janitor (slice 75)
+	// consults this when the heartbeat response carries a
+	// `forgotten_workspaces` list, then `os.RemoveAll`s the named paths.
+	// Live workspaces' paths are owned by the workspace process itself
+	// (not the supervisor) — only orphans (from a previous run) need
+	// supervisor-side path tracking.
+	workspacePaths map[string]string
 }
 
 // New constructs a Supervisor. The client is wired but identity hasn't
@@ -107,11 +116,12 @@ func New(cfg Config, client *protocol.Client, log Logger) *Supervisor {
 		cfg.Spawn = ExecSpawn(os.Args[0], 5*time.Second, log)
 	}
 	return &Supervisor{
-		cfg:       cfg,
-		client:    client,
-		log:       log,
-		inventory: make(map[string]protocol.HeartbeatWorkspaceEntry),
-		pool:      NewPool(cfg.Spawn, log),
+		cfg:            cfg,
+		client:         client,
+		log:            log,
+		inventory:      make(map[string]protocol.HeartbeatWorkspaceEntry),
+		workspacePaths: make(map[string]string),
+		pool:           NewPool(cfg.Spawn, log),
 	}
 }
 
@@ -129,11 +139,17 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// Startup reconciliation: any workspace directory left over from a
 	// previous run gets pre-loaded into the inventory as
 	// `status="unknown"` so the first heartbeat reports it. The backend
-	// decides whether to reclaim or signal cleanup.
-	if orphans := scanOrphanWorkspaces(s.cfg.WorkspaceRoot, s.log); len(orphans) > 0 {
+	// decides whether to reclaim or signal cleanup via
+	// `HeartbeatResponse.forgotten_workspaces` — the disk janitor in
+	// `sendHeartbeat` applies that.
+	orphans, paths := scanOrphanWorkspaces(s.cfg.WorkspaceRoot, s.log)
+	if len(orphans) > 0 {
 		s.mu.Lock()
 		for _, o := range orphans {
 			s.inventory[o.WorkspaceID] = o
+		}
+		for id, p := range paths {
+			s.workspacePaths[id] = p
 		}
 		s.mu.Unlock()
 		s.log.Info("supervisor.reconciliation_orphans", "count", len(orphans))
@@ -223,10 +239,31 @@ func (s *Supervisor) sendHeartbeat(ctx context.Context) {
 		s.log.Warn("supervisor.heartbeat_error", "err", err.Error())
 		return
 	}
-	if len(resp.ForgottenWorkspaces) > 0 {
-		s.log.Info("supervisor.heartbeat_reconciled",
-			"forgotten_count", len(resp.ForgottenWorkspaces))
+	if len(resp.ForgottenWorkspaces) == 0 {
+		return
 	}
+	s.log.Info("supervisor.heartbeat_reconciled", "forgotten_count", len(resp.ForgottenWorkspaces))
+
+	// Disk janitor (slice 75): the backend named workspaces it no
+	// longer tracks. Walk the supervisor's path map, `os.RemoveAll`
+	// each surviving dir, and drop the cleaned ids from both the path
+	// map AND the inventory so the next heartbeat doesn't keep
+	// reporting them. Live workspaces still in `s.pool` aren't in
+	// `workspacePaths` (their on-disk path lives in the workspace
+	// process), so the janitor only touches orphan dirs.
+	s.mu.Lock()
+	s.workspacePaths = cleanupForgottenWorkspaces(s.workspacePaths, resp.ForgottenWorkspaces, s.log)
+	for _, id := range resp.ForgottenWorkspaces {
+		// `cleanupForgottenWorkspaces` removes the entry when the path
+		// is successfully RemoveAll'd. Absence == cleaned == drop the
+		// inventory entry so it stops being reported. Presence ==
+		// remove failed; leave inventory alone so the next heartbeat
+		// signals the backend to retry.
+		if _, stillPresent := s.workspacePaths[id]; !stillPresent {
+			delete(s.inventory, id)
+		}
+	}
+	s.mu.Unlock()
 }
 
 // routeCommand dispatches an AgentCommand into the per-workspace pool +
