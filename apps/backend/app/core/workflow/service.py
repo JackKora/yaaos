@@ -59,6 +59,7 @@ _APPENDED_POOL_KEY = "__appended_pool__"
 _AFTER_APPEND_KEY = "__after_append__"
 _ATTEMPTS_KEY = "__attempts__"
 _WORKSPACE_PROVIDER_KEY = "__workspace_provider__"
+_RECOVERED_STEPS_KEY = "__recovered_steps__"
 
 # Provider values stashed by `engine.start()`. The intake layer passes the
 # org's `workspace_provider` setting (or "in_memory" when unset). The Workspace
@@ -366,6 +367,40 @@ async def route_workflow(
             await s.commit()
             return
 
+        # Tier-1 recovery: if the failure label has a registered recovery
+        # policy (e.g. `auth_expired → RefreshWorkspaceAuth`), insert the
+        # recovery command as an appended step that runs BEFORE the original
+        # step retries. Recovery fires at most once per step instance — the
+        # second hit falls through to Tier-2 retry / Tier-3 transition.
+        if outcome_label and outcome_label != "success":
+            from app.core.workspace.dispatch import get_recovery_policy  # noqa: PLC0415
+
+            recovery_kind = get_recovery_policy(outcome_label)
+            if recovery_kind is not None and not _has_recovered(wfx, completed_step_id):
+                _mark_recovered(wfx, completed_step_id, outcome_label)
+                # Reset the failed step's attempt counter so the post-recovery
+                # retry isn't already eating into the Tier-2 budget.
+                _persist_attempt(wfx, completed_step_id, 0)
+                from uuid import uuid4 as _uuid4  # noqa: PLC0415
+
+                recovery_step = Step(id=f"_recover_{_uuid4().hex[:8]}", command_kind=recovery_kind)
+                _queue_appended_steps(wfx, [recovery_step])
+                _set_after_append(wfx, completed_step_id)
+                wfx.state = WorkflowState.RUNNING.value
+                log.info(
+                    "workflow.route_workflow.recovery_inserted",
+                    workflow_execution_id=workflow_execution_id,
+                    failed_step_id=completed_step_id,
+                    failure_label=outcome_label,
+                    recovery_kind=recovery_kind,
+                )
+                # Drain the appended step (the recovery) immediately.
+                head = _dequeue_appended(wfx)
+                assert head is not None  # we just queued it
+                await _enqueue_start_step(s, wfx, wf, head.id, traceparent, attempt=0)
+                await s.commit()
+                return
+
         # Tier-2 retry on failure: bump attempt; re-enqueue start_step if
         # the budget allows. On exhaustion, fall through to the transition
         # map (Tier-3).
@@ -576,6 +611,22 @@ def _resolve_input_expression(wfx: WorkflowExecutionRow, expr: Any) -> Any:
     if not isinstance(bucket, dict):
         return None
     return bucket.get("outputs", {}).get(tail)
+
+
+def _has_recovered(wfx: WorkflowExecutionRow, step_id: str) -> bool:
+    """Has recovery already been inserted for this step instance? One-shot
+    per step to prevent infinite auth-refresh loops."""
+    return step_id in wfx.step_state.get(_RECOVERED_STEPS_KEY, {})
+
+
+def _mark_recovered(wfx: WorkflowExecutionRow, step_id: str, failure_label: str) -> None:
+    """Mark this step as having had recovery applied (with the triggering
+    label) so a second attempt at recovery falls through to Tier-2 retry."""
+    bucket = dict(wfx.step_state)
+    recovered = dict(bucket.get(_RECOVERED_STEPS_KEY, {}))
+    recovered[step_id] = failure_label
+    bucket[_RECOVERED_STEPS_KEY] = recovered
+    wfx.step_state = bucket
 
 
 def _persist_attempt(wfx: WorkflowExecutionRow, step_id: str, attempt: int) -> None:

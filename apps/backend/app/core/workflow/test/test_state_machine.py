@@ -43,6 +43,10 @@ from app.core.workflow import (
     request_cancel,
     resume_hitl,
 )
+from app.core.workspace.dispatch import (
+    _reset_recovery_policies_for_tests,
+    register_recovery_policy,
+)
 
 # ── Test commands ───────────────────────────────────────────────────────
 
@@ -678,3 +682,108 @@ async def test_route_workflow_skips_when_terminal(db_session) -> None:
 
     wfx = await db_session.get(WorkflowExecutionRow, exec_id)
     assert wfx.state == WorkflowState.DONE.value
+
+
+@pytest.mark.asyncio
+async def test_recovery_policy_inserts_recovery_step_before_retry(db_session) -> None:
+    """When a Local command fails with a label that has a registered
+    recovery policy, the engine inserts the recovery command as an
+    appended step that runs BEFORE the failed step retries. Recovery
+    fires at most once per step instance."""
+    _reset_recovery_policies_for_tests()
+    register_recovery_policy(failure_label="auth_expired", command_kind="DoRefresh")
+
+    review_calls: list[str] = []
+    refresh_calls: list[str] = []
+
+    class _FailOnceCommand:
+        kind = "DoReview"
+        category = CommandCategory.LOCAL
+        restart_safe = True
+
+        async def execute(self, inputs, ctx: CommandContext) -> Outcome:
+            del inputs
+            review_calls.append(ctx.step_id)
+            if len(review_calls) == 1:
+                return Outcome.failure(reason="token expired", label="auth_expired")
+            return Outcome.success()
+
+    class _RefreshCommand:
+        kind = "DoRefresh"
+        category = CommandCategory.LOCAL
+        restart_safe = True
+
+        async def execute(self, inputs, ctx: CommandContext) -> Outcome:
+            del inputs
+            refresh_calls.append(ctx.step_id)
+            return Outcome.success()
+
+    wf = Workflow(
+        name="recovery-1",
+        version=1,
+        steps=(
+            Step(
+                id="review",
+                command_kind="DoReview",
+                transitions={"success": TerminalAction.COMPLETE_WORKFLOW},
+            ),
+        ),
+        entry_step_id="review",
+    )
+    eng = _engine_with(_FailOnceCommand(), _RefreshCommand(), workflow=wf)
+    exec_id = await eng.start(workflow_name="recovery-1", ticket_id=_ticket_id(), session=db_session)
+    await db_session.commit()
+    await _drain_workflow_outbox(db_session)
+
+    assert len(refresh_calls) == 1
+    assert len(review_calls) == 2
+
+    wfx = await db_session.get(WorkflowExecutionRow, exec_id)
+    assert wfx.state == WorkflowState.DONE.value
+
+
+@pytest.mark.asyncio
+async def test_recovery_policy_fires_at_most_once_per_step(db_session) -> None:
+    """Second failure with the same recovery-eligible label after recovery
+    has already run falls through to Tier-3 fail — no infinite loop."""
+    _reset_recovery_policies_for_tests()
+    register_recovery_policy(failure_label="auth_expired", command_kind="DoRefresh")
+
+    review_calls: list[str] = []
+    refresh_calls: list[str] = []
+
+    class _AlwaysFail:
+        kind = "DoReview"
+        category = CommandCategory.LOCAL
+        restart_safe = True
+
+        async def execute(self, inputs, ctx: CommandContext) -> Outcome:
+            del inputs, ctx
+            review_calls.append("x")
+            return Outcome.failure(reason="still expired", label="auth_expired")
+
+    class _RefreshOk:
+        kind = "DoRefresh"
+        category = CommandCategory.LOCAL
+        restart_safe = True
+
+        async def execute(self, inputs, ctx: CommandContext) -> Outcome:
+            del inputs, ctx
+            refresh_calls.append("x")
+            return Outcome.success()
+
+    wf = Workflow(
+        name="recovery-2",
+        version=1,
+        steps=(Step(id="review", command_kind="DoReview"),),
+        entry_step_id="review",
+    )
+    eng = _engine_with(_AlwaysFail(), _RefreshOk(), workflow=wf)
+    exec_id = await eng.start(workflow_name="recovery-2", ticket_id=_ticket_id(), session=db_session)
+    await db_session.commit()
+    await _drain_workflow_outbox(db_session)
+
+    assert len(refresh_calls) == 1
+    assert len(review_calls) == 2
+    wfx = await db_session.get(WorkflowExecutionRow, exec_id)
+    assert wfx.state == WorkflowState.FAILED.value

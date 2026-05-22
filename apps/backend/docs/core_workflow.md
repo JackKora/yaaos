@@ -63,6 +63,17 @@ Exports `Workflow`, `Step`, `RetryPolicy`, `WorkflowCommand`, `Outcome`, `Outcom
 
 Workspace commands can issue long-running AgentCommands. `start_step` exits after dispatch; `handle_agent_event` is enqueued when the terminal event arrives at `core/agent_gateway`; `route_workflow` does the routing. Workers stay free during the wait. See [architecture.md § Why three tasks (not two)](../../../plan/milestones/M05-workspace-agent/architecture.md#why-three-tasks-not-two).
 
+### Recovery-policy insertion (Tier-1)
+
+Before Tier-2 retry / Tier-3 transition, `route_workflow` checks the failed step's `outcome_label` against `core/workspace.get_recovery_policy(label)`. When a policy is registered (boot ships `auth_expired → RefreshWorkspaceAuth`), the engine:
+
+1. Appends a synthetic recovery step (with the registered `command_kind`) at the head of the execution queue.
+2. Snapshots the failed step id as the post-recovery destination via the existing `__after_append__` machinery.
+3. Resets the failed step's attempt counter (Tier-2 budget starts fresh after recovery).
+4. Marks the step as recovered in `step_state.__recovered_steps__` so a second failure with the same label falls through to retry/fail — preventing infinite auth-refresh loops.
+
+Recovery fires **at most once per step instance**. Repeated `auth_expired` after recovery has run drops to Tier-2 (retry budget) and then Tier-3 (transition map).
+
 ### Workspace dispatch — in_memory vs remote_agent
 
 `engine.start(..., workspace_provider=...)` stashes the org's provider on `step_state["__workspace_provider__"]`. `start_step`'s Workspace branch reads it:
