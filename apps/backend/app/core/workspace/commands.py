@@ -25,9 +25,21 @@ from uuid import UUID
 import structlog
 
 from app.core.workflow import CommandCategory, CommandContext, Outcome
-from app.core.workspace.service import close_workspace
+from app.core.workspace.service import close_workspace, create_workspace
+from app.core.workspace.types import (
+    NetworkPolicy,
+    RepoRefForSpec,
+    ResourceCaps,
+    WorkspaceSpec,
+)
+from app.core.workspace.workflow_context import get_workflow_context_provider
 
 log = structlog.get_logger("core.workspace.commands")
+
+# Provider id used for the in-memory workspace plugin (registered as
+# `in_process` historically — kept stable through the rename to
+# in_memory_workspace per Phase 0a).
+_IN_MEMORY_PROVIDER_ID = "in_process"
 
 
 class _LifecycleCommand:
@@ -44,12 +56,70 @@ class _LifecycleCommand:
 
 
 class ProvisionWorkspace(_LifecycleCommand):
-    """Provision a workspace for a ticket's repo + head sha. Will issue
-    `CreateWorkspace` and (when org has yaaos skills configured)
-    `WriteFiles` AgentCommands in the full implementation. Body lands in
-    the follow-on slice that introduces the ticket-reader callback."""
+    """Provision a workspace for a ticket's repo + head sha. For the
+    in_memory provider, fetches the ticket context via the registered
+    `WorkflowContextProvider`, builds a `WorkspaceSpec`, and calls
+    `create_workspace()` directly. Returns the new `workspace_id` in
+    outputs so downstream steps can claim against it via the `$provision`
+    input expression. For the remote_agent provider this would issue
+    `CreateWorkspace` over the wire — that path lands with the Phase 6
+    Go workspace subcommand body.
+
+    Falls back to `Outcome.failure` when:
+    - no `WorkflowContextProvider` is registered (bootstrap bug)
+    - the provider returns None (ticket not found)
+    - `create_workspace()` raises (provider-level provisioning failure)
+    """
 
     kind = "ProvisionWorkspace"
+
+    async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
+        del inputs
+        provider = get_workflow_context_provider()
+        if provider is None:
+            return Outcome.failure(reason="no workflow_context provider registered")
+
+        try:
+            ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
+        except Exception as exc:
+            log.exception(
+                "provision_workspace.context_fetch_failed",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+            )
+            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
+
+        if ticket_ctx is None:
+            return Outcome.failure(reason=f"ticket {ctx.ticket_id} not found")
+
+        head_sha = str(ticket_ctx.payload.get("head_sha") or "HEAD")
+        base_sha = ticket_ctx.payload.get("base_sha")
+
+        spec = WorkspaceSpec(
+            repo=RepoRefForSpec(plugin_id=ticket_ctx.plugin_id, external_id=ticket_ctx.repo_external_id),
+            sha=head_sha,
+            base_sha=str(base_sha) if base_sha else None,
+            resource_caps=ResourceCaps(),
+            network_policy=NetworkPolicy.GITHUB_ONLY,
+        )
+
+        try:
+            ws = await create_workspace(_IN_MEMORY_PROVIDER_ID, spec, org_id=ticket_ctx.org_id)
+        except Exception as exc:
+            log.exception(
+                "provision_workspace.create_failed",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+            )
+            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
+
+        log.info(
+            "provision_workspace.success",
+            workflow_execution_id=ctx.workflow_execution_id,
+            ticket_id=ctx.ticket_id,
+            workspace_id=ws.id,
+        )
+        return Outcome.success(outputs={"workspace_id": ws.id})
 
 
 class CleanupWorkspace(_LifecycleCommand):

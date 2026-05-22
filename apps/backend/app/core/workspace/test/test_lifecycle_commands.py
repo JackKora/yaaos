@@ -1,13 +1,18 @@
-"""CleanupWorkspace lifecycle command — real body.
+"""Lifecycle commands — `CleanupWorkspace` + `ProvisionWorkspace` real bodies.
 
-Covers: missing workspace_id (idempotent success), invalid uuid (failure),
-happy-path close that flips the WorkspaceRow status to `expired`.
+Covers:
+- CleanupWorkspace: missing workspace_id (idempotent success), invalid
+  uuid (failure), happy-path close that flips the WorkspaceRow status
+  to `expired`, unknown id (idempotent).
+- ProvisionWorkspace: no provider registered (failure), provider returns
+  None (failure), happy-path creates a WorkspaceRow via the in-memory
+  provider with spec built from the ticket context.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
@@ -68,3 +73,118 @@ async def test_cleanup_unknown_workspace_succeeds_silently(db_session) -> None: 
     _ = db_session  # ensure schema exists for the close_workspace path
     outcome = await CleanupWorkspace().execute({"workspace_id": str(uuid4())}, _ctx())
     assert outcome.label == "success"
+
+
+# ── ProvisionWorkspace ─────────────────────────────────────────────────
+
+
+import pytest  # noqa: E402
+
+from app.core.plugin_meta import PluginMeta  # noqa: E402
+from app.core.workspace import (  # noqa: E402
+    WorkspaceTicketContext,
+    _reset_providers_for_tests,
+    _reset_workflow_context_provider_for_tests,
+    register_workflow_context_provider,
+    register_workspace_provider,
+)
+from app.core.workspace.commands import ProvisionWorkspace  # noqa: E402
+
+
+class _StubProvider:
+    """Stub WorkflowContextProvider that returns a fixed context (or None)."""
+
+    def __init__(self, context: WorkspaceTicketContext | None) -> None:
+        self._context = context
+
+    async def get_workspace_ticket_context(self, ticket_id):  # type: ignore[no-untyped-def]
+        del ticket_id
+        return self._context
+
+
+class _StubWorkspaceProvider:
+    """Tiny WorkspaceProvider stub registered as id `in_process`. Doesn't
+    actually clone anything — just returns a fake plugin_state so
+    create_workspace() succeeds end-to-end."""
+
+    meta = PluginMeta(id="in_process", type="workspace", display_name="stub-in-memory")
+
+    async def provision(self, spec):  # type: ignore[no-untyped-def]
+        return {"working_dir": "/tmp/stub", "sha": spec.sha}
+
+    async def destroy(self, plugin_state):  # type: ignore[no-untyped-def]
+        return None
+
+    async def health_check(self, plugin_state):  # type: ignore[no-untyped-def]
+        del plugin_state
+        return None
+
+    async def run_coding_agent_cli(self, plugin_state, argv, **kwargs):  # type: ignore[no-untyped-def]
+        raise NotImplementedError
+
+    async def read_text(self, plugin_state, path):  # type: ignore[no-untyped-def]
+        return None
+
+    async def write_text(self, plugin_state, path, content):  # type: ignore[no-untyped-def]
+        return None
+
+
+@pytest.fixture
+def _stub_workspace_plugin():
+    _reset_providers_for_tests()
+    register_workspace_provider(_StubWorkspaceProvider())
+    yield
+    _reset_providers_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _reset_workflow_context():
+    yield
+    _reset_workflow_context_provider_for_tests()
+
+
+async def test_provision_fails_without_registered_provider() -> None:
+    outcome = await ProvisionWorkspace().execute({}, _ctx())
+    assert outcome.label == "failure"
+    assert "no workflow_context provider" in (outcome.failure_reason or "")
+
+
+async def test_provision_fails_when_ticket_not_found() -> None:
+    register_workflow_context_provider(_StubProvider(context=None))
+    outcome = await ProvisionWorkspace().execute({}, _ctx())
+    assert outcome.label == "failure"
+    assert "not found" in (outcome.failure_reason or "")
+
+
+async def test_provision_creates_workspace_with_spec(db_session, _stub_workspace_plugin) -> None:  # type: ignore[no-untyped-def]
+    ticket_id = uuid4()
+    org_id = uuid4()
+    register_workflow_context_provider(
+        _StubProvider(
+            context=WorkspaceTicketContext(
+                org_id=org_id,
+                plugin_id="github",
+                repo_external_id="me/repo",
+                payload={"head_sha": "deadbeefcafef00d", "base_sha": "babecafe"},
+            )
+        )
+    )
+    ctx = CommandContext(
+        workflow_execution_id=str(uuid4()),
+        ticket_id=str(ticket_id),
+        step_id="provision",
+        attempt=0,
+    )
+    outcome = await ProvisionWorkspace().execute({}, ctx)
+    assert outcome.label == "success"
+    workspace_id = outcome.outputs.get("workspace_id")
+    assert workspace_id is not None
+
+    row = (
+        await db_session.execute(select(WorkspaceRow).where(WorkspaceRow.id == UUID(workspace_id)))
+    ).scalar_one()
+    assert row.org_id == org_id
+    assert row.provider_id == "in_process"
+    assert row.status == WorkspaceStatus.ACTIVE.value
+    assert row.spec["sha"] == "deadbeefcafef00d"
+    assert row.spec["base_sha"] == "babecafe"

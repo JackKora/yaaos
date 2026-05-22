@@ -216,11 +216,25 @@ __all__ = [
 ]
 
 
+class _TicketWorkflowContextProvider:
+    """Bridges core/workspace WorkflowCommands to domain/tickets without
+    crossing the core → domain layer boundary at import time. Registered
+    by `_register_m05_workflows()` at module import."""
+
+    async def get_workspace_ticket_context(self, ticket_id):  # type: ignore[no-untyped-def]
+        from app.domain.tickets.service import get_workspace_ticket_context  # noqa: PLC0415
+
+        return await get_workspace_ticket_context(ticket_id)
+
+
 def _register_m05_workflows() -> None:
     """Register the five M05 reviewer workflows + their WorkflowCommands +
-    the three workspace lifecycle commands against `core/workflow`. Called
-    at import time; idempotent on re-import (tests reset the engine)."""
+    the three workspace lifecycle commands against `core/workflow`. Also
+    installs the workflow-context provider so `ProvisionWorkspace` can
+    read ticket fields. Called at import time; idempotent on re-import
+    (tests reset the engine)."""
     from app.core.workflow import WorkflowError, get_engine  # noqa: PLC0415
+    from app.core.workspace import register_workflow_context_provider  # noqa: PLC0415
     from app.core.workspace.commands import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
     from app.domain.reviewer.commands import (  # noqa: PLC0415
         ALL_LOCAL_COMMANDS,
@@ -240,6 +254,8 @@ def _register_m05_workflows() -> None:
             engine.register_workflow(wf)
         except WorkflowError:
             pass
+
+    register_workflow_context_provider(_TicketWorkflowContextProvider())
 
 
 _register_m05_workflows()

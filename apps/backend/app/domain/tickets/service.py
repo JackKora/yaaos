@@ -269,6 +269,30 @@ async def get_payload(ticket_id: UUID, *, session: AsyncSession) -> dict[str, An
     return dict(row.payload or {})
 
 
+async def get_workspace_ticket_context(ticket_id: UUID):  # type: ignore[no-untyped-def]
+    """Read the ticket fields a Workspace WorkflowCommand needs to build a
+    `WorkspaceSpec` — `org_id`, `plugin_id`, `repo_external_id`, `payload`.
+    Returns None when the ticket is missing.
+
+    Owns its session (read-only, no commits). Registered with
+    `core/workspace.register_workflow_context_provider` at boot so
+    `ProvisionWorkspace` can read tickets without crossing the
+    core → domain layer boundary.
+    """
+    from app.core.workspace import WorkspaceTicketContext  # noqa: PLC0415
+
+    async with db_session() as s:
+        row = (await s.execute(select(TicketRow).where(TicketRow.id == ticket_id))).scalar_one_or_none()
+    if row is None:
+        return None
+    return WorkspaceTicketContext(
+        org_id=row.org_id,
+        plugin_id=row.plugin_id or "github",
+        repo_external_id=row.repo_external_id or "",
+        payload=dict(row.payload or {}),
+    )
+
+
 async def get_by_pr(pr_id: UUID, *, org_id: UUID) -> Ticket | None:
     async with db_session() as s:
         row = (

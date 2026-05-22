@@ -101,7 +101,14 @@ The recovery-policy registry (`register_recovery_policy(failure_label=, command_
 `commands.py` ships three `WorkflowCommand`s — `ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`. All Workspace-category, all `restart_safe=True`. Registered against the engine via `domain/reviewer` bootstrap so the M05 reviewer workflows can reference them.
 
 - `CleanupWorkspace` has a real body: reads `workspace_id` from inputs and calls `close_workspace()`. Idempotent — missing/invalid/unknown ids return success so partial-failure workflows still drain.
-- `ProvisionWorkspace` + `RefreshWorkspaceAuth` remain stubs. `ProvisionWorkspace` needs ticket fields (org_id, repo, sha) to build the spec, but `core/workspace` can't import `domain/tickets` (layer rule) — the next slice introduces a ticket-reader callback registered at boot so the body can fetch what it needs without crossing the layer.
+- `ProvisionWorkspace` has a real body: fetches the ticket context via the registered `WorkflowContextProvider` (see [Workflow-context callback](#workflow-context-callback)), builds a `WorkspaceSpec`, calls `create_workspace()`, returns `workspace_id` in outputs. Fails cleanly when no provider is registered, the ticket isn't found, or the underlying create fails.
+- `RefreshWorkspaceAuth` remains a stub pending the VCS-auth-refresh substrate.
+
+### Workflow-context callback
+
+`workflow_context.py` exposes a singleton `WorkflowContextProvider` Protocol that bridges `core/workspace` to `domain/tickets` without crossing the `core → domain` layer boundary. The domain layer registers a concrete reader at boot via `register_workflow_context_provider(provider)`; `ProvisionWorkspace.execute()` reads it via `get_workflow_context_provider()` and calls `await provider.get_workspace_ticket_context(ticket_id)` to fetch the ticket's `org_id`, `plugin_id`, `repo_external_id`, and `payload`. Registration is idempotent-replace so test reloads don't conflict; `_reset_workflow_context_provider_for_tests()` clears the singleton.
+
+The bridge is registered from [`domain/reviewer/__init__.py`](domain_reviewer.md) at module-import time, alongside the workflow + command registrations.
 
 ### Idle-timeout sweep (Phase 3)
 
