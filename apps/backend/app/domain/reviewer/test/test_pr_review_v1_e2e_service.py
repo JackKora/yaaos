@@ -149,6 +149,43 @@ async def _drain_workflow_outbox(db_session, *, max_iterations: int = 50) -> int
     return total
 
 
+async def _advance_pending_agent_event(  # type: ignore[no-untyped-def]
+    db_session,
+    wfx_id: str,
+    outputs: dict[str, object] | None = None,
+    *,
+    outcome_label: str = "success",
+):
+    """Simulate the agent's terminal event for a Workspace step on
+    `remote_agent` provider. Reads the workflow's `pending_agent_command_id`,
+    enqueues `handle_agent_event` with the matching id + supplied outputs,
+    then drains the outbox so the workflow advances to the next step (or
+    DONE).
+    """
+    from app.core.tasks import enqueue  # noqa: PLC0415
+    from app.core.workflow.service import HANDLE_AGENT_EVENT  # noqa: PLC0415
+
+    wfx = await db_session.get(WorkflowExecutionRow, UUID(wfx_id))
+    assert wfx is not None
+    assert wfx.state == WorkflowState.AWAITING_AGENT.value, (
+        f"expected AWAITING_AGENT before agent event, got {wfx.state!r}"
+    )
+    assert wfx.pending_agent_command_id is not None
+    await enqueue(
+        HANDLE_AGENT_EVENT,
+        args={
+            "workflow_execution_id": wfx_id,
+            "agent_command_id": str(wfx.pending_agent_command_id),
+            "outcome_label": outcome_label,
+            "outputs": outputs or {},
+            "traceparent": None,
+        },
+        session=db_session,
+    )
+    await db_session.commit()
+    await _drain_workflow_outbox(db_session)
+
+
 async def test_pr_review_v1_runs_end_to_end_in_memory(db_session, _registered_engine) -> None:  # type: ignore[no-untyped-def]
     org_id = uuid4()
     # 1. Create a ticket the way intake would.
@@ -401,3 +438,87 @@ async def test_pr_review_v1_with_findings_persists_to_db(db_session) -> None:  #
         _reset_for_tests()
         _reset_providers_for_tests()
         _reset_workflow_context_provider_for_tests()
+
+
+async def test_pr_review_v1_runs_end_to_end_remote_agent(db_session, _registered_engine) -> None:  # type: ignore[no-untyped-def]
+    """Provider parity: the same `pr_review_v1` workflow walks to DONE
+    against `workspace_provider="remote_agent"` exactly as it does under
+    `in_memory` — only the dispatch path differs. Workspace-category
+    commands (`ProvisionWorkspace`, `CodeReview`, `CleanupWorkspace`)
+    land at AWAITING_AGENT instead of running inline; the test simulates
+    each terminal AgentEvent via `_advance_pending_agent_event`. Local
+    commands (`CheckShouldReview`, `PostFindings`) still execute inline
+    on the control plane — proves the engine treats provider as a
+    dispatch concern, not a workflow-shape concern.
+
+    The actual Go-side workspace subprocess body lands in the Phase 6
+    follow-on. Today the remote-dispatch path is a synthesize-command-id
+    stub (`workflow.start_step.workspace_remote_dispatch_stub`) and the
+    test fills in for the agent. This audit-tier coverage is what the
+    Phase 10 provider-parity audit asks for.
+    """
+    org_id = uuid4()
+    ticket_id, _ = await create_ticket(
+        type="github_pr",
+        payload={
+            "is_draft": False,
+            "is_fork": False,
+            "labels": ["enhancement"],
+            "author_login": "alice",
+            "pr_external_id": "42",
+            "head_sha": "deadbeefcafef00d",
+            "base_sha": "babecafe",
+        },
+        idempotency_key=f"e2e-remote-{uuid4()}",
+        org_id=org_id,
+        title="real-ticket",
+        source="github_pr",
+        source_external_id="42",
+        plugin_id="github",
+        repo_external_id="me/repo",
+        session=db_session,
+    )
+    register_workflow_context_provider(
+        _StaticWorkflowContextProvider(
+            WorkspaceTicketContext(
+                org_id=org_id,
+                plugin_id="github",
+                repo_external_id="me/repo",
+                payload={"head_sha": "deadbeefcafef00d", "base_sha": "babecafe"},
+            )
+        )
+    )
+
+    wfx_id = await _registered_engine.start(
+        workflow_name="pr_review_v1",
+        ticket_id=str(ticket_id),
+        workspace_provider="remote_agent",
+        session=db_session,
+    )
+    await db_session.commit()
+
+    # Initial drain — CheckShouldReview (Local) executes inline; then
+    # ProvisionWorkspace (Workspace) hits the remote-dispatch stub and
+    # parks at AWAITING_AGENT. drain returns when no more outbox rows.
+    await _drain_workflow_outbox(db_session)
+
+    # Simulate agent CreateWorkspace.result with a synthetic workspace_id.
+    sim_workspace_id = str(uuid4())
+    await _advance_pending_agent_event(db_session, wfx_id, outputs={"workspace_id": sim_workspace_id})
+
+    # Now parked at AWAITING_AGENT on CodeReview. Simulate the
+    # InvokeClaudeCode.result event with no draft findings.
+    await _advance_pending_agent_event(
+        db_session,
+        wfx_id,
+        outputs={"draft_findings": [], "summary_body": "", "state": "COMMENT"},
+    )
+
+    # PostFindings (Local) ran inline with empty drafts → success-no-op;
+    # CleanupWorkspace then parked. Simulate its terminal event.
+    await _advance_pending_agent_event(db_session, wfx_id, outputs={})
+
+    # Workflow terminal — done.
+    wfx = await db_session.get(WorkflowExecutionRow, UUID(wfx_id))
+    assert wfx.state == WorkflowState.DONE.value
+    assert wfx.pending_agent_command_id is None
