@@ -217,6 +217,35 @@ async def get_workspace_info(workspace_id: UUID) -> WorkspaceInfo:
     return await _read_info(workspace_id)
 
 
+async def get_workspace(workspace_id: UUID) -> Workspace | None:
+    """Load a live `Workspace` handle for `workspace_id`, or None if the
+    row is missing / not active. Substrate for Workspace WorkflowCommand
+    bodies that take a `workspace_id` input (e.g. CodeReview) and need to
+    run a coding-agent CLI against the existing workspace.
+
+    Returns None when:
+    - the row doesn't exist
+    - the row's `plugin_state` is unset (workspace failed to provision)
+    - the row's provider isn't registered (deployment-level misconfig —
+      caller surfaces this as a workflow failure)
+    """
+    async with get_session() as s:
+        row = (
+            await s.execute(select(WorkspaceRow).where(WorkspaceRow.id == workspace_id))
+        ).scalar_one_or_none()
+    if row is None or row.plugin_state is None:
+        return None
+    provider = _PROVIDERS.get(row.provider_id)
+    if provider is None:
+        log.warning(
+            "workspace.get_workspace.provider_not_registered",
+            workspace_id=str(workspace_id),
+            provider_id=row.provider_id,
+        )
+        return None
+    return _WorkspaceImpl(id=str(row.id), provider=provider, plugin_state=row.plugin_state)
+
+
 async def force_close_all(*, org_id: UUID) -> int:
     """Flip every active/creating workspace for the org to expired. Returns count."""
     async with get_session() as s:
