@@ -3,8 +3,23 @@
 Each `Workflow` is registered against `core/workflow.get_engine()` at
 import time (via `domain/reviewer/__init__.py`). The matching commands
 live in `domain/reviewer/commands/` + `core/workspace/commands/` (workspace
-lifecycle). Step input expressions use the `$<step_id>.<field>` form the
-router resolves via `step_state`.
+lifecycle).
+
+Step `inputs` reference shorthand:
+- `$<step_id>.<field>` — value from a prior step's outputs (e.g.
+  `$provision.workspace_id`).
+- `$ticket.<field>` — value from the ticket payload supplied to
+  `engine.start(ticket_payload=...)` by intake.
+
+Required ticket-payload fields by workflow (intake handlers populate):
+- `pr_review_v1` + `incremental_review_v1` — `head_sha`, `base_sha`.
+- `verify_fix_v1` — `finding_id`, `head_sha`.
+- `stale_check_v1` — `finding_ids` (list of candidate finding ids).
+- `answer_question_v1` — `finding_id`, `question_body`, `head_sha`.
+
+Future intake handlers MUST populate these — the workflow design assumes
+they're there. Missing fields resolve to `None` in command bodies; bodies
+that hard-require a field should fail explicitly.
 """
 
 from __future__ import annotations
@@ -33,7 +48,11 @@ pr_review_v1 = Workflow(
         Step(
             id="review",
             command_kind="CodeReview",
-            inputs={"workspace_id": "$provision.workspace_id"},
+            inputs={
+                "workspace_id": "$provision.workspace_id",
+                "head_sha": "$ticket.head_sha",
+                "base_sha": "$ticket.base_sha",
+            },
         ),
         Step(
             id="post",
@@ -72,7 +91,11 @@ incremental_review_v1 = Workflow(
         Step(
             id="review",
             command_kind="IncrementalReview",
-            inputs={"workspace_id": "$provision.workspace_id"},
+            inputs={
+                "workspace_id": "$provision.workspace_id",
+                "head_sha": "$ticket.head_sha",
+                "base_sha": "$ticket.base_sha",
+            },
         ),
         Step(
             id="post",
@@ -103,7 +126,11 @@ verify_fix_v1 = Workflow(
         Step(
             id="verify",
             command_kind="VerifyFix",
-            inputs={"workspace_id": "$provision.workspace_id"},
+            inputs={
+                "workspace_id": "$provision.workspace_id",
+                "finding_id": "$ticket.finding_id",
+                "head_sha": "$ticket.head_sha",
+            },
         ),
         Step(
             id="resolve",
@@ -135,7 +162,11 @@ stale_check_v1 = Workflow(
         Step(
             id="check",
             command_kind="StaleCheck",
-            inputs={"workspace_id": "$provision.workspace_id"},
+            inputs={
+                "workspace_id": "$provision.workspace_id",
+                "finding_ids": "$ticket.finding_ids",
+                "head_sha": "$ticket.head_sha",
+            },
         ),
         Step(
             id="archive",
@@ -166,12 +197,20 @@ answer_question_v1 = Workflow(
         Step(
             id="answer",
             command_kind="AnswerQuestion",
-            inputs={"workspace_id": "$provision.workspace_id"},
+            inputs={
+                "workspace_id": "$provision.workspace_id",
+                "finding_id": "$ticket.finding_id",
+                "question_body": "$ticket.question_body",
+                "head_sha": "$ticket.head_sha",
+            },
         ),
         Step(
             id="reply",
             command_kind="PostReply",
-            inputs={"reply_body": "$answer.reply_body"},
+            inputs={
+                "reply_body": "$answer.reply_body",
+                "finding_id": "$ticket.finding_id",
+            },
         ),
         Step(
             id="cleanup",
