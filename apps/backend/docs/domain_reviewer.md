@@ -42,6 +42,28 @@ HTTP routes (`/api/reviewer`):
 
 ## Module architecture
 
+### File layout (after the queue.py dismantle, slices 40-46)
+
+The legacy `queue.py` was a 1197-line monolith. It's now a 234-line scheduling shell plus nine focused modules that the M05 workflow-engine path imports from directly:
+
+| Module | Responsibility |
+|---|---|
+| `queue.py` | Public scheduling API (`schedule_review`, `cancel_pending`, `startup_recovery`) + the in-process `_inflight_tasks` registry. |
+| `legacy_runner.py` | The legacy `_run_review_job_inner` runner — provision workspace, invoke CLI, post Review, audit-at-every-step. Spawned by `schedule_review` and `startup_recovery`. |
+| `review_job.py` | `ReviewJob` + `ReviewJobInput` Pydantic value objects (read-side projection of `review_jobs` rows). |
+| `review_job_queries.py` | Read-only SELECTs: `get_review_job`, `list_review_jobs_for_pr`, `list_in_flight`, `metrics_summary`. SPA endpoints in `web.py` use these. |
+| `review_job_transitions.py` | Write-side helpers (`transition_failed`, `transition_skipped`, `set_step`) + the 7 audit-payload Pydantic models. Atomic row-update + audit-row writes. |
+| `queue_events.py` | `ReviewJobStatusChanged`, `ReviewJobStepProgress`, `ReviewJobActivity` — Pydantic `Event` subclasses published to the SSE bus. |
+| `secrets_detection.py` | `detect_secrets(diff)` + `secrets_warning_review(rule_id)`. Pure regex pre-flight. |
+| `mcp_wiring.py` | `build_mcp_payload`, `prefix_broken_creds_warning`. MCP-provider collection + the broken-creds GitHub callout. |
+| `diff_utils.py` | `detect_language`, `ticket_skip_reason`, `is_skip_path`. Pure `Diff` inspection. |
+| `constants.py` | `REVIEWER_TAG`, `CODING_AGENT_PLUGIN_ID`, `DEFAULT_MODEL`, `DEFAULT_EFFORT`, `M01_ORG_ID`. |
+| `admission.py` | `admit_raw_findings`, `findingdrafts_to_raw`, `raw_to_vcs_findings`, `post_admitted_findings_to_vcs`. M05 workflow-engine `PostFindings` command also imports from here. |
+| `commands/__init__.py` | M05 `WorkflowCommand` bodies (5 Workspace + 5 Local). |
+| `workflows/*` | M05 `Workflow` definitions for the 5 reviewer task modes. |
+
+The legacy runner + its read/write helpers stay live until the SPA cuts over to read `workflow_executions` instead of `review_jobs`. Once that cutover lands, `queue.py` + `legacy_runner.py` + `review_job*.py` + `queue_events.py` all retire as a single PR with a `019_drop_review_jobs.sql` migration.
+
 ### M05 workflows + commands (Phase 4 foundations)
 
 Five typed `Workflow` definitions live in `domain/reviewer/workflows/` and register at module import:
@@ -98,7 +120,7 @@ Tests register a fake plugin via [`testing/fake_coding_agent`](testing_fake_codi
 - `FindingFingerprint` — conceptual identity across reviews: `(file_path, rule_id, anchor_content_hash, body_gist_hash)`. Whitespace-normalized hashes so reindents don't churn fingerprints (plan §2.3).
 - `CodeAnchor` — `(file_path, line_start, line_end, surrounding_content_hash, commit_sha)`. The surrounding hash covers ±3 lines and is what lets `anchor.resolve_anchor` re-find the position after line drift.
 - `FindingState`, `Severity`, `AckKind`, `ReplyIntent`, `AuthorKind`, `ReviewTrigger`, `ReviewScope` — enums + frozen dataclasses per plan §2.3.
-- `RawFinding` — coding-agent output before admission; must include `concrete_failure_scenario` ≥ 20 chars (plan §10.1) or the aggregate drops it. Built from `coding_agent.FindingDraft` via `_findingdrafts_to_raw` in `queue.py`; admitted survivors are translated back to `vcs.Finding` for posting via `_raw_to_vcs_findings`. These two are the only shared converters; the legacy `_vcs_findings_to_raw` is gone.
+- `RawFinding` — coding-agent output before admission; must include `concrete_failure_scenario` ≥ 20 chars (plan §10.1) or the aggregate drops it. Built from `coding_agent.FindingDraft` via `findingdrafts_to_raw` in [`admission.py`](../app/domain/reviewer/admission.py); admitted survivors are translated back to `vcs.Finding` for posting via `raw_to_vcs_findings`. These two are the only shared converters; the legacy `_vcs_findings_to_raw` is gone.
 - `AdmissionDrop` — audit-log payload for a rejected raw finding: `(rule_id, reason, severity, confidence)` where reason ∈ `malformed | below_threshold | nit_cap | top_cap | matches_ack`.
 
 ### Core user flows
@@ -163,14 +185,14 @@ Pure transition functions in `state_machine.py`; the aggregate is the only legit
 Inside `aggregate.post_process_raw_findings(review_id, raw, *, diff_files=None)`, in order:
 
 1. **Schema gate** — drop raw findings whose `concrete_failure_scenario` is missing or under `_MIN_SCENARIO_LEN` (20 chars stripped). Closes the legacy synthesis loophole where a one-word body would otherwise pass. Audit reason: `malformed`.
-2. **Off-diff drop** — when `diff_files` is supplied (queue.py for full review, incremental.py for incremental), findings whose anchor file isn't in the PR diff are dropped (plan §10.9). Audit reason: `off_diff`.
+2. **Off-diff drop** — when `diff_files` is supplied (`legacy_runner.py` for full review, `incremental.py` for incremental), findings whose anchor file isn't in the PR diff are dropped (plan §10.9). Audit reason: `off_diff`.
 3. **Per-severity threshold** — `blocker`/`major` ≥ 75, `minor` ≥ 85, `nit` ≥ 90 (plan §10.2). Audit reason: `below_threshold`.
 4. **Per-PR nit cap** — at most 5 nits ever for this PR (plan §10.5). Audit reason: `nit_cap`.
 5. **Fingerprint match** — vs prior findings on this PR: matches against `acknowledged` drop silently (`matches_ack`); matches against `open` re-observe with sticky severity + `max(stored, new)` confidence.
 6. **Cross-file dedup** — same-rule findings on multiple files collapse into one survivor whose body gains an "Also in: file2, file3, …" footer enumerating the duplicated paths (plan §10.8).
 7. **Per-review top-10 cap** — rank by `severity_weight × confidence` (blocker=4, major=3, minor=2, nit=1); admit top 10. Re-observations don't count. Audit reason: `top_cap`.
 
-Admission runs BEFORE `vcs.post_review` in `queue.py`'s full-review flow — rejected drafts never reach GitHub.
+Admission runs BEFORE `vcs.post_review` in `legacy_runner.py`'s full-review flow — rejected drafts never reach GitHub.
 
 ### Cancellation — DB flip + task cancel (generation 1)
 
@@ -207,7 +229,7 @@ Generation 2 (plan §4.1):
 - `comment_messages` — every yaaos- and human-authored message. `external_comment_id` indexed. `classified_intent` populated for human messages by `classify_reply`.
 - `acknowledgment_decisions` — persistent dev decisions. Survive future reviews — re-observed fingerprints with an ack drop silently in the admission pipeline.
 
-`SqlAlchemyAggregateRepository.save` flushes in FK order: findings → flush → observations + threads → flush → messages → flush → acks. It also persists `Review` row updates (status, `commit_sha_at_start`, `superseded_by_review_id`, `pending_replay`, `started_at` / `completed_at` timestamps) via `_review_from_row` — initial `ReviewRow` INSERT still lives in `queue.py` / `incremental.py` because those callers hold the per-PR advisory lock and assign `sequence_number`.
+`SqlAlchemyAggregateRepository.save` flushes in FK order: findings → flush → observations + threads → flush → messages → flush → acks. It also persists `Review` row updates (status, `commit_sha_at_start`, `superseded_by_review_id`, `pending_replay`, `started_at` / `completed_at` timestamps) via `_review_from_row` — initial `ReviewRow` INSERT still lives in `queue.py` (the schedule API) / `incremental.py` because those callers hold the per-PR advisory lock and assign `sequence_number`.
 
 `review_id` columns on generation-2 tables are unconstrained UUIDs by design; the `review_jobs → reviews` rename in §13 step 7 turns them into a real FK. Canonical schema in [core_database.md](core_database.md).
 
