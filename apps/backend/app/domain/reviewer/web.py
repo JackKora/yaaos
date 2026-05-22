@@ -18,7 +18,6 @@ from app.domain.reviewer.queue import (
     cancel_pending,
     list_review_jobs_for_pr,
     metrics_summary,
-    schedule_review,
     startup_recovery,
 )
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
@@ -41,19 +40,48 @@ class RereviewRequest(BaseModel):
 
 @router.post("/rereview")
 async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
+    """Re-review a ticket — drives `pr_review_v1` via the M05 workflow engine.
+
+    Replaces the legacy `schedule_review` / `review_jobs` flow. The SPA's
+    only contract with this endpoint is the `scheduled_count` field; the
+    response now carries `workflow_execution_id` instead of `review_job_id`
+    so the caller can poll workflow state if desired.
+    """
     try:
         await tickets.get(req.ticket_id, org_id=M01_ORG_ID)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
-    job_id = await schedule_review(
-        ticket_id=req.ticket_id,
-        trigger_reason="ui_button",
-        actor=Actor.system(),
-        org_id=M01_ORG_ID,
-    )
+
+    # Read ticket context via the workflow-context provider (registered at
+    # domain/reviewer bootstrap). Routes the same path intake uses, so the
+    # workflow engine receives a payload-derived `$ticket.*` view + the
+    # right org id without re-fetching here.
+    from app.core.workflow import get_engine  # noqa: PLC0415
+    from app.core.workspace import get_workflow_context_provider  # noqa: PLC0415
+
+    provider = get_workflow_context_provider()
+    if provider is None:
+        raise HTTPException(
+            status_code=500,
+            detail="workflow context provider not registered",
+        )
+    ctx = await provider.get_workspace_ticket_context(req.ticket_id)
+    if ctx is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    async with session() as s:
+        workflow_execution_id = await get_engine().start(
+            workflow_name="pr_review_v1",
+            ticket_id=str(req.ticket_id),
+            workspace_provider="in_memory",
+            ticket_payload=dict(ctx.payload),
+            session=s,
+        )
+        await s.commit()
+
     return {
-        "scheduled_count": 1 if job_id else 0,
-        "review_job_id": str(job_id) if job_id else None,
+        "scheduled_count": 1,
+        "workflow_execution_id": workflow_execution_id,
     }
 
 
