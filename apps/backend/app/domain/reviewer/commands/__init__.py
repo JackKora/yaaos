@@ -635,18 +635,67 @@ class PostReply(_LocalReviewCommand):
                 )
                 return Outcome.success(outputs={"posted": False, "reason": "no_thread"})
 
-            # Placeholder external id — GitHub post lands in the follow-on
-            # slice. Matches the existing local-<id> convention from queue.py.
-            placeholder_external_id = f"local-reply-{uuid4()}"
+            # Find the parent yaaos comment on the thread — the first message
+            # by author_kind="yaaos" carries the external_comment_id we reply
+            # under. If none exists (thread opened but never posted), fall
+            # through to local-only persist.
+            parent_external_id = None
+            for msg in aggregate.messages:
+                if msg.thread_id == thread.id and msg.author_kind == "yaaos":
+                    parent_external_id = msg.external_comment_id
+                    break
+
+            # Look up the PR row for the external id. Required to call
+            # vcs.post_comment_reply.
+            from sqlalchemy import select as _select  # noqa: PLC0415
+
+            from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+
+            pr_row = (
+                await s.execute(_select(PullRequestRow).where(PullRequestRow.id == ticket_ctx.pr_id))
+            ).scalar_one_or_none()
+
+            external_comment_id = f"local-reply-{uuid4()}"  # fallback
+            if parent_external_id is None or pr_row is None or parent_external_id.startswith("local-"):
+                # No real parent yet (e.g. PostFindings never posted to GitHub
+                # for this finding) — persist locally with placeholder. Same
+                # behavior as before slice 32.
+                log.info(
+                    "post_reply.local_only",
+                    workflow_execution_id=ctx.workflow_execution_id,
+                    finding_id=str(finding_id),
+                    reason="no_real_parent" if parent_external_id else "no_pr_row",
+                )
+            else:
+                # Real parent + real PR row → post to GitHub.
+                try:
+                    from app.domain.vcs import get_plugin as get_vcs_plugin  # noqa: PLC0415
+
+                    vcs_plugin = get_vcs_plugin(pr_row.plugin_id)
+                    external_comment_id = await vcs_plugin.post_comment_reply(
+                        pr_row.external_id, parent_external_id, str(reply_body)
+                    )
+                except Exception as exc:
+                    log.exception(
+                        "post_reply.vcs_post_failed",
+                        workflow_execution_id=ctx.workflow_execution_id,
+                        finding_id=str(finding_id),
+                    )
+                    return Outcome.failure(
+                        reason=f"vcs.post_comment_reply failed: {type(exc).__name__}: {exc}",
+                    )
+
             aggregate.append_message(
                 thread_id=thread.id,
                 author_kind="yaaos",
                 author_external_id="yaaos",
-                external_comment_id=placeholder_external_id,
+                external_comment_id=external_comment_id,
+                in_reply_to_external_id=parent_external_id,
                 body=str(reply_body),
             )
             await repo.save(aggregate)
             await s.commit()
+            placeholder_external_id = external_comment_id  # for the existing return-shape
 
         log.info(
             "post_reply.persisted",
