@@ -31,6 +31,7 @@ import structlog
 
 from app.core.database import session as db_session
 from app.core.workflow import CommandCategory, CommandContext, Outcome
+from app.core.workspace import get_workflow_context_provider
 from app.domain.tickets import get_payload as get_ticket_payload
 
 log = structlog.get_logger("domain.reviewer.commands")
@@ -140,7 +141,89 @@ class ResolveFinding(_LocalReviewCommand):
 
 
 class ArchiveStaleFindings(_LocalReviewCommand):
+    """Mark a list of findings as `STALE` in the reviewer aggregate. Receives
+    `stale_finding_ids: list[str]` from inputs — typically sourced from the
+    prior `StaleCheck` Workspace step via `$check.stale_finding_ids`.
+
+    Idempotent and defensive:
+    - Empty / missing input → success-no-op.
+    - Ticket with no `pr_id` (intake created the ticket before PR
+      materialization) → success-no-op. Nothing to archive.
+    - Individual `finding_id` not present in the aggregate → skipped, not a
+      failure. The aggregate enumerates findings owned by this PR; ids from
+      a stale upstream payload (e.g. finding was hard-deleted) shouldn't
+      sink the whole step.
+
+    Outputs `archived_count` so downstream steps or audits can read how
+    many state transitions actually fired.
+    """
+
     kind = "ArchiveStaleFindings"
+
+    async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
+        stale_ids_raw = inputs.get("stale_finding_ids") or []
+        if not stale_ids_raw:
+            return Outcome.success(outputs={"archived_count": 0})
+
+        provider = get_workflow_context_provider()
+        if provider is None:
+            return Outcome.failure(reason="no workflow_context provider registered")
+
+        try:
+            ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
+        except Exception as exc:
+            log.exception(
+                "archive_stale_findings.context_fetch_failed",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+            )
+            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
+
+        if ticket_ctx is None or ticket_ctx.pr_id is None:
+            log.info(
+                "archive_stale_findings.no_pr_link",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+            )
+            return Outcome.success(outputs={"archived_count": 0})
+
+        # Defer the heavy SqlAlchemyAggregateRepository import — keeps the
+        # commands module-import cheap for the engine registration path.
+        from app.domain.reviewer.repository import (  # noqa: PLC0415
+            SqlAlchemyAggregateRepository,
+        )
+
+        archived = 0
+        skipped = 0
+        async with db_session() as s:
+            repo = SqlAlchemyAggregateRepository(s)
+            aggregate = await repo.load(pr_id=ticket_ctx.pr_id, org_id=ticket_ctx.org_id)
+            known_ids = {f.id for f in aggregate.findings}
+            for raw_id in stale_ids_raw:
+                try:
+                    fid = UUID(str(raw_id))
+                except (TypeError, ValueError):
+                    skipped += 1
+                    continue
+                if fid not in known_ids:
+                    skipped += 1
+                    continue
+                # confidence=1.0 because StaleCheck has already decided;
+                # ArchiveStaleFindings is the durable persistence step.
+                result = aggregate.record_stale_detection(finding_id=fid, still_applies=False, confidence=1.0)
+                if result is not None:
+                    archived += 1
+            await repo.save(aggregate)
+            await s.commit()
+
+        log.info(
+            "archive_stale_findings.done",
+            workflow_execution_id=ctx.workflow_execution_id,
+            ticket_id=ctx.ticket_id,
+            archived=archived,
+            skipped=skipped,
+        )
+        return Outcome.success(outputs={"archived_count": archived, "skipped_count": skipped})
 
 
 class PostReply(_LocalReviewCommand):

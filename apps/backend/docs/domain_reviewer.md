@@ -59,7 +59,12 @@ Ten matching `WorkflowCommand`s ship as stubs in `domain/reviewer/commands/`:
 
 The three workspace-lifecycle commands (`ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`) ship in [`core/workspace.commands`](core_workspace.md) and register through the reviewer bootstrap so any workflow can reference them.
 
-**Phase 4 boundary:** `CheckShouldReview` ships with a real body — reads `is_draft` / `is_fork` / `labels` / `author_login` from the ticket payload and returns `Outcome.success(label="skip", outputs={"reason": ...})` on any first-match signal (`draft`, `fork`, `label:<name>`, `bot_author`). Skip labels: `yaaos-skip`, `no-review`, `wip` (case-insensitive). The bot-author check matches `*[bot]` / `*-bot` suffixes. Other command bodies remain stubs until the `queue.py` dismantle wires them to `domain/coding_agent` + admission and drops the `review_jobs` table.
+**Phase 4 boundary:** Two Local bodies are real today.
+
+- `CheckShouldReview` reads `is_draft` / `is_fork` / `labels` / `author_login` from the ticket payload and returns `Outcome.success(label="skip", outputs={"reason": ...})` on any first-match signal (`draft`, `fork`, `label:<name>`, `bot_author`). Skip labels: `yaaos-skip`, `no-review`, `wip` (case-insensitive). The bot-author check matches `*[bot]` / `*-bot` suffixes.
+- `ArchiveStaleFindings` consumes `stale_finding_ids: list[str]` from inputs (sourced from the prior `StaleCheck` step), loads the reviewer aggregate by `pr_id` via the registered `WorkflowContextProvider`, and transitions each finding to `STALE` via `aggregate.record_stale_detection(still_applies=False, confidence=1.0)`. Defensive on missing pr_id (no-op-success), unknown finding ids (skipped, not failed), invalid uuids (skipped). Outputs `archived_count` and `skipped_count`.
+
+Other Local + Workspace bodies remain stubs until the `queue.py` dismantle wires them to `domain/coding_agent` + admission and drops the `review_jobs` table.
 
 ### Entities
 
