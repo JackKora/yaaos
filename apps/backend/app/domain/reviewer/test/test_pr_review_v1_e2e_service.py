@@ -27,7 +27,7 @@ from sqlalchemy import select
 from app.core.outbox import drain_once
 from app.core.outbox.models import OutboxEntryRow
 from app.core.plugin_meta import PluginMeta
-from app.core.workflow import WorkflowExecutionRow, WorkflowState, _reset_for_tests, get_engine
+from app.core.workflow import Outcome, WorkflowExecutionRow, WorkflowState, _reset_for_tests, get_engine
 from app.core.workspace import (
     WorkspaceTicketContext,
     _reset_providers_for_tests,
@@ -208,3 +208,187 @@ async def test_pr_review_v1_runs_end_to_end_in_memory(db_session, _registered_en
     )
     assert len(rows) == 1, "expected exactly one workspace row for this org"
     assert rows[0].status == WorkspaceStatus.EXPIRED.value
+
+
+async def test_pr_review_v1_with_findings_persists_to_db(db_session) -> None:  # type: ignore[no-untyped-def]
+    """Full workflow walk with a spy CodeReview that emits realistic
+    FindingDrafts. Verifies the entire pipeline composes:
+    intake → CheckShouldReview → ProvisionWorkspace → CodeReview (spy) →
+    PostFindings (real body) → admission → CleanupWorkspace. After the
+    workflow ends DONE, FindingRow rows exist for the PR.
+    """
+    from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+    from app.domain.reviewer.commands import CodeReview  # noqa: PLC0415
+    from app.domain.reviewer.models import FindingRow  # noqa: PLC0415
+    from app.domain.tickets.models import TicketRow  # noqa: PLC0415
+
+    _reset_for_tests()
+    _reset_providers_for_tests()
+    _reset_workflow_context_provider_for_tests()
+
+    # 1. Workspace provider whose plugin_state carries the file content the
+    #    finding's anchor references. CodeReview spy never reads it (it just
+    #    emits the dicts); PostFindings DOES via the workspace.read_text path.
+    class _StubProviderWithFiles:
+        meta = PluginMeta(id="in_process", type="workspace", display_name="stub")
+
+        async def provision(self, spec):  # type: ignore[no-untyped-def]
+            return {
+                "sha": spec.sha,
+                "files": {"src/foo.py": "def foo(x):\n    return x.value\n"},
+            }
+
+        async def destroy(self, plugin_state):  # type: ignore[no-untyped-def]
+            return None
+
+        async def health_check(self, plugin_state):  # type: ignore[no-untyped-def]
+            del plugin_state
+            return None
+
+        async def run_coding_agent_cli(self, plugin_state, argv, **kwargs):  # type: ignore[no-untyped-def]
+            raise NotImplementedError
+
+        async def read_text(self, plugin_state, path):  # type: ignore[no-untyped-def]
+            return plugin_state.get("files", {}).get(path)
+
+        async def write_text(self, plugin_state, path, content):  # type: ignore[no-untyped-def]
+            return None
+
+    register_workspace_provider(_StubProviderWithFiles())
+
+    org_id = uuid4()
+    ticket_id = uuid4()
+    pr_id = uuid4()
+
+    # 2. Real ticket + PR rows so admission's findings FK lands cleanly.
+    db_session.add(
+        TicketRow(
+            id=ticket_id,
+            org_id=org_id,
+            source="github_pr",
+            source_external_id="42",
+            title="t",
+            status="pending",
+            plugin_id="github",
+            repo_external_id="me/repo",
+            type="github_pr",
+            idempotency_key=f"e2e-findings-{uuid4()}",
+            payload={
+                "is_draft": False,
+                "is_fork": False,
+                "labels": [],
+                "author_login": "alice",
+                "head_sha": "deadbeef",
+                "base_sha": "babecafe",
+            },
+        )
+    )
+    await db_session.flush()
+    db_session.add(
+        PullRequestRow(
+            id=pr_id,
+            org_id=org_id,
+            plugin_id="github",
+            external_id=f"pr-{uuid4()}",
+            repo_external_id="me/repo",
+            ticket_id=ticket_id,
+            number=42,
+            title="t",
+            body=None,
+            author_login="alice",
+            author_type="user",
+            base_branch="main",
+            head_branch="feature",
+            base_sha="babecafe",
+            head_sha="deadbeef",
+            is_draft=False,
+            is_fork=False,
+            state="open",
+            html_url="http://test",
+        )
+    )
+    await db_session.commit()
+
+    # 3. Context provider returns the real ticket_id-linked PR.
+    register_workflow_context_provider(
+        _StaticWorkflowContextProvider(
+            WorkspaceTicketContext(
+                org_id=org_id,
+                plugin_id="github",
+                repo_external_id="me/repo",
+                payload={"head_sha": "deadbeef", "base_sha": "babecafe"},
+                pr_id=pr_id,
+            )
+        )
+    )
+
+    # 4. Spy CodeReview emits one FindingDraft. The real PostFindings will
+    #    deserialize it, read the file, build the RawFinding, admit, persist.
+    spy_finding = {
+        "severity": "major",
+        "rule_id": "spy_rule",
+        "title": "Spy finding",
+        "body": "Spy body.",
+        "concrete_failure_scenario": (
+            "Caller can pass None; foo() dereferences without a check; raises NoneType."
+        ),
+        "confidence": 90,
+        "rationale": "Function signature accepts any.",
+        "anchor": {"file_path": "src/foo.py", "line_start": 2, "line_end": 2},
+    }
+
+    class _SpyCodeReview(CodeReview):
+        async def _run_in_workspace(self, workspace, ticket_ctx, inputs, ctx):  # type: ignore[no-untyped-def]
+            del workspace, ticket_ctx, inputs, ctx
+            return Outcome.success(outputs={"draft_findings": [spy_finding]})
+
+    # 5. Register the workflow + commands with the spy override.
+    eng = get_engine()
+    from app.core.workspace.commands import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
+
+    for cmd in ALL_LIFECYCLE_COMMANDS:
+        eng.register_command(cmd)
+    eng.register_command(_SpyCodeReview())  # overrides stub CodeReview
+    for cmd in ALL_LOCAL_COMMANDS:
+        eng.register_command(cmd)
+    # Skip the rest of ALL_WORKSPACE_COMMANDS (CodeReview replaced; others
+    # not referenced in pr_review_v1).
+    eng.register_workflow(pr_review_v1)
+
+    try:
+        # 6. Kick off + drain.
+        wfx_id = await eng.start(
+            workflow_name="pr_review_v1",
+            ticket_id=str(ticket_id),
+            workspace_provider="in_memory",
+            ticket_payload={
+                "head_sha": "deadbeef",
+                "base_sha": "babecafe",
+                "is_draft": False,
+                "is_fork": False,
+            },
+            session=db_session,
+        )
+        await db_session.commit()
+        await _drain_workflow_outbox(db_session)
+
+        wfx = await db_session.get(WorkflowExecutionRow, UUID(wfx_id))
+        assert wfx.state == WorkflowState.DONE.value
+
+        # 7. FindingRow lands.
+        rows = (
+            (
+                await db_session.execute(
+                    select(FindingRow).where(FindingRow.pr_id == pr_id, FindingRow.org_id == org_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].rule_id == "spy_rule"
+        assert rows[0].title == "Spy finding"
+    finally:
+        _reset_for_tests()
+        _reset_providers_for_tests()
+        _reset_workflow_context_provider_for_tests()
