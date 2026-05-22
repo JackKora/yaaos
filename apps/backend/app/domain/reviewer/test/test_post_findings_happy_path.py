@@ -106,7 +106,7 @@ async def test_post_findings_persists_admitted_findings(db_session, _stubs) -> N
             id=pr_id,
             org_id=org_id,
             plugin_id="github",
-            external_id=f"pr-{uuid4()}",
+            external_id="pr-external",
             repo_external_id="me/repo",
             ticket_id=ticket_id,
             number=42,
@@ -184,11 +184,23 @@ async def test_post_findings_persists_admitted_findings(db_session, _stubs) -> N
         attempt=0,
     )
 
-    outcome = await PostFindings().execute({"draft_findings": drafts, "workspace_id": str(ws_id)}, ctx)
+    # 3b. Register stub VCS plugin so the GitHub-post half of PostFindings
+    # has somewhere to post. Without it, the post step raises (plugin not
+    # registered) and the workflow fails. PR row's plugin_id is "github" so
+    # we register under that id.
+    from app.testing.stub_vcs import register_stub_vcs  # noqa: PLC0415
+
+    with register_stub_vcs(plugin_id="github") as stub:
+        outcome = await PostFindings().execute({"draft_findings": drafts, "workspace_id": str(ws_id)}, ctx)
 
     assert outcome.label == "success", f"unexpected failure: {outcome.failure_reason}"
     assert outcome.outputs.get("admitted_count") == 1
     assert outcome.outputs.get("dropped_count") == 0
+    assert outcome.outputs.get("posted") is True
+    assert len(stub.posted_reviews) == 1
+    external_id, posted_review = stub.posted_reviews[0]
+    assert external_id == "pr-external"
+    assert len(posted_review.findings) == 1
 
     # 4. FindingRow landed in the DB scoped to (pr_id, org_id).
     rows = (

@@ -302,6 +302,61 @@ class PostFindings(_LocalReviewCommand):
             )
             await s.commit()
 
+        # 4. Post admitted findings to the VCS plugin (GitHub). Only fires
+        # when there's something to post; the helper looks up the PR row
+        # for the external id. VCS failures are surfaced as Outcome.failure
+        # so the workflow can decide retry/cleanup — the admitted findings
+        # already persisted in step 3 so they're not lost.
+        posted = False
+        if result.admitted:
+            from sqlalchemy import select as _select  # noqa: PLC0415
+
+            from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+            from app.domain.reviewer.admission import (  # noqa: PLC0415
+                post_admitted_findings_to_vcs,
+            )
+
+            async with db_session() as s:
+                pr_row = (
+                    await s.execute(_select(PullRequestRow).where(PullRequestRow.id == ticket_ctx.pr_id))
+                ).scalar_one_or_none()
+
+            if pr_row is None:
+                log.warning(
+                    "post_findings.no_pr_row",
+                    workflow_execution_id=ctx.workflow_execution_id,
+                    pr_id=str(ticket_ctx.pr_id),
+                )
+            else:
+                try:
+                    async with db_session() as s:
+                        await post_admitted_findings_to_vcs(
+                            pr_id=ticket_ctx.pr_id,
+                            org_id=ticket_ctx.org_id,
+                            pr_external_id=pr_row.external_id,
+                            vcs_plugin_id=pr_row.plugin_id,
+                            admitted=result.admitted,
+                            raw=raw,
+                            summary_body=None,
+                            session=s,
+                        )
+                        await s.commit()
+                    posted = True
+                except Exception as exc:
+                    log.exception(
+                        "post_findings.vcs_post_failed",
+                        workflow_execution_id=ctx.workflow_execution_id,
+                        pr_id=str(ticket_ctx.pr_id),
+                    )
+                    return Outcome.failure(
+                        reason=f"vcs.post_review failed: {type(exc).__name__}: {exc}",
+                        outputs={
+                            "admitted_count": len(result.admitted),
+                            "dropped_count": len(result.drops),
+                            "posted": False,
+                        },
+                    )
+
         log.info(
             "post_findings.done",
             workflow_execution_id=ctx.workflow_execution_id,
@@ -310,11 +365,13 @@ class PostFindings(_LocalReviewCommand):
             drafts_after_read=len(raw),
             admitted=len(result.admitted),
             dropped=len(result.drops),
+            posted=posted,
         )
         return Outcome.success(
             outputs={
                 "admitted_count": len(result.admitted),
                 "dropped_count": len(result.drops),
+                "posted": posted,
             }
         )
 

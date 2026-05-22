@@ -355,22 +355,27 @@ async def test_pr_review_v1_with_findings_persists_to_db(db_session) -> None:  #
     # not referenced in pr_review_v1).
     eng.register_workflow(pr_review_v1)
 
+    # Register stub VCS plugin so PostFindings' GitHub-post step has
+    # somewhere to post.
+    from app.testing.stub_vcs import register_stub_vcs  # noqa: PLC0415
+
     try:
         # 6. Kick off + drain.
-        wfx_id = await eng.start(
-            workflow_name="pr_review_v1",
-            ticket_id=str(ticket_id),
-            workspace_provider="in_memory",
-            ticket_payload={
-                "head_sha": "deadbeef",
-                "base_sha": "babecafe",
-                "is_draft": False,
-                "is_fork": False,
-            },
-            session=db_session,
-        )
-        await db_session.commit()
-        await _drain_workflow_outbox(db_session)
+        with register_stub_vcs(plugin_id="github"):
+            wfx_id = await eng.start(
+                workflow_name="pr_review_v1",
+                ticket_id=str(ticket_id),
+                workspace_provider="in_memory",
+                ticket_payload={
+                    "head_sha": "deadbeef",
+                    "base_sha": "babecafe",
+                    "is_draft": False,
+                    "is_fork": False,
+                },
+                session=db_session,
+            )
+            await db_session.commit()
+            await _drain_workflow_outbox(db_session)
 
         wfx = await db_session.get(WorkflowExecutionRow, UUID(wfx_id))
         assert wfx.state == WorkflowState.DONE.value
