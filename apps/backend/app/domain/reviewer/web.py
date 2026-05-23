@@ -130,9 +130,16 @@ async def push_back_finding(finding_id: UUID, req: _PushBackRequest) -> dict[str
 
 
 async def _record_ack(finding_id: UUID, *, kind: str, rationale: str) -> dict[str, Any]:
-    """Shared body: load aggregate, transition the finding, save."""
-    from uuid import uuid4 as _uuid4  # noqa: PLC0415
+    """Shared body: load aggregate, transition the finding, save.
 
+    The aggregate's `acknowledge()` references a `made_by_message_id` that
+    has a FK to `comment_messages`. For an HTTP-driven ack there's no
+    inbound reply message, so we synthesize one: open a thread on the
+    finding (or reuse the existing thread) and append a single
+    `kind="human"` message whose body is the Builder's rationale. The
+    aggregate then transitions atomically; one `repo.save()` persists
+    the thread + message + ack.
+    """
     from sqlalchemy import select as _select  # noqa: PLC0415
 
     from app.core.auth.context import user_id_var  # noqa: PLC0415
@@ -148,13 +155,28 @@ async def _record_ack(finding_id: UUID, *, kind: str, rationale: str) -> dict[st
         repo = SqlAlchemyAggregateRepository(s)
         aggregate = await repo.load(pr_id=finding.pr_id, org_id=org_id)
         actor_id = user_id_var.get()
+        actor_label = str(actor_id) if actor_id else "system"
+
+        # Find or open a thread for this finding.
+        thread = next((t for t in aggregate.threads if t.finding_id == finding_id), None)
+        if thread is None:
+            thread = aggregate.open_thread_for_finding(finding_id)
+
+        msg = aggregate.append_message(
+            thread_id=thread.id,
+            author_kind="human",
+            author_external_id=actor_label,
+            external_comment_id=f"http-ack-{finding_id}",
+            body=rationale,
+        )
+
         try:
             aggregate.acknowledge(
                 finding_id=finding_id,
                 kind=kind,  # type: ignore[arg-type]
                 rationale=rationale,
-                made_by_external_id=str(actor_id) if actor_id else "system",
-                made_by_message_id=_uuid4(),
+                made_by_external_id=actor_label,
+                made_by_message_id=msg.id,
             )
         except KeyError:
             raise HTTPException(status_code=404, detail="finding not in aggregate")
