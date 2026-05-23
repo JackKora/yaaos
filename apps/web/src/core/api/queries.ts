@@ -459,13 +459,32 @@ export function useCancelReviewerJobs() {
   });
 }
 
-export function useLessons(repo_external_id?: string) {
+export interface LessonsFilter {
+  /** Repo full-names; when present each is sent as a separate
+   * `repo_external_id=…` query parameter. */
+  repos?: string[];
+  /** Case-insensitive title+body substring. */
+  q?: string;
+  /** UUID of the user who created the lesson. */
+  created_by?: string;
+  sort?: "created_desc" | "created_asc" | "updated_desc";
+  limit?: number;
+}
+
+export function useLessons(filter: LessonsFilter | string = {}) {
+  // Back-compat: old callers passed `repo_external_id?: string`.
+  const f: LessonsFilter =
+    typeof filter === "string" ? { repos: filter ? [filter] : undefined } : filter;
+  const params = new URLSearchParams();
+  for (const r of f.repos ?? []) params.append("repo_external_id", r);
+  if (f.q) params.set("q", f.q);
+  if (f.created_by) params.set("created_by", f.created_by);
+  if (f.sort) params.set("sort", f.sort);
+  if (f.limit) params.set("limit", String(f.limit));
+  const qs = params.toString();
   return useQuery<Lesson[]>({
-    queryKey: ["lessons", repo_external_id ?? "all"],
-    queryFn: () =>
-      apiFetch<Lesson[]>(
-        `/api/lessons${repo_external_id ? `?repo_external_id=${encodeURIComponent(repo_external_id)}` : ""}`,
-      ),
+    queryKey: ["lessons", f.repos ?? "all", f.q ?? "", f.created_by ?? "", f.sort ?? ""],
+    queryFn: () => apiFetch<Lesson[]>(`/api/lessons${qs ? `?${qs}` : ""}`),
   });
 }
 

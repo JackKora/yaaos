@@ -67,6 +67,9 @@ export type Lesson = {
   title: string;
   body: string;
   source_pr_url: string | null;
+  /** UUID of the user who created the lesson; null for system/reviewer-created
+   * rows (workspace agent, pre-M06 backfills). */
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 from sqlalchemy import delete as sql_delete
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.audit_log import Actor, audit_for_lesson
 from app.core.database import session as db_session
@@ -141,6 +142,43 @@ async def list_for_repo(repo_external_id: str, *, org_id: UUID, plugin_id: str =
             .all()
         )
         return [Lesson.from_row(r) for r in rows]
+
+
+class LessonFilter(BaseModel):
+    """Query parameters for `list_lessons`. All fields optional."""
+
+    repo_external_ids: list[str] | None = None
+    q: str | None = None  # case-insensitive substring against title + body
+    created_by: UUID | None = None
+    created_after: datetime | None = None
+    created_before: datetime | None = None
+    sort: Literal["created_desc", "created_asc", "updated_desc"] = "created_desc"
+
+
+async def list_lessons(filter_: LessonFilter, *, org_id: UUID, limit: int = 50) -> list[Lesson]:
+    """M06 audit follow-up — q / repo multi / created_by / date range / sort."""
+    async with db_session() as s:
+        stmt = select(LessonRow).where(LessonRow.org_id == org_id)
+        if filter_.repo_external_ids:
+            stmt = stmt.where(LessonRow.repo_external_id.in_(filter_.repo_external_ids))
+        if filter_.q:
+            term = f"%{filter_.q.lower()}%"
+            stmt = stmt.where(func.lower(LessonRow.title).like(term) | func.lower(LessonRow.body).like(term))
+        if filter_.created_by is not None:
+            stmt = stmt.where(LessonRow.created_by == filter_.created_by)
+        if filter_.created_after is not None:
+            stmt = stmt.where(LessonRow.created_at >= filter_.created_after)
+        if filter_.created_before is not None:
+            stmt = stmt.where(LessonRow.created_at <= filter_.created_before)
+        if filter_.sort == "created_asc":
+            stmt = stmt.order_by(LessonRow.created_at.asc())
+        elif filter_.sort == "updated_desc":
+            stmt = stmt.order_by(LessonRow.updated_at.desc())
+        else:
+            stmt = stmt.order_by(LessonRow.created_at.desc())
+        stmt = stmt.limit(limit)
+        rows = (await s.execute(stmt)).scalars().all()
+    return [Lesson.from_row(r) for r in rows]
 
 
 async def list_all(*, org_id: UUID) -> list[Lesson]:

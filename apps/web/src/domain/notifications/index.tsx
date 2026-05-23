@@ -77,17 +77,60 @@ export function NotificationsPage() {
           body="When yaaos needs a decision on one of your tickets, or finishes a review, it shows up here."
         />
       ) : (
-        <ul
-          className="rounded-md border border-border overflow-hidden"
-          data-testid="notifications-list"
-        >
-          {items.map((n) => (
-            <Row key={n.id} item={n} onClick={() => markOne.mutate(n.id)} />
+        <div className="flex flex-col gap-4" data-testid="notifications-list">
+          {groupByDate(items).map((group) => (
+            <section key={group.label}>
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                {group.label}
+              </h2>
+              <ul className="rounded-md border border-border overflow-hidden">
+                {group.items.map((n) => (
+                  <Row key={n.id} item={n} onClick={() => markOne.mutate(n.id)} />
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
+}
+
+interface DateGroup {
+  label: string;
+  items: NotificationItem[];
+}
+
+/**
+ * Bucket notifications into the four date groups from E2a.6: Today,
+ * Yesterday, This week, Older. Preserves the server's ordering inside
+ * each bucket (the API returns newest first).
+ */
+function groupByDate(items: NotificationItem[]): DateGroup[] {
+  const groups: DateGroup[] = [
+    { label: "Today", items: [] },
+    { label: "Yesterday", items: [] },
+    { label: "This week", items: [] },
+    { label: "Older", items: [] },
+  ];
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86_400_000;
+  const startOfWeek = startOfToday - 6 * 86_400_000;
+
+  for (const item of items) {
+    const created = new Date(item.created_at).getTime();
+    if (created >= startOfToday) {
+      groups[0]?.items.push(item);
+    } else if (created >= startOfYesterday) {
+      groups[1]?.items.push(item);
+    } else if (created >= startOfWeek) {
+      groups[2]?.items.push(item);
+    } else {
+      groups[3]?.items.push(item);
+    }
+  }
+  return groups.filter((g) => g.items.length > 0);
 }
 
 function Row({ item, onClick }: { item: NotificationItem; onClick: () => void }) {

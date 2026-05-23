@@ -2,6 +2,13 @@ import { useCurrentUser } from "@domain/auth";
 import { ConfirmModal } from "@shared/components/layout";
 import { Badge } from "@shared/components/ui/badge";
 import { Button } from "@shared/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@shared/components/ui/dialog";
 import { useEffect, useState } from "react";
 import {
   type CodingAgentInstall,
@@ -478,12 +485,12 @@ function AgentEditor({
               {(agent.prompt || "").slice(0, 120) || "(empty)"}
             </button>
           ) : (
-            <textarea
+            <MaximizableTextarea
               value={agent.prompt}
-              onChange={(e) => onChange({ ...agent, prompt: e.target.value })}
-              data-testid={`${testIdPrefix}-prompt`}
+              onChange={(v) => onChange({ ...agent, prompt: v })}
+              testId={`${testIdPrefix}-prompt`}
+              label="Prompt"
               rows={8}
-              className="w-full rounded border border-border bg-card px-2 py-1 text-sm"
             />
           )}
         </div>
@@ -519,13 +526,13 @@ function AgentEditor({
             Use default system prompt
           </label>
           {!(agent.use_default_system_prompt ?? true) && (
-            <textarea
+            <MaximizableTextarea
               value={agent.system_prompt ?? ""}
-              onChange={(e) => onChange({ ...agent, system_prompt: e.target.value })}
-              data-testid={`${testIdPrefix}-system-prompt`}
+              onChange={(v) => onChange({ ...agent, system_prompt: v })}
+              testId={`${testIdPrefix}-system-prompt`}
+              label="System prompt"
               rows={4}
               placeholder="Override the built-in system prompt for this agent…"
-              className="w-full rounded border border-border bg-card px-2 py-1 text-sm"
             />
           )}
         </div>
@@ -544,6 +551,12 @@ function AgentEditor({
             </option>
           ))}
         </select>
+        {isOverridden("model") && (
+          <OverrideDot
+            testId={`${testIdPrefix}-model-override-dot`}
+            title="Overridden — click Reset to revert"
+          />
+        )}
         <span className="text-muted-foreground text-xs">Version</span>
         <select
           value={agent.version}
@@ -557,6 +570,12 @@ function AgentEditor({
             </option>
           ))}
         </select>
+        {isOverridden("version") && (
+          <OverrideDot
+            testId={`${testIdPrefix}-version-override-dot`}
+            title="Overridden — click Reset to revert"
+          />
+        )}
         <span className="text-muted-foreground text-xs">Effort</span>
         <select
           value={agent.effort}
@@ -570,10 +589,97 @@ function AgentEditor({
             </option>
           ))}
         </select>
+        {isOverridden("effort") && (
+          <OverrideDot
+            testId={`${testIdPrefix}-effort-override-dot`}
+            title="Overridden — click Reset to revert"
+          />
+        )}
       </div>
       {agent.updated_at && (
         <p className="text-muted-foreground text-[10.5px]">Updated {agent.updated_at}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * Textarea with an inline Maximize affordance per E2a.2.
+ *
+ * Click "Maximize" → a Dialog renders the same value in a larger
+ * editor; edits propagate live. Closes via Escape or the Done button.
+ * Falls back to the inline textarea when collapsed.
+ */
+function MaximizableTextarea({
+  value,
+  onChange,
+  testId,
+  label,
+  rows,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  testId: string;
+  label: string;
+  rows: number;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-1">
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        data-testid={testId}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full rounded border border-border bg-card px-2 py-1 text-sm"
+      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          data-testid={`${testId}-maximize`}
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          Maximize
+        </button>
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{label}</DialogTitle>
+          </DialogHeader>
+          <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            data-testid={`${testId}-maximized`}
+            rows={24}
+            placeholder={placeholder}
+            className="w-full rounded border border-border bg-card px-3 py-2 text-sm font-mono"
+          />
+          <DialogFooter>
+            <Button onClick={() => setOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/**
+ * 6px round dot rendered next to overridden model/version/effort selects.
+ * Pairs with the "overridden" badge on the larger fields (name, prompt);
+ * the inline selects don't have room for a full Badge.
+ */
+function OverrideDot({ testId, title }: { testId: string; title: string }) {
+  return (
+    <span
+      data-testid={testId}
+      title={title}
+      aria-label={title}
+      className="inline-block h-1.5 w-1.5 rounded-full bg-primary"
+    />
   );
 }

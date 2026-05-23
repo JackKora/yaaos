@@ -47,7 +47,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityEventRow } from "./ActivityEventRow";
 import { FindingRow } from "./FindingRow";
 import { HitlPanel } from "./HitlPanel";
@@ -162,7 +162,17 @@ export function TicketDetailPage() {
         open={showRerun}
         onOpenChange={setShowRerun}
         title="Re-run review?"
-        body="Running again spends LLM tokens. Existing findings persist; the agents look at the latest commit."
+        body={
+          <>
+            <p>Running again spends LLM tokens against the org's BYOK key.</p>
+            <p className="mt-2">
+              Estimate: ~<span className="font-mono">{estimateTokens(ticket.findings_count)}</span>{" "}
+              tokens ( ≈$<span className="font-mono">{estimateUsd(ticket.findings_count)}</span> at
+              default Sonnet rates). Existing findings persist; the agents look at the latest
+              commit.
+            </p>
+          </>
+        }
         confirmLabel="Re-run"
         pending={rereview.isPending}
         onConfirm={() => {
@@ -171,6 +181,30 @@ export function TicketDetailPage() {
       />
     </div>
   );
+}
+
+/**
+ * Heuristic token-spend estimate for the re-run modal. POC stand-in for
+ * a real per-org / per-model integration with the BYOK provider — keeps
+ * the spec promise ("cost-protective modal") while avoiding fake
+ * precision. Scales with findings count since more findings → bigger
+ * conversation context.
+ */
+function estimateTokens(findingsCount: number): string {
+  const baseline = 15_000;
+  const perFinding = 4_000;
+  const est = baseline + Math.max(0, findingsCount) * perFinding;
+  return est.toLocaleString();
+}
+
+function estimateUsd(findingsCount: number): string {
+  // Claude Sonnet input ≈ $3 / 1M tokens, output ≈ $15 / 1M. Blended
+  // POC midpoint: $5 / 1M.
+  const baseline = 15_000;
+  const perFinding = 4_000;
+  const tokens = baseline + Math.max(0, findingsCount) * perFinding;
+  const usd = (tokens / 1_000_000) * 5;
+  return usd < 0.1 ? usd.toFixed(2) : usd.toFixed(2);
 }
 
 function Header({
@@ -330,10 +364,21 @@ function FindingsTab({ ticketId }: { ticketId: string }) {
 
 function ActivityTab({ ticketId }: { ticketId: string }) {
   const { data: jobs, isLoading } = useReviewJobsForTicket(ticketId);
-  if (isLoading) return <Skeleton className="h-24" />;
+  const bottomRef = useRef<HTMLDivElement | null>(null);
   const events = (jobs ?? []).flatMap((j) => j.activity_log ?? []);
   // Newest events come from the most recent job first; reverse to chronological.
   const ordered = [...events].sort((a, b) => a.ts.localeCompare(b.ts));
+  const newestTs = ordered.length > 0 ? ordered[ordered.length - 1]?.ts : null;
+
+  // Auto-scroll to the newest event when it changes — so a long-running
+  // review keeps the latest step visible without manual scroll-down.
+  useEffect(() => {
+    if (newestTs && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [newestTs]);
+
+  if (isLoading) return <Skeleton className="h-24" />;
   if (ordered.length === 0) {
     return (
       <EmptyState
@@ -344,10 +389,14 @@ function ActivityTab({ ticketId }: { ticketId: string }) {
     );
   }
   return (
-    <div className="rounded-md border border-border" data-testid="activity-stream">
+    <div
+      className="rounded-md border border-border max-h-[600px] overflow-y-auto"
+      data-testid="activity-stream"
+    >
       {ordered.map((e) => (
         <ActivityEventRow key={`${e.ts}-${e.kind}`} event={e} />
       ))}
+      <div ref={bottomRef} aria-hidden />
     </div>
   );
 }

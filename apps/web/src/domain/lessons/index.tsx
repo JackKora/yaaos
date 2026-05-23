@@ -19,8 +19,20 @@ import {
 import { Textarea } from "@shared/components/ui/textarea";
 import { useState } from "react";
 
+type LessonSort = "created_desc" | "created_asc" | "updated_desc";
+
 export function LessonsPage() {
-  const { data: lessons } = useLessons();
+  // Filters: q substring (debounced via blur), repo single-select (multi
+  // deferred; one repo per list call covers the common case), sort.
+  const [q, setQ] = useState("");
+  const [repoFilter, setRepoFilter] = useState<string>("all");
+  const [sort, setSort] = useState<LessonSort>("created_desc");
+
+  const { data: lessons } = useLessons({
+    q: q.trim() || undefined,
+    repos: repoFilter === "all" ? undefined : [repoFilter],
+    sort,
+  });
   const { data: repos } = useGithubRepositories();
   const create = useCreateLesson();
   const remove = useDeleteLesson();
@@ -122,8 +134,58 @@ export function LessonsPage() {
       </section>
 
       <section className="rounded-lg border border-border bg-card">
-        <header className="border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold">Lessons</h2>
+        <header className="border-b border-border px-4 py-3 flex flex-wrap items-end gap-3">
+          <h2 className="text-sm font-semibold mr-auto">Lessons</h2>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="lessons-search" className="text-xs">
+              Search
+            </Label>
+            <Input
+              id="lessons-search"
+              data-testid="lessons-search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="title or body…"
+              className="h-8 w-[200px]"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="lessons-repo-filter" className="text-xs">
+              Repo
+            </Label>
+            <Select value={repoFilter} onValueChange={setRepoFilter}>
+              <SelectTrigger
+                id="lessons-repo-filter"
+                data-testid="lessons-repo-filter"
+                className="h-8 w-[180px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All repos</SelectItem>
+                {pickerOptions.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="lessons-sort" className="text-xs">
+              Sort
+            </Label>
+            <Select value={sort} onValueChange={(v) => setSort(v as LessonSort)}>
+              <SelectTrigger id="lessons-sort" data-testid="lessons-sort" className="h-8 w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_desc">Newest first</SelectItem>
+                <SelectItem value="created_asc">Oldest first</SelectItem>
+                <SelectItem value="updated_desc">Recently updated</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </header>
         <div className="px-4 py-4">
           <ul className="flex flex-col gap-2" data-testid="lessons-list">

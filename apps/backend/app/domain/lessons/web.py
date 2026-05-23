@@ -14,9 +14,10 @@ user, derived from the session cookie.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.auth.context import org_id_var
@@ -24,13 +25,13 @@ from app.core.auth.types import Action
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.lessons.service import (
     Lesson,
+    LessonFilter,
     LessonNotFoundError,
     LessonValidationError,
     create,
     delete,
     get,
-    list_all,
-    list_for_repo,
+    list_lessons,
     update,
 )
 from app.domain.sessions.dependencies import current_actor, require
@@ -64,11 +65,30 @@ def _org() -> UUID:
 
 
 @router.get("", dependencies=[Depends(require(Action.LESSONS_READ))])
-async def list_(repo_external_id: str | None = None) -> list[Lesson]:
-    org_id = _org()
-    if repo_external_id is not None:
-        return await list_for_repo(repo_external_id, org_id=org_id)
-    return await list_all(org_id=org_id)
+async def list_(
+    repo_external_id: list[str] | None = Query(default=None),
+    q: str | None = Query(default=None),
+    created_by: UUID | None = Query(default=None),
+    created_after: datetime | None = Query(default=None),
+    created_before: datetime | None = Query(default=None),
+    sort: str = Query(default="created_desc"),
+    limit: int = Query(default=50, le=200),
+) -> list[Lesson]:
+    """M06-era list: q + repo multi + created_by + date range + sort.
+
+    All filters are AND'd. `sort` accepts `created_desc` / `created_asc`
+    / `updated_desc`; anything else falls back to `created_desc` in
+    `LessonFilter`.
+    """
+    filt = LessonFilter(
+        repo_external_ids=repo_external_id,
+        q=q,
+        created_by=created_by,
+        created_after=created_after,
+        created_before=created_before,
+        sort=sort if sort in ("created_desc", "created_asc", "updated_desc") else "created_desc",  # type: ignore[arg-type]
+    )
+    return await list_lessons(filt, org_id=_org(), limit=limit)
 
 
 @router.get("/{lesson_id}", dependencies=[Depends(require(Action.LESSONS_READ))])
