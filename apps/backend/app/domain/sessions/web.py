@@ -23,7 +23,7 @@ Errors:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
@@ -393,6 +393,29 @@ async def providers() -> dict[str, list[str]]:
     """List registered provider ids. The SPA renders one button per id on
     the login page; the test stub appears only when YAAOS_ENV=test."""
     return {"providers": list_providers()}
+
+
+@router.get("/sso/discover", dependencies=[Depends(public_route)])
+@limiter.limit(AUTH_LIMIT)
+async def sso_discover(request: Request, email: str) -> dict[str, Any]:
+    """M06 Phase 8: find the SSO IdP (if any) matching the email's domain.
+
+    Drives the Login page's provider-button rendering per E2a.18:
+    `{provider: "github" | "saml", saml_org_slug?: str, saml_idp_name?: str}`.
+    Email-domain → SSO mapping is not configurable on `sso_configs` today
+    (the SsoConfigRow has no domain field); for POC the endpoint always
+    falls back to `provider: "github"`. Once an `email_domains: list[str]`
+    column or a domain-claims table lands, this handler grows the lookup
+    without changing the SPA contract.
+
+    `email` is required but only the format is validated — the substantive
+    answer is "no SAML match" today, so we don't leak whether a given
+    address actually exists in the user table.
+    """
+    del request  # rate-limit-only; FastAPI requires the kwarg
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail={"error": "invalid_email"})
+    return {"provider": "github"}
 
 
 # ── M02 Phase 11 — TOTP enroll + verify ──────────────────────────────────

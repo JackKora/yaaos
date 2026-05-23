@@ -90,6 +90,12 @@
 - **Rejected:** keep the bare-array shape and add cursor support later.
 - **Why:** the spec calls for the new shape; doing it once at the wire layer is cheaper than two SPA migrations. `useTickets()` updated to unwrap `items` so existing pages still see a bare array.
 
+### D8.1 — `/api/auth/sso/discover` returns github for every email
+
+- **Picked:** ship the endpoint with the contract the SPA expects (`{provider}`) but always return `provider: "github"`. Email format is validated (`@` present) so the SPA can rely on a 200 / 422 split for the form-error path; substantive SSO lookup is a stub.
+- **Rejected:** add an `email_domains: list[str]` column to `sso_configs` + an admin UI + a lookup branch that returns `provider: "saml"` when the email's domain matches a configured org. That's a feature (domain-claims management) the M06 spec doesn't actually require to land.
+- **Why:** there's no email-domain → org mapping in the schema today; the spec's intent ("drives the Login page's button rendering") is met by the github fallback, and the SPA contract stays stable for the day a domain column lands.
+
 ### D4.1 — ClaudeCodeSettings schema: additive, not versioned, not renamed
 
 - **Picked:** keep the `agents` field name + the existing model shape; add three new optional fields with sensible defaults — `AgentSettings.use_default_system_prompt: bool = True`, `AgentSettings.system_prompt: str | None = None`, `ClaudeCodeSettings.mcp_proxy_ids: list[UUID] = []`. Existing DB rows (which lack all three) continue to validate because the new fields are optional.
