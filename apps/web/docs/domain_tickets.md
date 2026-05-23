@@ -50,11 +50,11 @@ Body composition (applies to every status with a job — except `no-job` which r
 
 ### Finding rows
 
-Inside `findings-list`: severity dot + title + severity label + `file:line` + subagent tag from `source_agent`. Click expands → body, italic `rationale`, line-numbered snippet diff. Applied-lesson chip(s) link to `/memory`. **"Teach yaaos…"** button opens the modal.
+Inside `findings-list`: severity dot + title + severity label + `file:line` + subagent tag from `source_agent`. Click expands → body, italic `rationale`, line-numbered snippet diff. Applied-lesson chip(s) link to `/lessons`. **"Teach yaaos…"** button opens the modal.
 
 ### Teach-yaaos modal
 
-Pre-fills title (empty), body (finding's body, editable, 1000-char cap), repo (the ticket's). Submit → `useCreateLesson` posts `/api/lessons/lessons`, invalidates `["memory", repo]`, closes.
+Pre-fills title (empty), body (finding's body, editable, 1000-char cap), repo (the ticket's). Submit → `useCreateLesson` posts `/api/lessons`, invalidates `["lessons", repo]`, closes.
 
 ### Audit tab
 

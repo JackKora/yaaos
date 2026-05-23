@@ -49,9 +49,9 @@ Edits overwrite in place — no versioning table; history lives in `audit_log`. 
 
 ### Retrieval semantics
 
-`reviewer` calls `list_for_repo` during prompt assembly and includes every returned lesson. No per-lesson relevance filter, no scope-limiting, no per-agent subsetting. `list_all(org_id)` powers the unfiltered memory-management page. Newest-first by `created_at`. No pagination — at most a few dozen lessons per repo in practice.
+`reviewer` calls `list_for_repo` during prompt assembly and includes every returned lesson. No per-lesson relevance filter, no scope-limiting, no per-agent subsetting. `list_all(org_id)` powers the unfiltered lessons-management page. Newest-first by `created_at`. No pagination — at most a few dozen lessons per repo in practice.
 
-### What memory doesn't do
+### What lessons don't do
 
 - Doesn't publish events; the page re-queries after each mutation.
 - Doesn't snapshot lesson content at review time — `review_jobs.lessons_applied` (owned by `reviewer`) records UUIDs for UI chip resolution; content at that moment is not frozen.
@@ -64,4 +64,4 @@ Edits overwrite in place — no versioning table; history lives in `audit_log`. 
 
 ## How it's tested
 
-`app/domain/lessons/test/test_validation.py` — empty title/body rejected, length caps enforced, valid input passes. CRUD + audit covered by HTTP-layer integration tests and by `reviewer`'s tests exercising `list_for_repo`. **Service test** `app/domain/lessons/test/test_teach_from_finding_service.py` (`@pytest.mark.service`) covers the "Teach yaaos" memory-loop entry point — `memory.create` inserts a lesson row + writes the `lesson.created` audit + `list_for_repo` finds it.
+`app/domain/lessons/test/test_validation.py` — empty title/body rejected, length caps enforced, valid input passes. CRUD + audit covered by HTTP-layer integration tests and by `reviewer`'s tests exercising `list_for_repo`. **Service test** `app/domain/lessons/test/test_teach_from_finding_service.py` (`@pytest.mark.service`) covers the "Teach yaaos" lessons-loop entry point — `lessons.create` inserts a lesson row + writes the `lesson.created` audit + `list_for_repo` finds it.

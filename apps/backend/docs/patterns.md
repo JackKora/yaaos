@@ -314,7 +314,7 @@ Don't wrap every domain function — noise hurts more than detail helps.
 3. Initialize events bus — `app.core.events` *before any domain subscribes*.
 4. Import webserver registry — `app.core.webserver` *before any module registers routes*.
 5. Core modules with plugin Protocols — `app.core.audit_log`, `app.core.workspace`.
-6. Domain modules in dependency order — types first (vcs, memory), then coding_agent, then leaf domain modules, then dependents.
+6. Domain modules in dependency order — types first (vcs, lessons), then coding_agent, then leaf domain modules, then dependents.
 7. Plugins — `in_memory_workspace`, `claude_code`, `github`.
 8. Test-mode wrapping (conditional) — when `YAAOS_CODING_AGENT_STUB=1`, import `app.testing.stub_*` and call `wrap_all_registered_*()`. When `yaaos_env == "dev"`, import `app.testing.e2e_setup` so `/api/testing/*` mounts.
 9. Build the FastAPI app — `webserver.create_app()`.

@@ -20,9 +20,9 @@ Discipline still applies: terse, bullets, no code snippets, no `Decisions` secti
 
 ## Auth + tenancy (M02 + M03)
 
-- **API client auto-injects `X-Org-Slug`** — `apps/web/src/core/api/org-context.ts` holds the current slug. The `/orgs/$slug` router scope writes to it in `beforeLoad`; `/login` and `/account/*` clear it. `apiFetch` reads the slug and adds the header unless the caller already supplied one. Domain hooks stay org-agnostic at the call site.
+- **API client auto-injects `X-Org-Slug`** — `apps/web/src/core/api/org-context.ts` holds the current slug. The `/orgs/$slug` router scope writes to it in `beforeLoad`; `/login` and `/user/*` clear it. `apiFetch` reads the slug and adds the header unless the caller already supplied one. Domain hooks stay org-agnostic at the call site.
 - **Use `RequireMembership` for role gates** — `<RequireMembership orgSlug="..." role="admin">` renders children only when the current user has at least `role` in that org. UI hint only; the backend's `require(action)` is the source of truth.
-- **Route → org slug** — `/orgs/$slug/...` is the canonical shape for every domain page. `/`, `/login`, `/account/*` stay user-scoped. The `/` route probes `/api/auth/me` and redirects to `/orgs/<first-slug>/dashboard` or `/login`.
+- **Route → org slug** — `/orgs/$slug/...` is the canonical shape for every domain page. `/`, `/login`, `/user/*` stay user-scoped. The `/` route probes `/api/auth/me` and redirects to `/orgs/<first-slug>/dashboard` or `/login`.
 
 ## Sidebar nav config (M03)
 
@@ -54,7 +54,7 @@ Every TanStack Query key is a module-scoped array. Canonical keys:
 
 - `["tickets"]`, `["tickets", id]`, `["tickets", id, "audit"]`
 - `["reviewer", "jobs", ticket_id]`, `["reviewer", "metrics"]`, `["reviewer", "agents"]`
-- `["memory", repo]`
+- `["lessons", repo]`
 - `["github", "installation"]`, `["github", "repositories"]`
 - `["plugin-health", pluginId]`
 - `["onboarding"]`, `["health"]`

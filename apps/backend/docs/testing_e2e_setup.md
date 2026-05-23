@@ -28,7 +28,7 @@ The testing layer is the only place allowed to depend on every other module's `m
 
 ### Populating `Base.metadata`
 
-`service.py` imports every other module's `models` at the top (audit_log, workspace, memory, pull_requests, reviewer, tickets, claude_code, github). Each import-for-side-effect (`# noqa: F401`) forces SQLAlchemy to register that module's tables on `Base.metadata`, which `truncate_all_tables` walks. Without these imports, a module whose HTTP routes haven't been touched in the current process might not have its tables loaded, and the truncate would miss them.
+`service.py` imports every other module's `models` at the top (audit_log, workspace, lessons, pull_requests, reviewer, tickets, claude_code, github). Each import-for-side-effect (`# noqa: F401`) forces SQLAlchemy to register that module's tables on `Base.metadata`, which `truncate_all_tables` walks. Without these imports, a module whose HTTP routes haven't been touched in the current process might not have its tables loaded, and the truncate would miss them.
 
 Adding a new module with tables means adding one line here. Otherwise `/reset` silently leaves the new tables non-empty between specs and tests cross-contaminate.
 

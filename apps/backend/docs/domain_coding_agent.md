@@ -8,7 +8,7 @@ The contract between yaaos and external agent CLIs. Owns the `CodingAgentPlugin`
 
 Also owns the **shipped reviewer subagent prompt content** under `reviewers/*.md`. The markdown is plugin-agnostic ("what to check"); each plugin's installer wraps it in its own native format (Claude Code frontmatter, etc.) and writes it to the right place.
 
-Lives in `domain/` (not `core/`) because return types reference `vcs.Finding` and `memory.Lesson`. See [`modularity.md`](modularity.md).
+Lives in `domain/` (not `core/`) because return types reference `vcs.Finding` and `lessons.Lesson`. See [`modularity.md`](modularity.md).
 
 ## Public interface
 
