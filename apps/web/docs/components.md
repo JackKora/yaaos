@@ -63,6 +63,16 @@ Primitives are thin wrappers over Radix UI (focus management, ARIA correctness) 
 |---|---|
 | `sonner.tsx` | Wraps `sonner` for theme-aware toasts. Rendered once in `main.tsx`. |
 
+## Layout composites (`src/shared/components/layout/`)
+
+| File | Purpose |
+|---|---|
+| `page-header.tsx` | `PageHeader` — title + optional subtitle + right-aligned actions slot. The first composite on every M06 surface. |
+| `empty-state.tsx` | `EmptyState` — icon + headline + body + optional action; the C2 empty-list pattern. |
+| `error-banner.tsx` | `ErrorBanner` — in-page error with optional Retry. Voice rule (D3): blames the system, not the user. |
+| `confirm-modal.tsx` | `ConfirmModal` — destructive + cost-protective variants share the shell; copy differs (D3). |
+| `picker-modal.tsx` | `PickerModal` — "Add X" flows (plugin type, integration provider). Lists `PickerOption[]`; caller wires the post-pick route push. |
+
 ## Hooks (`src/shared/hooks/`)
 
 | File | Purpose |
