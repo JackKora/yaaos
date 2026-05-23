@@ -5,17 +5,29 @@ tied to the plugin's runtime contract. `domain/orgs.install_coding_agent`
 calls `validate_settings()` via the plugin's `Plugin.validate_settings`
 hook, which delegates here. The settings JSONB shape is:
 
-    {orchestrator: AgentSettings, agents: [AgentSettings, ...]}
+    {orchestrator: AgentSettings, agents: [AgentSettings, ...], mcp_proxy_ids?: [UUID]}
 
-Constraints (Phase 10):
+Constraints:
 - Sub-agent count: 1 ≤ len(agents) ≤ 8.
 - Sub-agent names: unique within `agents`, length 1..64.
 - model, version, effort: must be from the enum lists in `defaults.py`.
+
+M06 Phase 4 additions (all optional, default-friendly so older DB rows
+continue to parse without migration):
+- `AgentSettings.use_default_system_prompt: bool = True` — when true the
+  plugin uses its built-in system prompt and the per-agent `system_prompt`
+  is ignored.
+- `AgentSettings.system_prompt: str | None = None` — overridden text;
+  consumed only when `use_default_system_prompt is False`.
+- `ClaudeCodeSettings.mcp_proxy_ids: list[UUID] = []` — references to
+  configured `domain/integrations` MCP proxy connections that the
+  orchestrator should expose as MCP context for this org's runs.
 """
 
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -31,6 +43,10 @@ class AgentSettings(BaseModel):
     version: str
     effort: str
     updated_at: str = ""
+    # M06 Phase 4 — system-prompt overrides per E2a.2. Optional so existing
+    # rows in `org_coding_agents.settings` keep parsing.
+    use_default_system_prompt: bool = True
+    system_prompt: str | None = None
 
     @field_validator("model")
     @classmethod
@@ -59,6 +75,9 @@ class ClaudeCodeSettings(BaseModel):
 
     orchestrator: AgentSettings
     agents: list[AgentSettings] = Field(min_length=1, max_length=8)
+    # M06 Phase 4 — MCP-proxy connections to expose as context for this org's
+    # runs. Optional with empty-default so legacy DB rows still parse.
+    mcp_proxy_ids: list[UUID] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _unique_agent_names(self) -> ClaudeCodeSettings:

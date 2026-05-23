@@ -90,6 +90,12 @@
 - **Rejected:** keep the bare-array shape and add cursor support later.
 - **Why:** the spec calls for the new shape; doing it once at the wire layer is cheaper than two SPA migrations. `useTickets()` updated to unwrap `items` so existing pages still see a bare array.
 
+### D4.1 — ClaudeCodeSettings schema: additive, not versioned, not renamed
+
+- **Picked:** keep the `agents` field name + the existing model shape; add three new optional fields with sensible defaults — `AgentSettings.use_default_system_prompt: bool = True`, `AgentSettings.system_prompt: str | None = None`, `ClaudeCodeSettings.mcp_proxy_ids: list[UUID] = []`. Existing DB rows (which lack all three) continue to validate because the new fields are optional.
+- **Rejected:** rename to `sub_agents` per the api-changes.md letter; introduce a `schema_version` integer + a `migrate_legacy_settings()` helper.
+- **Why:** the spec literally says "Backwards-compatible read (older opaque settings still parse)" — adding optional fields is the cheapest mechanism that delivers exactly that promise, with no migration plumbing. A rename touches every caller in service.py + defaults.py + tests for zero functional gain on POC.
+
 ### D3.3 — `findings_count` + `max_severity`: computed-on-read via grouped query
 
 - **Picked:** compute `findings_count` + `max_severity` on each list call with a single `GROUP BY pr_id` against the `findings` table, scoped to the listed tickets' PRs.
