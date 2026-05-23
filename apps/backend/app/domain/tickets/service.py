@@ -423,6 +423,13 @@ async def abandon(ticket_id: UUID, *, reason: str, org_id: UUID) -> None:
     await _transition(ticket_id, new_status="cancelled", org_id=org_id, reason=reason)
 
 
+async def fail(ticket_id: UUID, *, reason: str, org_id: UUID) -> None:
+    """Move a `running` ticket to `failed`. The reason is recorded in the
+    audit row's payload — caller-supplied so the sweep / workflow / HITL
+    layers can each tag their own failure mode."""
+    await _transition(ticket_id, new_status="failed", org_id=org_id, reason=reason)
+
+
 async def _transition(
     ticket_id: UUID,
     *,

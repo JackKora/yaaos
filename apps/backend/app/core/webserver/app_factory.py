@@ -125,6 +125,12 @@ def _install_middleware(app: FastAPI) -> None:
 
     app.add_middleware(AuthMiddleware)
 
+    # Slow-request log — forensic trail for intermittent hangs. Wraps every
+    # request; emits one warn line per request taking >500ms.
+    from app.core.observability.slow_request import SlowRequestLogMiddleware  # noqa: PLC0415
+
+    app.add_middleware(SlowRequestLogMiddleware)
+
     # M02 Phase 13: slowapi rate limiting. Per-IP on /api/auth/* (anonymous
     # endpoints); per-user on mutating /api/* paths. Limits live on
     # individual route decorators (`@limiter.limit(AUTH_LIMIT)`). Only

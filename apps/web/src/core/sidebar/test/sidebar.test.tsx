@@ -13,8 +13,10 @@ vi.mock("@core/api", () => ({
   useMarkAllNotificationsRead: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+const pathnameMock = vi.fn(() => "/orgs/acme/dashboard");
+
 vi.mock("@tanstack/react-router", () => ({
-  useRouterState: () => ({ location: { pathname: "/orgs/acme/dashboard" } }),
+  useRouterState: () => ({ location: { pathname: pathnameMock() } }),
 }));
 
 const currentUserMock = vi.fn();
@@ -45,18 +47,21 @@ describe("Sidebar", () => {
   beforeEach(() => {
     localStorage.clear();
     currentUserMock.mockReset();
+    pathnameMock.mockReturnValue("/orgs/acme/dashboard");
   });
 
   it("renders top-level org-scoped links + the user card when expanded (snapshot-ish)", () => {
+    // Put the user inside a settings sub-route so the group is expanded
+    // and the children render in the DOM for testid lookup.
+    pathnameMock.mockReturnValue("/orgs/acme/settings/auth");
     currentUserMock.mockReturnValue(userResp("admin"));
     render(<Sidebar />);
     expect(screen.getByTestId("nav-dashboard")).toHaveAttribute("href", "/orgs/acme/dashboard");
-    expect(screen.getByTestId("nav-dashboard")).toHaveAttribute("data-active");
     expect(screen.getByTestId("nav-tickets")).toHaveAttribute("href", "/orgs/acme/tickets");
     expect(screen.getByTestId("nav-lessons")).toHaveAttribute("href", "/orgs/acme/lessons");
-    // Group header rendered; children visible by default (collapsed = false).
     expect(screen.getByTestId("nav-group-org-settings")).toBeInTheDocument();
     expect(screen.getByTestId("nav-auth")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-auth")).toHaveAttribute("data-active");
     expect(screen.getByTestId("nav-members")).toBeInTheDocument();
     expect(screen.getByTestId("nav-vcs")).toBeInTheDocument();
     expect(screen.getByTestId("nav-coding-agents")).toBeInTheDocument();
@@ -65,11 +70,11 @@ describe("Sidebar", () => {
   });
 
   it("members see the Org Settings group but only the Members sub-item", () => {
+    pathnameMock.mockReturnValue("/orgs/acme/settings/members");
     currentUserMock.mockReturnValue(userResp("builder"));
     render(<Sidebar />);
     expect(screen.getByTestId("nav-dashboard")).toBeInTheDocument();
     expect(screen.getByTestId("nav-tickets")).toBeInTheDocument();
-    // Group is visible (Members is in it) but only the Members link survives.
     expect(screen.getByTestId("nav-group-org-settings")).toBeInTheDocument();
     expect(screen.getByTestId("nav-members")).toBeInTheDocument();
     expect(screen.queryByTestId("nav-auth")).toBeNull();
@@ -80,25 +85,40 @@ describe("Sidebar", () => {
   });
 
   it("shows admin-gated group items for owners", () => {
+    pathnameMock.mockReturnValue("/orgs/acme/settings/vcs");
     currentUserMock.mockReturnValue(userResp("owner"));
     render(<Sidebar />);
     expect(screen.getByTestId("nav-group-org-settings")).toBeInTheDocument();
     expect(screen.getByTestId("nav-vcs")).toBeInTheDocument();
   });
 
-  it("persists collapse state to localStorage per group", async () => {
+  it("auto-collapses the group when the route is outside its children", () => {
+    // /dashboard is not a settings sub-path → group must be collapsed and
+    // children must not render in the DOM.
+    currentUserMock.mockReturnValue(userResp("admin"));
+    render(<Sidebar />);
+    expect(screen.getByTestId("nav-group-org-settings")).toHaveAttribute("data-collapsed");
+    expect(screen.queryByTestId("nav-auth")).toBeNull();
+  });
+
+  it("manual toggle expands the group; navigating away collapses it again", () => {
     currentUserMock.mockReturnValue(userResp("admin"));
     const { rerender } = render(<Sidebar />);
-    const groupBtn = screen.getByTestId("nav-group-org-settings");
-    // Expanded by default.
-    expect(groupBtn).not.toHaveAttribute("data-collapsed");
+    // Auto-collapsed on /dashboard.
+    expect(screen.getByTestId("nav-group-org-settings")).toHaveAttribute("data-collapsed");
 
-    // Click → collapsed.
-    groupBtn.click();
+    // Manual expand.
+    screen.getByTestId("nav-group-org-settings").click();
+    rerender(<Sidebar />);
+    expect(screen.getByTestId("nav-group-org-settings")).not.toHaveAttribute("data-collapsed");
+    expect(screen.getByTestId("nav-auth")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("yaaos.sidebar.collapse") ?? "{}")["org-settings"]).toBe(
+      false,
+    );
+
+    // Simulate route change to /tickets → effect re-collapses.
+    pathnameMock.mockReturnValue("/orgs/acme/tickets");
     rerender(<Sidebar />);
     expect(screen.getByTestId("nav-group-org-settings")).toHaveAttribute("data-collapsed");
-    const stored = localStorage.getItem("yaaos.sidebar.collapse");
-    expect(stored).toBeTruthy();
-    expect(JSON.parse(stored ?? "{}")["org-settings"]).toBe(true);
   });
 });

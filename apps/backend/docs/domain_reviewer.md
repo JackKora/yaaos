@@ -59,6 +59,7 @@ The legacy `queue.py` monolith was dismantled across slices 40-61. Today's modul
 | `workflows/*` | M05 `Workflow` definitions for the 5 reviewer task modes. |
 | `aggregate.py` + `repository.py` + `events.py` + `types.py` + `models.py` | Durable-findings layer. |
 | `service.py` + `replies.py` + `trigger.py` + `lock.py` + `anchor.py` | Reply classifier, trigger policy, advisory locking, anchor resolution. |
+| `orphan_sweep.py` | Periodic safeguard: tickets stuck `running` past the grace window with no `reviews` row → `tickets.fail(reason='orphaned_no_review_job')`. Spawned via the module's `on_startup` hook. Cadence + grace from `yaaos_ticket_orphan_{sweep_interval,grace}_seconds` (defaults 60 s / 300 s). |
 
 ### M05 workflows + commands (Phase 4 foundations)
 

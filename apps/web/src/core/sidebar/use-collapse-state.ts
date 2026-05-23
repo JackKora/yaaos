@@ -53,6 +53,14 @@ export function useCollapseState() {
       return next;
     });
   }, []);
+  const setCollapsed = useCallback((id: string, value: boolean) => {
+    setState((prev) => {
+      if (Boolean(prev[id]) === value) return prev;
+      const next = { ...prev, [id]: value };
+      write(next);
+      return next;
+    });
+  }, []);
 
-  return { isCollapsed, toggle };
+  return { isCollapsed, toggle, setCollapsed };
 }

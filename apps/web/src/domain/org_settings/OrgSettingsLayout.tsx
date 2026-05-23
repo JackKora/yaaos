@@ -1,72 +1,24 @@
-import { getCurrentOrgSlug } from "@core/api";
-import { useCurrentUser } from "@domain/auth";
-import { cn } from "@shared/utils/cn";
 import type React from "react";
 
 /**
- * Org Settings shell. Renders the active sub-page inside a tab-style header.
- * Per-tab role gating mirrors the sidebar: Members is the only tab a
- * non-admin can hit; the rest are Owner+Admin only.
+ * Org Settings shell.
+ *
+ * Passthrough wrapper — the SPA has no top bar, so settings pages render
+ * their content as the topmost element. The sidebar's Org Settings group
+ * already shows which sub-page is active; a horizontal tab strip would
+ * duplicate that nav and violate the "no topbar ever" rule (see
+ * apps/web/docs/design.md § Layout).
+ *
+ * Kept as a component (rather than removed entirely) so per-tab role gating
+ * and any future shared chrome land in one place. The `active` prop is now
+ * informational only — preserved for callers but unused.
  */
-interface SettingsTab {
-  id: string;
-  label: string;
-  path: string;
-  role?: "builder" | "admin";
-}
-
-const TABS: SettingsTab[] = [
-  { id: "auth", label: "Auth", path: "/settings/auth", role: "admin" },
-  { id: "members", label: "Members", path: "/settings/members" },
-  { id: "vcs", label: "VCS", path: "/settings/vcs", role: "admin" },
-  { id: "coding-agents", label: "Coding Agents", path: "/settings/coding-agents", role: "admin" },
-  { id: "api-keys", label: "API Keys", path: "/settings/api-keys", role: "admin" },
-  { id: "mcp-proxy", label: "MCP Proxy", path: "/settings/mcp-proxy", role: "admin" },
-  { id: "audit", label: "Audit", path: "/settings/audit", role: "admin" },
-];
-
 export function OrgSettingsLayout({
-  active,
+  active: _active,
   children,
 }: {
   active: string;
   children: React.ReactNode;
 }) {
-  const slug = getCurrentOrgSlug();
-  const { data: user } = useCurrentUser();
-  const membership = user?.orgs.find((o) => o.slug === user?.current_org_slug);
-  const isAdmin = membership?.role === "owner" || membership?.role === "admin";
-  const visibleTabs = TABS.filter((t) => !t.role || (t.role === "admin" && isAdmin));
-
-  const absolutePath = (relative: string) => (slug ? `/orgs/${slug}${relative}` : relative);
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-end gap-1 border-b border-border bg-card px-4 pt-3">
-        <h1 className="text-[18px] font-semibold tracking-tight mr-4 mb-2">Org Settings</h1>
-        <nav className="flex gap-1" data-testid="org-settings-tabs">
-          {visibleTabs.map((t) => {
-            const isActive = t.id === active;
-            return (
-              <a
-                key={t.id}
-                href={absolutePath(t.path)}
-                data-testid={`tab-${t.id}`}
-                data-active={isActive || undefined}
-                className={cn(
-                  "rounded-t border-b-2 px-3 py-1.5 text-[12.5px] transition-colors",
-                  isActive
-                    ? "border-accent text-foreground bg-background"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent",
-                )}
-              >
-                {t.label}
-              </a>
-            );
-          })}
-        </nav>
-      </div>
-      <div className="flex-1 overflow-y-auto">{children}</div>
-    </div>
-  );
+  return <div className="flex h-full flex-col">{children}</div>;
 }

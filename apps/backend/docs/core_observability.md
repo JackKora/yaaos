@@ -12,6 +12,7 @@ Logging + tracing bootstrap. Configures structlog once at process start (console
 - `get_logger(name=None)` — returns a bound structlog logger. Used in place of `logging.getLogger`.
 - `spawn(name, coro)` — fire-and-forget background work. Wraps `asyncio.create_task` with a try/except that logs `spawn.crashed`. The wrapped task is retained in a module-level set so the GC doesn't collect it mid-flight.
 - `active_task_count()` — test helper; number of pending spawned tasks.
+- `SlowRequestLogMiddleware` — ASGI middleware that emits a `http.slow_request` warn log for any request taking ≥ `SLOW_REQUEST_THRESHOLD_MS` (default 500). Mounted by `core/webserver` on every app. Forensic trail for intermittent slow responses; never throws.
 
 No HTTP routes. No tables. See `app/core/observability/__init__.py`.
 

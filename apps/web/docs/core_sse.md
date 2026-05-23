@@ -16,7 +16,7 @@ yaaos's UI is driven by a server-side event stream — the reviewer pipeline emi
 
 ### Mounting
 
-`<SSESubscriber>` wraps the router in `main.tsx`. One `EventSource("/api/events")` per mount → one per browser tab. The effect's cleanup closes it on unmount.
+`<SSESubscriber>` wraps the router in `main.tsx`. The `EventSource("/api/events")` is held at module scope — **not** inside the `useEffect`. The React effect only attaches the active `QueryClient`; the connection itself outlives the component, so React StrictMode's dev-mode mount → unmount → remount cycle does NOT open new connections. Exactly one connection per browser tab.
 
 ### Event → invalidation map
 
@@ -29,6 +29,10 @@ yaaos's UI is driven by a server-side event stream — the reviewer pipeline emi
 | anything else | silently ignored |
 
 `ticket_id` on the envelope scopes invalidations. Events without it fall back to the global keys (`["tickets"]`, `["reviewer", "metrics"]`).
+
+### Coalesced invalidations
+
+Invalidations are deduped on a 200 ms trailing debounce keyed by `JSON.stringify(queryKey)`. A burst of N events that all target the same key triggers one `invalidateQueries` call. Drains the dashboard "boot flurry" where the reviewer pipeline emits several `ticket_status_changed` events in tight succession.
 
 ### Reconnection
 
@@ -48,4 +52,4 @@ None. The `EventSource` is per-mount.
 
 ## How it's tested
 
-End-to-end via `apps/e2e/tests/sse-step-progress-live.spec.ts` — dispatches a webhook, opens the ticket detail page without refreshing, asserts the review card transitions to `posted` via SSE-driven invalidations alone. No Vitest — mocking `EventSource` would test the mock more than the code.
+End-to-end via `apps/e2e/tests/sse-step-progress-live.spec.ts` — dispatches a webhook, opens the ticket detail page without refreshing, asserts the review card transitions to `posted` via SSE-driven invalidations alone. Vitest coverage in `subscriber.test.tsx` mocks the global `EventSource` constructor to assert (a) one connection survives StrictMode double-mount and (b) bursts of events coalesce to a single `invalidateQueries` per key.

@@ -7,6 +7,10 @@ boundary.
 """
 
 from app.core.observability.service import configure, get_logger
+from app.core.observability.slow_request import (
+    SLOW_REQUEST_THRESHOLD_MS,
+    SlowRequestLogMiddleware,
+)
 from app.core.observability.spawn import active_task_count, spawn
 from app.core.observability.traceparent import (
     current_traceparent,
@@ -15,6 +19,8 @@ from app.core.observability.traceparent import (
 )
 
 __all__ = [
+    "SLOW_REQUEST_THRESHOLD_MS",
+    "SlowRequestLogMiddleware",
     "active_task_count",
     "configure",
     "current_traceparent",

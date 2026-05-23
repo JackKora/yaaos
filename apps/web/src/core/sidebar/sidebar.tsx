@@ -1,6 +1,7 @@
 import { getCurrentOrgSlug } from "@core/api";
 import { useCurrentUser } from "@domain/auth";
 import { NotificationsBell, OrgSwitcher } from "@shared/components/chrome";
+import { Popover, PopoverContent, PopoverTrigger } from "@shared/components/ui/popover";
 import { cn } from "@shared/utils/cn";
 import { useRouterState } from "@tanstack/react-router";
 import {
@@ -17,7 +18,7 @@ import {
   Users,
   Workflow,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getSidebarPinned, setSidebarPinned } from "../layout/theme";
 import type { NavConfig, NavGroup, NavItem, NavLink, NavRole } from "./nav-config";
 import { useCollapseState } from "./use-collapse-state";
@@ -103,7 +104,20 @@ export function Sidebar() {
   const active = location.pathname;
   const slug = getCurrentOrgSlug();
   const { data: user } = useCurrentUser();
-  const { isCollapsed, toggle } = useCollapseState();
+  const { isCollapsed, toggle, setCollapsed } = useCollapseState();
+
+  // Auto-collapse rule: a group stays open only while one of its children
+  // is the active route. Leave the section → it collapses. User can still
+  // manually expand from anywhere; the next navigation re-applies the rule.
+  useEffect(() => {
+    for (const item of NAV.org) {
+      if (item.kind !== "group") continue;
+      const anyActive = item.children.some((c) =>
+        active.startsWith(slug ? `/orgs/${slug}${c.path}` : c.path),
+      );
+      if (!anyActive) setCollapsed(item.id, true);
+    }
+  }, [active, slug, setCollapsed]);
 
   const currentMembership = user?.orgs.find((o) => o.slug === user?.current_org_slug);
   // Owner satisfies any admin-gated nav item (Owner > Admin > Builder).
@@ -177,7 +191,7 @@ export function Sidebar() {
       </div>
 
       {/* Org switcher chip — defines the current org context. */}
-      <div className="px-1.5 pt-2">
+      <div className="px-1.5 py-2 border-b border-border">
         <OrgSwitcher expanded={pinned} />
       </div>
 
@@ -242,6 +256,8 @@ function renderLink(item: NavLink, ctx: RenderContext, depth: 0 | 1 = 0) {
   const Icon = item.icon;
   const href = ctx.absolutePath(item.path);
   const isActive = ctx.active.startsWith(href);
+  // Active state is ONLY a background color change — no border, no margin shift,
+  // so the item stays in the exact same position whether selected or not.
   return (
     <a
       key={item.id}
@@ -250,9 +266,10 @@ function renderLink(item: NavLink, ctx: RenderContext, depth: 0 | 1 = 0) {
       data-active={isActive || undefined}
       className={cn(
         "flex items-center gap-2.5 px-2 py-1.5 rounded text-[12.5px] transition-colors",
+        !ctx.pinned && "justify-center",
         depth === 1 && "ml-5",
         isActive
-          ? "bg-accent text-foreground border-l-2 border-accent -ml-[2px] pl-[10px]"
+          ? "bg-accent text-foreground"
           : "text-foreground hover:bg-accent hover:text-foreground",
       )}
       title={ctx.pinned ? undefined : item.label}
@@ -269,6 +286,61 @@ function renderGroup(
 ) {
   const Icon = item.icon;
   const hasActiveChild = item.children.some((c) => ctx.active.startsWith(ctx.absolutePath(c.path)));
+
+  // Rail mode: the group's children can't render inline (no room for labels),
+  // so the icon opens a popover anchored to the right with the full sub-menu.
+  if (!ctx.pinned) {
+    return (
+      <Popover key={item.id}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-testid={`nav-group-${item.id}`}
+            data-active={hasActiveChild || undefined}
+            className={cn(
+              "flex w-full items-center justify-center px-2 py-1.5 rounded text-[12.5px] transition-colors",
+              hasActiveChild
+                ? "text-foreground bg-accent"
+                : "text-foreground hover:bg-accent hover:text-foreground",
+            )}
+            title={item.label}
+          >
+            <Icon className="w-4 h-4 shrink-0" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent side="right" align="start" sideOffset={8} className="w-48 p-1">
+          <div className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {item.label}
+          </div>
+          <div className="flex flex-col gap-0.5">
+            {item.children.map((c) => {
+              const ChildIcon = c.icon;
+              const href = ctx.absolutePath(c.path);
+              const isActive = ctx.active.startsWith(href);
+              return (
+                <a
+                  key={c.id}
+                  href={href}
+                  data-testid={`nav-${c.id}`}
+                  data-active={isActive || undefined}
+                  className={cn(
+                    "flex items-center gap-2.5 px-2 py-1.5 rounded text-[12.5px] transition-colors",
+                    isActive
+                      ? "bg-accent text-foreground"
+                      : "text-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <ChildIcon className="w-4 h-4 shrink-0" />
+                  <span>{c.label}</span>
+                </a>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
   return (
     <div key={item.id}>
       <button
@@ -283,20 +355,17 @@ function renderGroup(
             ? "text-foreground bg-accent"
             : "text-foreground hover:bg-accent hover:text-foreground",
         )}
-        title={ctx.pinned ? undefined : item.label}
       >
         <Icon className="w-4 h-4 shrink-0" />
-        {ctx.pinned && <span className="flex-1 text-left">{item.label}</span>}
-        {ctx.pinned && (
-          <ChevronRight
-            className={cn(
-              "w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform",
-              !ctx.collapsed && "rotate-90",
-            )}
-          />
-        )}
+        <span className="flex-1 text-left">{item.label}</span>
+        <ChevronRight
+          className={cn(
+            "w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform",
+            !ctx.collapsed && "rotate-90",
+          )}
+        />
       </button>
-      {!ctx.collapsed && ctx.pinned && (
+      {!ctx.collapsed && (
         <div className="flex flex-col gap-0.5 mt-0.5">
           {item.children.map((c) => renderLink(c, ctx, 1))}
         </div>

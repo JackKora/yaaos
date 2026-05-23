@@ -9,7 +9,6 @@ from app.plugins.github import web  # noqa: F401 — registers webhook route
 from app.plugins.github.intake_type import GithubPrIntakeType
 from app.plugins.github.models import (
     GitHubAppInstallationRow,
-    GitHubPollerStateRow,
     GitHubSettingsRow,
     GitHubWebhookEventRow,
 )
@@ -27,7 +26,6 @@ __all__ = [
     "GitHubAppInstallationRow",
     "GitHubOAuthProvider",
     "GitHubPlugin",
-    "GitHubPollerStateRow",
     "GitHubSettingsRow",
     "GitHubWebhookEventRow",
     "GithubPrIntakeType",

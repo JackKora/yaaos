@@ -131,10 +131,6 @@ class StubVCSPlugin:
     async def list_yaaos_comments(self, external_id: str) -> list[Comment]:
         return list(self._comments.get(external_id, []))
 
-    async def list_open_prs_since(self, repo_external_id: str, since: datetime) -> list[VCSPullRequest]:
-        del repo_external_id, since
-        return []
-
     async def is_repo_accessible(self, repo_external_id: str) -> bool:
         del repo_external_id
         return True

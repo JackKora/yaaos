@@ -16,7 +16,6 @@ Bridges GitHub REST + webhooks to `domain/vcs` types. Implements every `VCSPlugi
   - `GET /installation` — three-state response driving the Settings UI.
   - `GET /repositories` — live list of repos the App sees.
   - `GET /health` — three-state credentials / installation / ok.
-- `_start_catchup` is the `on_startup` hook on the github `RouteSpec`.
 - Domain code never imports `plugins/github` directly — it goes through `domain/vcs`'s registry.
 
 ## Module architecture
@@ -48,7 +47,7 @@ Two write paths converge on the same row:
 5. **Idempotency** — `record_webhook_event` keyed on `X-GitHub-Delivery`. Duplicate → `200 {status: duplicate}`.
 6. **Install lifecycle short-circuit** — `installation` events update `github_app_installations` directly via `upsert_installation` / `mark_installation_inactive`. They never flow through `intake` — infrastructure state, not domain events.
 7. **Parse + enrich** — `parse_webhook` returns zero-or-more `VCSEvent`s. For `pull_request.synchronize`, handler does the force-push enrichment call and rebuilds events with the true flag.
-8. **Dispatch** — `domain.intake.handle_vcs_events`. Failures logged; handler still responds `200` — GitHub doesn't retry and a 5xx would only mask the failure. Catch-up poller covers missed events on next startup.
+8. **Dispatch** — `domain.intake.handle_vcs_events`. Failures logged; handler still responds `200` — GitHub doesn't retry and a 5xx would only mask the failure. Missed webhooks during downtime are a known POC limitation (no catch-up reconciliation yet).
 9. `mark_webhook_processed(row_id)` stamps `processed_at`. Respond `200`.
 
 ### Event mapping (`payload_parser.parse_webhook`)
@@ -101,9 +100,8 @@ No shared `httpx.AsyncClient` — short-lived per-method against `github_api_bas
 | `GET .../pulls/{n}/comments`, `/issues/{n}/comments` | `list_yaaos_comments` |
 | `POST .../pulls/{n}/comments` (inline) + `POST .../issues/{n}/comments` (top-level) | `post_review` |
 | `POST .../pulls/{n}/comments/{id}/replies` (`/issues/{n}/comments` fallback on 404) | `post_comment_reply` |
-| `GET .../pulls?state=open` | `list_open_prs_since` / poller |
 | `GET .../compare/{base}...{head}` | `detect_force_push`, `list_commit_messages` (the `commits[].commit.message` array; consumed by `incremental.py` to feed `TriggerInputs.new_commit_messages` for §7's base-merge heuristic) |
-| `GET /installation/repositories` | repositories route + poller |
+| `GET /installation/repositories` | repositories route |
 | `GET /repos/{owner}/{repo}` | `is_repo_accessible` |
 
 `post_review` posts each finding as its own comment rather than bundling them into a single `Review` object — no top-level wrapper comment, no `APPROVE` / `REQUEST_CHANGES` verdict (deferred). Findings with `file` + `line_start` go to `POST /pulls/{n}/comments` (the inline-review-comments endpoint, which requires the PR's `head_sha` as `commit_id`); orphan findings and the secrets-warning `summary_body` case route to `POST /issues/{n}/comments` (GitHub's path for non-inline PR comments — naming aside, this is *not* a GitHub Issues operation). `Review.state` is recorded internally but ignored on post; the approve flow will reintroduce it later.
@@ -114,34 +112,15 @@ The M02 `github_installations(installation_id PK, org_id, created_at)` table —
 
 After the install completes, GitHub redirects to `GET /api/github/install_callback?installation_id=<n>&state=<signed>`. The handler verifies the signature + TTL and either inserts or updates the `github_installations` row to map `installation_id → org_id`. Bad/expired states return 400. Successful binds 303 to `/`.
 
-`resolve_org_for_installation(installation_id)` is the public helper webhook consumers + the catch-up poller can call to look up which org owns an installation event. Returns `None` when the install hasn't been bound to an org yet.
-
-### Catch-up poller
-
-`_start_catchup` is the `on_startup` hook; spawns `run_catchup_loop()` via `core/observability.spawn("github.catchup", ...)`.
-
-`run_catchup_loop`:
-1. Sleep `yaaos_catchup_delay_seconds` (10s prod, 0s tests).
-2. Load active `github_app_installations`.
-3. Per distinct org, run `_run_catchup`.
-
-`_run_catchup(org_id)`:
-1. Find active install.
-2. Issue installation token.
-3. `GET /installation/repositories`.
-4. Per repo, list open PRs, call `intake.refresh_pr_metadata(...)` — same upsert path as the webhook handler. New PRs get tickets; existing ones get title / body / sha updates. **Reviews are not replayed**; missed review-triggers during downtime are a known POC limitation.
-5. Bump `github_poller_state.last_polled_at` per repo.
-
-Per-repo / per-PR exceptions: log + continue. Loop runs once per process; doesn't re-arm.
+`resolve_org_for_installation(installation_id)` is the public helper webhook consumers can call to look up which org owns an installation event. Returns `None` when the install hasn't been bound to an org yet.
 
 ## Data owned
 
-All four tables detailed in `docs/architecture.md` under "Data model":
+Tables detailed in `docs/architecture.md` under "Data model":
 
 - `github_app_installations` — `status` is `active` / `suspended` / `uninstalled`.
 - `github_settings` — App ID, slug, encrypted PEM + webhook secret (one per org).
 - `github_webhook_events` — idempotency on `X-GitHub-Delivery`.
-- `github_poller_state` — per-(org, repo) catch-up cursor.
 
 Reads (M02): `github_installations` — owned by [`domain/identity`](domain_identity.md); the plugin only inserts via `/install_callback` and reads via `resolve_org_for_installation`.
 
@@ -153,4 +132,4 @@ Unit tests in `app/plugins/github/test/`:
 - `test_payload_parser.py` — every event-mapping branch.
 - `test_post_review.py` — `post_review` routing (inline / orphan / summary-only / empty) and `_format_finding_body` rendering (agent emoji suffix, fallback, omitted-when-unset).
 
-Full webhook + dispatch, manifest-callback, credentials, installation route, repositories proxy, force-push detection, and catch-up poller exercised end-to-end by `apps/e2e/` Playwright specs against `apps/fake-github`.
+Full webhook + dispatch, manifest-callback, credentials, installation route, repositories proxy, and force-push detection exercised end-to-end by `apps/e2e/` Playwright specs against `apps/fake-github`.

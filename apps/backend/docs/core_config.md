@@ -27,7 +27,7 @@ Optional, with defaults:
 - `otel_exporter_otlp_endpoint`, `otel_service_name` (`yaaos`).
 - `log_level` (`INFO`).
 - `github_api_base_url` (`https://api.github.com`; overridden by e2e stack to `apps/fake-github`).
-- Time controls: `yaaos_review_debounce_seconds` (30), `yaaos_reaper_interval_seconds` (30), `yaaos_heartbeat_interval_seconds` (10), `yaaos_catchup_delay_seconds` (10).
+- Time controls: `yaaos_review_debounce_seconds` (30), `yaaos_reaper_interval_seconds` (30), `yaaos_heartbeat_interval_seconds` (10).
 
 ### `.env` file precedence
 

@@ -30,7 +30,6 @@ from app.plugins.github.service import (
     mark_installation_inactive,
     mark_webhook_processed,
     record_webhook_event,
-    run_catchup_loop,
     set_github_credentials,
     upsert_installation,
     verify_webhook_signature,
@@ -374,17 +373,6 @@ async def health() -> dict[str, object]:
     return {"healthy": True, "message": "ok", "checked_at": now}
 
 
-async def _start_catchup() -> None:
-    """Spawn the catch-up poller as a background task. We do NOT await it from
-    the startup hook — the hook must return promptly so FastAPI can finish
-    initializing. The poller sleeps for `yaaos_catchup_delay_seconds` first
-    and then refreshes open-PR metadata across each install's visible repos.
-    """
-    from app.core.observability import spawn  # noqa: PLC0415
-
-    spawn("github.catchup", run_catchup_loop())
-
-
 # ── M02 — GitHub App install ↔ org binding ──────────────────────────────
 
 
@@ -539,4 +527,4 @@ async def resolve_org_for_installation(installation_id: int):
     return row.org_id if row else None
 
 
-register_routes(RouteSpec(module_name="github", router=router, on_startup=[_start_catchup]))
+register_routes(RouteSpec(module_name="github", router=router))

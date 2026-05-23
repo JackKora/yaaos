@@ -11,7 +11,7 @@ src/shared/components/
 └── layout/    yaaos layout composites — page header, empty state, error banner (Phase 2+)
 ```
 
-Primitives are thin wrappers over Radix UI (focus management, ARIA correctness) and Tailwind (visual style via [design tokens](design-tokens.md)). They live in our repo — modify freely.
+Primitives are thin wrappers over Radix UI (focus management, ARIA correctness) and Tailwind (visual style via the design tokens documented in [design.md](design.md)). They live in our repo — modify freely.
 
 ## Primitives (`src/shared/components/ui/`)
 

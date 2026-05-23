@@ -418,9 +418,17 @@ async def thread_by_finding(finding_id: UUID) -> dict[str, Any]:
     }
 
 
+async def _start_orphan_sweep() -> None:
+    from app.core.observability import spawn  # noqa: PLC0415
+    from app.domain.reviewer.orphan_sweep import run_sweep_loop  # noqa: PLC0415
+
+    spawn("reviewer.orphan_sweep", run_sweep_loop())
+
+
 register_routes(
     RouteSpec(
         module_name="reviewer",
         router=router,
+        on_startup=[_start_orphan_sweep],
     )
 )

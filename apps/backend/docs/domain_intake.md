@@ -59,10 +59,12 @@ Single case-insensitive regex compiled once: `@yaaos(?:-[a-z0-9-]+)?\s+rereview`
 
 Two functions share an internal upsert. Use `refresh_pr_metadata` when the caller has a `VCSPullRequest` (webhooks include it); use `refresh_pr_metadata_by_id` when only the external id is known (catch-up poller, reviewer recovery — fetches via `vcs.get_plugin("github").fetch_pr`).
 
-Handles the chicken-and-egg between `tickets.pr_id` and `pull_requests.ticket_id`:
+Handles the chicken-and-egg between `tickets.pr_id` and `pull_requests.ticket_id` via an idempotent claim:
 
-1. If the `pull_requests` row exists, call `pull_requests.upsert(pr)`, then re-sync ticket `title`/`description` via `_sync_ticket_titles` (no audit — metadata sync is not a status transition).
-2. If not, insert a `TicketRow` first (status=`in_review`, `pr_id=None`), then `pull_requests.upsert(pr, ticket_id=ticket_id)`, then backfill `tickets.pr_id`. Writes `ticket.created` and publishes `TicketStatusChanged(previous=None, new='in_review')`.
+1. `INSERT ... ON CONFLICT DO NOTHING` on `tickets (org_id, source, source_external_id)` — exactly one concurrent caller wins the row (constraint `uq_tickets_org_source_external` from migration 025). The loser selects the existing ticket.
+2. `pull_requests.upsert(pr, ticket_id=)` — points the PR at whatever ticket id the previous step resolved.
+3. Patch `tickets.pr_id` (only if still NULL) so the FK direction closes.
+4. Winner emits `ticket.created` + publishes `TicketStatusChanged(previous=None, new='running')`. Loser re-syncs `title`/`description` via `_sync_ticket_titles` (no audit — metadata sync is not a status transition).
 
 This is the production write path for tickets. `tickets.create_for_pr` exists for direct callers and tests.
 

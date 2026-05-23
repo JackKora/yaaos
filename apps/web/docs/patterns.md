@@ -28,11 +28,13 @@ Discipline still applies: terse, bullets, no code snippets, no `Decisions` secti
 
 - **Typed nav, no per-route hardcoding** — `apps/web/src/core/sidebar/nav-config.ts` defines the `NavConfig` type (`link | group`). The Sidebar renders the static config; route paths inside the group are *relative* (`/dashboard`, `/settings/auth`) and prefixed with `/orgs/{slug}` by the renderer.
 - **Per-item role gates** — `role: "admin"` on a `link` or `group` hides it for `member`-role users. The group itself is hidden when no child survives the filter (matches the backend's per-action gate).
-- **Per-group collapse state in `localStorage`** — `use-collapse-state.ts` persists `{ [groupId]: collapsed }` and syncs across tabs via the `storage` event.
+- **Per-group collapse state in `localStorage`** — `use-collapse-state.ts` persists `{ [groupId]: collapsed }` and syncs across tabs via the `storage` event. A group is rendered expanded only while one of its children is the active route; whenever the active route falls outside the group, an effect in `sidebar.tsx` force-collapses it. The user can still manually expand from any page; the next navigation re-applies the rule.
+- **Rail-mode flyout for groups** — when the sidebar is unpinned, group icons open a right-anchored Popover with the sub-items instead of trying to render them in the 56px rail. Top-level link icons and the org switcher are centered in the rail.
+- **Active state is background-only** — selected nav items get `bg-accent` and nothing else. No border, no margin/padding shift; the item must occupy the exact same box whether selected or not.
 
 ## Org Settings shell (M03)
 
-- **One shell, six tabs** — `OrgSettingsLayout` at `/orgs/$slug/settings/$section`. Per-tab role gating mirrors the sidebar: Members is the only tab a non-admin can hit; Auth/VCS/Coding Agents/BYOK/Audit are Owner+Admin only.
+- **Passthrough wrapper, no top chrome** — `OrgSettingsLayout` is now a thin `<div>` that just renders its children. The sidebar's Org Settings group is the only nav into sub-pages; the layout itself adds nothing visual above the page content (see [design.md § Principles](design.md#principles): no top bar ever). Per-page role gating happens in each settings page, mirroring the sidebar gate.
 - **Bespoke React per plugin via the registry** — Coding-agent plugin settings dispatch through `apps/web/src/domain/org_settings/coding_agents/plugin_registry.ts`. First-party plugins register components at module load via a side-effect import (today: `claude_code`); unregistered plugins land on the built-in placeholder. No generic JSON-schema renderer in M03.
 - **Plugin picker is shared** — `apps/web/src/shared/plugin_picker/PluginPicker` is used by both the VCS empty-state and the Coding Agents Add flow. Backed by `useAvailablePlugins(type)` which hits `GET /api/plugins/available?type=...`.
 

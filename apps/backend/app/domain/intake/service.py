@@ -313,68 +313,94 @@ async def refresh_pr_metadata(
 ) -> pull_requests.PullRequest:
     """Upsert pull_requests row + ensure a ticket exists. Returns the PR row.
 
-    Two-step: create the ticket lazily on first insert (we need pr.id to set FK on
-    ticket; we also need ticket.id to set FK on pr — chicken-and-egg). Approach:
-      1. Check if PR row exists. If yes, update it.
-      2. If not, create ticket FIRST, then insert the PR row pointing at the
-         ticket, then set ticket.pr_id to the new pr.id.
+    Race-safe via the `uq_tickets_org_source_external` constraint
+    (migration 025): two concurrent webhook deliveries both INSERT the same
+    `(org_id, source, source_external_id)` slot via `ON CONFLICT DO NOTHING`;
+    exactly one wins and owns the `ticket.created` audit row. The loser
+    selects the existing ticket and re-uses its id. PR and ticket FKs
+    chicken-and-egg, so the ticket inserts first with `pr_id=NULL`, the PR
+    upsert points at the canonical ticket, then ticket.pr_id is patched.
     """
-    existing = await pull_requests.get_by_external(pr.plugin_id, pr.external_id, org_id=org_id)
-    if existing is not None:
-        upserted = await pull_requests.upsert(pr, org_id=org_id)
-        ticket = await tickets.get(existing.ticket_id, org_id=org_id)
-        await _sync_ticket_titles(ticket.id, pr.title, pr.body, org_id=org_id)
-        return upserted
-
     from uuid import uuid4  # noqa: PLC0415
+
+    from sqlalchemy import select as sql_select  # noqa: PLC0415
+    from sqlalchemy import update as sql_update  # noqa: PLC0415
+    from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: PLC0415
 
     from app.domain.tickets.models import TicketRow  # noqa: PLC0415
 
+    new_ticket_id = uuid4()
     async with db_session() as s:
-        ticket_row = TicketRow(
-            id=uuid4(),
-            org_id=org_id,
-            source="github_pr",
-            source_external_id=pr.external_id,
-            title=pr.title,
-            description=pr.body,
-            status="running",
-            plugin_id=pr.plugin_id,
-            repo_external_id=repo_external_id,
-            pr_id=None,
+        stmt = (
+            pg_insert(TicketRow)
+            .values(
+                id=new_ticket_id,
+                org_id=org_id,
+                source="github_pr",
+                source_external_id=pr.external_id,
+                title=pr.title,
+                description=pr.body,
+                status="running",
+                plugin_id=pr.plugin_id,
+                repo_external_id=repo_external_id,
+                pr_id=None,
+            )
+            .on_conflict_do_nothing(index_elements=["org_id", "source", "source_external_id"])
+            .returning(TicketRow.id)
         )
-        s.add(ticket_row)
+        inserted_ticket_id = (await s.execute(stmt)).scalar_one_or_none()
+        if inserted_ticket_id is None:
+            existing_row = (
+                await s.execute(
+                    sql_select(TicketRow).where(
+                        TicketRow.org_id == org_id,
+                        TicketRow.source == "github_pr",
+                        TicketRow.source_external_id == pr.external_id,
+                    )
+                )
+            ).scalar_one()
+            ticket_id = existing_row.id
+            we_created = False
+        else:
+            ticket_id = inserted_ticket_id
+            we_created = True
         await s.commit()
-        await s.refresh(ticket_row)
-        ticket_id = ticket_row.id
 
     upserted = await pull_requests.upsert(pr, ticket_id=ticket_id, org_id=org_id)
 
     async with db_session() as s:
-        from sqlalchemy import update as sql_update  # noqa: PLC0415
-
-        await s.execute(sql_update(TicketRow).where(TicketRow.id == ticket_id).values(pr_id=upserted.id))
-        await audit_for_ticket(
-            ticket_id,
-            "ticket.created",
-            _TicketCreatedAuditPayload(pr_id=upserted.id, repo_external_id=repo_external_id),
-            actor=Actor.system(),
-            org_id=org_id,
-            session=s,
+        await s.execute(
+            sql_update(TicketRow)
+            .where(TicketRow.id == ticket_id, TicketRow.pr_id.is_(None))
+            .values(pr_id=upserted.id)
         )
+        if we_created:
+            await audit_for_ticket(
+                ticket_id,
+                "ticket.created",
+                _TicketCreatedAuditPayload(pr_id=upserted.id, repo_external_id=repo_external_id),
+                actor=Actor.system(),
+                org_id=org_id,
+                session=s,
+            )
         await s.commit()
-    from app.core.events import publish  # noqa: PLC0415
-    from app.domain.tickets import TicketStatusChanged  # noqa: PLC0415
 
-    await publish(
-        TicketStatusChanged(
-            ticket_id=ticket_id,
-            repo_external_id=repo_external_id,
-            pr_id=upserted.id,
-            previous_status=None,
-            new_status="running",
+    if we_created:
+        from app.core.events import publish  # noqa: PLC0415
+        from app.domain.tickets import TicketStatusChanged  # noqa: PLC0415
+
+        await publish(
+            TicketStatusChanged(
+                ticket_id=ticket_id,
+                repo_external_id=repo_external_id,
+                pr_id=upserted.id,
+                previous_status=None,
+                new_status="running",
+            )
         )
-    )
+    else:
+        # Loser path: still keep title/description fresh in case the PR was edited.
+        await _sync_ticket_titles(ticket_id, pr.title, pr.body, org_id=org_id)
 
     return upserted
 

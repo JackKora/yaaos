@@ -42,7 +42,7 @@ Every PR has an internal `UUID` owned by `domain/pull_requests`. Plugin methods 
 
 A plugin exposes a `meta: PluginMeta` attribute plus async methods:
 
-- Read: `fetch_pr`, `fetch_diff`, `list_yaaos_comments`, `list_open_prs_since`, `is_repo_accessible`.
+- Read: `fetch_pr`, `fetch_diff`, `list_yaaos_comments`, `is_repo_accessible`.
 - Write: `post_review`, `post_comment_reply`, `mark_comments_outdated`.
 - Auth: `get_installation_token(org_id)` — short-lived; callers use once (e.g., `git clone` via `GIT_ASKPASS`) and forget. Never cached.
 

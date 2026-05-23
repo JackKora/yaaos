@@ -148,6 +148,8 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("022_lessons_created_by", "lessons_created_by"),
     ("023_collapse_ticket_status", "collapse_ticket_status"),
     ("024_sso_email_domains", "sso_email_domains"),
+    ("025_tickets_dedupe_external_id", "tickets_dedupe_external_id"),
+    ("026_drop_github_poller_state", "drop_github_poller_state"),
 )
 
 
@@ -190,10 +192,21 @@ async def _apply_drop_repos_table(conn) -> None:  # type: ignore[no-untyped-def]
         "ALTER TABLE pull_requests ADD COLUMN IF NOT EXISTS repo_external_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS plugin_id TEXT NOT NULL DEFAULT 'github'",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS repo_external_id TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE github_poller_state ADD COLUMN IF NOT EXISTS repo_external_id TEXT NOT NULL DEFAULT ''",
     ]
     for stmt in statements:
         await conn.execute(text(stmt))
+
+    # `github_poller_state` was retired in migration 026. Fresh DBs no longer
+    # have the table at this point; legacy DBs that ran 001 with the old model
+    # do — so all ALTERs against it are guarded.
+    has_poller_state = await _table_exists(conn, "github_poller_state")
+    if has_poller_state:
+        await conn.execute(
+            text(
+                "ALTER TABLE github_poller_state ADD COLUMN IF NOT EXISTS"
+                " repo_external_id TEXT NOT NULL DEFAULT ''"
+            )
+        )
 
     repos_exists = (await conn.execute(text("SELECT to_regclass('repos') IS NOT NULL"))).scalar()
     if repos_exists:
@@ -203,25 +216,34 @@ async def _apply_drop_repos_table(conn) -> None:  # type: ignore[no-untyped-def]
             "UPDATE pull_requests p SET repo_external_id = r.external_id FROM repos r WHERE p.repo_id = r.id",
             "UPDATE tickets t SET plugin_id = r.plugin_id, repo_external_id = r.external_id"
             " FROM repos r WHERE t.repo_id = r.id",
-            "UPDATE github_poller_state s SET repo_external_id = r.external_id"
-            " FROM repos r WHERE s.repo_id = r.id",
         ]
         for stmt in backfills:
             await conn.execute(text(stmt))
+        if has_poller_state:
+            await conn.execute(
+                text(
+                    "UPDATE github_poller_state s SET repo_external_id = r.external_id"
+                    " FROM repos r WHERE s.repo_id = r.id"
+                )
+            )
 
     drops: list[str] = [
         "ALTER TABLE lessons DROP COLUMN IF EXISTS repo_id",
         "ALTER TABLE pull_requests DROP COLUMN IF EXISTS repo_id",
         "ALTER TABLE tickets DROP COLUMN IF EXISTS repo_id",
-        "ALTER TABLE github_poller_state DROP CONSTRAINT IF EXISTS uq_github_poller_state_org_repo",
-        "ALTER TABLE github_poller_state DROP COLUMN IF EXISTS repo_id",
-        "ALTER TABLE github_poller_state"
-        " ADD CONSTRAINT uq_github_poller_state_org_repo UNIQUE (org_id, repo_external_id)",
         "CREATE INDEX IF NOT EXISTS lessons_repo_idx ON lessons (org_id, plugin_id, repo_external_id)",
         "DROP TABLE IF EXISTS repos",
     ]
     for stmt in drops:
         await conn.execute(text(stmt))
+    if has_poller_state:
+        for stmt in (
+            "ALTER TABLE github_poller_state DROP CONSTRAINT IF EXISTS uq_github_poller_state_org_repo",
+            "ALTER TABLE github_poller_state DROP COLUMN IF EXISTS repo_id",
+            "ALTER TABLE github_poller_state"
+            " ADD CONSTRAINT uq_github_poller_state_org_repo UNIQUE (org_id, repo_external_id)",
+        ):
+            await conn.execute(text(stmt))
 
 
 async def _table_exists(conn, name: str) -> bool:  # type: ignore[no-untyped-def]
@@ -552,6 +574,75 @@ async def _apply_collapse_ticket_status(conn) -> None:  # type: ignore[no-untype
         await conn.execute(text(stmt))
 
 
+async def _apply_drop_github_poller_state(conn) -> None:  # type: ignore[no-untyped-def]
+    """Drop the `github_poller_state` table. The boot-time catch-up poller
+    was retired — webhooks are sufficient for POC. The table existed only to
+    track per-repo last-poll cursors. Idempotent."""
+    await conn.execute(text("DROP TABLE IF EXISTS github_poller_state"))
+
+
+async def _apply_tickets_dedupe_external_id(conn) -> None:  # type: ignore[no-untyped-def]
+    """Add `(org_id, source, source_external_id)` UNIQUE on `tickets`.
+
+    Pre-existing duplicates (produced by a race in `refresh_pr_metadata` —
+    two concurrent webhook deliveries both pass the existence check and both
+    insert a fresh ticket row for the same PR) are deleted outright. The
+    canonical row is the one a `pull_requests` row points at via `ticket_id`,
+    falling back to the oldest by `created_at`. Audit rows for the deleted
+    tickets are dropped first so the manual cleanup is self-contained.
+
+    Hard delete (rather than cancel) is required because the UNIQUE index is
+    unconditional; status doesn't enter the key. Losers from the race never
+    had a `review_job.scheduled` entry, so dropping their audit rows loses
+    nothing the canonical row doesn't also carry.
+
+    Idempotent — re-running produces no additional changes since the UNIQUE
+    constraint then blocks future duplicates.
+    """
+    # Both deletes operate over the same ranked-by-(org,source,external) set;
+    # a single statement with a data-modifying CTE keeps the SQL fully
+    # literal (no f-string interpolation → semgrep-friendly) and atomically
+    # drops audit rows + ticket rows in one transaction.
+    await conn.execute(
+        text(
+            """
+            WITH ranked AS (
+              SELECT t.id,
+                     row_number() OVER (
+                       PARTITION BY t.org_id, t.source, t.source_external_id
+                       ORDER BY
+                         (EXISTS (SELECT 1 FROM pull_requests p WHERE p.ticket_id = t.id))::int DESC,
+                         t.created_at ASC
+                     ) AS rn
+                FROM tickets t
+            ),
+            losers AS (
+              SELECT id FROM ranked WHERE rn > 1
+            ),
+            audit_del AS (
+              DELETE FROM audit_entries
+               WHERE entity_kind = 'ticket'
+                 AND entity_id IN (SELECT id FROM losers)
+              RETURNING 1
+            )
+            -- Delete the loser tickets last. The PR upsert keys on
+            -- (plugin_id, external_id) so only one ticket per (org, ext_id)
+            -- is referenced by `pull_requests.ticket_id`; that row wins the
+            -- ranking. The FK is NO ACTION, so a violation here would be a
+            -- loud, correct failure rather than silent data loss.
+            DELETE FROM tickets WHERE id IN (SELECT id FROM losers)
+            """
+        )
+    )
+    # Constraint enforces uniqueness going forward.
+    await conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_tickets_org_source_external "
+            "ON tickets (org_id, source, source_external_id)"
+        )
+    )
+
+
 async def _apply_sso_email_domains(conn) -> None:  # type: ignore[no-untyped-def]
     """M06 audit follow-up — add `sso_configs.email_domains` JSONB column.
 
@@ -731,6 +822,10 @@ async def migrate() -> None:
                 await _apply_collapse_ticket_status(conn)
             elif kind == "sso_email_domains":
                 await _apply_sso_email_domains(conn)
+            elif kind == "tickets_dedupe_external_id":
+                await _apply_tickets_dedupe_external_id(conn)
+            elif kind == "drop_github_poller_state":
+                await _apply_drop_github_poller_state(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

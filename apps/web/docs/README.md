@@ -4,6 +4,8 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 
 ## Read first
 
+- [design.md](design.md) — design principles, layout, navigation rules, state patterns, density, voice, icons, a11y, design tokens. Read before adding a surface or chrome element.
+- [components.md](components.md) — index of available primitives + composites.
 - [modularity.md](modularity.md) — layer shape, import rules, testid conventions.
 - [patterns.md](patterns.md) — query-key taxonomy, time helpers, SSE invalidation, error boundary.
 
@@ -18,7 +20,7 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 | [core_api](core_api.md) | `openapi-fetch` client + `apiFetch` + every TanStack Query/mutation hook. |
 | [core_sse](core_sse.md) | Single `EventSource` at app root; events → query-cache invalidations. |
 | [core_routing](core_routing.md) | TanStack Router config + route tree. |
-| [core_layout](core_layout.md) | App shell — sidebar, topbar, theme tokens, route outlet. |
+| [core_layout](core_layout.md) | App shell — sidebar mount, theme tokens, route outlet, broken-integrations banner. No topbar (see [design.md](design.md)). |
 
 ### Domain
 

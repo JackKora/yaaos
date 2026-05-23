@@ -12,10 +12,10 @@ Exported from `app/domain/tickets/__init__.py`:
 
 - `Ticket` — Pydantic row view; carries denormalized PR fields (`pr_number`, `author_login`, `is_draft`) populated at read time.
 - `TicketFilter` — list filter (`repo_external_ids`, `author_logins`, `created_after`, `created_before`, `statuses`).
-- `TicketStatus` — `Literal["open", "in_review", "complete", "abandoned"]` (legacy values; M05 also writes `pending|running|done|failed|cancelled` for intake-created tickets).
+- `TicketStatus` — `Literal["running", "hitl", "done", "failed", "cancelled"]` (M06 collapse).
 - `TicketStatusChanged` — published on every transition (subclass of `core.events.Event`).
 - `TicketRow` — SQLAlchemy model (exported so cross-module joins avoid import cycles).
-- Service — `create` (M05 intake-driven; idempotent on `idempotency_key`), `create_for_pr`, `get`, `get_by_pr`, `list_tickets`, `complete`, `abandon`, `attach_workflow_execution`.
+- Service — `create` (M05 intake-driven; idempotent on `idempotency_key`), `create_for_pr`, `get`, `get_by_pr`, `list_tickets`, `complete`, `abandon`, `fail`, `attach_workflow_execution`.
 - Exceptions — `TicketNotFoundError`, `InvalidTicketTransition`.
 
 M05 columns on `tickets`: `type` (`pr_review` default), `idempotency_key` (sparse-unique), `payload` (JSONB), `current_workflow_execution_id` (soft pointer into `workflow_executions`). Created by migration `016_tickets_m05_columns`.
@@ -39,17 +39,20 @@ HTTP routes (`/api/tickets`):
 
 | Current → New | Trigger |
 |---|---|
-| (none) → `in_review` | `create_for_pr` |
-| `in_review` → `complete` | `complete` (intake on PR close/merge) |
-| `in_review` → `abandoned` | `abandon(reason=...)` |
+| (none) → `running` | `create_for_pr` / `intake.refresh_pr_metadata` |
+| `running` → `done` | `complete` (intake on PR close/merge) |
+| `running` → `cancelled` | `abandon(reason=...)` |
+| `running` → `failed` | `fail(reason=...)` — used by the orphan sweep and future workflow-failure paths |
 
-`complete` and `abandon` share `_transition`: loads the row, refuses if terminal (raising `InvalidTicketTransition`), updates `status`, commits, writes the audit entry, and publishes `TicketStatusChanged` *after* commit. Terminal states have no outbound transitions. Enforced in code, not DB CHECK; column is plain `String`.
+`complete`, `abandon`, and `fail` share `_transition`: loads the row, refuses if terminal (raising `InvalidTicketTransition`), updates `status`, commits, writes the audit entry, and publishes `TicketStatusChanged` *after* commit. Terminal states have no outbound transitions. Enforced in code, not DB CHECK; column is plain `String`.
 
 ### Idempotent creation
 
-`create_for_pr` is the only insert path. If a row exists for the given `pr_id`, it updates `title` / `description` and returns the existing ticket — callers can invoke unconditionally. Fresh insert writes `ticket.created` and publishes `TicketStatusChanged(previous=None, new='in_review')`.
+`create_for_pr` is the only insert path. If a row exists for the given `pr_id`, it updates `title` / `description` and returns the existing ticket — callers can invoke unconditionally. Fresh insert writes `ticket.created` and publishes `TicketStatusChanged(previous=None, new='running')`.
 
 In production the create path is reached *through* `intake.refresh_pr_metadata`, which creates the `TicketRow` directly so it can set `pull_requests.ticket_id` before back-filling `tickets.pr_id`. `create_for_pr` exists for direct callers and tests.
+
+The `(org_id, source, source_external_id)` UNIQUE constraint (migration 025) collapses concurrent webhook deliveries for the same PR to a single ticket row. Intake uses `INSERT ... ON CONFLICT DO NOTHING` on this key; the loser selects the existing row and only the winner emits the `ticket.created` audit + publishes `TicketStatusChanged`.
 
 ### Read-time denormalization
 
@@ -68,6 +71,7 @@ Every transition (including creation) publishes `TicketStatusChanged` with `prev
 `tickets` does not decide *when* to transition. Current callers:
 
 - `intake._handle_pr_closed` → `tickets.complete(ticket_id)` on merge or close.
+- `reviewer.orphan_sweep` → `tickets.fail(ticket_id, reason='orphaned_no_review_job')` on tickets stuck `running` past the grace window with no `reviews` row.
 - A future repo-removal flow → `tickets.abandon(ticket_id, reason='repo_removed')`.
 - The audit endpoint reads but never writes.
 

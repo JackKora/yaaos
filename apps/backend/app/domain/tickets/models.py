@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,6 +16,12 @@ from app.core.database import Base
 
 class TicketRow(Base):
     __tablename__ = "tickets"
+    # Enforced by migration 025: one ticket per (org, source, external id).
+    # `refresh_pr_metadata` upserts on this key; concurrent webhook deliveries
+    # for the same PR collapse to a single row.
+    __table_args__ = (
+        UniqueConstraint("org_id", "source", "source_external_id", name="uq_tickets_org_source_external"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
