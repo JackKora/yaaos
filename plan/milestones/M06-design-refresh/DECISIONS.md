@@ -33,3 +33,29 @@
 - **Picked:** install `tailwindcss-animate` and wire as a plugin in `tailwind.config.ts`.
 - **Rejected:** hand-rolled keyframes per primitive.
 - **Why:** shadcn primitives reference its utility classes directly; adding the plugin is the lowest-friction path.
+
+## Phase 2 — Chrome, IA, route renames, backend chores
+
+### D2.1 — `owner` role: keep or collapse into `admin`
+
+- **Picked:** keep `owner` as-is in the role enum; only rename `member` → `builder`.
+- **Rejected:** collapse `owner` → `admin` so the enum exactly matches the M06 "Admin / Builder" two-role spec.
+- **Why:** `owner` carries privileges (SSO config, bootstrap-creator distinction) that `admin` doesn't; collapsing would force a broader rewrite for no POC-phase win. The UI can show both as "Admin" if the spec calls for two visible roles.
+
+### D2.2 — `domain/integrations/` vs the M06 "MCP Proxy" page
+
+- **Picked:** keep `apps/backend/app/domain/integrations/` as the internal module name; expose its endpoints under the new `/api/mcp-proxy/...` path prefix (in addition to or replacing `/api/integrations/...`).
+- **Rejected:** rename the directory to match the public name (collides with the existing `apps/backend/app/domain/mcp_proxy/` module, which is the per-review MCP dispatcher — distinct concern).
+- **Why:** the two "MCP Proxy"-named modules serve different concerns; renaming the OAuth-config module would force a 3-way rename across the dispatch module too, with no POC payoff.
+
+### D2.3 — Favicon ICO: defer
+
+- **Picked:** ship the SVG favicon (already present) + PNG siblings (`apple-touch-icon`, `icon-192`, `icon-512`) only; skip `favicon.ico`.
+- **Rejected:** generate a multi-resolution ICO (`16/32/48`).
+- **Why:** ICO requires native imagemagick/rsvg tooling that isn't on the dev box; the SVG favicon covers every modern browser and the PNG sizes cover iOS / Android. ICO support is a one-line polish later.
+
+### D2.4 — SVG optimization on copy
+
+- **Picked:** run `npx svgo --multipass` on the logos already in `apps/web/public/logos/` (saved 22–35%).
+- **Rejected:** copy SVGs verbatim and defer SVGO.
+- **Why:** plan calls for an SVGO pass and the tool runs through npx without local install.
