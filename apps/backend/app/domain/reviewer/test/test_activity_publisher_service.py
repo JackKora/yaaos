@@ -15,6 +15,8 @@ import asyncio
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
 from app.core.sse_pubsub import (
     _reset_for_tests,
     channel_for,
@@ -23,6 +25,8 @@ from app.core.sse_pubsub import (
 from app.core.workflow import CommandContext
 from app.domain.coding_agent.types import ActivityEvent
 from app.domain.reviewer.commands import _activity_publisher_for
+
+pytestmark = pytest.mark.usefixtures("redis_or_skip")
 
 
 async def test_activity_publisher_fans_out_to_subscribed_channel() -> None:

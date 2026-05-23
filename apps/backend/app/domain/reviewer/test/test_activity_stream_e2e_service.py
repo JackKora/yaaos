@@ -45,6 +45,8 @@ from app.domain.reviewer.workflows import pr_review_v1
 from app.domain.tickets import create as create_ticket
 from app.testing.fake_coding_agent import register_fake_coding_agent
 
+pytestmark = pytest.mark.usefixtures("redis_or_skip")
+
 
 class _StubWorkspaceProvider:
     meta = PluginMeta(id="in_process", type="workspace", display_name="stub")

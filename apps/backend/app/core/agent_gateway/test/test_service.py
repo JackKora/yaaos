@@ -223,7 +223,7 @@ async def test_progress_event_does_not_enqueue_workflow(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_progress_event_publishes_to_sse_pubsub(db_session) -> None:
+async def test_progress_event_publishes_to_sse_pubsub(db_session, redis_or_skip) -> None:
     """Slice 77: progress AgentEvents posted via HTTP get republished to
     the `activity:{workflow_execution_id}` SSE channel so the SPA's
     live-tail picks them up alongside batched WebSocket events."""

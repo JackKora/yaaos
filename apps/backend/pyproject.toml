@@ -46,6 +46,9 @@ dependencies = [
     "itsdangerous>=2.2",
     "pyotp>=2.9",
     "slowapi>=0.1.9",
+    # M05 — Redis pub/sub backs core/sse_pubsub fanout; the same client is
+    # reused by core/tasks Phase 1's taskiq broker.
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]

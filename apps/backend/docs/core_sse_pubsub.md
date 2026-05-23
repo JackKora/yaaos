@@ -1,33 +1,32 @@
 # core/sse_pubsub
 
-> Pub/sub for ActivityEvent fanout from `core/agent_gateway` to SSE handlers.
+> Redis-backed pub/sub for ActivityEvent fanout from `core/agent_gateway` (and the reviewer's direct activity publisher) to SSE handlers.
 
 ## Purpose
 
-Owns the in-process fanout primitive that bridges the activity-stream WebSocket (ingress at `core/agent_gateway`) and the per-workflow SSE handler in `core/webserver`. Publishers call `publish(channel, event)` with `channel = activity:{workflow_execution_id}`; subscribers iterate `async for event in subscribe(channel)`. Best-effort delivery: a slow subscriber drops its oldest queued event rather than backpressuring the publisher. No event persistence — activity is in flight only.
+Bridges the activity-event producers (the WebSocket ingress in `core/agent_gateway` and the in-memory reviewer's direct publisher) and the per-workflow SSE handler. Publishers call `publish(channel, event)` with `channel = activity:{workflow_execution_id}`; subscribers iterate `async for event in subscribe(channel)`. Backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process reaches an SSE subscriber attached to a different web process. Fire-and-forget per Redis semantics — slow consumers do not backpressure publishers, and no event persistence.
 
 ## Public interface
 
 Exported from `app/core/sse_pubsub/__init__.py`:
 
-- `publish(channel, event)` — fan out to every subscriber on `channel`; returns the number reached.
-- `subscribe(channel)` — async iterator that yields each subsequent event published on `channel`. Subscriber registers on first iteration and unregisters when the iterator exits.
+- `publish(channel, event)` — fan out to every subscriber on `channel`; returns the Redis-reported delivery count (number of subscribers across the cluster).
+- `subscribe(channel)` — async iterator that yields each subsequent event published on `channel`. Subscriber registers a Redis subscription on first iteration and unregisters when the iterator exits.
 - `channel_for(workflow_execution_id)` — centralized name shape (`activity:{id}`) so publishers + subscribers agree.
-- `subscriber_count(channel)` — diagnostic; tests use it to assert demand-pull semantics.
-- `InMemoryPubsub` — class form for callers that want to construct their own bus (mostly tests).
+- `subscriber_count(channel)` — diagnostic; **local-process** subscriber count (Redis's `PUBSUB NUMSUB` is cluster-wide and not what callers want).
+- `RedisPubsub` — class form for callers that want to construct their own bus (mostly tests).
 - `get_pubsub()` — process-singleton accessor.
-- `_reset_for_tests()` — drop the singleton.
+- `_reset_for_tests()` — drop the singleton + close the held Redis client.
 
 ## Module architecture
 
-### Backends
+### Backend
 
-- **`InMemoryPubsub`** ships in Phase 8b foundations and is the only backend today. One `asyncio.Queue` per (channel, subscriber). Bounded buffer (default 256) per subscriber — when full, the head event is dropped before the new event is queued, so slow consumers can't induce unbounded memory growth.
-- **Redis-backed** — slots in behind the same module surface in the Phase 8b follow-on alongside the worker process. `settings.redis_url` flips the implementation.
+Redis-only. `settings.redis_url` is required at boot (see [core/config](core_config.md)). Client construction is lazy — importing the module or grabbing the singleton doesn't touch Redis, so tests that don't publish/subscribe don't need Redis to be reachable.
 
 ### Channel naming
 
-`activity:{workflow_execution_id}`. The publisher (`core/agent_gateway` WebSocket handler) constructs this from the inbound `activity_batch` message. The SSE handler in `web.py` (Phase 8b follow-on) constructs it from the route path. `channel_for()` is the single source of truth — neither side hard-codes the prefix.
+`activity:{workflow_execution_id}`. The publisher (`core/agent_gateway` WebSocket handler, or the reviewer's `_activity_publisher_for`) constructs this from the workflow execution id. The SSE handler in `web.py` constructs it from the route path. `channel_for()` is the single source of truth — neither side hard-codes the prefix.
 
 ### Persistence invariant
 
@@ -35,8 +34,8 @@ Exported from `app/core/sse_pubsub/__init__.py`:
 
 ## Data owned
 
-None. The module is transport.
+None. The module is transport — Redis is the substrate.
 
 ## How it's tested
 
-`test/test_service.py` covers: publish with no subscribers returns 0; fan-out delivers to every subscriber; subscriber removal after iterator exit; slow-consumer drops the oldest event (the bounded-buffer behavior); singleton identity.
+`test/test_service.py` covers: publish with no subscribers returns 0; fan-out delivers to every subscriber; subscriber bookkeeping balances on iterator exit; singleton identity. Tests use the `redis_or_skip` fixture from the root conftest so local dev workflows without Redis aren't blocked — when Redis is reachable, they hit real Redis with per-test unique channel names.

@@ -12,6 +12,10 @@ import pytest_asyncio
 # Set test env vars BEFORE any app imports so module-level `get_settings()` works.
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://yaaos:yaaos@localhost:5432/yaaos_test")
 os.environ.setdefault("YAAOS_ENCRYPTION_KEY", "vrGOcrqpNIMof1qsuwOEVYvgxo-03dCX8lfVXm_G4JI=")
+# Required by core/config; only tests that publish/subscribe actually
+# connect (lazy client). Tests that need a live Redis check reachability
+# themselves and skip if absent.
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 # YAAOS_ENV must be `test` for the suite — `get_engine()` switches to NullPool
 # whenever `is_non_prod` (dev or test), and the `oauth_test` plugin asserts on
 # this exact value to refuse loading outside the test env. The `backend-ci`
@@ -28,6 +32,38 @@ os.environ.setdefault("YAAOS_HEARTBEAT_INTERVAL_SECONDS", "1")
 def _quiet_pydantic_warnings() -> None:
     """Suppress noisy pydantic deprecation warnings during tests."""
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic.*")
+
+
+@pytest_asyncio.fixture(scope="session")
+async def _redis_reachable() -> bool:
+    """Probe `settings.redis_url` once per session. Tests that publish or
+    subscribe via `core/sse_pubsub` use `redis_or_skip` (below) to skip
+    cleanly when Redis is unavailable — local dev workflows without a
+    Redis container aren't blocked."""
+    from redis.asyncio import from_url  # noqa: PLC0415
+    from redis.exceptions import RedisError  # noqa: PLC0415
+
+    from app.core.config import get_settings  # noqa: PLC0415
+
+    try:
+        client = from_url(get_settings().redis_url, decode_responses=True)
+        try:
+            await client.ping()
+            return True
+        finally:
+            await client.aclose()
+    except (RedisError, OSError):
+        return False
+
+
+@pytest.fixture
+def redis_or_skip(_redis_reachable: bool) -> None:
+    """Function-scoped: skip the test if Redis isn't reachable.
+    `pytestmark = pytest.mark.usefixtures("redis_or_skip")` at the top of
+    a module marks every test in it as Redis-dependent.
+    """
+    if not _redis_reachable:
+        pytest.skip("Redis not reachable at settings.redis_url")
 
 
 @pytest.fixture(autouse=True)

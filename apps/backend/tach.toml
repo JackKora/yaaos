@@ -58,7 +58,7 @@ depends_on = ["app.core.config"]
 
 [[modules]]
 path = "app.core.sse_pubsub"
-depends_on = []
+depends_on = ["app.core.config"]
 
 [[modules]]
 path = "app.core.tasks"

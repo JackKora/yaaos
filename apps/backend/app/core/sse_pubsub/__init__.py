@@ -1,13 +1,12 @@
-"""core/sse_pubsub — pub/sub for ActivityEvent fanout.
+"""core/sse_pubsub — Redis-backed pub/sub for ActivityEvent fanout.
 
-Phase 8b foundations ships an in-memory backend that's adequate for
-single-instance backends + every test. The Redis-backed variant lands
-alongside the worker process in the Phase 8b follow-on (wires
-`settings.redis_url`). Channel name shape: `activity:{workflow_execution_id}`.
+Backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process
+reaches an SSE subscriber attached to a different web process. Channel
+name shape: `activity:{workflow_execution_id}`.
 """
 
 from app.core.sse_pubsub.service import (
-    InMemoryPubsub,
+    RedisPubsub,
     _reset_for_tests,
     channel_for,
     get_pubsub,
@@ -17,7 +16,7 @@ from app.core.sse_pubsub.service import (
 )
 
 __all__ = [
-    "InMemoryPubsub",
+    "RedisPubsub",
     "_reset_for_tests",
     "channel_for",
     "get_pubsub",
