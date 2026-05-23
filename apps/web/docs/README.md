@@ -9,7 +9,7 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 
 ## Module map
 
-4 core docs + 5 domain docs.
+4 core docs + the domain docs below.
 
 ### Core
 
@@ -25,9 +25,13 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 | Module | Responsibility |
 |---|---|
 | [domain_dashboard](domain_dashboard.md) | M06 landing — 4 stat cards + In-flight band + Needs-attention band, with the NotConfiguredBanner on top when the org isn't ready. |
-| [domain_tickets](domain_tickets.md) | M06 tickets list + (still-legacy) ticket detail. The detail page rebuild is Phase 6 of M06. |
+| [domain_tickets](domain_tickets.md) | M06 tickets list + ticket detail (header band, StageIndicator, Findings / Activity / HITL tabs). |
 | [domain_lessons](domain_lessons.md) | Per-repo lessons CRUD. |
 | [domain_notifications](domain_notifications.md) | M06 cross-org inbox page + sidebar bell popover. |
+| [domain_org_settings](domain_org_settings.md) | Tabbed org-settings shell (Auth, Members, VCS, Coding Agents, API Keys, MCP Proxy, Audit). |
+| [domain_auth](domain_auth.md) | Login page (email-first SSO-discover) + logout. |
+| [domain_account](domain_account.md) | `/user/details`, `/user/security`, `/user/messaging` — self-service profile + 2FA. |
+| [domain_orgs](domain_orgs.md) | Org picker (`/orgs`) + Members + Audit + SSO config — surfaces tied to a specific org's identity layer. |
 
 ## Directory shape
 
@@ -53,7 +57,7 @@ Under `apps/web/src/`: `core/` (api, sse, routing, layout, observability), `doma
 | Real-time | Native `EventSource` (SSE) |
 | Forms | React state + manual validation |
 | Styling | Tailwind, oklch color tokens |
-| Component primitives | hand-rolled in `shared/components/` |
+| Component primitives | shadcn-style copies in `shared/components/ui/` (Radix-backed) + composites in `shared/components/{layout,chrome}/` |
 | Lint / format | Biome |
 | Unit tests | Vitest |
 | Icons | lucide-react |

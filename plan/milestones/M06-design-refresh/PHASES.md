@@ -230,7 +230,7 @@ The 9 phases extend F1's table in [requirements.md § F1](requirements.md). Each
 
 **Definition of done:**
 
-- [ ] All 6 Tier-2 surfaces render against real backend data. (Notifications page + popover ✓; Lessons list redesign + Settings Auth/Members/Audit per E2a still pending.)
+- [x] All 6 Tier-2 surfaces render against real backend data. (Notifications page + popover; Lessons list, Settings Auth, Members, Audit all migrated to shadcn primitives.)
 - [x] Notifications module passes service tests (real Postgres, stub plugins).
 - [ ] SSE notification updates land in popover without page reload. (30s poll is the floor; SSE event-kind emission + subscribers wiring deferred — see DECISIONS.md notes.)
 - [x] Mark all read works (popover + page).
@@ -271,7 +271,7 @@ The 9 phases extend F1's table in [requirements.md § F1](requirements.md). Each
 - [x] Login SSO-discover flow works: typing an email shows correct provider button (github fallback today — D8.1).
 - [x] Org picker shows role badge + create-org modal works. (last_used_at column deferred per Open Question 3; alphabetical-by-slug is the M06 sort.)
 - [x] User Messaging route renders with placeholder copy.
-- [ ] `apps/web/docs/` per-page docs updated for every new surface. (Pending for Login + Org picker pages.)
+- [x] `apps/web/docs/` per-page docs updated for every new surface. (domain_auth.md, domain_account.md, domain_orgs.md added; README module map refreshed.)
 - [ ] axe-core passes everywhere. (Phase 1's existing spec covers the Dashboard; per-anchor axe deferred.)
 - [ ] Full `apps/e2e/bin/ci` passes. (Docker not available in the cron environment.)
 
