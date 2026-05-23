@@ -66,6 +66,18 @@
 - **Rejected:** keep `MEMBER` as an alias of `BUILDER` for backward-compat.
 - **Why:** CLAUDE.md is explicit ("no backward-compat shims"). The repo is small enough that mechanical rename + reformat is the right move; tests caught the one frontend `RANK` literal that was missed.
 
+### D2.8 — Place `/api/orgs/mine` + `/api/orgs/config-status` on the existing `orgs` router
+
+- **Picked:** add both endpoints to `apps/backend/app/domain/orgs/org_settings_web.py` (the already-registered `orgs` module at `/api/orgs`). `/mine` uses `public_route` + manual session cookie resolution; `/config-status` uses `require(Action.ORG_READ)`. `/api/orgs/mine` added to `PUBLIC_PATH_EXACT` in `core/auth/types.py`.
+- **Rejected:** create a separate `user_orgs_web.py` module with its own `RouteSpec(module_name="orgs_user", ...)`. The route registry enforces one-prefix-per-module, and two RouteSpecs both at `/api/orgs` collide.
+- **Why:** the registry already encodes the rule "one module per URL prefix"; piling endpoints onto the existing module is the path of least resistance.
+
+### D2.9 — Coding-agent readiness inferred from `anthropic_key_set`
+
+- **Picked:** in `/api/orgs/config-status`, treat the existing `anthropic_key_set` contributor as a proxy for "coding agent configured" (do not surface `coding_agent` separately in `missing`).
+- **Rejected:** add a third onboarding contributor for "≥1 coding agent installed" and check `OrgCodingAgentRow` directly.
+- **Why:** today the only coding-agent plugin is Claude Code and its install flow co-provisions an Anthropic key, so the two signals are perfectly correlated. When a second coding-agent plugin ships, we add the contributor then; no code today is mis-served by this aggregation.
+
 ### D2.7 — SPA route renames only (byok / integrations / account); backend paths kept
 
 - **Picked:** rename SPA-facing routes only — `/settings/byok` → `/settings/api-keys`, `/settings/integrations` → `/settings/mcp-proxy`, `/account/*` → `/user/*`. Backend `/api/byok/*` and `/api/integrations/*` paths are unchanged. UI labels: "BYOK" → "API Keys", "Integrations" → "MCP Proxy"; nav/tab ids likewise.

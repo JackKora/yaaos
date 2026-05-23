@@ -68,7 +68,15 @@ PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
 # `/api/memberships/accept` lives on the public allowlist because acceptance
 # must work for users who have a session but no membership yet — the signed
 # invitation token is the authorization, not an org membership.
-PUBLIC_PATH_EXACT: frozenset[str] = frozenset({"/api/health", "/api/memberships/accept"})
+PUBLIC_PATH_EXACT: frozenset[str] = frozenset(
+    {
+        "/api/health",
+        "/api/memberships/accept",
+        # M06 — user-scoped (cross-org) listing. Session cookie identifies the
+        # user; no `X-Org-Slug` because the endpoint enumerates the user's orgs.
+        "/api/orgs/mine",
+    }
+)
 
 
 # Paths the auth middleware enforces on. M02 routes opt in by adding their
