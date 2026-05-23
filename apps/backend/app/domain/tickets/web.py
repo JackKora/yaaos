@@ -134,6 +134,59 @@ async def list_(
     }
 
 
+@router.get("/{ticket_id}/hitl/history")
+async def hitl_history(ticket_id: UUID) -> list[dict[str, Any]]:
+    """List past HITL exchanges (prompt + response + timestamps) for the
+    ticket per E2a.4 HITL tab "History" subsection.
+
+    Joins `pending_human_decisions` against the ticket's
+    `workflow_executions` rows. Newest exchange first.
+    """
+    from sqlalchemy import desc as _desc  # noqa: PLC0415
+    from sqlalchemy import select as _select  # noqa: PLC0415
+
+    from app.core.database import session as _db_session  # noqa: PLC0415
+    from app.core.workflow.models import (  # noqa: PLC0415
+        PendingHumanDecisionRow,
+        WorkflowExecutionRow,
+    )
+
+    org_id = _org()
+    try:
+        await get(ticket_id, org_id=org_id)
+    except TicketNotFoundError:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    async with _db_session() as s:
+        wfx_ids_q = _select(WorkflowExecutionRow.id).where(WorkflowExecutionRow.ticket_id == ticket_id)
+        wfx_ids = (await s.execute(wfx_ids_q)).scalars().all()
+        if not wfx_ids:
+            return []
+        rows = (
+            (
+                await s.execute(
+                    _select(PendingHumanDecisionRow)
+                    .where(PendingHumanDecisionRow.workflow_execution_id.in_(wfx_ids))
+                    .order_by(_desc(PendingHumanDecisionRow.created_at))
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    return [
+        {
+            "id": str(r.id),
+            "workflow_execution_id": str(r.workflow_execution_id),
+            "question_payload": r.question_payload,
+            "resolution_payload": r.resolution_payload,
+            "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
 @router.get("/{ticket_id}")
 async def detail(ticket_id: UUID) -> Ticket:
     try:

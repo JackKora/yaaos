@@ -122,7 +122,7 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.cor
 
 [[modules]]
 path = "app.domain.tickets"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.core.events", "app.core.webserver", "app.core.workspace", "app.domain.pull_requests", "app.domain.reviewer", "app.domain.sessions"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.core.events", "app.core.webserver", "app.core.workflow", "app.core.workspace", "app.domain.pull_requests", "app.domain.reviewer", "app.domain.sessions"]
 
 [[modules]]
 path = "app.domain.vcs"
