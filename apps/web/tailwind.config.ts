@@ -2,17 +2,14 @@ import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 
 /**
- * Tailwind config.
+ * Tailwind config — shadcn-named semantic roles only. Yaaos-named transitional
+ * tokens were removed at the end of M06 Phase 9; the underlying oklch CSS
+ * variables live in `src/styles.css`.
  *
- * Two token vocabularies share the same oklch CSS variables (see `src/styles.css`):
- *   - yaaos-named (`bg`, `surface`, `text-2`, …) — legacy, removed in Phase 9.
- *   - shadcn-named (`background`, `foreground`, `primary`, …) — what `src/shared/components/ui/*` consumes.
- *
- * Anything new should use the shadcn-named vocabulary.
- *
- * Note: shadcn's sidebar primitive expects `hsl(var(--sidebar-*))`; we store oklch in
- * those vars and tailwind references them with `var(--sidebar-*)` directly. The
- * primitive's class strings (`bg-sidebar`, etc.) resolve against the mappings below.
+ * Note: shadcn's sidebar primitive expects `hsl(var(--sidebar-*))`; we store
+ * oklch in those vars and tailwind references them with `var(--sidebar-*)`
+ * directly. The primitive's class strings (`bg-sidebar`, etc.) resolve against
+ * the mappings below.
  */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -20,25 +17,6 @@ export default {
   theme: {
     extend: {
       colors: {
-        /* yaaos-named (transitional) */
-        bg: "var(--bg)",
-        "bg-2": "var(--bg-2)",
-        surface: "var(--surface)",
-        "surface-2": "var(--surface-2)",
-        "surface-3": "var(--surface-3)",
-        hover: "var(--hover)",
-        "border-soft": "var(--border-soft)",
-        "border-hard": "var(--border-hard)",
-        text: "var(--text)",
-        "text-2": "var(--text-2)",
-        "text-3": "var(--text-3)",
-        "text-4": "var(--text-4)",
-        "accent-2": "var(--accent-2)",
-        "accent-dim": "var(--accent-dim)",
-        "accent-bg": "var(--accent-bg)",
-        "accent-border": "var(--accent-border)",
-        danger: "var(--danger)",
-
         /* shadcn-named semantic roles */
         background: "var(--background)",
         foreground: "var(--foreground)",

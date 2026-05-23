@@ -130,13 +130,13 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col bg-bg-2 border-r border-border-soft shrink-0",
+        "flex flex-col bg-card border-r border-border shrink-0",
         pinned ? "w-[220px]" : "w-[56px]",
       )}
       data-testid="sidebar"
       data-pinned={pinned}
     >
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-border-soft h-[56px]">
+      <div className="flex items-center gap-2 px-3 py-3 border-b border-border h-[56px]">
         <a href="/" className="flex items-center gap-2" aria-label="yaaos home">
           {pinned ? (
             <img src="/logos/yaaos-lockup-dark.svg" alt="yaaos" className="h-5 dark:block hidden" />
@@ -187,17 +187,17 @@ export function Sidebar() {
       </nav>
 
       {/* User-scoped zone — cross-org. */}
-      <div className="px-1.5 py-2 border-t border-border-soft">
+      <div className="px-1.5 py-2 border-t border-border">
         <NotificationsBell expanded={pinned} />
       </div>
 
       <UserCard expanded={pinned} />
 
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-border-soft">
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-border">
         {pinned && (
           <>
             <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            <span className="mono text-text-4 text-[10.5px] flex-1">v0.0.1</span>
+            <span className="mono text-muted-foreground text-[10.5px] flex-1">v0.0.1</span>
           </>
         )}
         <button
@@ -205,7 +205,7 @@ export function Sidebar() {
           onClick={togglePin}
           data-testid="sidebar-pin"
           className={cn(
-            "rounded p-1 text-text-3 hover:bg-hover hover:text-text",
+            "rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground",
             !pinned && "mx-auto",
           )}
           title={pinned ? "Unpin (collapse to rail)" : "Pin (always show)"}
@@ -237,8 +237,8 @@ function renderLink(item: NavLink, ctx: RenderContext, depth: 0 | 1 = 0) {
         "flex items-center gap-2.5 px-2 py-1.5 rounded text-[12.5px] transition-colors",
         depth === 1 && "ml-5",
         isActive
-          ? "bg-accent-bg text-text border-l-2 border-accent -ml-[2px] pl-[10px]"
-          : "text-text-2 hover:bg-hover hover:text-text",
+          ? "bg-accent text-foreground border-l-2 border-accent -ml-[2px] pl-[10px]"
+          : "text-foreground hover:bg-accent hover:text-foreground",
       )}
       title={ctx.pinned ? undefined : item.label}
     >
@@ -264,7 +264,9 @@ function renderGroup(
         data-collapsed={ctx.collapsed || undefined}
         className={cn(
           "flex w-full items-center gap-2.5 px-2 py-1.5 rounded text-[12.5px] transition-colors",
-          hasActiveChild ? "text-text bg-accent-bg" : "text-text-2 hover:bg-hover hover:text-text",
+          hasActiveChild
+            ? "text-foreground bg-accent"
+            : "text-foreground hover:bg-accent hover:text-foreground",
         )}
         title={ctx.pinned ? undefined : item.label}
       >
@@ -273,7 +275,7 @@ function renderGroup(
         {ctx.pinned && (
           <ChevronRight
             className={cn(
-              "w-3.5 h-3.5 shrink-0 text-text-4 transition-transform",
+              "w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform",
               !ctx.collapsed && "rotate-90",
             )}
           />

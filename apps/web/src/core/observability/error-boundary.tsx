@@ -18,9 +18,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
   override render(): React.ReactNode {
     if (this.state.error) {
       return (
-        <div className="p-8 text-text">
+        <div className="p-8 text-foreground">
           <h1 className="mb-2 text-lg font-semibold">Something went wrong.</h1>
-          <p className="text-text-3 text-sm">{this.state.error.message}</p>
+          <p className="text-muted-foreground text-sm">{this.state.error.message}</p>
         </div>
       );
     }

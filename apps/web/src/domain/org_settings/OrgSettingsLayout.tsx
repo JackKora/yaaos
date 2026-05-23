@@ -42,7 +42,7 @@ export function OrgSettingsLayout({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-end gap-1 border-b border-border-soft bg-bg-2 px-4 pt-3">
+      <div className="flex items-end gap-1 border-b border-border bg-card px-4 pt-3">
         <h1 className="text-[18px] font-semibold tracking-tight mr-4 mb-2">Org Settings</h1>
         <nav className="flex gap-1" data-testid="org-settings-tabs">
           {visibleTabs.map((t) => {
@@ -56,8 +56,8 @@ export function OrgSettingsLayout({
                 className={cn(
                   "rounded-t border-b-2 px-3 py-1.5 text-[12.5px] transition-colors",
                   isActive
-                    ? "border-accent text-text bg-bg"
-                    : "border-transparent text-text-3 hover:text-text hover:bg-hover",
+                    ? "border-accent text-foreground bg-background"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent",
                 )}
               >
                 {t.label}

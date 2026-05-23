@@ -43,18 +43,18 @@ export function UserCard({ expanded }: { expanded: boolean }) {
   };
 
   return (
-    <div ref={ref} className="relative border-t border-border-soft">
+    <div ref={ref} className="relative border-t border-border">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         data-testid="user-card-button"
         className={cn(
-          "flex w-full items-center gap-2 px-3 py-2 text-left text-text-2 hover:bg-hover hover:text-text",
+          "flex w-full items-center gap-2 px-3 py-2 text-left text-foreground hover:bg-accent hover:text-foreground",
           !expanded && "justify-center",
         )}
         title={expanded ? undefined : data.user.display_name || ""}
       >
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-bg text-[10.5px] font-semibold text-text">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent text-[10.5px] font-semibold text-foreground">
           {initials}
         </span>
         {expanded && (
@@ -63,29 +63,29 @@ export function UserCard({ expanded }: { expanded: boolean }) {
               {data.user.display_name || data.user.primary_email}
             </span>
             {currentOrg && (
-              <span className="truncate font-mono text-[10.5px] text-text-4">
+              <span className="truncate font-mono text-[10.5px] text-muted-foreground">
                 @{currentOrg.handle}
               </span>
             )}
           </div>
         )}
-        {expanded && <ChevronUp className="ml-auto h-3.5 w-3.5 shrink-0 text-text-4" />}
+        {expanded && <ChevronUp className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       </button>
       {open && (
         <div
           data-testid="user-card-popover"
-          className="absolute bottom-full left-2 right-2 mb-1 rounded border border-border-soft bg-bg-2 py-1 shadow-lg"
+          className="absolute bottom-full left-2 right-2 mb-1 rounded border border-border bg-card py-1 shadow-lg"
         >
           <a
             href="/user/details"
-            className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-text-2 hover:bg-hover hover:text-text"
+            className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
             data-testid="user-nav-details"
           >
             <UserIcon className="h-3.5 w-3.5" /> Details
           </a>
           <a
             href="/user/security"
-            className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-text-2 hover:bg-hover hover:text-text"
+            className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
             data-testid="user-nav-security"
           >
             <Lock className="h-3.5 w-3.5" /> Security
@@ -94,7 +94,7 @@ export function UserCard({ expanded }: { expanded: boolean }) {
             type="button"
             onClick={onLogoff}
             data-testid="user-nav-logoff"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-text-2 hover:bg-hover hover:text-text"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
           >
             <LogOut className="h-3.5 w-3.5" /> Log off
           </button>

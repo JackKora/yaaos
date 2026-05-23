@@ -263,7 +263,7 @@ function AnthropicKeyCard() {
             type={reveal ? "text" : "password"}
             placeholder={configured ? "•••• last 4 only — replace to update" : "sk-ant-..."}
             data-testid="cc-key-input"
-            className="flex-1 rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+            className="flex-1 rounded border border-border bg-card px-2 py-1 text-sm"
           />
           <Button data-testid="cc-key-reveal" onClick={() => setReveal((v) => !v)}>
             {reveal ? "Hide" : "Show"}
@@ -387,7 +387,7 @@ function SubAgentsCard({
             return (
               <div
                 key={`${idx}-${a.name}`}
-                className="rounded border border-border-soft p-3"
+                className="rounded border border-border p-3"
                 data-testid={`cc-agent-${idx}`}
               >
                 <AgentEditor
@@ -454,7 +454,7 @@ function AgentEditor({
           onChange={(e) => onChange({ ...agent, name: e.target.value })}
           data-testid={`${testIdPrefix}-name`}
           maxLength={64}
-          className="flex-1 rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm disabled:opacity-60"
+          className="flex-1 rounded border border-border bg-card px-2 py-1 text-sm disabled:opacity-60"
         />
         {isOverridden("name") && nameEditable && (
           <>
@@ -473,7 +473,7 @@ function AgentEditor({
               type="button"
               onClick={() => setExpanded(true)}
               data-testid={`${testIdPrefix}-prompt-expand`}
-              className="text-muted-foreground w-full truncate rounded border border-border-soft bg-bg-2 px-2 py-1 text-left text-xs hover:bg-hover"
+              className="text-muted-foreground w-full truncate rounded border border-border bg-card px-2 py-1 text-left text-xs hover:bg-accent"
             >
               {(agent.prompt || "").slice(0, 120) || "(empty)"}
             </button>
@@ -483,7 +483,7 @@ function AgentEditor({
               onChange={(e) => onChange({ ...agent, prompt: e.target.value })}
               data-testid={`${testIdPrefix}-prompt`}
               rows={8}
-              className="w-full rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+              className="w-full rounded border border-border bg-card px-2 py-1 text-sm"
             />
           )}
         </div>
@@ -525,7 +525,7 @@ function AgentEditor({
               data-testid={`${testIdPrefix}-system-prompt`}
               rows={4}
               placeholder="Override the built-in system prompt for this agent…"
-              className="w-full rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+              className="w-full rounded border border-border bg-card px-2 py-1 text-sm"
             />
           )}
         </div>
@@ -536,7 +536,7 @@ function AgentEditor({
           value={agent.model}
           onChange={(e) => onChange({ ...agent, model: e.target.value })}
           data-testid={`${testIdPrefix}-model`}
-          className="flex-1 rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+          className="flex-1 rounded border border-border bg-card px-2 py-1 text-sm"
         >
           {defaults.models.map((m) => (
             <option key={m} value={m}>
@@ -549,7 +549,7 @@ function AgentEditor({
           value={agent.version}
           onChange={(e) => onChange({ ...agent, version: e.target.value })}
           data-testid={`${testIdPrefix}-version`}
-          className="rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+          className="rounded border border-border bg-card px-2 py-1 text-sm"
         >
           {defaults.versions.map((v) => (
             <option key={v} value={v}>
@@ -562,7 +562,7 @@ function AgentEditor({
           value={agent.effort}
           onChange={(e) => onChange({ ...agent, effort: e.target.value })}
           data-testid={`${testIdPrefix}-effort`}
-          className="rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+          className="rounded border border-border bg-card px-2 py-1 text-sm"
         >
           {defaults.efforts.map((eff) => (
             <option key={eff} value={eff}>
