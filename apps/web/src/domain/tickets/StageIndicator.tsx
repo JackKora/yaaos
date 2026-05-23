@@ -61,7 +61,6 @@ export function StageIndicator({ stages }: { stages: TicketStage[] | undefined }
         const Icon = meta.icon;
         const spin = stage.state === "running" || stage.state === "awaiting_human";
         return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: stages have no stable client-side id beyond order
           <div key={`${stage.workflow_execution_id}-${i}`} className="flex items-center gap-2">
             {i > 0 && (
               <span className="text-muted-foreground" aria-hidden="true">
