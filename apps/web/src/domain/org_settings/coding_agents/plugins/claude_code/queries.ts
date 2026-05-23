@@ -8,6 +8,10 @@ export interface AgentConfig {
   version: string;
   effort: string;
   updated_at: string;
+  // M06 Phase 4 — system-prompt override toggle per E2a.2. Both optional
+  // so existing settings rows stay compatible.
+  use_default_system_prompt?: boolean;
+  system_prompt?: string | null;
 }
 
 export interface ClaudeCodeDefaults {

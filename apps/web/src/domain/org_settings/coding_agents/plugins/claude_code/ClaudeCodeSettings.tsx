@@ -91,6 +91,7 @@ function Editor({
   return (
     <div className="flex flex-col gap-4">
       <BrokenIntegrationsNotice />
+      <BuilderReadOnlyBanner />
       <Card>
         <CardHeader>
           <h2 className="text-[16px] font-semibold">Claude Code</h2>
@@ -134,6 +135,27 @@ function Editor({
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+/** M06 Phase 4: read-only banner for Builders. Per A1, Builders see Coding
+ *  Agent settings (read access on the listing endpoint) but can't mutate
+ *  org-wide config — the server-side `require(Action.CODING_AGENT_WRITE)`
+ *  is the source of truth; the banner is UI affordance. */
+function BuilderReadOnlyBanner() {
+  const { data } = useCurrentUser();
+  if (!data) return null;
+  const currentOrg = data.orgs.find((o) => o.slug === data.current_org_slug);
+  if (!currentOrg) return null;
+  if (currentOrg.role !== "builder") return null;
+  return (
+    <div
+      className="rounded border border-info/40 bg-info/10 px-4 py-2 text-sm"
+      data-testid="cc-builder-readonly"
+    >
+      <span className="font-semibold">View-only.</span> Builders see Coding Agent settings but can't
+      change them. Ask an Admin in this org to update model, sub-agents, or system prompts.
     </div>
   );
 }
@@ -425,6 +447,40 @@ function AgentEditor({
             </Button>
           </div>
         )}
+      </div>
+      {/* M06 Phase 4: system-prompt override per E2a.2. Toggle disables the
+          custom textarea; when off, the plugin uses its built-in system
+          prompt for this agent. */}
+      <div className="flex items-start gap-2">
+        <span className="text-text-3 w-20 pt-1.5 text-xs">System prompt</span>
+        <div className="flex-1 flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={agent.use_default_system_prompt ?? true}
+              onChange={(e) =>
+                onChange({
+                  ...agent,
+                  use_default_system_prompt: e.target.checked,
+                  // Clear stale override when toggling back to default.
+                  system_prompt: e.target.checked ? null : (agent.system_prompt ?? ""),
+                })
+              }
+              data-testid={`${testIdPrefix}-use-default-system-prompt`}
+            />
+            Use default system prompt
+          </label>
+          {!(agent.use_default_system_prompt ?? true) && (
+            <textarea
+              value={agent.system_prompt ?? ""}
+              onChange={(e) => onChange({ ...agent, system_prompt: e.target.value })}
+              data-testid={`${testIdPrefix}-system-prompt`}
+              rows={4}
+              placeholder="Override the built-in system prompt for this agent…"
+              className="w-full rounded border border-border-soft bg-bg-2 px-2 py-1 text-sm"
+            />
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <span className="text-text-3 w-20 text-xs">Model</span>
