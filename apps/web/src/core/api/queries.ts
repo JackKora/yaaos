@@ -304,6 +304,70 @@ export function useThreadForFinding(finding_id: string | null) {
   });
 }
 
+/** M06: Builder confirms a finding ("yeah I'll fix this"). */
+export function useAckFinding(ticket_id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (finding_id: string) =>
+      apiFetch<{ finding_id: string; state: string }>(`/api/reviewer/findings/${finding_id}/ack`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["reviewer", "findings", ticket_id] });
+    },
+  });
+}
+
+/** M06: Builder rejects a finding with a reason. */
+export function usePushBackFinding(ticket_id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { finding_id: string; reason: string }) =>
+      apiFetch<{ finding_id: string; state: string }>(
+        `/api/reviewer/findings/${args.finding_id}/push-back`,
+        { method: "POST", body: JSON.stringify({ reason: args.reason }) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["reviewer", "findings", ticket_id] });
+    },
+  });
+}
+
+/** M06: past HITL exchanges on a ticket — prompt + resolution + timestamps. */
+export interface HitlHistoryEntry {
+  id: string;
+  workflow_execution_id: string;
+  question_payload: Record<string, unknown>;
+  resolution_payload: Record<string, unknown> | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export function useHitlHistory(ticket_id: string) {
+  return useQuery<HitlHistoryEntry[]>({
+    queryKey: ["tickets", ticket_id, "hitl-history"],
+    queryFn: () => apiFetch<HitlHistoryEntry[]>(`/api/tickets/${ticket_id}/hitl/history`),
+    enabled: !!ticket_id,
+  });
+}
+
+/** M06: submit a HITL response. The body shape is prompt-discriminated;
+ *  callers pass the dict the HITL renderer produced. */
+export function useHitlRespond(ticket_id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (response: Record<string, unknown>) =>
+      apiFetch<{ stage: string; next_state: string }>(`/api/tickets/${ticket_id}/hitl/respond`, {
+        method: "POST",
+        body: JSON.stringify(response),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tickets", ticket_id] });
+      qc.invalidateQueries({ queryKey: ["tickets", ticket_id, "hitl-history"] });
+    },
+  });
+}
+
 /**
  * `@yaaos full review` from the UI — schedules a full review.
  * Reuses the existing /api/reviewer/rereview endpoint (trigger_reason="ui_button"
