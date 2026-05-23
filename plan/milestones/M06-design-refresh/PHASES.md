@@ -131,14 +131,14 @@ The 9 phases extend F1's table in [requirements.md § F1](requirements.md). Each
 
 **Definition of done:**
 
-- [ ] Page renders against `/api/coding-agents/:plugin_id` with new schema.
-- [ ] Add / edit / remove sub-agents works (≤8 enforced; uniqueness validated).
-- [ ] Save / Discard buttons sticky on scroll; dirty-state detection accurate.
-- [ ] Builders see read-only state with the role-banner.
-- [ ] Uninstall in Danger zone fires destructive confirm.
-- [ ] `apps/web/docs/domain_org_settings.md` updated.
-- [ ] axe-core passes.
-- [ ] CI + E2E green.
+- [x] Page renders against `/api/coding-agents/:plugin_id` with new schema (M06 fields are additive optional; legacy rows still parse — D4.1).
+- [x] Add / edit / remove sub-agents works (≤8 enforced; uniqueness validated).
+- [ ] Save / Discard buttons sticky on scroll; dirty-state detection accurate. (Save button is inline today; sticky-footer polish deferred.)
+- [x] Builders see read-only state with the role-banner.
+- [x] Uninstall in Danger zone fires destructive confirm (ConfirmModal with destructive tone).
+- [x] `apps/web/docs/domain_org_settings.md` updated.
+- [ ] axe-core passes on the new page. (Phase 1's existing spec covers; per-anchor axe pending.)
+- [x] CI green (backend + web). E2E deferred.
 
 ---
 

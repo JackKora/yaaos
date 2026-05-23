@@ -1,0 +1,65 @@
+# domain/org_settings
+
+> Org-scoped settings — one route per concern. Each page mounts the `OrgSettingsLayout` shell so the side-tab navigation stays consistent.
+
+## Purpose
+
+Per-org configuration the SPA surfaces under `/orgs/$slug/settings/*`. The pages share an `OrgSettingsLayout` shell + per-tab content. The Coding Agent detail (M06 Phase 4 anchor) is the most complex of the bunch; the rest are linear settings forms.
+
+## Public interface
+
+Each page is mounted by `core/routing` at its respective path:
+
+| Page | Route | File |
+|---|---|---|
+| Auth | `/orgs/$slug/settings/auth` | `AuthSettingsPage.tsx` |
+| Members | `/orgs/$slug/settings/members` | `MembersSettingsPage.tsx` |
+| Audit | `/orgs/$slug/settings/audit` | `AuditSettingsPage.tsx` |
+| VCS | `/orgs/$slug/settings/vcs` | `vcs/VcsSettingsPage.tsx` |
+| Coding Agents (list) | `/orgs/$slug/settings/coding-agents` | `coding_agents/CodingAgentsSettingsPage.tsx` |
+| Coding Agent (detail) | `/orgs/$slug/settings/coding-agents/$pluginId` | `coding_agents/CodingAgentSettingsPage.tsx` |
+| API Keys | `/orgs/$slug/settings/api-keys` | `byok/BYOKSettingsPage.tsx` |
+| MCP Proxy | `/orgs/$slug/settings/mcp-proxy` | `integrations/IntegrationsSettingsPage.tsx` |
+
+`OrgSettingsLayout` renders the left tab strip + the page body slot; each page passes `active=…` so the matching tab highlights.
+
+## Coding Agent detail — M06 Phase 4 anchor
+
+`coding_agents/CodingAgentSettingsPage.tsx` dispatches to a per-plugin component registered via `coding_agents/plugin_registry.ts`. Today `claude_code` is the only registered plugin; future coding agents register here.
+
+`coding_agents/plugins/claude_code/ClaudeCodeSettings.tsx` is the M06 anchor implementation:
+
+### Composition
+
+1. **`BrokenIntegrationsNotice`** — amber banner when the org has any MCP credential with `last_refresh_status="failed"`. Sourced from `/api/auth/me`'s `broken_integrations`.
+2. **`BuilderReadOnlyBanner`** — info banner for Builder-role users. UI affordance only; the server-side `require(Action.CODING_AGENT_WRITE)` enforcement is the truth.
+3. **Architecture description card** — one-paragraph static explainer.
+4. **`AnthropicKeyCard`** — BYOK provider=anthropic. Reveal/save/test/clear via the four mutations in `coding_agents/plugins/claude_code/queries.ts`.
+5. **`OrchestratorCard`** — bare `AgentEditor` for the orchestrator. Inline "overridden" badges + Reset buttons when any field differs from the plugin defaults from `/api/claude_code/defaults`.
+6. **`SubAgentsCard`** — repeatable `AgentEditor` rows (1..8) with Add / Remove (last-protection). Inline duplicate-name validation.
+7. **Save button** — replaces the entire settings JSONB in one PATCH; disabled when there's a duplicate sub-agent name or the count is out of range.
+8. **`DangerZone`** — destructive `ConfirmModal` flow that fires `useUninstallCodingAgent`.
+
+### Per-agent M06 fields
+
+`AgentEditor` exposes all four M06 schema additions from `apps/backend/app/plugins/claude_code/settings_schema.py` (b36c824):
+
+- `name`, `prompt`, `model`, `version`, `effort` — legacy fields.
+- `use_default_system_prompt` (checkbox, default true) — when toggled off, reveals…
+- `system_prompt` (textarea) — overrides the plugin's built-in system prompt for this agent.
+
+Toggling the checkbox back to default clears any stale `system_prompt` override so the wire payload stays clean.
+
+`mcp_proxy_ids` lives on `ClaudeCodeSettings` (not the per-agent level); the SPA picker for it fits inside the MCP Proxy list page (E2a.13) that lands in Phase 8 — until then the field round-trips through the form unchanged.
+
+## Data owned
+
+None. Each page reads through `core/api` query hooks; mutations target the existing org-settings endpoints (`/api/coding-agents`, `/api/byok`, `/api/integrations`, `/api/orgs`, `/api/memberships`, `/api/audit`).
+
+## How it's tested
+
+- `coding_agents/test/coding_agents.test.tsx` — the list page covering install / uninstall confirm.
+- `coding_agents/test/plugin_registry.test.tsx` — dispatch via `getPluginSettingsComponent`.
+- `byok/test/byok.test.tsx`, `integrations/test/integrations.test.tsx`, `vcs/test/vcs.test.tsx` — the per-page settings forms.
+- `test/layout.test.tsx` — tab visibility per role (admin sees all six; builder sees Members only).
+- The Coding Agent detail page is exercised by the PR-review e2e (which traverses the full settings → review pipeline) rather than a dedicated detail-page Vitest.
