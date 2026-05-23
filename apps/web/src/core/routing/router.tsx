@@ -208,34 +208,6 @@ const orgSettingsIntegrationsRoute = createRoute({
   component: IntegrationsSettingsPage,
 });
 
-// Legacy aliases — M01-era links + e2e specs target `/dashboard`,
-// `/tickets`, `/lessons`, `/settings`. Render the same components directly
-// (no auth probe) so M01 flows keep working. M02 flows go through
-// `/orgs/$slug/...`.
-const legacyDashboardRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/dashboard",
-  component: DashboardPage,
-});
-
-const legacyTicketsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tickets",
-  component: TicketsPage,
-});
-
-const legacyTicketDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tickets/$ticketId",
-  component: TicketDetailPage,
-});
-
-const legacyLessonsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/lessons",
-  component: LessonsPage,
-});
-
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -245,10 +217,6 @@ const routeTree = rootRoute.addChildren([
   userMessagingRoute,
   notificationsRoute,
   orgsPickerRoute,
-  legacyDashboardRoute,
-  legacyTicketsRoute,
-  legacyTicketDetailRoute,
-  legacyLessonsRoute,
   orgScopeRoute.addChildren([
     orgIndexRoute,
     orgDashboardRoute,
