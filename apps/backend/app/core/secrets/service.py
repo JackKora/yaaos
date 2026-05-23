@@ -21,7 +21,8 @@ class SecretsDecryptError(ValueError):
 
 def _fernet() -> Fernet:
     s = get_settings()
-    key = s.yaaos_totp_master_key or s.yaaos_encryption_key
+    totp_key = s.yaaos_totp_master_key.get_secret_value()
+    key = totp_key or s.yaaos_encryption_key.get_secret_value()
     return Fernet(key.encode())
 
 

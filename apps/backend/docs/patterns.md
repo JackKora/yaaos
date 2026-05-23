@@ -130,13 +130,19 @@ Rules:
 
 Alembic CLI is only used for `alembic revision --autogenerate -m "..."`. Direct `alembic upgrade` is forbidden.
 
-## Durable tasks via `core/tasks` + `core/outbox`
+## Durable tasks via `core/tasks`
 
 Use [`core/tasks`](core_tasks.md) when work must survive backend restarts, has retry policy, or participates in a workflow. Use [`core/observability.spawn()`](core_observability.md) for fire-and-forget request-scoped background work without durability needs.
 
-`@task` registers a body; `enqueue(task_ref, args, *, session)` writes a `taskiq_enqueue` row to `outbox_entries` in the caller's session. The drain (`apps/backend/bin/worker`, Phase 1+) pushes outbox rows to Redis after commit. The atomic-in-session contract: task is durable iff the caller's transaction commits.
+`@task` registers a body; `enqueue(task_ref, args, *, session)` writes a `taskiq_enqueue` row to `outbox_entries` in the caller's session. The drain (in `apps/backend/bin/worker`) pushes outbox rows to Redis after commit. The atomic-in-session contract: task is durable iff the caller's transaction commits. The outbox table is private to `core/tasks` — domain modules never import it directly.
 
 Task bodies must be idempotent — a drain crash between dispatch and `dispatched_at` stamp can redispatch. Bodies look up state from DB (don't carry "do this once" semantics in the args).
+
+## Secrets
+
+Every sensitive value crosses module boundaries as Pydantic `SecretStr`: encryption keys, OAuth client secrets, TOTP master key, session tokens, invitation tokens, SMTP password, third-party API keys (Braintrust, Anthropic via BYOK), GitHub App private keys. `SecretStr` renders as `'**********'` in `repr`, `str`, `model_dump`, and `model_dump_json` so logs / tracebacks / audit payloads never carry plaintext.
+
+Call `.get_secret_value()` only at the byte boundary — Fernet construction, JWT sign, HTTP `Authorization` header, subprocess argv, broker payload heading out the door. Never put a raw secret into: a log call, a Pydantic `model_dump` output, an exception message, an outbox payload, an audit-log entry, or an SSE event. The config layer is covered today; new sensitive request-body fields should follow the same pattern.
 
 ## WorkflowCommand discipline
 

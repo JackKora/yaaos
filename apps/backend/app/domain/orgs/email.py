@@ -53,7 +53,7 @@ def _send_blocking(msg: EmailMessage) -> None:
     )
     try:
         if s.smtp_username:
-            smtp.login(s.smtp_username, s.smtp_password)
+            smtp.login(s.smtp_username, s.smtp_password.get_secret_value())
         smtp.send_message(msg)
     finally:
         smtp.quit()

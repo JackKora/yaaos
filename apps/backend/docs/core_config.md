@@ -31,6 +31,10 @@ Optional, with defaults:
 - `github_api_base_url` (`https://api.github.com`; overridden by e2e stack to `apps/fake-github`).
 - Time controls: `yaaos_review_debounce_seconds` (30), `yaaos_reaper_interval_seconds` (30), `yaaos_heartbeat_interval_seconds` (10).
 
+### Secret fields
+
+Every sensitive field — encryption keys, OAuth client secrets, TOTP master key, invitation-token secret, SMTP password, Braintrust API key — is typed as Pydantic `SecretStr`. `repr(settings)` and `settings.model_dump()` both render these as `'**********'` so logs, exception tracebacks, and audit dumps never leak the plaintext. Call `.get_secret_value()` at the byte boundary (Fernet construction, JWT sign, HTTP Authorization header). See [patterns.md § Secrets](patterns.md).
+
 ### `.env` file precedence
 
 `SettingsConfigDict` reads, in order: `.env`, `.env.local`, `.env.dev`, `.env.dev.local`. Later overrides earlier; process env overrides everything. `extra="ignore"` so unknown vars don't error.
@@ -50,4 +54,4 @@ None. Read-only and stateless.
 
 ## How it's tested
 
-`app/core/config/test/` — integration tests for env parsing and defaults. Standard pattern: `monkeypatch.setenv(...)` then `get_settings.cache_clear()`.
+`app/core/config/test/` — integration tests for env parsing and defaults. Standard pattern: `monkeypatch.setenv(...)` then `get_settings.cache_clear()`. `test_secret_redaction.py` asserts every sensitive field is `SecretStr` and verifies `repr`/`model_dump`/`model_dump_json` redact plaintext.

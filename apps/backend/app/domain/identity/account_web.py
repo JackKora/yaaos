@@ -213,7 +213,9 @@ def _verify_state_serializer():
 
     from app.core.config import get_settings  # noqa: PLC0415
 
-    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret, salt="yaaos-github-verify")
+    return URLSafeTimedSerializer(
+        get_settings().yaaos_oauth_state_secret.get_secret_value(), salt="yaaos-github-verify"
+    )
 
 
 _VERIFY_STATE_MAX_AGE_SECONDS = 600

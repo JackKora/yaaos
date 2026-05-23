@@ -187,7 +187,7 @@ async def test_callback_round_trip_persists_credential(
     del stub_provider, stub_exchange
     # Mint a valid state via the same serializer the endpoint uses.
     state = URLSafeTimedSerializer(
-        get_settings().yaaos_invitation_token_secret, salt="yaaos-integration-connect"
+        get_settings().yaaos_invitation_token_secret.get_secret_value(), salt="yaaos-integration-connect"
     ).dumps(
         {
             "org_id": str(seeded["org"].id),
@@ -234,7 +234,7 @@ async def test_callback_rejects_tampered_state(seeded) -> None:
 async def test_callback_rejects_wrong_provider_in_state(seeded, stub_provider) -> None:
     del stub_provider
     state = URLSafeTimedSerializer(
-        get_settings().yaaos_invitation_token_secret, salt="yaaos-integration-connect"
+        get_settings().yaaos_invitation_token_secret.get_secret_value(), salt="yaaos-integration-connect"
     ).dumps(
         {
             "org_id": str(seeded["org"].id),
@@ -257,7 +257,7 @@ async def test_delete_endpoint_clears_row(seeded, stub_provider, stub_exchange, 
     del stub_provider, stub_exchange
     # Seed a credential by hitting the callback first.
     state = URLSafeTimedSerializer(
-        get_settings().yaaos_invitation_token_secret, salt="yaaos-integration-connect"
+        get_settings().yaaos_invitation_token_secret.get_secret_value(), salt="yaaos-integration-connect"
     ).dumps(
         {
             "org_id": str(seeded["org"].id),
@@ -287,7 +287,7 @@ async def test_patch_endpoint_updates_allowlist_and_enabled(
 ) -> None:
     del stub_provider, stub_exchange
     state = URLSafeTimedSerializer(
-        get_settings().yaaos_invitation_token_secret, salt="yaaos-integration-connect"
+        get_settings().yaaos_invitation_token_secret.get_secret_value(), salt="yaaos-integration-connect"
     ).dumps(
         {
             "org_id": str(seeded["org"].id),
@@ -332,7 +332,7 @@ async def test_patch_endpoint_updates_allowlist_and_enabled(
 async def test_validate_endpoint_returns_provider_result(seeded, stub_provider, stub_exchange) -> None:
     del stub_exchange
     state = URLSafeTimedSerializer(
-        get_settings().yaaos_invitation_token_secret, salt="yaaos-integration-connect"
+        get_settings().yaaos_invitation_token_secret.get_secret_value(), salt="yaaos-integration-connect"
     ).dumps(
         {
             "org_id": str(seeded["org"].id),

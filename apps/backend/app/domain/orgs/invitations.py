@@ -45,7 +45,9 @@ class InvitationInvalidError(InvitationError):
 
 
 def _serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(get_settings().yaaos_invitation_token_secret, salt="yaaos-invitation")
+    return URLSafeTimedSerializer(
+        get_settings().yaaos_invitation_token_secret.get_secret_value(), salt="yaaos-invitation"
+    )
 
 
 def _hash(raw: str) -> str:

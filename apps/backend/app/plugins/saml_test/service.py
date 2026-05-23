@@ -21,7 +21,7 @@ _TTL_SECONDS = 600
 
 
 def _serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret, salt=_SALT)
+    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret.get_secret_value(), salt=_SALT)
 
 
 def sign_assertion(payload: dict) -> str:

@@ -71,15 +71,21 @@ router = APIRouter()
 
 
 def _state_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret, salt="yaaos-oauth-state")
+    return URLSafeTimedSerializer(
+        get_settings().yaaos_oauth_state_secret.get_secret_value(), salt="yaaos-oauth-state"
+    )
 
 
 def _link_pending_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret, salt="yaaos-link-pending")
+    return URLSafeTimedSerializer(
+        get_settings().yaaos_oauth_state_secret.get_secret_value(), salt="yaaos-link-pending"
+    )
 
 
 def _totp_challenge_serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret, salt="yaaos-totp-challenge")
+    return URLSafeTimedSerializer(
+        get_settings().yaaos_oauth_state_secret.get_secret_value(), salt="yaaos-totp-challenge"
+    )
 
 
 def _redirect_uri_for(request: Request, provider_id: str) -> str:

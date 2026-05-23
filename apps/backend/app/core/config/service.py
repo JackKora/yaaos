@@ -13,7 +13,7 @@ variables for the canonical list.
 from functools import cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
         ...,
         description="Async Postgres URL (e.g., postgresql+asyncpg://user:pw@host:port/db).",
     )
-    yaaos_encryption_key: str = Field(
+    yaaos_encryption_key: SecretStr = Field(
         ...,
         description="Fernet key (32 bytes, URL-safe base64) for credential encryption at rest.",
     )
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     github_api_base_url: str = "https://api.github.com"
 
     # core/llm gateway. Both unset = direct provider calls via ANTHROPIC_API_KEY.
-    braintrust_api_key: str | None = None
+    braintrust_api_key: SecretStr | None = None
     braintrust_api_url: str | None = None  # e.g. https://gateway.braintrust.dev
     # Name of the Braintrust project that gateway calls log into. Without this
     # the gateway is a pure pass-through and nothing appears in the Logs tab.
@@ -93,22 +93,22 @@ class Settings(BaseSettings):
     # M02 — OAuth GitHub credentials. Required in `prod`; defaults let `dev`
     # boot without provisioning. Tests override via env at fixture time.
     yaaos_oauth_github_client_id: str = ""
-    yaaos_oauth_github_client_secret: str = ""
+    yaaos_oauth_github_client_secret: SecretStr = SecretStr("")
     yaaos_oauth_github_authorize_url: str = "https://github.com/login/oauth/authorize"
     yaaos_oauth_github_token_url: str = "https://github.com/login/oauth/access_token"
     yaaos_oauth_github_userinfo_url: str = "https://api.github.com/user"
     yaaos_oauth_github_emails_url: str = "https://api.github.com/user/emails"
-    yaaos_oauth_state_secret: str = "dev-only-oauth-state-secret"
+    yaaos_oauth_state_secret: SecretStr = SecretStr("dev-only-oauth-state-secret")
 
     # M02 — TOTP master key (Fernet, 32 bytes URL-safe base64). Defaults to
     # empty; `domain/identity.totp` falls back to `yaaos_encryption_key` when
     # unset so dev/test only need one key. Production must set this.
-    yaaos_totp_master_key: str = ""
+    yaaos_totp_master_key: SecretStr = SecretStr("")
 
     # M04 — Linear OAuth + hosted MCP. Defaults point at the real upstreams;
     # the test compose overrides to fake-linear hostnames.
     yaaos_oauth_linear_client_id: str = ""
-    yaaos_oauth_linear_client_secret: str = ""
+    yaaos_oauth_linear_client_secret: SecretStr = SecretStr("")
     linear_oauth_authorize_url: str = "https://linear.app/oauth/authorize"
     linear_oauth_token_url: str = "https://api.linear.app/oauth/token"
     linear_oauth_refresh_url: str = "https://api.linear.app/oauth/token"
@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     # M04 — Notion OAuth + hosted MCP. Same shape; Notion uses HTTP Basic
     # on the token endpoint, encoded in the provider config rather than here.
     yaaos_oauth_notion_client_id: str = ""
-    yaaos_oauth_notion_client_secret: str = ""
+    yaaos_oauth_notion_client_secret: SecretStr = SecretStr("")
     notion_oauth_authorize_url: str = "https://api.notion.com/v1/oauth/authorize"
     notion_oauth_token_url: str = "https://api.notion.com/v1/oauth/token"
     notion_oauth_refresh_url: str = "https://api.notion.com/v1/oauth/token"
@@ -126,13 +126,13 @@ class Settings(BaseSettings):
     notion_api_base_url: str = "https://api.notion.com"
 
     # M02 — invitations + dev SMTP (Mailpit).
-    yaaos_invitation_token_secret: str = "dev-only-invitation-secret"
+    yaaos_invitation_token_secret: SecretStr = SecretStr("dev-only-invitation-secret")
     yaaos_invitation_lifetime_seconds: int = 60 * 60 * 24 * 7  # 7 days
     yaaos_app_base_url: str = "http://localhost:8080"
     smtp_host: str = "localhost"
     smtp_port: int = 1025
     smtp_username: str = ""
-    smtp_password: str = ""
+    smtp_password: SecretStr = SecretStr("")
     smtp_from: str = "yaaos@localhost"
     smtp_use_tls: bool = False
 

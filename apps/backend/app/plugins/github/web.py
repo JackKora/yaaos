@@ -63,7 +63,7 @@ async def webhook(
         log.warning("github.webhook.no_settings_row")
         return JSONResponse(status_code=400, content={"error": "github_settings missing"})
 
-    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
     secret = fernet.decrypt(settings_row.encrypted_webhook_secret)
     if not verify_webhook_signature(body, x_hub_signature_256, secret):
         log.warning("github.webhook.bad_signature", delivery=x_github_delivery)
@@ -384,7 +384,9 @@ def _install_state_serializer():
 
     from app.core.config import get_settings  # noqa: PLC0415
 
-    return URLSafeTimedSerializer(get_settings().yaaos_oauth_state_secret, salt=_INSTALL_STATE_SALT)
+    return URLSafeTimedSerializer(
+        get_settings().yaaos_oauth_state_secret.get_secret_value(), salt=_INSTALL_STATE_SALT
+    )
 
 
 @router.get("/install")

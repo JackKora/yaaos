@@ -64,7 +64,9 @@ _STATE_SALT = "yaaos-integration-connect"
 def _state_serializer() -> URLSafeTimedSerializer:
     # Reuses the M02 invitation-token secret — same lifecycle (server-side
     # rotation), same operator pager rotation discipline.
-    return URLSafeTimedSerializer(get_settings().yaaos_invitation_token_secret, salt=_STATE_SALT)
+    return URLSafeTimedSerializer(
+        get_settings().yaaos_invitation_token_secret.get_secret_value(), salt=_STATE_SALT
+    )
 
 
 def _redirect_uri(request: Request, provider: str) -> str:

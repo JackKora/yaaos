@@ -53,7 +53,7 @@ class GitHubOAuthProvider:
         s = get_settings()
         async with AsyncOAuth2Client(
             client_id=s.yaaos_oauth_github_client_id,
-            client_secret=s.yaaos_oauth_github_client_secret,
+            client_secret=s.yaaos_oauth_github_client_secret.get_secret_value(),
             redirect_uri=redirect_uri,
         ) as client:
             try:
@@ -123,7 +123,7 @@ def bootstrap_oauth() -> None:
     configured".
     """
     s = get_settings()
-    if not s.yaaos_oauth_github_client_id or not s.yaaos_oauth_github_client_secret:
+    if not s.yaaos_oauth_github_client_id or not s.yaaos_oauth_github_client_secret.get_secret_value():
         log.info("oauth_github.skipped_unconfigured")
         return
     register_provider(GitHubOAuthProvider())

@@ -181,15 +181,15 @@ def _check_required_prod_secrets() -> None:
     if s.yaaos_env != "prod":
         return
     missing: list[str] = []
-    if s.yaaos_oauth_state_secret == "dev-only-oauth-state-secret":
+    if s.yaaos_oauth_state_secret.get_secret_value() == "dev-only-oauth-state-secret":
         missing.append("YAAOS_OAUTH_STATE_SECRET")
-    if s.yaaos_invitation_token_secret == "dev-only-invitation-secret":
+    if s.yaaos_invitation_token_secret.get_secret_value() == "dev-only-invitation-secret":
         missing.append("YAAOS_INVITATION_TOKEN_SECRET")
     if not s.yaaos_oauth_github_client_id:
         missing.append("YAAOS_OAUTH_GITHUB_CLIENT_ID")
-    if not s.yaaos_oauth_github_client_secret:
+    if not s.yaaos_oauth_github_client_secret.get_secret_value():
         missing.append("YAAOS_OAUTH_GITHUB_CLIENT_SECRET")
-    if not s.yaaos_totp_master_key:
+    if not s.yaaos_totp_master_key.get_secret_value():
         missing.append("YAAOS_TOTP_MASTER_KEY")
     if missing:
         raise RuntimeError(f"yaaos refuses to start in prod with missing/stub secrets: {', '.join(missing)}")

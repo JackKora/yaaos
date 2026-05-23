@@ -117,7 +117,7 @@ class GitHubPlugin:
         row = await self._get_settings_row(org_id)
         if row is None:
             raise VCSAuthError("github_settings not configured")
-        fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+        fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
         pem = fernet.decrypt(row.encrypted_private_key).decode()
         secret = fernet.decrypt(row.encrypted_webhook_secret).decode()
         return row.app_id, pem, secret
@@ -436,7 +436,7 @@ class GitHubPlugin:
             ).scalar_one_or_none()
             if existing is not None:
                 return
-            fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+            fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
             row = GitHubSettingsRow(
                 id=uuid4(),
                 org_id=org_id,
@@ -461,7 +461,7 @@ async def set_github_credentials(
     installation-token (if any) so the next API call re-issues against the new
     private key.
     """
-    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
     enc_key = fernet.encrypt(private_key.encode())
     enc_secret = fernet.encrypt(webhook_secret.encode())
     async with db_session() as s:

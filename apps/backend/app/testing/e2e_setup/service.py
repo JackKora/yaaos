@@ -112,7 +112,7 @@ async def seed_credentials_and_install(
 
     from app.domain.orgs.models import OrgRow  # noqa: PLC0415
 
-    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
     async with db_session() as s:
         if target_org_slug is not None:
             org = (await s.execute(select(OrgRow).where(OrgRow.slug == target_org_slug))).scalar_one_or_none()

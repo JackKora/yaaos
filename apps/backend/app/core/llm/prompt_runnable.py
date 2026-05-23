@@ -80,7 +80,7 @@ class PromptRunnable[OutputT: BaseModel]:
             # `llm_test_cache.py:_extract_llm_semantic_fields`) so flipping
             # the gateway on/off does not invalidate cached responses.
             kwargs["base_url"] = settings.braintrust_api_url or _DEFAULT_BRAINTRUST_GATEWAY
-            kwargs["api_key"] = settings.braintrust_api_key
+            kwargs["api_key"] = settings.braintrust_api_key.get_secret_value()
             # `x-bt-parent: project_name:<proj>` tells the gateway to log every
             # request to the named Braintrust project. Without it the gateway
             # is a pure pass-through and nothing shows up in the Logs tab.

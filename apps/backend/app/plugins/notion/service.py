@@ -41,7 +41,7 @@ def _build_config() -> ProviderConfig:
         refresh_url=s.notion_oauth_refresh_url,
         mcp_url=s.notion_mcp_url,
         client_id=s.yaaos_oauth_notion_client_id,
-        client_secret=s.yaaos_oauth_notion_client_secret,
+        client_secret=s.yaaos_oauth_notion_client_secret.get_secret_value(),
         scope_separator=" ",
         # Notion uses capabilities at the integration level rather than
         # OAuth scopes. yaaos passes an explicit `owner=user` flag via the
@@ -94,7 +94,7 @@ _provider = NotionProvider()
 def bootstrap() -> None:
     """Register the singleton provider. Skipped when credentials are unset."""
     s = get_settings()
-    if not s.yaaos_oauth_notion_client_id or not s.yaaos_oauth_notion_client_secret:
+    if not s.yaaos_oauth_notion_client_id or not s.yaaos_oauth_notion_client_secret.get_secret_value():
         log.info("notion.skipped_unconfigured")
         return
     register_provider(_provider)

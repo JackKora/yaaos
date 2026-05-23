@@ -442,7 +442,7 @@ class ClaudeCodePlugin:
         api_key: str | None = None
         if row.encrypted_anthropic_api_key:
             try:
-                fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+                fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
                 api_key = fernet.decrypt(row.encrypted_anthropic_api_key).decode()
             except InvalidToken:
                 log.warning("claude_code.api_key_decrypt_failed")
@@ -983,7 +983,7 @@ async def _onboarding_anthropic_key_set(org_id: UUID) -> bool:
     if row is None or row.encrypted_anthropic_api_key is None:
         return False
     try:
-        fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+        fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
         api_key = fernet.decrypt(row.encrypted_anthropic_api_key).decode()
     except InvalidToken:
         return False
@@ -995,7 +995,7 @@ async def _set_anthropic_key(org_id: UUID, raw_key: str) -> None:
     """Encrypt + upsert the Anthropic key on `claude_code_settings`."""
     from uuid import uuid4  # noqa: PLC0415
 
-    fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+    fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
     enc = fernet.encrypt(raw_key.encode())
     async with db_session() as s:
         row = (
@@ -1037,7 +1037,7 @@ async def bootstrap_anthropic_env() -> None:
         log.info("claude_code.bootstrap_env.no_key", reason="pre_onboarding")
         return
     try:
-        fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+        fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
         os.environ["ANTHROPIC_API_KEY"] = fernet.decrypt(row.encrypted_anthropic_api_key).decode()
     except InvalidToken:
         log.warning("claude_code.bootstrap_env.decrypt_failed")

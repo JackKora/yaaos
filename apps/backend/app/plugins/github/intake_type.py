@@ -52,7 +52,7 @@ class GithubPrIntakeType:
         if settings_row is None:
             raise IntakeRejectedError("bad_request", "github settings not configured")
 
-        fernet = Fernet(get_settings().yaaos_encryption_key.encode())
+        fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
         secret = fernet.decrypt(settings_row.encrypted_webhook_secret)
         if not verify_webhook_signature(body, signature, secret):
             log.warning("intake.github_pr.bad_signature", delivery=delivery)

@@ -33,7 +33,7 @@ def _build_config() -> ProviderConfig:
         refresh_url=s.linear_oauth_refresh_url,
         mcp_url=s.linear_mcp_url,
         client_id=s.yaaos_oauth_linear_client_id,
-        client_secret=s.yaaos_oauth_linear_client_secret,
+        client_secret=s.yaaos_oauth_linear_client_secret.get_secret_value(),
         scope_separator=",",
         default_scopes=("read",),
         known_read_tools=(
@@ -83,7 +83,7 @@ def bootstrap() -> None:
     (matches the github plugin's pattern: the UI surfaces 'not configured'
     instead of advertising an integration that would 404 upstream)."""
     s = get_settings()
-    if not s.yaaos_oauth_linear_client_id or not s.yaaos_oauth_linear_client_secret:
+    if not s.yaaos_oauth_linear_client_id or not s.yaaos_oauth_linear_client_secret.get_secret_value():
         log.info("linear.skipped_unconfigured")
         return
     register_provider(_provider)

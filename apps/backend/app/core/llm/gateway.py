@@ -30,7 +30,7 @@ def configure_gateway() -> None:
         return
 
     os.environ["ANTHROPIC_API_BASE"] = settings.braintrust_api_url
-    os.environ["ANTHROPIC_API_KEY"] = settings.braintrust_api_key
+    os.environ["ANTHROPIC_API_KEY"] = settings.braintrust_api_key.get_secret_value()
     os.environ["OPENAI_API_BASE"] = settings.braintrust_api_url
-    os.environ["OPENAI_API_KEY"] = settings.braintrust_api_key
+    os.environ["OPENAI_API_KEY"] = settings.braintrust_api_key.get_secret_value()
     log.info("llm.gateway.configured", base_url=settings.braintrust_api_url)
