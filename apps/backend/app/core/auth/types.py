@@ -62,6 +62,9 @@ class Action(StrEnum):
 # X-Org-Slug requirement AND the post-response security guard.
 PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
     "/api/auth/",
+    # M06 — notifications are user-scoped (cross-org). The session cookie
+    # identifies the recipient; org filters are optional query params.
+    "/api/notifications",
     # `/api/sso/{slug}/...` carries the org slug in the path, not the
     # `X-Org-Slug` header. The handlers resolve the slug themselves.
     # `/api/sso/config` (Owner-only) goes through the standard auth chain

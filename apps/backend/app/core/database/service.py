@@ -144,6 +144,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("018_create_workspace_agents", "create_workspace_agents"),
     ("019_orgs_workspace_provider", "orgs_workspace_provider"),
     ("020_rename_member_to_builder", "rename_member_to_builder"),
+    ("021_create_notifications", "create_notifications"),
 )
 
 
@@ -505,6 +506,20 @@ async def _apply_rename_member_to_builder(conn) -> None:  # type: ignore[no-unty
     await conn.execute(text("UPDATE memberships SET role = 'builder' WHERE role = 'member'"))
 
 
+async def _apply_create_notifications(conn) -> None:  # type: ignore[no-untyped-def]
+    """M06 Phase 7 — create the `notifications` table + indexes.
+
+    Idempotent: imports the model and runs `Base.metadata.create_all`
+    which is `CREATE TABLE IF NOT EXISTS` underneath. The
+    `app.domain.notifications.models` import registers the table on
+    `Base.metadata`.
+    """
+    import importlib  # noqa: PLC0415
+
+    importlib.import_module("app.domain.notifications.models")
+    await conn.run_sync(Base.metadata.create_all)
+
+
 async def _apply_create_workspace_agents(conn) -> None:  # type: ignore[no-untyped-def]
     """M05 Phase 7 — `workspace_agents` table: per-pod identity rows.
 
@@ -661,6 +676,8 @@ async def migrate() -> None:
                 await _apply_orgs_workspace_provider(conn)
             elif kind == "rename_member_to_builder":
                 await _apply_rename_member_to_builder(conn)
+            elif kind == "create_notifications":
+                await _apply_create_notifications(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},
