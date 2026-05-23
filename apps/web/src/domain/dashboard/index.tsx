@@ -1,248 +1,207 @@
-import {
-  type OnboardingStatus,
-  type Ticket,
-  useMetricsSummary,
-  useOnboarding,
-  useReviewJobsForTicket,
-  useTickets,
-} from "@core/api";
-import { Badge, Button, Card, CardContent, CardHeader } from "@shared/components";
+/**
+ * Dashboard — M06 anchor page (E2a.3).
+ *
+ * Two states:
+ *   - Configured: stat cards (4) + "In flight" band + "Needs attention" band.
+ *   - Not configured: setup banner (`NotConfiguredBanner`) renders above
+ *     stat cards; bands are still shown but typically empty.
+ *
+ * Single round-trip via `useDashboard()` → GET /api/tickets/dashboard.
+ * `refetchInterval: 5_000` covers SSE gaps; Phase 5 invalidation wiring
+ * (workflow_state_changed → invalidate) lands once dashboard kinds emit.
+ */
+
+import { type DashboardStats, type Ticket, useConfigStatus, useDashboard } from "@core/api";
+import { EmptyState, NotConfiguredBanner, PageHeader } from "@shared/components/layout";
+import { Skeleton } from "@shared/components/ui/skeleton";
 import { ago } from "@shared/utils/ago";
+import { cn } from "@shared/utils/cn";
 import { Link } from "@tanstack/react-router";
-import { Check } from "lucide-react";
+import { AlertCircle, Bell, CheckCircle2, Loader2, XCircle } from "lucide-react";
 
 export function DashboardPage() {
-  const { data: onboarding, isLoading } = useOnboarding();
-  if (isLoading || !onboarding) {
+  const { data: dashboard, isLoading } = useDashboard();
+  const { data: configStatus } = useConfigStatus();
+
+  if (isLoading || !dashboard) {
     return (
-      <div
-        className="mx-auto max-w-[1100px] text-text-3 text-[12.5px]"
-        data-testid="dashboard-loading"
-      >
-        Loading…
+      <div className="mx-auto max-w-[1200px] px-6 py-6" data-testid="dashboard-loading">
+        <PageHeader title="Dashboard" />
+        <div className="grid grid-cols-4 gap-3 mb-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: skeletons
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+        <Skeleton className="h-32 mb-4" />
+        <Skeleton className="h-32" />
       </div>
     );
   }
-  const allReady = onboarding.github_app_installed && onboarding.anthropic_key_set;
-  return allReady ? <DashboardPopulated /> : <DashboardOnboarding onboarding={onboarding} />;
-}
-
-// ─── Onboarding state ────────────────────────────────────────────────────────
-
-type Step = {
-  n: number;
-  title: string;
-  sub: string;
-  cta: string;
-  to: "/orgs/$slug/settings";
-  done: boolean;
-};
-
-function DashboardOnboarding({ onboarding }: { onboarding: OnboardingStatus }) {
-  const steps: Step[] = [
-    {
-      n: 1,
-      title: "Install the GitHub App",
-      sub: "Grant yaaos access to the repos you want reviewed. (Pick repos on GitHub.)",
-      cta: "Install",
-      to: "/orgs/$slug/settings",
-      done: onboarding.github_app_installed,
-    },
-    {
-      n: 2,
-      title: "Add your model API key",
-      sub: "Anthropic key — yaaos uses Claude Code internally.",
-      cta: "Add key",
-      to: "/orgs/$slug/settings",
-      done: onboarding.anthropic_key_set,
-    },
-  ];
-  const completed = steps.filter((s) => s.done).length;
 
   return (
-    <div className="mx-auto max-w-[900px] flex flex-col gap-5" data-testid="dashboard-onboarding">
-      <div className="flex items-start gap-3">
-        <div className="flex-1">
-          <h1 className="text-[20px] font-semibold tracking-tight">Welcome to yaaos</h1>
-          <p className="text-text-3 text-[12.5px] mt-1">Two steps to your first review.</p>
-        </div>
-        <Badge variant="soft" data-testid="onboarding-progress">
-          {completed} of {steps.length} complete
-        </Badge>
+    <div className="mx-auto max-w-[1200px] px-6 py-6" data-testid="dashboard-populated">
+      <PageHeader title="Dashboard" subtitle="What yaaos is working on right now." />
+
+      {configStatus && !configStatus.configured && <NotConfiguredBanner className="mb-4" />}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <StatCard
+          label="In flight"
+          value={dashboard.stats.in_flight}
+          icon={Loader2}
+          tone="info"
+          spin={dashboard.stats.in_flight > 0}
+        />
+        <StatCard
+          label="HITL pending"
+          value={dashboard.stats.hitl_pending}
+          icon={Bell}
+          tone="warning"
+        />
+        <StatCard
+          label="Completed today"
+          value={dashboard.stats.completed_today}
+          icon={CheckCircle2}
+          tone="success"
+        />
+        <StatCard
+          label="Failed today"
+          value={dashboard.stats.failed_today}
+          icon={XCircle}
+          tone="destructive"
+        />
       </div>
 
-      <Card className="overflow-hidden">
-        {steps.map((s, i) => (
-          <StepRow key={s.n} step={s} isLast={i === steps.length - 1} />
-        ))}
-      </Card>
+      <section className="mb-8">
+        <BandHeader title="In flight" count={dashboard.in_flight.length} />
+        {dashboard.in_flight.length === 0 ? (
+          <EmptyState
+            icon={Loader2}
+            headline="Nothing in flight."
+            body="When yaaos picks up a PR for review, it shows up here."
+          />
+        ) : (
+          <RowList>
+            {dashboard.in_flight.map((t) => (
+              <InFlightRow key={t.id} ticket={t} />
+            ))}
+          </RowList>
+        )}
+      </section>
 
-      <Card>
-        <CardHeader>
-          <h2 className="font-semibold text-[13.5px]">Then…</h2>
-        </CardHeader>
-        <CardContent>
-          <p className="text-text-2 text-[12.5px] leading-relaxed">
-            Open a PR on an allowlisted repo. yaaos will create a ticket and the three review agents
-            (architecture, security, style) will start working. You'll see them progress live on the
-            ticket page, and three review comments will appear on the PR within a few minutes.
-          </p>
-        </CardContent>
-      </Card>
+      <section>
+        <BandHeader title="Needs attention" count={dashboard.needs_attention.length} />
+        {dashboard.needs_attention.length === 0 ? (
+          <EmptyState
+            icon={AlertCircle}
+            headline="No tickets need attention."
+            body="High-severity findings on completed reviews show up here for a Builder to ack or push back."
+          />
+        ) : (
+          <RowList>
+            {dashboard.needs_attention.map((t) => (
+              <NeedsAttentionRow key={t.id} ticket={t} />
+            ))}
+          </RowList>
+        )}
+      </section>
     </div>
   );
 }
 
-function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
-  const borderCls = isLast ? "" : "border-b border-border-soft";
-  const bgCls = step.done ? "bg-success/10" : "";
+interface StatCardProps {
+  label: string;
+  value: number;
+  icon: typeof Loader2;
+  tone: "info" | "warning" | "success" | "destructive";
+  spin?: boolean;
+}
+
+function StatCard({ label, value, icon: Icon, tone, spin }: StatCardProps) {
+  const toneClass = {
+    info: "text-info",
+    warning: "text-warning",
+    success: "text-success",
+    destructive: "text-destructive",
+  }[tone];
   return (
-    <div className={`flex items-center gap-3 px-5 py-4 ${borderCls} ${bgCls}`}>
-      <div
-        className={[
-          "w-7 h-7 rounded-full grid place-items-center flex-none text-[12px] font-semibold",
-          step.done
-            ? "bg-success text-white border border-success"
-            : "border border-border-hard text-text-2",
-        ].join(" ")}
-        aria-label={step.done ? "done" : `step ${step.n}`}
-      >
-        {step.done ? <Check size={14} /> : step.n}
-      </div>
+    <div className="rounded-md border border-border bg-card p-4 flex items-start gap-3">
+      <Icon className={cn("w-5 h-5 mt-0.5", toneClass, spin && "animate-spin")} />
       <div className="flex-1 min-w-0">
-        <div
-          className={`text-[13px] font-semibold ${
-            step.done ? "line-through text-text-3" : "text-text"
-          }`}
-        >
-          {step.title}
+        <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+          {label}
         </div>
-        <div className="text-text-3 text-[12px] mt-0.5">{step.sub}</div>
+        <div className="text-2xl font-semibold mt-1">{value}</div>
       </div>
-      {step.done ? (
-        <Badge variant="success">
-          <Check size={11} />
-          Done
-        </Badge>
-      ) : (
-        <Link to={step.to} params={(prev) => ({ slug: prev.slug as string })}>
-          <Button variant="primary">{step.cta}</Button>
+    </div>
+  );
+}
+
+function BandHeader({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="flex items-baseline justify-between mb-3">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-lg font-medium">{title}</h2>
+        <span className="text-xs text-muted-foreground">{count}</span>
+      </div>
+      {count > 0 && (
+        <Link
+          to="/orgs/$slug/tickets"
+          params={(prev) => ({ slug: prev.slug as string })}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          View all
         </Link>
       )}
     </div>
   );
 }
 
-// ─── Populated state ─────────────────────────────────────────────────────────
+function RowList({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-md border border-border overflow-hidden">{children}</div>;
+}
 
-function DashboardPopulated() {
-  const { data: metrics } = useMetricsSummary();
-  const { data: tickets } = useTickets();
-  const inFlight = (tickets ?? []).filter((t) => t.status === "in_review");
-  const openInReview = inFlight.length;
-
-  const totalReviews = metrics?.total_reviews_posted ?? 0;
-  const failureRate = metrics?.failure_rate ?? 0;
-  const failureCount = metrics?.failure_count ?? 0;
-
+function InFlightRow({ ticket }: { ticket: Ticket }) {
   return (
-    <div className="mx-auto max-w-[1200px] flex flex-col gap-5" data-testid="dashboard-populated">
-      <div>
-        <h1 className="text-[20px] font-semibold tracking-tight">Overview</h1>
-        <p className="text-text-3 text-[12.5px] mt-1">all-time</p>
-      </div>
-
-      <div className="flex gap-3" data-testid="dashboard-metrics">
-        <MetricTile label="Reviews posted" value={totalReviews.toLocaleString()} sub="all-time" />
-        <MetricTile label="Open tickets" value={openInReview.toString()} sub="in review" />
-        <MetricTile
-          label="Failure rate"
-          value={`${(failureRate * 100).toFixed(1)}%`}
-          sub={`${failureCount} failed`}
-        />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <h2 className="font-semibold text-[13.5px]">Live agents · in flight</h2>
-          <div className="flex-1" />
-          <span className="text-text-3 text-[11px] mono">{openInReview} active</span>
-        </CardHeader>
-        <CardContent className="p-0">
-          {inFlight.length === 0 ? (
-            <div
-              className="px-4 py-6 text-text-3 text-[12.5px]"
-              data-testid="dashboard-no-inflight"
-            >
-              No tickets in review right now.
-            </div>
-          ) : (
-            <ul data-testid="dashboard-inflight">
-              {inFlight.map((t) => (
-                <LiveTicketRow key={t.id} ticket={t} />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <Link
+      to="/orgs/$slug/tickets/$ticketId"
+      params={(prev) => ({ slug: prev.slug as string, ticketId: ticket.id })}
+      className="flex items-center gap-3 px-3 py-2.5 border-b border-border last:border-0 hover:bg-accent text-sm transition-colors"
+      data-testid={`dashboard-inflight-${ticket.id}`}
+    >
+      <Loader2 className="w-4 h-4 shrink-0 text-info animate-spin" />
+      <span className="flex-1 truncate font-medium">{ticket.title}</span>
+      <span className="text-xs text-muted-foreground mono shrink-0">{ticket.repo_external_id}</span>
+      <span className="text-xs text-muted-foreground shrink-0">{ago(ticket.updated_at)}</span>
+    </Link>
   );
 }
 
-function MetricTile({ label, value, sub }: { label: string; value: string; sub: string }) {
+function NeedsAttentionRow({ ticket }: { ticket: Ticket }) {
+  const severityClass =
+    ticket.max_severity === "high"
+      ? "text-destructive"
+      : ticket.max_severity === "medium"
+        ? "text-warning"
+        : "text-info";
   return (
-    <Card className="flex-1 px-4 py-3">
-      <div className="text-text-3 text-[10.5px] uppercase tracking-wider font-medium">{label}</div>
-      <div className="mono font-semibold text-[24px] tracking-tight mt-1">{value}</div>
-      <div className="text-text-4 text-[11px] mono mt-1">{sub}</div>
-    </Card>
+    <Link
+      to="/orgs/$slug/tickets/$ticketId"
+      params={(prev) => ({ slug: prev.slug as string, ticketId: ticket.id })}
+      className="flex items-center gap-3 px-3 py-2.5 border-b border-border last:border-0 hover:bg-accent text-sm transition-colors"
+      data-testid={`dashboard-needs-attention-${ticket.id}`}
+    >
+      <AlertCircle className={cn("w-4 h-4 shrink-0", severityClass)} />
+      <span className="flex-1 truncate font-medium">{ticket.title}</span>
+      <span className="text-xs">
+        {ticket.findings_count} {ticket.findings_count === 1 ? "finding" : "findings"}
+      </span>
+      <span className="text-xs text-muted-foreground mono shrink-0">{ticket.repo_external_id}</span>
+    </Link>
   );
 }
 
-function LiveTicketRow({ ticket }: { ticket: Ticket }) {
-  const { data: jobs } = useReviewJobsForTicket(ticket.id);
-  const latest = (jobs ?? [])[0];
-  return (
-    <li className="border-t border-border-soft first:border-t-0">
-      <Link
-        to="/orgs/$slug/tickets/$ticketId"
-        params={(prev) => ({ slug: prev.slug as string, ticketId: ticket.id })}
-        className="flex flex-col gap-2 px-4 py-3 hover:bg-hover"
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="text-text-4 mono text-[11px] flex-none">
-            {ticket.source_external_id}
-          </span>
-          <span className="text-text-1 text-[12.5px] font-medium truncate min-w-0 flex-1">
-            {ticket.title}
-          </span>
-          <span className="text-text-4 mono text-[11px] flex-none">{ago(ticket.updated_at)}</span>
-        </div>
-        <div className="flex items-center gap-6 text-[11.5px]">
-          {!latest ? (
-            <span className="text-text-4 text-[11px] mono">no jobs yet</span>
-          ) : (
-            <AgentInline name="yaaos" status={latest.status} />
-          )}
-        </div>
-      </Link>
-    </li>
-  );
-}
-
-function AgentInline({ name, status }: { name: string; status: string }) {
-  const variant: "success" | "danger" | "soft" | "default" =
-    status === "posted"
-      ? "success"
-      : status === "failed"
-        ? "danger"
-        : status === "running"
-          ? "default"
-          : "soft";
-  return (
-    <div className="flex items-center gap-2">
-      <span className="mono text-text-4 text-[10.5px] uppercase tracking-wider">{name}</span>
-      <Badge variant={variant}>{status}</Badge>
-    </div>
-  );
-}
+// Re-export so dashboard.test.tsx's existing import keeps resolving until
+// Phase 9 cleanup; the test mocks `useOnboarding` directly.
+export type { DashboardStats };

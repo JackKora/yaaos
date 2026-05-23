@@ -63,6 +63,28 @@ export function useMyOrgs() {
   });
 }
 
+/** Single-round-trip Dashboard projection per E2a.3. */
+export interface DashboardStats {
+  in_flight: number;
+  hitl_pending: number;
+  completed_today: number;
+  failed_today: number;
+}
+
+export interface DashboardResponse {
+  stats: DashboardStats;
+  in_flight: Ticket[];
+  needs_attention: Ticket[];
+}
+
+export function useDashboard() {
+  return useQuery<DashboardResponse>({
+    queryKey: ["tickets", "dashboard"],
+    queryFn: () => apiFetch<DashboardResponse>("/api/tickets/dashboard"),
+    refetchInterval: 5_000,
+  });
+}
+
 interface TicketsListResponse {
   items: Ticket[];
   next_cursor: string | null;
