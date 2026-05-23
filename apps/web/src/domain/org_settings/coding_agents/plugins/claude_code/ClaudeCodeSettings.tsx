@@ -1,9 +1,11 @@
 import { useCurrentUser } from "@domain/auth";
 import { Badge, Button, Card, CardContent, CardHeader } from "@shared/components";
+import { ConfirmModal } from "@shared/components/layout";
 import { useEffect, useState } from "react";
 import {
   type CodingAgentInstall,
   useCodingAgents,
+  useUninstallCodingAgent,
   useUpdateCodingAgentSettings,
 } from "../../queries";
 import {
@@ -135,7 +137,52 @@ function Editor({
           </span>
         )}
       </div>
+
+      <DangerZone pluginId={install.plugin_id} />
     </div>
+  );
+}
+
+function DangerZone({ pluginId }: { pluginId: string }) {
+  const uninstall = useUninstallCodingAgent();
+  const [showConfirm, setShowConfirm] = useState(false);
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <h3 className="text-[13.5px] font-semibold text-destructive">Danger zone</h3>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-text-3 text-sm">
+              Uninstall Claude Code from this org. Existing reviews keep their findings, but future
+              PRs in this org won't be reviewed until a coding agent is reinstalled.
+            </p>
+            <Button
+              variant="ghost"
+              onClick={() => setShowConfirm(true)}
+              disabled={uninstall.isPending}
+              data-testid="cc-uninstall-button"
+              className="text-destructive"
+            >
+              Uninstall
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      <ConfirmModal
+        open={showConfirm}
+        onOpenChange={setShowConfirm}
+        title="Uninstall Claude Code?"
+        body="The plugin and its sub-agent configuration will be removed permanently. This cannot be undone."
+        confirmLabel="Uninstall"
+        tone="destructive"
+        pending={uninstall.isPending}
+        onConfirm={() => {
+          uninstall.mutate(pluginId, { onSettled: () => setShowConfirm(false) });
+        }}
+      />
+    </>
   );
 }
 
