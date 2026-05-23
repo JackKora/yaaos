@@ -111,8 +111,21 @@ M02_PROTECTED_PREFIXES: tuple[str, ...] = (
 )
 
 
-def is_public_path(path: str) -> bool:
+# M06 — (method, path) tuples that bypass X-Org-Slug for a single verb on a
+# path that otherwise requires it. Used for `POST /api/orgs` (org-create) so
+# the picker page can hit it before any org is selected, while `GET /api/orgs`
+# (org-settings read) keeps requiring X-Org-Slug.
+PUBLIC_METHOD_EXACT: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("POST", "/api/orgs"),
+    }
+)
+
+
+def is_public_path(path: str, method: str | None = None) -> bool:
     if path in PUBLIC_PATH_EXACT:
+        return True
+    if method is not None and (method, path) in PUBLIC_METHOD_EXACT:
         return True
     if any(path.startswith(p) for p in PUBLIC_PATH_PREFIXES):
         return True

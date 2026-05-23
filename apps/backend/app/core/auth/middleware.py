@@ -98,7 +98,7 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if is_public_path(path):
+        if is_public_path(path, request.method):
             route_security_resolved.set("public")
             await self.app(scope, receive, send)
             return

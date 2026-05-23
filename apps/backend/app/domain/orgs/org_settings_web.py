@@ -43,6 +43,7 @@ from app.domain.identity import repository as identity_repo
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.models import MembershipRow, OrgRow
 from app.domain.orgs.onboarding import get_onboarding_status
+from app.domain.orgs.types import Role
 from app.domain.sessions.dependencies import require
 
 log = structlog.get_logger("orgs.settings.web")
@@ -70,6 +71,69 @@ class _OrgSettingsResponse(BaseModel):
 
 def _err(status: int, code: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"error": code})
+
+
+class _CreateOrgRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    slug: str = Field(min_length=1, max_length=64)
+
+
+class _CreateOrgResponse(BaseModel):
+    id: UUID
+    slug: str
+    name: str
+    role: str
+
+
+@router.post("", dependencies=[Depends(public_route)])
+async def create_org(
+    body: _CreateOrgRequest,
+    yaaos_session: Annotated[str | None, Cookie()] = None,
+) -> JSONResponse:
+    """M06 Phase 8: create an org from the picker page (E2a.19).
+
+    The caller becomes Admin of the new org. Slug must be lowercase
+    a-z / 0-9 / hyphens and unique. Returns 409 `slug_taken` if the slug
+    is in use; 422 `invalid_slug` on bad characters; 401 on missing
+    session.
+    """
+    import re  # noqa: PLC0415
+
+    if not yaaos_session:
+        return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+    token_hash = identity_repo.hash_token(yaaos_session)
+    async with db_session() as s:
+        sess_row = await identity_repo.get_session_by_hash(s, token_hash)
+        if sess_row is None or sess_row.user_id is None:
+            return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+        from datetime import UTC, datetime  # noqa: PLC0415
+
+        if sess_row.expires_at < datetime.now(UTC):
+            return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+
+        slug = body.slug.strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}[a-z0-9]|[a-z0-9]", slug):
+            return JSONResponse(status_code=422, content={"error": "invalid_slug"})
+
+        existing = await orgs_repo.get_org_by_slug(s, slug)
+        if existing is not None:
+            return JSONResponse(status_code=409, content={"error": "slug_taken"})
+
+        org = await orgs_repo.insert_org(s, slug=slug, display_name=body.name.strip())
+        await orgs_repo.insert_membership(
+            s,
+            user_id=sess_row.user_id,
+            org_id=org.id,
+            role=Role.ADMIN,
+            handle=body.name.strip()[:64] or slug,
+        )
+        await s.commit()
+        await s.refresh(org)
+    return JSONResponse(
+        content=_CreateOrgResponse(id=org.id, slug=org.slug, name=org.display_name, role="admin").model_dump(
+            mode="json"
+        )
+    )
 
 
 @router.get("", dependencies=[Depends(require(Action.ORG_SETTINGS_READ))])
