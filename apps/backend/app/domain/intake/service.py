@@ -175,10 +175,12 @@ async def _handle_pr_synchronized(event: PullRequestSynchronized, *, org_id: UUI
     if ticket is None:
         return
     # The webhook payload carries `before`/`after`; pass `before` through as
-    # `prev_head_sha` so handle_push can compute the incremental scope. When
-    # `before` is missing (older payloads), the trigger policy falls back to
-    # `last_reviewed_sha` from the prior posted review.
-    await reviewer.handle_push(
+    # `prev_head_sha` so the trigger policy can compute the incremental scope.
+    # When `before` is missing (older payloads), the trigger policy falls back
+    # to `last_reviewed_sha` from the prior posted review.
+    # `start_incremental_review` runs the §7 trigger policy; on Run it
+    # dispatches an `incremental_review_legacy_v1` workflow_execution.
+    await reviewer.start_incremental_review(
         fresh.id,
         new_head_sha=event.new_head_sha or fresh.head_sha,
         prev_head_sha=event.prev_head_sha,
@@ -247,7 +249,9 @@ async def _handle_comment_created(event: CommentCreated, *, org_id: UUID) -> Non
             # M05: engine path via start_pr_review (slice 59).
             await reviewer.start_pr_review(ticket.id, org_id=org_id, trigger_reason="manual_full")
         elif cmd == "review":
-            await reviewer.handle_push(pr.id, new_head_sha=pr.head_sha, prev_head_sha=None, org_id=org_id)
+            await reviewer.start_incremental_review(
+                pr.id, new_head_sha=pr.head_sha, prev_head_sha=None, org_id=org_id
+            )
         return
 
     # Plan §6.4: anything else is a candidate developer reply on a yaaos

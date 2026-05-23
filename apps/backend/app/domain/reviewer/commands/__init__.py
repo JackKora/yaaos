@@ -1141,6 +1141,69 @@ class PostReply(_LocalReviewCommand):
         )
 
 
+class IncrementalReviewLegacy:
+    """Engine-shaped wrapper around `domain/reviewer/incremental.run_incremental_review`.
+
+    The full push-driven incremental review (workspace + LLM + anchor pass +
+    stale check + post + persist + replay) lives in `incremental.py`; this
+    command makes it visible to `core/workflow` so every incremental review
+    gets a `workflow_executions` row. Single-step workflow:
+    `incremental_review_legacy_v1`.
+
+    Inputs come from the ticket_payload set by `start_incremental_review`:
+    `review_id`, `prev_sha`, `head_sha`. Failures bubble as
+    `Outcome.failure`; the legacy body's own `ReviewRow` status update
+    (queued/running/posted/failed/skipped) continues to drive the per-PR
+    review history UI in parallel.
+    """
+
+    kind = "IncrementalReviewLegacy"
+    category = CommandCategory.LOCAL
+    restart_safe = False  # spawns workspace + LLM work — not safe to restart
+
+    async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
+        del inputs
+        from app.domain.reviewer.incremental import (  # noqa: PLC0415
+            run_incremental_review,
+        )
+
+        provider = get_workflow_context_provider()
+        if provider is None:
+            return Outcome.failure(reason="no workflow_context provider registered")
+        ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
+        if ticket_ctx is None:
+            return Outcome.failure(reason="ticket context not found")
+
+        payload = ticket_ctx.payload or {}
+        review_id_raw = payload.get("review_id")
+        prev_sha = payload.get("prev_sha")
+        head_sha = payload.get("head_sha")
+        if not review_id_raw or not prev_sha or not head_sha:
+            return Outcome.failure(reason="incremental_review_legacy: missing review_id/prev_sha/head_sha")
+
+        try:
+            review_id = UUID(str(review_id_raw))
+        except (TypeError, ValueError):
+            return Outcome.failure(reason=f"invalid review_id: {review_id_raw!r}")
+
+        try:
+            await run_incremental_review(
+                review_id=review_id,
+                ticket_id=UUID(ctx.ticket_id),
+                org_id=ticket_ctx.org_id,
+                prev_sha=str(prev_sha),
+                head_sha=str(head_sha),
+            )
+        except Exception as exc:
+            log.exception(
+                "incremental_review_legacy.failed",
+                workflow_execution_id=ctx.workflow_execution_id,
+                ticket_id=ctx.ticket_id,
+            )
+            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
+        return Outcome.success(outputs={"review_id": str(review_id)})
+
+
 ALL_WORKSPACE_COMMANDS: tuple[_WorkspaceReviewCommand, ...] = (
     CodeReview(),
     IncrementalReview(),
@@ -1156,6 +1219,7 @@ ALL_LOCAL_COMMANDS: tuple[object, ...] = (
     ResolveFinding(),
     ArchiveStaleFindings(),
     PostReply(),
+    IncrementalReviewLegacy(),
 )
 
 
@@ -1167,6 +1231,7 @@ __all__ = [
     "CheckShouldReview",
     "CodeReview",
     "IncrementalReview",
+    "IncrementalReviewLegacy",
     "PostFindings",
     "PostReply",
     "ResolveFinding",

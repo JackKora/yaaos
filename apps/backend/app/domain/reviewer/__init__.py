@@ -6,10 +6,12 @@ Entry points:
   `pr_review_v1` workflow execution via `core/workflow` for the full-review
   path. Intake's pr-ready handler + `/yaaos full review` + the SPA `/rereview`
   endpoint all route through here.
-- `handle_push(pr_id, *, new_head_sha, prev_head_sha, org_id)` — runs the §7
-  trigger policy for incremental review on push. Today this spawns the
-  self-contained runner in `incremental.py`; a follow-on moves it onto the
-  `incremental_review_v1` engine path.
+- `start_incremental_review(pr_id, *, new_head_sha, prev_head_sha, org_id)` —
+  runs the §7 trigger policy for incremental review on push. On `Run`,
+  dispatches an `incremental_review_legacy_v1` workflow_execution via
+  `core/workflow.engine`; the `IncrementalReviewLegacy` command runs the
+  legacy body in `incremental.run_incremental_review`. `handle_push` is a
+  backwards-compatible alias.
 - `cancel_workflows_for_ticket(ticket_id)` — `workflow.request_cancel` on
   every non-terminal `workflow_executions` row for the ticket.
 
@@ -45,7 +47,7 @@ from app.domain.reviewer.events import (
     ReviewStarted,
     ReviewSuperseded,
 )
-from app.domain.reviewer.incremental import handle_push
+from app.domain.reviewer.incremental import handle_push, start_incremental_review
 from app.domain.reviewer.llm import (
     ClassifyReplyInput,
     ClassifyReplyOutput,
@@ -206,6 +208,7 @@ __all__ = [
     "list_findings_view",
     "list_reviews_for_pr",
     "review_summary",
+    "start_incremental_review",
     "start_pr_review",
 ]
 

@@ -106,32 +106,34 @@ async def _set_step(job_id: UUID, step: str, *, pr_id: UUID) -> None:
         await s.commit()
 
 
-async def handle_push(
+async def start_incremental_review(
     pr_id: UUID,
     *,
     new_head_sha: str,
     prev_head_sha: str | None,
     org_id: UUID,
 ) -> str | None:
-    """Decide whether the push warrants an incremental review and spawn one.
+    """Engine-shaped entrypoint for push-driven incremental review.
 
-    Returns a short status string for the caller's audit / log line:
-    `"scheduled"`, `"skipped:<reason>"`, or `"debounced:<seconds>"`.
+    Runs the §7 trigger policy. On `Skip`, returns the reason. On `Debounce`,
+    spawns a delayed re-check. On `Run`, creates a `ReviewRow` (legacy
+    bookkeeping for the SPA's per-PR review history) and dispatches a
+    `incremental_review_legacy_v1` workflow via `core/workflow.engine` —
+    the actual review execution runs inside the engine's
+    `IncrementalReviewLegacy` command which delegates back to
+    `run_incremental_review` below.
 
-    `prev_head_sha` comes from the webhook payload (`synchronize.before`).
-    The trigger policy's `last_reviewed_sha` separately tracks the last
-    posted-review's commit; we prefer that as the incremental scope start
-    (so a series of pushes between reviews coalesce into one diff). If no
-    prior review exists, we fall back to `prev_head_sha`.
+    Returns one of: `"scheduled"`, `"skipped:<reason>"`, `"debounced:<seconds>"`.
+
+    Replaces the prior `handle_push` direct-spawn entry point — intake now
+    routes incremental reviews through the engine for tracking visibility
+    and unified workflow lifecycle.
     """
     pr = await pull_requests.get(pr_id, org_id=org_id)
     last_reviewed_sha = await _last_reviewed_sha(pr_id)
     in_flight_id = await _in_flight_review_id(pr_id)
     last_push_at = await _last_push_timestamp(pr_id)
 
-    # Effective prev for the scope: prefer last-reviewed SHA; fall back to
-    # webhook's `before`. Either way the trigger policy needs both to make
-    # the ancestor + base-merge checks.
     effective_prev = last_reviewed_sha or prev_head_sha
     ancestor_ok = await _is_ancestor(pr.plugin_id, pr.repo_external_id, effective_prev, new_head_sha)
     new_commit_messages = await _new_commit_messages(
@@ -158,8 +160,6 @@ async def handle_push(
             reason=decision.reason,
             human=humanize_skip(decision.reason),
         )
-        # If something is in-flight, flip pending_replay so the trigger policy
-        # re-evaluates when the current review completes (plan §7 rule 4).
         if decision.reason == "in_flight" and in_flight_id is not None:
             async with db_session() as s:
                 await s.execute(
@@ -174,7 +174,6 @@ async def handle_push(
             pr_id=str(pr_id),
             seconds_remaining=decision.seconds_remaining,
         )
-        # Spawn a delayed re-check so the debounce window self-resolves.
         spawn(
             f"incremental_debounce:{pr_id}:{new_head_sha[:8]}",
             _debounce_then_retry(
@@ -198,24 +197,44 @@ async def handle_push(
     if ticket is None:
         log.warning("incremental.no_ticket", pr_id=str(pr_id))
         return "skipped:no_ticket"
-    spawn(
-        f"incremental_review:{review_id}",
-        _run_incremental_review(
-            review_id=review_id,
-            ticket_id=ticket.id,
-            org_id=org_id,
-            prev_sha=decision.scope.base_sha,
-            head_sha=decision.scope.head_sha,
-        ),
-    )
+
+    # Engine dispatch: create a workflow_execution row + enqueue route_workflow.
+    # The IncrementalReviewLegacy command (registered in commands/__init__.py)
+    # delegates back to `run_incremental_review` below with the supplied
+    # context. workflow_executions becomes the source of truth for tracking;
+    # ReviewRow stays for legacy per-PR history UI.
+    from app.core.workflow import get_engine  # noqa: PLC0415
+
+    async with db_session() as s:
+        await get_engine().start(
+            workflow_name="incremental_review_legacy_v1",
+            ticket_id=str(ticket.id),
+            ticket_payload={
+                "review_id": str(review_id),
+                "pr_id": str(pr.id),
+                "prev_sha": decision.scope.base_sha,
+                "head_sha": decision.scope.head_sha,
+                "head_sha_at_start": decision.scope.head_sha,
+                "base_sha": decision.scope.base_sha,
+            },
+            session=s,
+        )
+        await s.commit()
     return "scheduled"
+
+
+# Legacy alias for callers still on the old name. New code calls
+# `start_incremental_review` directly.
+handle_push = start_incremental_review
 
 
 async def _debounce_then_retry(
     *, pr_id: UUID, new_head_sha: str, prev_head_sha: str | None, org_id: UUID, delay: float
 ) -> None:
     await asyncio.sleep(max(0.0, delay))
-    await handle_push(pr_id, new_head_sha=new_head_sha, prev_head_sha=prev_head_sha, org_id=org_id)
+    await start_incremental_review(
+        pr_id, new_head_sha=new_head_sha, prev_head_sha=prev_head_sha, org_id=org_id
+    )
 
 
 async def _create_incremental_review(*, pr_id: UUID, org_id: UUID, prev_sha: str, head_sha: str) -> UUID:
@@ -251,7 +270,7 @@ async def _create_incremental_review(*, pr_id: UUID, org_id: UUID, prev_sha: str
     return new_id
 
 
-async def _run_incremental_review(
+async def run_incremental_review(
     *,
     review_id: UUID,
     ticket_id: UUID,
@@ -753,4 +772,4 @@ async def _is_ancestor(plugin_id: str, repo_external_id: str, prev_sha: str | No
         return False
 
 
-__all__ = ["handle_push"]
+__all__ = ["handle_push", "run_incremental_review", "start_incremental_review"]
