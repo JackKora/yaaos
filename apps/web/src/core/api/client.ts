@@ -21,7 +21,9 @@ export type Ticket = {
   source_external_id: string;
   title: string;
   description: string | null;
-  status: "open" | "in_review" | "complete" | "abandoned";
+  // M06 collapsed status — 5-state UI vocab (the legacy 4-state values
+  // were rewritten one-shot in backend migration 023).
+  status: "running" | "hitl" | "done" | "failed" | "cancelled";
   plugin_id: string;
   repo_external_id: string;
   pr_id: string | null;
@@ -33,8 +35,6 @@ export type Ticket = {
   is_draft: boolean | null;
   created_at: string;
   updated_at: string;
-  // M06 fields — nullable until the projections that populate them ship.
-  m06_status: "running" | "hitl" | "done" | "failed" | "cancelled" | null;
   current_stage: string | null;
   findings_count: number;
   max_severity: "low" | "medium" | "high" | null;

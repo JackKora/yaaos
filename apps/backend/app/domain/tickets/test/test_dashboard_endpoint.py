@@ -62,10 +62,10 @@ async def seeded(db_session):
     sess = await session_lifecycle.create(db_session, user_id=user.id, workspace_id=None)
 
     # Seed: 2 in_review (→ running), 1 complete (→ done), 1 abandoned (→ cancelled).
-    await _seed_ticket(db_session, org.id, "in_review", "running-1")
-    await _seed_ticket(db_session, org.id, "in_review", "running-2")
-    await _seed_ticket(db_session, org.id, "complete", "done-1")
-    await _seed_ticket(db_session, org.id, "abandoned", "cancelled-1")
+    await _seed_ticket(db_session, org.id, "running", "running-1")
+    await _seed_ticket(db_session, org.id, "running", "running-2")
+    await _seed_ticket(db_session, org.id, "done", "done-1")
+    await _seed_ticket(db_session, org.id, "cancelled", "cancelled-1")
     await db_session.commit()
     yield {"org": org, "sess": sess}
 
@@ -117,7 +117,7 @@ async def test_dashboard_returns_shape_and_projects_status(seeded) -> None:
 async def test_dashboard_in_flight_capped_at_10(seeded, db_session) -> None:
     """If the org has many running tickets, the band caps at 10."""
     for i in range(12):
-        await _seed_ticket(db_session, seeded["org"].id, "in_review", f"extra-{i}")
+        await _seed_ticket(db_session, seeded["org"].id, "running", f"extra-{i}")
     await db_session.commit()
 
     async with _client() as c:

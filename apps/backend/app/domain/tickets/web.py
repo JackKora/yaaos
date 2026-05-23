@@ -54,44 +54,37 @@ async def dashboard() -> dict[str, Any]:
        needs_attention: [TicketRow ≤5]}`.
 
     Avoids the SPA making three `/api/tickets?status=…` calls in a tight
-    polling loop. POC computes M06 status via `project_status`; once the
-    workflow-state join lands, `hitl_pending` and `failed_today` will
-    pick up precise counts.
+    polling loop. `t.status` is the M06 5-state vocab post-collapse
+    (running / hitl / done / failed / cancelled); precise hitl/failed
+    counts depend on the workflow-state projection landing on every
+    transition.
     """
     from datetime import UTC, datetime  # noqa: PLC0415
-
-    from app.domain.tickets.m06_status import project_status  # noqa: PLC0415
 
     org_id = _org()
     # Pull a reasonable window — last 30 days plus everything active. For
     # POC, listing recent tickets is cheap enough; refinement later.
     items = await list_tickets(TicketFilter(sort="updated_desc"), org_id=org_id, limit=200)
 
-    in_flight: list[Ticket] = [t for t in items if project_status(t.status) == "running"]
+    in_flight: list[Ticket] = [t for t in items if t.status == "running"]
     needs_attention: list[Ticket] = [
         t
         for t in items
-        if t.findings_count > 0
-        and project_status(t.status) == "done"
-        and t.max_severity in ("medium", "high")
+        if t.findings_count > 0 and t.status == "done" and t.max_severity in ("medium", "high")
     ]
 
     today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     completed_today = sum(
-        1
-        for t in items
-        if project_status(t.status) == "done" and (t.updated_at or t.created_at) >= today_start
+        1 for t in items if t.status == "done" and (t.updated_at or t.created_at) >= today_start
     )
     failed_today = sum(
-        1
-        for t in items
-        if project_status(t.status) == "failed" and (t.updated_at or t.created_at) >= today_start
+        1 for t in items if t.status == "failed" and (t.updated_at or t.created_at) >= today_start
     )
 
     return {
         "stats": {
             "in_flight": len(in_flight),
-            "hitl_pending": sum(1 for t in items if project_status(t.status) == "hitl"),
+            "hitl_pending": sum(1 for t in items if t.status == "hitl"),
             "completed_today": completed_today,
             "failed_today": failed_today,
         },

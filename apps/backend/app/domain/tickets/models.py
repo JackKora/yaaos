@@ -23,7 +23,7 @@ class TicketRow(Base):
     source_external_id: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="in_review")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
     plugin_id: Mapped[str] = mapped_column(String, nullable=False, server_default="github")
     repo_external_id: Mapped[str] = mapped_column(String, nullable=False, server_default="")
     pr_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)

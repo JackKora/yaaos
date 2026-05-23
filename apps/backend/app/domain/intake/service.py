@@ -195,7 +195,7 @@ async def _handle_pr_closed(event: PullRequestClosed, *, org_id: UUID) -> None:
     new_state = "merged" if event.merged else "closed"
     await pull_requests.update_state(pr.id, new_state, org_id=org_id)  # type: ignore[arg-type]
     ticket = await tickets.get_by_pr(pr.id, org_id=org_id)
-    if ticket and ticket.status == "in_review":
+    if ticket and ticket.status == "running":
         await tickets.complete(ticket.id, org_id=org_id)
         from app.domain import reviewer  # noqa: PLC0415
 
@@ -338,7 +338,7 @@ async def refresh_pr_metadata(
             source_external_id=pr.external_id,
             title=pr.title,
             description=pr.body,
-            status="in_review",
+            status="running",
             plugin_id=pr.plugin_id,
             repo_external_id=repo_external_id,
             pr_id=None,
@@ -372,7 +372,7 @@ async def refresh_pr_metadata(
             repo_external_id=repo_external_id,
             pr_id=upserted.id,
             previous_status=None,
-            new_status="in_review",
+            new_status="running",
         )
     )
 

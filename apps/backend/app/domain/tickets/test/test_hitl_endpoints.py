@@ -55,7 +55,7 @@ async def seeded(db_session):
         text(
             "INSERT INTO tickets (id, org_id, source, source_external_id, title, status,"
             " plugin_id, repo_external_id)"
-            " VALUES (:id, :org_id, 'github_pr', 'x/y#hitl', 't', 'in_review', 'github', 'x/y')"
+            " VALUES (:id, :org_id, 'github_pr', 'x/y#hitl', 't', 'running', 'github', 'x/y')"
         ),
         {"id": ticket_id, "org_id": org.id},
     )
@@ -122,7 +122,7 @@ async def test_history_returns_empty_for_ticket_with_no_hitl(seeded, db_session)
         text(
             "INSERT INTO tickets (id, org_id, source, source_external_id, title, status,"
             " plugin_id, repo_external_id)"
-            " VALUES (:id, :org_id, 'github_pr', 'x/y#bare', 't', 'in_review', 'github', 'x/y')"
+            " VALUES (:id, :org_id, 'github_pr', 'x/y#bare', 't', 'running', 'github', 'x/y')"
         ),
         {"id": bare_ticket, "org_id": seeded["org"].id},
     )

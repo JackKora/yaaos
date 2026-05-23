@@ -117,7 +117,7 @@ export function TicketDetailPage() {
     );
   }
 
-  const m06Status = ticket.m06_status ?? "running";
+  const m06Status = ticket.status;
   const meta = M06_STATUS_META[m06Status] ?? DEFAULT_STATUS_META;
   const Icon = meta.icon;
   const isTerminal = m06Status === "done" || m06Status === "failed" || m06Status === "cancelled";

@@ -66,7 +66,7 @@ const ALL_STATUSES: M06Status[] = ["running", "hitl", "done", "failed", "cancell
 const PAGE_SIZE = 50;
 
 function getM06Status(t: Ticket): M06Status {
-  return t.m06_status ?? "running";
+  return t.status;
 }
 
 export function TicketsListPage() {

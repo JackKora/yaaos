@@ -15,10 +15,12 @@ from app.core.database import session as db_session
 from app.core.events import Event, publish
 from app.domain.tickets.models import TicketRow
 
-TicketStatus = Literal["open", "in_review", "complete", "abandoned"]
-
-
-M06Status = Literal["running", "hitl", "done", "failed", "cancelled"]
+# M06 collapse: single 5-state vocabulary. The legacy 4-state lifecycle
+# (open / in_review / complete / abandoned) was mapped one-shot in migration
+# 023; this is the canonical name now. `hitl` and `failed` are populated by
+# the workflow-state projection (reviewer/workflow_review_view.py); the
+# transition helpers below only emit `running`, `done`, `cancelled`.
+TicketStatus = Literal["running", "hitl", "done", "failed", "cancelled"]
 
 
 class Ticket(BaseModel):
@@ -41,7 +43,6 @@ class Ticket(BaseModel):
     created_at: datetime
     updated_at: datetime
     # M06 fields (nullable until the projections that populate them ship).
-    m06_status: M06Status | None = None
     current_stage: str | None = None
     findings_count: int = 0
     max_severity: Literal["low", "medium", "high"] | None = None
@@ -50,8 +51,6 @@ class Ticket(BaseModel):
 
     @classmethod
     def from_row(cls, row: TicketRow) -> Ticket:
-        from app.domain.tickets.m06_status import project_status  # noqa: PLC0415
-
         return cls(
             id=row.id,
             org_id=row.org_id,
@@ -65,7 +64,6 @@ class Ticket(BaseModel):
             pr_id=row.pr_id,
             created_at=row.created_at,
             updated_at=row.updated_at,
-            m06_status=project_status(row.status),
         )
 
 
@@ -228,7 +226,7 @@ async def create_for_pr(
             source_external_id=source_external_id,
             title=title,
             description=description,
-            status="in_review",
+            status="running",
             plugin_id=plugin_id,
             repo_external_id=repo_external_id,
             pr_id=pr_id,
@@ -251,7 +249,7 @@ async def create_for_pr(
             repo_external_id=repo_external_id,
             pr_id=pr_id,
             previous_status=None,
-            new_status="in_review",
+            new_status="running",
         )
     )
     return await get(row_id, org_id=org_id)
@@ -418,11 +416,11 @@ async def list_tickets(
 
 
 async def complete(ticket_id: UUID, *, org_id: UUID) -> None:
-    await _transition(ticket_id, new_status="complete", org_id=org_id)
+    await _transition(ticket_id, new_status="done", org_id=org_id)
 
 
 async def abandon(ticket_id: UUID, *, reason: str, org_id: UUID) -> None:
-    await _transition(ticket_id, new_status="abandoned", org_id=org_id, reason=reason)
+    await _transition(ticket_id, new_status="cancelled", org_id=org_id, reason=reason)
 
 
 async def _transition(
@@ -438,7 +436,7 @@ async def _transition(
         ).scalar_one_or_none()
         if row is None:
             raise TicketNotFoundError(str(ticket_id))
-        if row.status in ("complete", "abandoned"):
+        if row.status in ("done", "cancelled", "failed"):
             raise InvalidTicketTransition(f"ticket {ticket_id} is terminal ({row.status}); cannot transition")
         prev = row.status
         await s.execute(update(TicketRow).where(TicketRow.id == ticket_id).values(status=new_status))

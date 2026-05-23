@@ -146,6 +146,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("020_rename_member_to_builder", "rename_member_to_builder"),
     ("021_create_notifications", "create_notifications"),
     ("022_lessons_created_by", "lessons_created_by"),
+    ("023_collapse_ticket_status", "collapse_ticket_status"),
 )
 
 
@@ -531,6 +532,25 @@ async def _apply_lessons_created_by(conn) -> None:  # type: ignore[no-untyped-de
     await conn.execute(text("ALTER TABLE lessons ADD COLUMN IF NOT EXISTS created_by UUID"))
 
 
+async def _apply_collapse_ticket_status(conn) -> None:  # type: ignore[no-untyped-def]
+    """M06 audit follow-up — collapse `tickets.status` to the 5-state vocab.
+
+    Legacy lifecycle (open / in_review / complete / abandoned) is
+    rewritten to the M06 display vocab (running / hitl / done / failed
+    / cancelled) one-shot. `hitl` and `failed` are reserved for the
+    workflow-state projection to populate on later transitions; the
+    static migration only maps the four legacy values. Idempotent:
+    re-running matches zero rows.
+    """
+    statements: list[str] = [
+        "UPDATE tickets SET status = 'running' WHERE status IN ('open', 'in_review')",
+        "UPDATE tickets SET status = 'done' WHERE status = 'complete'",
+        "UPDATE tickets SET status = 'cancelled' WHERE status = 'abandoned'",
+    ]
+    for stmt in statements:
+        await conn.execute(text(stmt))
+
+
 async def _apply_create_workspace_agents(conn) -> None:  # type: ignore[no-untyped-def]
     """M05 Phase 7 — `workspace_agents` table: per-pod identity rows.
 
@@ -691,6 +711,8 @@ async def migrate() -> None:
                 await _apply_create_notifications(conn)
             elif kind == "lessons_created_by":
                 await _apply_lessons_created_by(conn)
+            elif kind == "collapse_ticket_status":
+                await _apply_collapse_ticket_status(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},
