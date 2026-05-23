@@ -15,7 +15,13 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 COMPOSE_FILE="${REPO_ROOT}/docker/docker-compose.test.yml"
 
 echo "==> docker compose up (test stack)"
-docker compose -f "${COMPOSE_FILE}" up -d --wait
+# `--build` is load-bearing: without it, `up` reuses any cached image whose
+# tag matches, even if local source has changed. We hit this exact trap
+# during M05 close-out — a stale image from before the `domain/auth` →
+# `domain/sessions` rename kept passing e2e while production was broken.
+# Tradeoff: a clean run is slower (full rebuild). Worth it; the suite is
+# small and runs end-to-end in under a minute.
+docker compose -f "${COMPOSE_FILE}" up -d --build --wait
 
 cleanup() {
   echo "==> docker compose down"

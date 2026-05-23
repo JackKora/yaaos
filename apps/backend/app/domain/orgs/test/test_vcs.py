@@ -31,12 +31,12 @@ def _ensure_github_registered() -> None:
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["vcs"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/vcs")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"vcs"})
     return app
 
 

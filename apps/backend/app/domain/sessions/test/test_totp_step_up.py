@@ -21,12 +21,11 @@ from app.plugins.oauth_test import set_next_profile
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
+    from app.core.webserver import mount_specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["sessions"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/auth")
+    mount_specs(app, only={"sessions"})
     return app
 
 

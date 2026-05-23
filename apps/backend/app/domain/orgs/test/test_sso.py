@@ -26,12 +26,11 @@ from app.plugins.saml_test.service import sign_assertion
 def _app() -> FastAPI:
     from fastapi import Depends  # noqa: PLC0415
 
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
+    from app.core.webserver import mount_specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    sso_spec = _specs["sso"]
-    app.include_router(sso_spec.router, prefix=sso_spec.url_prefix or "/api/sso")
+    mount_specs(app, only={"sso"})
 
     # A protected endpoint under /api/memberships so we can exercise the
     # SSO-enforcement branch in `require()`.

@@ -23,12 +23,11 @@ class _Payload(BaseModel):
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
+    from app.core.webserver import mount_specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    audit_spec = _specs["audit"]
-    app.include_router(audit_spec.router, prefix=audit_spec.url_prefix or "/api/audit")
+    mount_specs(app, only={"audit"})
     return app
 
 

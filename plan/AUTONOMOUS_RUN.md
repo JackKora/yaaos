@@ -35,6 +35,7 @@ The runner ticks these as each milestone completes. The top-level stop condition
 
 - [x] **M03 — Settings + sidebar restructure** → [START_HERE.md](milestones/M03-settings/START_HERE.md)
 - [x] **M04 — MCP context for reviewer agents** → [START_HERE.md](milestones/M04-mcp/START_HERE.md)
+- [x] **M05 — Workspace agent** → [PHASES.md](milestones/M05-workspace-agent/PHASES.md). _(Ran outside this autonomous loop on branch `m05-workspace-agent`; included here for the milestone-progress audit trail.)_
 
 ## Per-iteration ritual
 

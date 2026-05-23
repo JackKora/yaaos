@@ -23,6 +23,13 @@ class RouteSpec(BaseModel):
     on_startup: list[Callable[[], Awaitable[None]]] = Field(default_factory=list)
     on_shutdown: list[Callable[[], Awaitable[None]]] = Field(default_factory=list)
 
+    @property
+    def effective_prefix(self) -> str:
+        """The URL prefix this RouteSpec will mount at — explicit override or
+        `/api/{module_name}` fallback. The single source of truth used by both
+        the production app factory and any test that mounts specs."""
+        return self.url_prefix or f"/api/{self.module_name}"
+
 
 # Keyed by module_name for O(1) uniqueness; insertion order is preserved (Python 3.7+).
 _specs: dict[str, RouteSpec] = {}
@@ -46,7 +53,7 @@ def register_routes(spec: RouteSpec) -> None:
         )
     if spec.module_name in _specs:
         raise ValueError(f"module {spec.module_name!r} already registered routes")
-    prefix = spec.url_prefix or f"/api/{spec.module_name}"
+    prefix = spec.effective_prefix
     if not prefix.startswith("/api/") or prefix.endswith("/"):
         raise ValueError(
             f"{spec.module_name}: url_prefix must start with '/api/' and not end with '/' (got {prefix!r})"

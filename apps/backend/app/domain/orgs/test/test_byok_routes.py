@@ -26,12 +26,12 @@ def _ensure_anthropic_validator() -> None:
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["byok"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/byok")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"byok"})
     return app
 
 

@@ -14,7 +14,6 @@ from fastapi import FastAPI
 
 import app.main  # noqa: F401  — registers the reviewer router
 from app.core.auth import AuthMiddleware
-from app.core.webserver.registry import _specs
 from app.core.workflow import WorkflowExecutionRow, WorkflowState
 from app.domain.orgs import repository as orgs_repo
 from app.domain.tickets.models import TicketRow
@@ -23,8 +22,9 @@ from app.domain.tickets.models import TicketRow
 def _app() -> FastAPI:
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["reviewer"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/reviewer")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"reviewer"})
     return app
 
 

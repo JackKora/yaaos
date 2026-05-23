@@ -37,9 +37,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     await database.migrate()
 
     # 1. Mount routers registered by domain modules.
-    for spec in get_specs().values():
-        prefix = spec.url_prefix or f"/api/{spec.module_name}"
-        app.include_router(spec.router, prefix=prefix, tags=[spec.module_name])
+    mount_specs(app)
 
     # The framework /api/health carve-out (NOT in the RouteSpec registry).
     app.include_router(health_router)
@@ -169,6 +167,23 @@ def _check_required_prod_secrets() -> None:
         missing.append("YAAOS_TOTP_MASTER_KEY")
     if missing:
         raise RuntimeError(f"yaaos refuses to start in prod with missing/stub secrets: {', '.join(missing)}")
+
+
+def mount_specs(app: FastAPI, *, only: set[str] | None = None) -> None:
+    """Mount every registered RouteSpec onto `app` at its effective prefix.
+
+    Single source of truth for prefix resolution. Both the production lifespan
+    and any test that builds a partial app must call this — never reimplement
+    the prefix-derivation rule, or the test will silently diverge from prod
+    (and silently pass against the wrong URL).
+
+    `only` optionally restricts mounting to the named modules (useful for
+    fast unit tests that don't need the full app).
+    """
+    for spec in get_specs().values():
+        if only is not None and spec.module_name not in only:
+            continue
+        app.include_router(spec.router, prefix=spec.effective_prefix, tags=[spec.module_name])
 
 
 def create_app() -> FastAPI:

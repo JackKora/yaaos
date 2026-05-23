@@ -556,7 +556,7 @@ async def _emit_logout_audit(s, *, user_id, kind: str = "logout") -> None:
         )
 
 
-register_routes(RouteSpec(module_name="sessions", router=router))
+register_routes(RouteSpec(module_name="sessions", router=router, url_prefix="/api/auth"))
 
 
 __all__ = ["LINK_PENDING_COOKIE", "router"]

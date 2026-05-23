@@ -41,12 +41,12 @@ def _ensure_claude_code_registered() -> None:
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["coding_agents"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/coding-agents")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"coding_agents"})
     return app
 
 

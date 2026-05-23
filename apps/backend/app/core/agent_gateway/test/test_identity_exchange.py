@@ -27,11 +27,11 @@ from app.domain.orgs import repository as orgs_repo
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
-    spec = _specs["agent_gateway"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/v1")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"agent_gateway"})
     return app
 
 

@@ -26,7 +26,6 @@ from app.core.audit_log.models import AuditEntryRow
 from app.core.auth import AuthMiddleware
 from app.core.oauth import ProviderConfig
 from app.core.secrets import encrypt
-from app.core.webserver.registry import _specs
 from app.domain.identity import repository as identity_repo
 from app.domain.integrations.models import McpCredentialRow
 from app.domain.integrations.types import _REGISTRY
@@ -78,8 +77,9 @@ def stub_provider():
 def _app() -> FastAPI:
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["mcp"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/mcp")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"mcp"})
     return app
 
 

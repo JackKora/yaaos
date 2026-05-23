@@ -27,12 +27,12 @@ from app.domain.sessions import web as _auth_web  # noqa: F401 — ensures /api/
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    for spec in _specs.values():
-        app.include_router(spec.router, prefix=spec.url_prefix or f"/api/{spec.module_name}")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app)
     return app
 
 
@@ -44,11 +44,12 @@ def _enumerate_protected_routes() -> list[tuple[str, str]]:
     """Walk the registered routes; return `(method, path)` for every route
     under an M02_PROTECTED_PREFIX that uses a non-templated path. Templated
     paths get a synthetic UUID so the fixture can probe them."""
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
+
+    from app.core.webserver.registry import get_specs  # noqa: PLC0415
 
     out: list[tuple[str, str]] = []
-    for spec in _specs.values():
-        prefix = spec.url_prefix or f"/api/{spec.module_name}"
+    for spec in get_specs().values():
+        prefix = spec.effective_prefix
         for route in spec.router.routes:
             full = prefix + getattr(route, "path", "")
             if not is_m02_protected_path(full):

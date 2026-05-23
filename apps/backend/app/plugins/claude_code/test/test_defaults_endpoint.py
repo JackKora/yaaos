@@ -18,12 +18,12 @@ from app.plugins.claude_code import web as _cc_web  # noqa: F401
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["claude_code"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/claude_code")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"claude_code"})
     return app
 
 

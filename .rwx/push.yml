@@ -58,6 +58,7 @@ tasks:
         -v "$(pwd)/apps/web/docs:/app/apps/web/docs:ro" \
         -v "$(pwd)/apps/e2e/docs:/app/apps/e2e/docs:ro" \
         -v "$(pwd)/apps/fake-github/docs:/app/apps/fake-github/docs:ro" \
+        -v "$(pwd)/apps/agent/docs:/app/apps/agent/docs:ro" \
         -v "$(pwd)/apps/backend/tmp:/app/apps/backend/tmp" \
         yaaos-backend-ci sh -c "cd apps/backend && bin/ci"
     outputs:

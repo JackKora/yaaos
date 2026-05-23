@@ -24,12 +24,12 @@ from app.domain.sessions import web as _auth_web  # noqa: F401
 
 
 def _patch_app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["orgs"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/orgs")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"orgs"})
     return app
 
 
@@ -43,11 +43,10 @@ def _idle_probe_app() -> FastAPI:
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
 
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
-
     # Reuse the memberships router so we have an org-scoped GET to hit.
-    spec = _specs["memberships"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/memberships")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"memberships"})
     return app
 
 

@@ -20,12 +20,12 @@ from app.plugins.github.web import _install_state_serializer, resolve_org_for_in
 
 
 def _app() -> FastAPI:
-    from app.core.webserver.registry import _specs  # noqa: PLC0415
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
-    spec = _specs["github"]
-    app.include_router(spec.router, prefix=spec.url_prefix or "/api/github")
+    from app.core.webserver import mount_specs  # noqa: PLC0415
+
+    mount_specs(app, only={"github"})
     return app
 
 
