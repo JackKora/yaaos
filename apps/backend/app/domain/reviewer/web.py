@@ -1,4 +1,8 @@
-"""HTTP routes for review-job + durable-findings operations."""
+"""HTTP routes for review-job + durable-findings operations.
+
+Per-endpoint Action gating — `REVIEWER_READ` on GETs, `REVIEWER_WRITE` on
+POSTs. Org context arrives via `X-Org-Slug`.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core.auth import public_route
+from app.core.auth.context import org_id_var
+from app.core.auth.types import Action
 from app.core.database import session
 from app.core.webserver import RouteSpec, register_routes
 from app.domain import tickets
@@ -18,20 +23,27 @@ from app.domain.reviewer.service import (
     all_conversations_view,
     list_findings_view,
 )
+from app.domain.sessions.dependencies import require
 
-M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
-
-# M02 default-deny: legacy reviewer endpoints declare `public_route` so the
-# middleware's post-response guard recognizes the declaration. M03+ migration
-# to per-org access swaps this for `require(Action.X)`.
-router = APIRouter(dependencies=[Depends(public_route)])
+router = APIRouter()
 
 
 class RereviewRequest(BaseModel):
     ticket_id: UUID
 
 
-@router.post("/rereview")
+def _err(status: int, code: str) -> HTTPException:
+    return HTTPException(status_code=status, detail={"error": code})
+
+
+def _org() -> UUID:
+    org_id = org_id_var.get()
+    if org_id is None:
+        raise _err(400, "no_org_context")
+    return org_id
+
+
+@router.post("/rereview", dependencies=[Depends(require(Action.REVIEWER_WRITE))])
 async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
     """Re-review a ticket — drives `pr_review_v1` via the M05 workflow engine.
 
@@ -40,15 +52,12 @@ async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
     response now carries `workflow_execution_id` instead of `review_job_id`
     so the caller can poll workflow state if desired.
     """
+    org_id = _org()
     try:
-        await tickets.get(req.ticket_id, org_id=M01_ORG_ID)
+        await tickets.get(req.ticket_id, org_id=org_id)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
 
-    # Read ticket context via the workflow-context provider (registered at
-    # domain/reviewer bootstrap). Routes the same path intake uses, so the
-    # workflow engine receives a payload-derived `$ticket.*` view + the
-    # right org id without re-fetching here.
     from app.core.workflow import get_engine  # noqa: PLC0415
     from app.core.workspace import get_workflow_context_provider  # noqa: PLC0415
 
@@ -78,17 +87,12 @@ async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
     }
 
 
-@router.post("/cancel")
+@router.post("/cancel", dependencies=[Depends(require(Action.REVIEWER_WRITE))])
 async def cancel_jobs(ticket_id: UUID) -> dict[str, int]:
-    """Cancel any non-terminal workflow_executions for this ticket.
-
-    The legacy `review_jobs` cancel path was retired with the queue.py
-    dismantle (slice 60); now `workflow.request_cancel` is the single
-    source of truth. The engine transitions the workflow to `cancelled`
-    at its next step boundary.
-    """
+    """Cancel any non-terminal workflow_executions for this ticket."""
+    org_id = _org()
     try:
-        await tickets.get(ticket_id, org_id=M01_ORG_ID)
+        await tickets.get(ticket_id, org_id=org_id)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
 
@@ -98,42 +102,33 @@ async def cancel_jobs(ticket_id: UUID) -> dict[str, int]:
     return {"cancelled_count": cancelled}
 
 
-@router.get("/jobs/by-ticket/{ticket_id}")
+@router.get("/jobs/by-ticket/{ticket_id}", dependencies=[Depends(require(Action.REVIEWER_READ))])
 async def jobs_by_ticket(ticket_id: UUID) -> list[ReviewJob]:
-    """Per-ticket review history.
-
-    Reads from `workflow_executions` for this ticket, projected into the
-    `ReviewJob` shape via `workflow_review_view`. Newest first. The
-    legacy `review_jobs` merge was dropped with the queue.py dismantle
-    (slice 60) — that table is no longer written by any code path.
-    """
+    """Per-ticket review history."""
     from app.domain.reviewer.workflow_review_view import (  # noqa: PLC0415
         list_review_jobs_for_ticket as list_workflow_jobs,
     )
 
+    org_id = _org()
     try:
-        t = await tickets.get(ticket_id, org_id=M01_ORG_ID)
+        t = await tickets.get(ticket_id, org_id=org_id)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
 
-    # Workflow projection needs a PR id to populate `pr_id`. Use the
-    # ticket's pr_id if present; otherwise zero-UUID (SPA tolerates).
     pr_id_for_projection = t.pr_id or UUID(int=0)
-    rows = await list_workflow_jobs(ticket_id, pr_id=pr_id_for_projection, org_id=M01_ORG_ID)
+    rows = await list_workflow_jobs(ticket_id, pr_id=pr_id_for_projection, org_id=org_id)
     rows.sort(key=lambda j: j.scheduled_at, reverse=True)
     return rows
 
 
-@router.get("/metrics")
+@router.get("/metrics", dependencies=[Depends(require(Action.REVIEWER_READ))])
 async def metrics() -> dict[str, Any]:
-    """Aggregate review counters, sourced from `workflow_executions` via
-    the workflow_review_view projection. The legacy `review_jobs` source
-    was dropped with the queue.py dismantle (slice 60)."""
+    """Aggregate review counters."""
     from app.domain.reviewer.workflow_review_view import (  # noqa: PLC0415
         workflow_metrics_summary,
     )
 
-    workflow = await workflow_metrics_summary(org_id=M01_ORG_ID)
+    workflow = await workflow_metrics_summary(org_id=_org())
     by_status: dict[str, int] = dict(workflow.get("review_jobs_by_status") or {})
     posted = workflow.get("total_reviews_posted") or 0
     failed = workflow.get("failure_count") or 0
@@ -145,21 +140,22 @@ async def metrics() -> dict[str, Any]:
     }
 
 
-@router.get("/findings/by-ticket/{ticket_id}")
+@router.get(
+    "/findings/by-ticket/{ticket_id}",
+    dependencies=[Depends(require(Action.REVIEWER_READ))],
+)
 async def findings_by_ticket(ticket_id: UUID, include_terminal: bool = False) -> list[dict[str, Any]]:
-    """List open + acknowledged findings for the ticket's PR.
-
-    Set `include_terminal=true` to also return resolved + stale findings.
-    """
+    """List open + acknowledged findings for the ticket's PR."""
+    org_id = _org()
     try:
-        t = await tickets.get(ticket_id, org_id=M01_ORG_ID)
+        t = await tickets.get(ticket_id, org_id=org_id)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
     if t.pr_id is None:
         return []
     async with session() as s:
         repo = SqlAlchemyAggregateRepository(s)
-        aggregate = await repo.load(pr_id=t.pr_id, org_id=M01_ORG_ID)
+        aggregate = await repo.load(pr_id=t.pr_id, org_id=org_id)
     return [
         {
             "id": str(f.id),
@@ -180,18 +176,22 @@ async def findings_by_ticket(ticket_id: UUID, include_terminal: bool = False) ->
     ]
 
 
-@router.get("/conversations/by-ticket/{ticket_id}")
+@router.get(
+    "/conversations/by-ticket/{ticket_id}",
+    dependencies=[Depends(require(Action.REVIEWER_READ))],
+)
 async def conversations_by_ticket(ticket_id: UUID) -> list[dict[str, Any]]:
-    """All-Conversations cross-cut (plan §9.3) for the ticket's PR."""
+    """All-Conversations cross-cut for the ticket's PR."""
+    org_id = _org()
     try:
-        t = await tickets.get(ticket_id, org_id=M01_ORG_ID)
+        t = await tickets.get(ticket_id, org_id=org_id)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
     if t.pr_id is None:
         return []
     async with session() as s:
         repo = SqlAlchemyAggregateRepository(s)
-        aggregate = await repo.load(pr_id=t.pr_id, org_id=M01_ORG_ID)
+        aggregate = await repo.load(pr_id=t.pr_id, org_id=org_id)
     return [
         {
             "finding_id": str(c.finding_id),
@@ -206,21 +206,19 @@ async def conversations_by_ticket(ticket_id: UUID) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/reviews/by-ticket/{ticket_id}")
+@router.get(
+    "/reviews/by-ticket/{ticket_id}",
+    dependencies=[Depends(require(Action.REVIEWER_READ))],
+)
 async def reviews_by_ticket(ticket_id: UUID) -> list[dict[str, Any]]:
-    """Per-review timeline metadata (plan §9.2).
-
-    Returns one row per Review for the ticket's PR, newest first. Each row
-    carries `sequence_number`, `trigger_reason`, `scope_kind`/`scope_prev_sha`,
-    `commit_sha_at_start`, status, timestamps, model/tokens — everything the
-    UI needs to render the collapsible per-review section header.
-    """
+    """Per-review timeline metadata."""
     from sqlalchemy import desc, select  # noqa: PLC0415
 
     from app.domain.reviewer.models import ReviewRow  # noqa: PLC0415
 
+    org_id = _org()
     try:
-        t = await tickets.get(ticket_id, org_id=M01_ORG_ID)
+        t = await tickets.get(ticket_id, org_id=org_id)
     except tickets.TicketNotFoundError:
         raise HTTPException(status_code=404, detail="ticket not found")
     if t.pr_id is None:
@@ -230,7 +228,7 @@ async def reviews_by_ticket(ticket_id: UUID) -> list[dict[str, Any]]:
             (
                 await s.execute(
                     select(ReviewRow)
-                    .where(ReviewRow.pr_id == t.pr_id, ReviewRow.org_id == M01_ORG_ID)
+                    .where(ReviewRow.pr_id == t.pr_id, ReviewRow.org_id == org_id)
                     .order_by(desc(ReviewRow.sequence_number))
                 )
             )
@@ -259,9 +257,12 @@ async def reviews_by_ticket(ticket_id: UUID) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/threads/by-finding/{finding_id}")
+@router.get(
+    "/threads/by-finding/{finding_id}",
+    dependencies=[Depends(require(Action.REVIEWER_READ))],
+)
 async def thread_by_finding(finding_id: UUID) -> dict[str, Any]:
-    """Thread messages + ack banner for one finding (plan §9.4)."""
+    """Thread messages + ack banner for one finding."""
     from sqlalchemy import select  # noqa: PLC0415
 
     from app.domain.reviewer.models import (  # noqa: PLC0415
@@ -271,13 +272,14 @@ async def thread_by_finding(finding_id: UUID) -> dict[str, Any]:
         FindingRow,
     )
 
+    org_id = _org()
     async with session() as s:
         finding = (
             await s.execute(select(FindingRow).where(FindingRow.id == finding_id))
         ).scalar_one_or_none()
         if finding is None:
             raise HTTPException(status_code=404, detail="finding not found")
-        if finding.org_id != M01_ORG_ID:
+        if finding.org_id != org_id:
             raise HTTPException(status_code=404, detail="finding not found")
         thread = (
             await s.execute(select(CommentThreadRow).where(CommentThreadRow.finding_id == finding_id))

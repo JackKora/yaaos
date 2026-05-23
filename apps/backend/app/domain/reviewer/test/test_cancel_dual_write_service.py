@@ -15,7 +15,10 @@ from fastapi import FastAPI
 import app.main  # noqa: F401  — registers the reviewer router
 from app.core.auth import AuthMiddleware
 from app.core.workflow import WorkflowExecutionRow, WorkflowState
+from app.domain.identity import repository as identity_repo
+from app.domain.identity import sessions as session_lifecycle
 from app.domain.orgs import repository as orgs_repo
+from app.domain.orgs.types import Role
 from app.domain.tickets.models import TicketRow
 
 
@@ -32,19 +35,27 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=_app()), base_url="http://test")
 
 
-# M01 single-tenant org id — the same constant /api/reviewer routes hard-bind to.
+# M01 single-tenant org id — the same constant /api/reviewer routes used to
+# hard-bind to before M06 made the routers org-scoped. Tests still use it
+# as a stable test-fixture id; production code no longer references it.
 _M01_ORG_ID = "00000000-0000-0000-0000-000000000001"
+_ORG_SLUG = "m01"
 
 
-async def _seed_ticket(db_session) -> TicketRow:  # type: ignore[no-untyped-def]
-    """Insert a ticket bound to the M01 org so the cancel endpoint's
-    ticket lookup succeeds."""
-    # Ensure the M01 org row exists.
-    existing = await orgs_repo.get_org_by_slug(db_session, "m01")
+async def _seed_ticket(db_session) -> tuple[TicketRow, object]:  # type: ignore[no-untyped-def]
+    """Insert a ticket + a Builder session so the cancel endpoint can
+    authenticate. Returns (ticket, session)."""
+    existing = await orgs_repo.get_org_by_slug(db_session, _ORG_SLUG)
     if existing is None:
-        org = await orgs_repo.insert_org(db_session, slug="m01")
+        org = await orgs_repo.insert_org(db_session, slug=_ORG_SLUG)
         org.id = type(org.id)(_M01_ORG_ID)  # rebind to the M01 id
         await db_session.flush()
+        existing = org
+    user = await identity_repo.insert_user(db_session, display_name="Builder")
+    await orgs_repo.insert_membership(
+        db_session, user_id=user.id, org_id=existing.id, role=Role.BUILDER, handle="b"
+    )
+    sess = await session_lifecycle.create(db_session, user_id=user.id, workspace_id=None)
 
     ticket = TicketRow(
         id=uuid4(),
@@ -57,7 +68,14 @@ async def _seed_ticket(db_session) -> TicketRow:  # type: ignore[no-untyped-def]
     )
     db_session.add(ticket)
     await db_session.flush()
-    return ticket
+    return ticket, sess
+
+
+def _auth(sess) -> dict[str, dict[str, str] | dict[str, str]]:  # type: ignore[no-untyped-def]
+    return {
+        "cookies": {"yaaos_session": sess.raw_token, "yaaos_csrf": sess.csrf_token},
+        "headers": {"X-Org-Slug": _ORG_SLUG, "X-CSRF-Token": sess.csrf_token},
+    }
 
 
 @pytest.mark.asyncio
@@ -66,7 +84,7 @@ async def test_cancel_endpoint_sets_cancel_requested_on_workflow_executions(  # 
 ):
     """A running workflow_executions row for the ticket gets
     `cancel_requested=true` after POST /api/reviewer/cancel."""
-    ticket = await _seed_ticket(db_session)
+    ticket, sess = await _seed_ticket(db_session)
 
     wfx_running = WorkflowExecutionRow(
         ticket_id=ticket.id,
@@ -92,10 +110,8 @@ async def test_cancel_endpoint_sets_cancel_requested_on_workflow_executions(  # 
     await db_session.commit()
 
     async with _client() as c:
-        resp = await c.post(f"/api/reviewer/cancel?ticket_id={ticket.id}")
+        resp = await c.post(f"/api/reviewer/cancel?ticket_id={ticket.id}", **_auth(sess))
     assert resp.status_code == 200, resp.text
-    # cancelled_count includes the workflow row (legacy cancel_pending
-    # returns 0 because no ReviewRow / pr_id link).
     assert resp.json()["cancelled_count"] >= 1
 
     refreshed_running = await db_session.get(WorkflowExecutionRow, wfx_running.id)
@@ -107,17 +123,20 @@ async def test_cancel_endpoint_sets_cancel_requested_on_workflow_executions(  # 
 @pytest.mark.asyncio
 async def test_cancel_endpoint_no_workflows_returns_zero(db_session) -> None:  # type: ignore[no-untyped-def]
     """No workflows + no legacy rows → cancelled_count == 0."""
-    ticket = await _seed_ticket(db_session)
+    ticket, sess = await _seed_ticket(db_session)
     await db_session.commit()
 
     async with _client() as c:
-        resp = await c.post(f"/api/reviewer/cancel?ticket_id={ticket.id}")
+        resp = await c.post(f"/api/reviewer/cancel?ticket_id={ticket.id}", **_auth(sess))
     assert resp.status_code == 200
     assert resp.json()["cancelled_count"] == 0
 
 
 @pytest.mark.asyncio
-async def test_cancel_endpoint_404_on_missing_ticket() -> None:
+async def test_cancel_endpoint_404_on_missing_ticket(db_session) -> None:  # type: ignore[no-untyped-def]
+    # Seed an org + session so we get past auth and into the handler.
+    _, sess = await _seed_ticket(db_session)
+    await db_session.commit()
     async with _client() as c:
-        resp = await c.post(f"/api/reviewer/cancel?ticket_id={uuid4()}")
+        resp = await c.post(f"/api/reviewer/cancel?ticket_id={uuid4()}", **_auth(sess))
     assert resp.status_code == 404

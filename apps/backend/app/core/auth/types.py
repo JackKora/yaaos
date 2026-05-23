@@ -49,6 +49,14 @@ class Action(StrEnum):
     INTEGRATIONS_READ = "integrations.read"
     INTEGRATIONS_WRITE = "integrations.write"
 
+    # M06 — org-scope the M01-era routers (tickets, lessons, reviewer). Every
+    # Builder reads + mutates; Admin/Owner inherit via Role.covers().
+    TICKETS_READ = "tickets.read"
+    LESSONS_READ = "lessons.read"
+    LESSONS_WRITE = "lessons.write"
+    REVIEWER_READ = "reviewer.read"
+    REVIEWER_WRITE = "reviewer.write"
+
 
 # Public-allowlist prefixes: any path matching one of these bypasses the
 # X-Org-Slug requirement AND the post-response security guard.
@@ -93,6 +101,10 @@ M02_PROTECTED_PREFIXES: tuple[str, ...] = (
     "/api/orgs",  # exact + prefix
     "/api/byok",  # exact + prefix
     "/api/integrations",  # exact + prefix
+    # M06 — org-scope the three M01-era routers.
+    "/api/tickets",  # exact + prefix
+    "/api/lessons",  # exact + prefix
+    "/api/reviewer",  # exact + prefix
 )
 
 

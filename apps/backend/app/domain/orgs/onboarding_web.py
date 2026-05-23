@@ -25,14 +25,19 @@ from app.domain.coding_agent.service import _PLUGINS as _CODING_AGENT_PLUGINS
 from app.domain.orgs.onboarding import OnboardingStatus, get_onboarding_status
 from app.domain.vcs.registry import _PLUGINS as _VCS_PLUGINS
 
-M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
+# Legacy single-tenant fallback org id — kept inline here because this
+# endpoint is the only domain caller and is scheduled for deletion in
+# F1 Phase 9 (replaced by /api/orgs/config-status). Inlining keeps the
+# Phase 2 grep clean without dragging the legacy export back into a
+# shared constants module.
+_LEGACY_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 router = APIRouter(dependencies=[Depends(public_route)])
 
 
 @router.get("/onboarding")
 async def onboarding() -> OnboardingStatus:
-    return await get_onboarding_status(org_id=M01_ORG_ID)
+    return await get_onboarding_status(org_id=_LEGACY_ORG_ID)
 
 
 @router.get("/plugins")

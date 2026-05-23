@@ -7,13 +7,6 @@ no re-binding shims required.
 
 from __future__ import annotations
 
-from uuid import UUID
-
-# Default org id used by the M01 single-tenant POC for rows that predate
-# multi-tenant scoping. Anywhere a real `org_id` flows it should take
-# precedence; this constant is the fallback identity only.
-M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
-
 # Hard-coded reviewer identity. There's only one reviewer (the parent
 # agent that dispatches subagents); we use this tag on the top-level
 # GitHub review body. Per-comment prefixes come from each finding's
@@ -37,6 +30,5 @@ __all__ = [
     "CODING_AGENT_PLUGIN_ID",
     "DEFAULT_EFFORT",
     "DEFAULT_MODEL",
-    "M01_ORG_ID",
     "REVIEWER_TAG",
 ]

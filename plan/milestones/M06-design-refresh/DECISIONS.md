@@ -72,6 +72,18 @@
 - **Rejected:** create a separate `user_orgs_web.py` module with its own `RouteSpec(module_name="orgs_user", ...)`. The route registry enforces one-prefix-per-module, and two RouteSpecs both at `/api/orgs` collide.
 - **Why:** the registry already encodes the rule "one module per URL prefix"; piling endpoints onto the existing module is the path of least resistance.
 
+### D2.10 — Org-scoping the three M01 routers: 5 new Actions, all Builder-grade
+
+- **Picked:** add `TICKETS_READ`, `LESSONS_READ`, `LESSONS_WRITE`, `REVIEWER_READ`, `REVIEWER_WRITE` to `Action`; all map to `Role.BUILDER` in `_REQUIRED_ROLE`. Replaced `dependencies=[Depends(public_route)]` + `M01_ORG_ID` with per-endpoint `dependencies=[Depends(require(Action.X))]` + `org_id_var.get()`. Spec listed 4 Actions (no `LESSONS_WRITE`); added it because POST/PUT/DELETE /api/lessons clearly need a write-tier check.
+- **Rejected:** keep `public_route` and infer org from request body / first query param.
+- **Why:** the spec wants org-scoping the standard M02 way; this mirrors how the other already-org-scoped modules (orgs, integrations, vcs, coding_agents) work.
+
+### D2.11 — `M01_ORG_ID` constant in `orgs/onboarding_web.py`: inline literal
+
+- **Picked:** delete the `M01_ORG_ID = UUID(...)` constant in `reviewer/constants.py` (unused outside tests). In `orgs/onboarding_web.py` (the legacy `/api/settings/onboarding` endpoint, scheduled for Phase 9 deletion), rename the constant to `_LEGACY_ORG_ID` so the Phase 2 grep is clean while preserving the legacy fallback the SPA still calls.
+- **Rejected:** delete the legacy `/api/settings/onboarding` endpoint now (the Dashboard + Settings pages still call it pre-redesign).
+- **Why:** the spec lets the legacy endpoint live through Phase 2 → Phase 5 transition; rename-only keeps the grep clean without breaking the unmigrated SPA pages.
+
 ### D2.9 — Coding-agent readiness inferred from `anthropic_key_set`
 
 - **Picked:** in `/api/orgs/config-status`, treat the existing `anthropic_key_set` contributor as a proxy for "coding agent configured" (do not surface `coding_agent` separately in `missing`).

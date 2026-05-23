@@ -1,4 +1,15 @@
-"""HTTP routes for memory CRUD."""
+"""HTTP routes for lessons CRUD.
+
+| Method | Path                  | Action          |
+|--------|-----------------------|-----------------|
+| GET    | `/api/lessons`        | `LESSONS_READ`  |
+| POST   | `/api/lessons`        | `LESSONS_WRITE` |
+| PUT    | `/api/lessons/{id}`   | `LESSONS_WRITE` |
+| DELETE | `/api/lessons/{id}`   | `LESSONS_WRITE` |
+
+Org context arrives via `X-Org-Slug` (M02 pattern). Actor is the current
+user, derived from the session cookie.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +18,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core.audit_log import Actor
-from app.core.auth import public_route
+from app.core.auth.context import org_id_var
+from app.core.auth.types import Action
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.lessons.service import (
     Lesson,
@@ -21,11 +32,9 @@ from app.domain.lessons.service import (
     list_for_repo,
     update,
 )
+from app.domain.sessions.dependencies import current_actor, require
 
-M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
-
-# M02 default-deny: legacy memory endpoints declare `public_route`.
-router = APIRouter(dependencies=[Depends(public_route)])
+router = APIRouter()
 
 
 class CreateLessonRequest(BaseModel):
@@ -42,14 +51,26 @@ class UpdateLessonRequest(BaseModel):
     source_pr_url: str | None = None
 
 
-@router.get("")
+def _err(status: int, code: str) -> HTTPException:
+    return HTTPException(status_code=status, detail={"error": code})
+
+
+def _org() -> UUID:
+    org_id = org_id_var.get()
+    if org_id is None:
+        raise _err(400, "no_org_context")
+    return org_id
+
+
+@router.get("", dependencies=[Depends(require(Action.LESSONS_READ))])
 async def list_(repo_external_id: str | None = None) -> list[Lesson]:
+    org_id = _org()
     if repo_external_id is not None:
-        return await list_for_repo(repo_external_id, org_id=M01_ORG_ID)
-    return await list_all(org_id=M01_ORG_ID)
+        return await list_for_repo(repo_external_id, org_id=org_id)
+    return await list_all(org_id=org_id)
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require(Action.LESSONS_WRITE))])
 async def create_lesson(req: CreateLessonRequest) -> Lesson:
     try:
         return await create(
@@ -57,15 +78,15 @@ async def create_lesson(req: CreateLessonRequest) -> Lesson:
             req.title,
             req.body,
             req.source_pr_url,
-            actor=Actor.system(),
-            org_id=M01_ORG_ID,
+            actor=current_actor(),
+            org_id=_org(),
             plugin_id=req.plugin_id,
         )
     except LessonValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.put("/{lesson_id}")
+@router.put("/{lesson_id}", dependencies=[Depends(require(Action.LESSONS_WRITE))])
 async def update_lesson(lesson_id: UUID, req: UpdateLessonRequest) -> Lesson:
     try:
         return await update(
@@ -73,8 +94,8 @@ async def update_lesson(lesson_id: UUID, req: UpdateLessonRequest) -> Lesson:
             title=req.title,
             body=req.body,
             source_pr_url=req.source_pr_url,
-            actor=Actor.system(),
-            org_id=M01_ORG_ID,
+            actor=current_actor(),
+            org_id=_org(),
         )
     except LessonNotFoundError:
         raise HTTPException(status_code=404, detail="lesson not found")
@@ -82,13 +103,14 @@ async def update_lesson(lesson_id: UUID, req: UpdateLessonRequest) -> Lesson:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/{lesson_id}")
+@router.delete("/{lesson_id}", dependencies=[Depends(require(Action.LESSONS_WRITE))])
 async def delete_lesson(lesson_id: UUID) -> dict[str, str]:
+    org_id = _org()
     try:
-        await get(lesson_id, org_id=M01_ORG_ID)
+        await get(lesson_id, org_id=org_id)
     except LessonNotFoundError:
         raise HTTPException(status_code=404, detail="lesson not found")
-    await delete(lesson_id, actor=Actor.system(), org_id=M01_ORG_ID)
+    await delete(lesson_id, actor=current_actor(), org_id=org_id)
     return {"status": "deleted"}
 
 
