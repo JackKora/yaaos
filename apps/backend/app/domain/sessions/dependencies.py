@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import Cookie, Depends, Header, HTTPException, Request
 
 from app.core.audit_log import Actor, ActorKind
+from app.core.auth.auth_failure import AuthFailure
 from app.core.auth.context import (
     actor_id_var,
     actor_kind_var,
@@ -119,7 +120,10 @@ def require(action: Action) -> Callable[..., None]:
         user_id=Depends(_current_session_user_id),
     ) -> Membership:
         if user_id is None:
-            raise _err(401, "unauthenticated")
+            # Raise the AuthFailure subclass so the registered handler
+            # clears the stale session + csrf cookies on the way out.
+            # Browser's next request starts clean → no cascading 401 loop.
+            raise AuthFailure("unauthenticated")
         if not x_org_slug:
             # Middleware should have caught this, but defend in depth.
             raise _err(400, "missing_org_slug")
@@ -153,7 +157,30 @@ def require(action: Action) -> Callable[..., None]:
                 minutes = org_row.session_timeout_override
                 idle = _timedelta(minutes=minutes) if minutes else SESSION_IDLE_TIMEOUT
                 if sess_row.last_seen_at + idle < _datetime.now(_UTC):
-                    raise _err(401, "session_idle_expired")
+                    # Audit row mirrors the hard-expiry pattern in
+                    # `domain/identity/scheduler._purge_expired_sessions`
+                    # so the timeline has a "why did my session die"
+                    # entry for the idle case too.
+                    from pydantic import BaseModel as _BaseModel  # noqa: PLC0415
+
+                    from app.core.audit_log import Actor as _Actor  # noqa: PLC0415
+                    from app.core.audit_log import audit as _audit  # noqa: PLC0415
+
+                    class _IdlePayload(_BaseModel):
+                        kind: str = "idle_timeout"
+
+                    async with db_session() as s:
+                        await _audit(
+                            "user",
+                            user_id,
+                            "logout",
+                            _IdlePayload(),
+                            _Actor.user(user_id=user_id),
+                            org_id=org_row.id,
+                            session=s,
+                        )
+                        await s.commit()
+                    raise AuthFailure("session_idle_expired")
         # SSO satisfaction: if the org has SSO enabled, the session must
         # have `sso_satisfied_for_org_id == org_id` within the 8h TTL.
         # Break-glass: the exempt Owner bypasses this AND must have a

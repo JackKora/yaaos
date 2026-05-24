@@ -31,12 +31,15 @@ export function DetailsPage() {
     return <div className="p-6 text-muted-foreground text-sm">Loading…</div>;
   }
   if (!data) {
+    // A real 401 has already been intercepted by `apiFetch`'s central
+    // handler, which hard-navigates to /login — this code path is
+    // unreachable in that case. The branch only fires if the request
+    // failed for some other reason (network blip, 500, etc.); surface
+    // a neutral error instead of the misleading "Not signed in" message
+    // that masked a recent missing_org_slug bug.
     return (
-      <div className="p-6 text-sm">
-        Not signed in.{" "}
-        <a href="/login" className="text-primary underline">
-          Go to login.
-        </a>
+      <div className="p-6 text-sm text-destructive">
+        Couldn't load your account. Refresh to try again.
       </div>
     );
   }

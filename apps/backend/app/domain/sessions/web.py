@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from app.core.audit_log import Actor
 from app.core.audit_log import audit as audit_write
+from app.core.auth.auth_failure import auth_failure_response
 from app.core.auth.cookies import (
     CSRF_COOKIE_NAME,
     SESSION_COOKIE_NAME,
@@ -246,11 +247,11 @@ async def me(
     from app.domain.orgs.types import Role as _Role  # noqa: PLC0415
 
     if not yaaos_session:
-        return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+        return auth_failure_response("unauthenticated")
     async with db_session() as s:
         session = await session_lifecycle.lookup(s, yaaos_session)
         if session is None or session.user_id is None:
-            return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+            return auth_failure_response("unauthenticated")
         user_row = await identity_repo.get_user(s, session.user_id)
         emails = await identity_repo.list_emails_for_user(s, session.user_id)
         memberships = await orgs_repo.list_memberships_for_user(s, session.user_id)
@@ -385,11 +386,11 @@ async def totp_enroll(
     from app.domain.identity import totp as totp_lifecycle  # noqa: PLC0415
 
     if not yaaos_session:
-        return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+        return auth_failure_response("unauthenticated")
     async with db_session() as s:
         session = await session_lifecycle.lookup(s, yaaos_session)
         if session is None or session.user_id is None:
-            return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+            return auth_failure_response("unauthenticated")
         seed, uri = await totp_lifecycle.enroll(
             s, user_id=session.user_id, account_label=str(session.user_id)
         )
@@ -461,11 +462,11 @@ async def totp_verify(
     from app.domain.identity import totp as totp_lifecycle  # noqa: PLC0415
 
     if not yaaos_session:
-        return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+        return auth_failure_response("unauthenticated")
     async with db_session() as s:
         session = await session_lifecycle.lookup(s, yaaos_session)
         if session is None or session.user_id is None:
-            return JSONResponse(status_code=401, content={"error": "unauthenticated"})
+            return auth_failure_response("unauthenticated")
         ok = await totp_lifecycle.verify(s, user_id=session.user_id, code=body.code)
         await s.commit()
     if not ok:

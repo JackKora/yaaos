@@ -169,6 +169,13 @@ def _install_middleware(app: FastAPI) -> None:
         app.add_middleware(SlowAPIMiddleware)
         app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    # AuthFailure → 401 with cleared yaaos_session + yaaos_csrf cookies.
+    # Registered before the catch-all Exception handler below so it gets
+    # first crack at the typed subclass.
+    from app.core.auth.auth_failure import register_handler as _register_auth_failure  # noqa: PLC0415
+
+    _register_auth_failure(app)
+
     # Unhandled-exception handler — log + return JSON 500.
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:

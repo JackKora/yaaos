@@ -13,6 +13,7 @@
  */
 
 import { useSsoDiscover } from "@core/api";
+import type { AuthFailureReason } from "@core/api/auth-failure";
 import { Button } from "@shared/components/ui/button";
 import { Input } from "@shared/components/ui/input";
 import { Skeleton } from "@shared/components/ui/skeleton";
@@ -20,9 +21,29 @@ import { Mail } from "lucide-react";
 import { useState } from "react";
 import { useProviders } from "./queries";
 
+/** Map the `?reason=` query param the central 401 handler sets to the
+ * banner copy the user sees. Anything unrecognized renders no banner —
+ * the bare /login page already explains itself. */
+const REASON_COPY: Record<AuthFailureReason, string> = {
+  idle: "Your session timed out from inactivity. Sign in to continue.",
+  expired: "Your session expired. Sign in to continue.",
+  signed_out: "You were signed out. Sign in to continue.",
+};
+
+function reasonFromQuery(search: string): AuthFailureReason | null {
+  const v = new URLSearchParams(search).get("reason");
+  if (v === "idle" || v === "expired" || v === "signed_out") return v;
+  return null;
+}
+
 export function LoginPage() {
   const { data: providers, isLoading } = useProviders();
+  // `next` is the path the central 401 handler captured before redirecting,
+  // OR a fresh deeplink the user pasted. Forwarded to the OAuth provider
+  // via `?next=`; backend `_safe_next` validator rejects anything that
+  // isn't a same-origin relative path.
   const next = new URLSearchParams(window.location.search).get("next") ?? "/";
+  const reason = reasonFromQuery(window.location.search);
   const [email, setEmail] = useState("");
   const discover = useSsoDiscover();
 
@@ -49,6 +70,15 @@ export function LoginPage() {
         <header>
           <h1 className="text-xl font-semibold tracking-tight">Sign in to yaaos</h1>
         </header>
+
+        {reason && (
+          <output
+            className="block rounded border border-amber-400/40 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-300/30 dark:bg-amber-950/40 dark:text-amber-100"
+            data-testid="login-reason-banner"
+          >
+            {REASON_COPY[reason]}
+          </output>
+        )}
 
         {isLoading && <Skeleton className="h-9" />}
         {!isLoading && githubAvailable && (

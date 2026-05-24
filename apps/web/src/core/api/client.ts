@@ -187,6 +187,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     ...init,
     headers,
   });
+  if (r.status === 401) {
+    // Auth-dead session — central handler hard-navigates to /login and
+    // throws AuthError. Importing lazily breaks the import cycle: this
+    // module is part of every page's load path, and auth-failure does
+    // not need to be on it.
+    const { handleAuthFailure } = await import("./auth-failure");
+    await handleAuthFailure(r);
+    // handleAuthFailure always throws — TypeScript needs the unreachable.
+    throw new Error("unreachable");
+  }
   if (!r.ok) {
     const body = await r.text();
     throw new Error(`${r.status} ${path}: ${body}`);

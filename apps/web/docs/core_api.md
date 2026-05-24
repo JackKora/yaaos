@@ -20,9 +20,18 @@ Re-exports from `@core/api`:
 
 `client.ts`:
 - `apiClient` — `openapi-fetch` typed client. `Paths` is hand-declared and currently only covers `/api/health`.
-- `apiFetch<T>(path, init?)` — generic fetch wrapper. Throws on non-2xx with `${status} ${path}: ${body}`; returns `undefined` on 204; otherwise returns parsed JSON.
+- `apiFetch<T>(path, init?)` — generic fetch wrapper. On `401` it hands the response to [`handleAuthFailure`](../src/core/api/auth-failure.ts) (lazy-imported to break the load-path cycle), which hard-navigates to `/login?reason=...&next=<current-path>` and throws `AuthError`. On any other non-2xx, throws `${status} ${path}: ${body}`. Returns `undefined` on 204; parsed JSON otherwise.
 
 OpenAPI codegen is deferred — the surface is small enough that hand-declared types are cheaper.
+
+### Central 401 handler
+
+`auth-failure.ts` owns the one-and-only redirect-on-auth-died path:
+
+- **Mutex** — a module-level `redirectInProgress` flag means concurrent 401s (every page often fires `/api/auth/me` + `/api/orgs/mine` + page queries in parallel) trigger exactly one `window.location.assign`. Hard nav rather than TanStack Router soft-nav clears React state + the query cache, which is the right thing when the session is dead.
+- **Reason mapping** — backend `{"error": "<code>"}` body → UX banner reason: `session_idle_expired → "idle"`, `session_expired → "expired"`, `unauthenticated → "signed_out"`, unknown → `"signed_out"` (catch-all so renames don't break the banner).
+- **`next` round-trip** — captures `window.location.pathname + search + hash` and tags it as `?next=`. `LoginPage` forwards it through the OAuth flow's `next` query param; backend `_safe_next` (and our mirroring `safeNext` helper) reject scheme-relative / off-origin paths and `/login` loops. The user lands back where they were trying to go after sign-in. Covers both "session died mid-flow" and "cold deeplink while logged out" identically.
+- The backend already clears `yaaos_session` + `yaaos_csrf` via `Set-Cookie: Max-Age=0` on every 401 it issues (see [`apps/backend/app/core/auth/auth_failure.py`](../../backend/app/core/auth/auth_failure.py)), so by the time the redirect fires the browser already has fresh state.
 
 ### Resource types
 

@@ -33,9 +33,18 @@ HTTP routes (registered side-effect via `web.py`):
 ### Error shape
 
 - No session → 401 `unauthenticated`.
+- Stale `last_seen_at` past the per-org idle window → 401 `session_idle_expired`.
 - No `X-Org-Slug` → middleware already 400'd; this dep won't reach the check.
 - Org doesn't exist OR caller has no membership in it → 404 `org_not_found`. Mask existence — never leak "the org is real but you can't see it."
 - Role insufficient → 403 `insufficient_role`.
+
+### Auth-failure response shape
+
+Every 401 caused by a dead/missing session flows through [`AuthFailure`](../app/core/auth/auth_failure.py) → registered handler in `core/webserver/app_factory.create_app`. The handler returns `{"error": "<reason>"}` AND emits two `Set-Cookie: <name>=; Max-Age=0` headers for `yaaos_session` + `yaaos_csrf`. The browser's next request therefore arrives without the dead cookie — defeats the "401 → cookie still attached → 401 → ..." cascade that previously rendered "Not signed in" across every page after one auth-died request. The SPA's central handler in [`apps/web/src/core/api/auth-failure.ts`](../../web/src/core/api/auth-failure.ts) reads the body's `error` code to pick a banner reason and hard-navigates to `/login?reason=...&next=<current-path>`.
+
+`/api/auth/me` (a public route — no `require` dep) routes through `auth_failure_response()`, which is the JSONResponse-returning sibling of the exception so the same body + cookie shape lands.
+
+Idle timeout also writes a `user / logout / payload.kind=idle_timeout` audit row before raising — mirrors the hard-expiry pattern in `domain/identity/scheduler._purge_expired_sessions` so the timeline has a server-side answer to "why did my session die" for both expiry paths.
 
 ### `_REQUIRED_ROLE` registry
 
