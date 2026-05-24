@@ -298,6 +298,70 @@ async def test_patch_org_rejects_invalid_workspace_provider(seeded) -> None:
     assert r.json()["detail"]["error"] == "invalid_workspace_provider"
 
 
+@pytest.mark.parametrize(
+    "bad_arn",
+    [
+        "not-an-arn",
+        # Wrong service.
+        "arn:aws:sts::123456789012:role/yaaos-agent",
+        # Wrong partition (only `aws` accepted in M05 — gov/cn deferred).
+        "arn:aws-us-gov:iam::123456789012:role/yaaos-agent",
+        # Account isn't 12 digits.
+        "arn:aws:iam::12345:role/yaaos-agent",
+        # Role path — would collide on canonicalization with the no-path form
+        # (`assumed-role` ARNs strip the path), so two orgs could canonicalize
+        # to the same string. Forbid at registration.
+        "arn:aws:iam::123456789012:role/team/yaaos-agent",
+        # Wrong resource type.
+        "arn:aws:iam::123456789012:user/jack",
+        # Trailing garbage — regex must full-match.
+        "arn:aws:iam::123456789012:role/yaaos-agent extra",
+    ],
+)
+@pytest.mark.asyncio
+async def test_patch_org_rejects_malformed_arn(seeded, bad_arn: str) -> None:
+    """Registration regex full-matches `arn:aws:iam::<12-digit>:role/<name>`
+    with no path slashes — the only shape that round-trips through STS
+    canonicalization. Anything else gets 422 so a misconfigured customer
+    discovers the problem at save time, not at first identity exchange."""
+    sess = seeded["admin_sess"]
+    async with _patch_client() as c:
+        r = await c.patch(
+            "/api/orgs",
+            json={
+                "workspace_provider": "remote_agent",
+                "registered_iam_arn": bad_arn,
+                "aws_region": "us-east-1",
+            },
+            cookies={"yaaos_session": sess.raw_token, "yaaos_csrf": sess.csrf_token},
+            headers={"X-Org-Slug": seeded["org"].slug, "X-CSRF-Token": sess.csrf_token},
+        )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["error"] == "invalid_registered_iam_arn"
+
+
+@pytest.mark.asyncio
+async def test_patch_org_lowercases_arn(seeded) -> None:
+    """ARN comparison is case-insensitive (IAM names are unique-case-insensitive
+    in AWS), implemented by lowercasing at write time + lowercasing in
+    `canonicalize_arn`. A customer who types `MyRole` is stored as `myrole`
+    and matches STS's response regardless of returned case."""
+    sess = seeded["admin_sess"]
+    async with _patch_client() as c:
+        r = await c.patch(
+            "/api/orgs",
+            json={
+                "workspace_provider": "remote_agent",
+                "registered_iam_arn": "arn:aws:iam::123456789012:role/Yaaos-Agent",
+                "aws_region": "us-east-1",
+            },
+            cookies={"yaaos_session": sess.raw_token, "yaaos_csrf": sess.csrf_token},
+            headers={"X-Org-Slug": seeded["org"].slug, "X-CSRF-Token": sess.csrf_token},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["registered_iam_arn"] == "arn:aws:iam::123456789012:role/yaaos-agent"
+
+
 @pytest.mark.asyncio
 async def test_patch_org_ignores_unrelated_keys(seeded, db_session) -> None:
     """Keys we don't recognise are silently ignored — the body schema is

@@ -25,6 +25,7 @@ null in M06 — there is no per-membership "last visited" column today
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 from uuid import UUID
 
@@ -60,6 +61,16 @@ class _PatchOrgRequest(BaseModel):
 
 
 _ALLOWED_WORKSPACE_PROVIDERS = {"in_memory", "remote_agent"}
+
+# Strict registration shape for `registered_iam_arn`: partition `aws`, service
+# `iam`, 12-digit account, `role/<name>` with NO path slashes. Full-matched
+# because looser matching enables a cross-org escalation: STS returns
+# `assumed-role/<name>/<session>` without echoing the IAM path, so a customer
+# who registers `arn:aws:iam::ACCT:role/team/sub/foo` canonicalizes to
+# `arn:aws:iam::ACCT:role/sub/foo` (wrong) and a *different* customer's role
+# `arn:aws:iam::ACCT:role/foo` could end up matching the same canonical row.
+# `[\w+=,.@-]+` matches AWS's documented IAM name character set.
+_IAM_ROLE_ARN_RE = re.compile(r"^arn:aws:iam::\d{12}:role/[\w+=,.@-]+$", re.ASCII)
 
 
 class _OrgSettingsResponse(BaseModel):
@@ -98,8 +109,6 @@ async def create_org(
     is in use; 422 `invalid_slug` on bad characters; 401 on missing
     session.
     """
-    import re  # noqa: PLC0415
-
     if not yaaos_session:
         return JSONResponse(status_code=401, content={"error": "unauthenticated"})
     token_hash = identity_repo.hash_token(yaaos_session)
@@ -179,8 +188,16 @@ async def patch_org_settings(body: dict) -> _OrgSettingsResponse:
             row.workspace_provider = value
         if "registered_iam_arn" in body:
             value = body["registered_iam_arn"]
-            if value is not None and (not isinstance(value, str) or not value.strip()):
-                raise _err(422, "invalid_registered_iam_arn")
+            if value is not None:
+                if not isinstance(value, str):
+                    raise _err(422, "invalid_registered_iam_arn")
+                # Lowercase before validation + storage. IAM names are
+                # unique-case-insensitive in AWS, and `canonicalize_arn` in
+                # `core/agent_gateway/sts_verifier` lowercases the STS-returned
+                # ARN before lookup — both sides must agree.
+                value = value.strip().lower()
+                if not _IAM_ROLE_ARN_RE.fullmatch(value):
+                    raise _err(422, "invalid_registered_iam_arn")
             row.registered_iam_arn = value
         if "aws_region" in body:
             value = body["aws_region"]

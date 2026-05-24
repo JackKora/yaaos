@@ -138,12 +138,17 @@ def canonicalize_arn(arn: str) -> str:
     registers `arn:aws:iam::ACCOUNT:role/ROLE` in the UI — so we strip
     the session and rewrite the prefix before org lookup.
 
-    IAM user / role ARNs pass through unchanged.
+    Output is always lowercased: IAM names are unique-case-insensitive in
+    AWS (you cannot create `MyRole` and `myrole` in the same account), so
+    case-insensitive matching is safe, and the registration endpoint
+    lowercases on write to keep both sides aligned.
+
+    IAM user / role ARNs pass through (still lowercased).
     """
     m = _ASSUMED_ROLE_ARN_RE.match(arn)
     if m:
-        return f"arn:aws:iam::{m.group('account')}:role/{m.group('role')}"
-    return arn
+        return f"arn:aws:iam::{m.group('account')}:role/{m.group('role')}".lower()
+    return arn.lower()
 
 
 # ── Replay-protection LRU ──────────────────────────────────────────────

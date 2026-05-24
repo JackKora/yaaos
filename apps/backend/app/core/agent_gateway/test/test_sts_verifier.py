@@ -20,6 +20,7 @@ import pytest
 
 from app.core.agent_gateway.sts_verifier import (
     InvalidSignedRequestError,
+    canonicalize_arn,
     parse_signed_request,
     replay_caller_identity,
 )
@@ -201,3 +202,29 @@ async def test_replay_rejects_http_error() -> None:
         signed = parse_signed_request(json.dumps(_good_signed_request_dict()))
         with pytest.raises(InvalidSignedRequestError, match="HTTP error"):
             await replay_caller_identity(signed, client=client)
+
+
+# ── canonicalize_arn ──────────────────────────────────────────────────────
+
+
+def test_canonicalize_assumed_role_to_iam_role() -> None:
+    """STS returns an assumed-role ARN for workloads using a task/instance/IRSA
+    role; we rewrite it to the IAM role ARN form the customer registered."""
+    raw = "arn:aws:sts::123456789012:assumed-role/yaaos-agent/i-0abc123def456"
+    assert canonicalize_arn(raw) == "arn:aws:iam::123456789012:role/yaaos-agent"
+
+
+def test_canonicalize_lowercases_output() -> None:
+    """IAM names are case-insensitive for uniqueness in AWS (you cannot create
+    `MyRole` and `myrole` in the same account), so lowercasing on both sides
+    of the match is safe and prevents a customer-typed `MyRole` from missing
+    an STS-returned `myrole`."""
+    raw = "arn:aws:sts::123456789012:assumed-role/Yaaos-Agent/Session-XYZ"
+    assert canonicalize_arn(raw) == "arn:aws:iam::123456789012:role/yaaos-agent"
+
+
+def test_canonicalize_iam_role_passthrough_lowercased() -> None:
+    """An IAM role ARN (the form a customer pastes) is returned unchanged
+    except for lowercasing — match-by-equality holds against the stored value."""
+    raw = "arn:aws:iam::123456789012:role/YAAOS-Agent"
+    assert canonicalize_arn(raw) == "arn:aws:iam::123456789012:role/yaaos-agent"

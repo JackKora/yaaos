@@ -104,9 +104,9 @@ Both write `membership/role_changed` or `membership/removed` audit entries with 
 - `UNIQUE(org_id, handle)` on `memberships` keeps `@mentions` unambiguous inside an org.
 - Partial unique `uq_invitations_pending_org_email` on `(org_id, lower(email)) WHERE accepted_at IS NULL` blocks duplicate pending invites for the same address.
 - `orgs.workspace_provider` — `in_memory` (testing) or `remote_agent`. Drives [`core/workspace`](core_workspace.md) provider selection.
-- `orgs.registered_iam_arn` — canonical IAM role ARN customers register for AWS-IAM auth. Partial UNIQUE (`WHERE NOT NULL`) prevents two orgs claiming the same ARN.
+- `orgs.registered_iam_arn` — canonical IAM role ARN customers register for AWS-IAM auth. Partial UNIQUE (`WHERE NOT NULL`) prevents two orgs claiming the same ARN. Stored lowercased to keep match with `core/agent_gateway` canonicalization (IAM names are unique-case-insensitive).
 - `orgs.aws_region` — STS region the agent runs in. Paired with `registered_iam_arn` via check constraint `ck_orgs_arn_region_paired` (both-or-neither). Cross-checked against the signed STS URL in `core/agent_gateway` to defend against cross-region replay.
-- `org_settings_web.PATCH /api/orgs` accepts `workspace_provider`, `registered_iam_arn`, `aws_region` together; rejects unpaired ARN/region with 422 `arn_and_region_must_be_paired`. SPA exposes them through `WorkspaceSettingsPage`.
+- `org_settings_web.PATCH /api/orgs` accepts `workspace_provider`, `registered_iam_arn`, `aws_region` together. ARN must full-match `arn:aws:iam::<12-digit>:role/<name>` with no path slashes — paths get stripped by AWS's `assumed-role` form, so two orgs registering different-path roles could collide on the same canonical and one would receive the other's bearer. Rejects malformed shapes with 422 `invalid_registered_iam_arn`; rejects unpaired ARN/region with 422 `arn_and_region_must_be_paired`. SPA exposes them through `WorkspaceSettingsPage`.
 
 ## How it's tested
 

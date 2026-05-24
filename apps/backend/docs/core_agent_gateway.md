@@ -51,8 +51,8 @@ HTTP routes mounted under `/api/v1/` (architecture's `/v1/` namespace nested und
    - Parses the envelope; rejects non-STS URLs (`endpoint_disallowed`), wrong body (`body_mismatch`).
    - Replay-LRU dedupe on `Authorization || X-Amz-Date` (10 min window, rejects `replay_detected`).
    - HTTPS POST to AWS STS via a TLS-1.3-pinned shared httpx client; on `RequestExpired` returns `clock_skew`, other non-2xx returns `aws_rejected`.
-   - Canonicalizes the returned ARN (`arn:aws:sts::ACCT:assumed-role/ROLE/SESSION` → `arn:aws:iam::ACCT:role/ROLE`) so the customer's registered IAM role ARN matches.
-   - Looks up the org by `orgs.registered_iam_arn` (UNIQUE) and checks the signed URL's region against `orgs.aws_region`.
+   - Canonicalizes the returned ARN (`arn:aws:sts::ACCT:assumed-role/ROLE/SESSION` → `arn:aws:iam::ACCT:role/ROLE`) and lowercases it so the customer's registered IAM role ARN matches. IAM names are unique-case-insensitive in AWS, so lowering both sides is safe and removes a foot-gun.
+   - Looks up the org by `orgs.registered_iam_arn` (UNIQUE) and checks the signed URL's region against `orgs.aws_region`. Registration enforces a strict no-path role-ARN shape in [`domain/orgs/org_settings_web`](domain_orgs.md) so two orgs can't collide on the same canonical (paths are stripped by AWS's `assumed-role` form).
    - Issues a 24h bearer via `bearers.issue` (sha256 hash stored, plaintext returned once), upserts the `workspace_agents` row, captures source IP.
    - Returns `{bearer, expires_at, agent_id}`.
 2. **Long-poll command claim.** Free agent slots each post `claim` with `wait_seconds=30`. Backend's per-agent FIFO returns the head, or 204 on timeout. Internally an `asyncio.Condition` per agent wakes the poll the moment `enqueue_command(agent_id, cmd)` runs.
