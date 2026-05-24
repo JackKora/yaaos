@@ -16,9 +16,9 @@ cd "$(dirname "$0")/.."
 echo "==> Building SPA (apps/web/dist/)"
 pnpm --filter ./apps/web build
 
-echo "==> Rebuilding backend image + starting stack"
+echo "==> Rebuilding backend image + starting stack (app + worker)"
 docker compose \
   -f docker/docker-compose.yml \
   -f docker/docker-compose.dev.yml \
   --env-file .env \
-  up -d --build app
+  up -d --build app worker

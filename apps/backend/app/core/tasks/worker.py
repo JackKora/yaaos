@@ -16,6 +16,7 @@ import contextlib
 import signal
 
 import structlog
+from taskiq.receiver import Receiver
 
 from app.core import database
 from app.core import redis as redis_client
@@ -34,9 +35,11 @@ async def run() -> None:
 
     broker = get_broker()
     # Import the modules that register @task bodies so the in-process
-    # registry is populated before the broker starts dispatching. Future
-    # task-defining modules add themselves here.
-    # (Phase 1: no in-tree @task bodies yet; this is the seam.)
+    # registry is populated before the broker starts dispatching. The
+    # @task decorators run at import time and register with the broker
+    # singleton via `get_broker()`.
+    import app.core.workflow.service  # noqa: F401, PLC0415
+
     log.info("tasks.worker.booting", broker=type(broker).__name__)
 
     await broker.startup()
@@ -48,9 +51,13 @@ async def run() -> None:
             loop.add_signal_handler(sig, stop.set)
 
     drain_task = asyncio.create_task(drain_loop(broker), name="drain_loop")
-    # taskiq's listen() consumes from the broker and dispatches to registered
-    # task bodies. It blocks until the broker shuts down.
-    consume_task = asyncio.create_task(broker.listen(), name="broker_listen")
+    # `broker.listen()` is an async-generator yielding raw broker messages.
+    # `Receiver` wraps it: consumes the generator, parses each message,
+    # looks the registered @task body up by name, and dispatches.
+    # `Receiver.listen(finish_event)` runs until the event is set; we
+    # tie it to the same `stop` event the SIGTERM/SIGINT handler triggers.
+    receiver = Receiver(broker, run_startup=False)
+    consume_task = asyncio.create_task(receiver.listen(stop), name="broker_listen")
     stop_task = asyncio.create_task(stop.wait(), name="stop_signal")
 
     log.info("tasks.worker.running")

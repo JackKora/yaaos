@@ -63,6 +63,22 @@ services:
       # immediately on browser refresh. No backend restart needed.
       - ../apps/web/dist:/app/apps/web/dist
 
+  # M05/core-tasks Phase 1: the worker process runs taskiq's broker
+  # consumer + the outbox→Redis drain loop. Without it, every
+  # workflow_execution created via `engine.start(...)` sits in `pending`
+  # and intake-driven reviews never execute. Same `backend-ci` image as
+  # `app` (saves a build) — only the command differs.
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: backend-ci
+    command: ["python", "apps/backend/bin/worker"]
+    environment:
+      YAAOS_ENV: dev
+    volumes:
+      - ../apps/backend:/app/apps/backend
+
   # M05 — local WorkspaceAgent talking to the backend over the docker
   # network. Uses the placeholder identity-exchange verifier (any
   # non-empty YAAOS_SIGNED_STS_REQUEST satisfies it). Phase 7 follow-on
