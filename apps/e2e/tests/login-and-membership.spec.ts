@@ -38,7 +38,25 @@ test.describe("auth + members", () => {
     await page.getByTestId("login-test").click();
     await page.waitForURL(/\/orgs\/acme\/dashboard$/);
 
-    // Members page: invite a new member. M03+ re-homed it under settings.
+    // Regression: SPA-internal nav → user details → dashboard click must
+    // land on /orgs/acme/dashboard, not "Not Found".
+    await page.getByTestId("user-card-button").click();
+    await page.getByTestId("user-nav-details").click();
+    await page.waitForURL(/\/orgs\/acme\/user\/details$/);
+    await page.getByTestId("nav-dashboard").click();
+    await page.waitForURL(/\/orgs\/acme\/dashboard$/);
+
+    // Regression: HARD-NAV directly to /orgs/acme/user/details (no SPA
+    // history), then click Dashboard — must still land on /orgs/acme/dashboard.
+    // This is the case that broke originally: the module-global slug cache
+    // was null on first load, so the sidebar built bare `/dashboard` hrefs
+    // → NotFound. Slug now comes from the URL on every read.
+    await page.goto(`${BASE}/orgs/acme/user/details`);
+    await page.waitForURL(/\/orgs\/acme\/user\/details$/);
+    await page.getByTestId("nav-dashboard").click();
+    await page.waitForURL(/\/orgs\/acme\/dashboard$/);
+
+    // Members page: invite a new member.
     await page.goto(`${BASE}/orgs/acme/settings/members`);
     await page.locator('input[type="email"]').fill("bob@example.com");
     // The shadcn Select is a Radix popover, not a native <select>. Open
@@ -78,7 +96,7 @@ test.describe("auth + members", () => {
     await page.getByRole("option", { name: "admin" }).click();
 
     // Sign out of every session. M03+ moved the action to the Security page.
-    await page.goto(`${BASE}/user/security`);
+    await page.goto(`${BASE}/orgs/acme/user/security`);
     await page.getByTestId("logout-all").click();
     await page.waitForURL(/\/login$/);
   });

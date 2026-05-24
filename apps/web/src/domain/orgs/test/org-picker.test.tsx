@@ -20,6 +20,30 @@ vi.mock("@core/api", () => ({
   }),
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  // Stub `Link` so it renders a plain `<a>` — production code uses it for
+  // SPA nav, assertions here only check the rendered href.
+  Link: ({
+    to,
+    params,
+    children,
+    ...props
+  }: {
+    to: string;
+    params?: Record<string, string>;
+    children: React.ReactNode;
+  } & Record<string, unknown>) => {
+    const href = params
+      ? Object.entries(params).reduce((acc, [k, v]) => acc.replace(`$${k}`, v), to)
+      : to;
+    return (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    );
+  },
+}));
+
 let useMyOrgsMock = () => ({ data: [] as unknown[], isLoading: false });
 
 import { OrgPickerPage } from "../OrgPickerPage";
@@ -28,7 +52,7 @@ describe("OrgPickerPage", () => {
   it("renders the EmptyState when there are no orgs", () => {
     useMyOrgsMock = () => ({ data: [], isLoading: false });
     render(<OrgPickerPage />);
-    expect(screen.getByText(/No organizations yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/don't belong to any organizations yet/i)).toBeInTheDocument();
   });
 
   it("renders one row per org with the role badge", () => {

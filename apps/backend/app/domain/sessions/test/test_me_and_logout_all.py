@@ -35,7 +35,7 @@ async def test_me_without_session_returns_401() -> None:
 
 
 @pytest.mark.asyncio
-async def test_me_returns_user_and_orgs(db_session) -> None:
+async def test_me_returns_user_and_memberships(db_session) -> None:
     user = await identity_repo.insert_user(db_session, display_name="Jack K")
     await identity_repo.add_email(
         db_session, user_id=user.id, email="jack@example.com", is_primary=True, verified=True
@@ -57,9 +57,11 @@ async def test_me_returns_user_and_orgs(db_session) -> None:
     body = resp.json()
     assert body["user"]["display_name"] == "Jack K"
     assert body["user"]["primary_email"] == "jack@example.com"
-    slugs = sorted(o["slug"] for o in body["orgs"])
+    slugs = sorted(m["slug"] for m in body["memberships"])
     assert slugs == ["me-org-a", "me-org-b"]
-    assert body["current_org_slug"] in slugs
+    # Server has no opinion about which org is "current" — that's view state
+    # and lives in the URL. The response shape carries no current_org_slug.
+    assert "current_org_slug" not in body
 
     # Cleanup so other tests start clean.
     from sqlalchemy import delete  # noqa: PLC0415
@@ -141,7 +143,7 @@ async def test_me_exposes_broken_integrations_for_admins(db_session) -> None:
         a_resp = await c.get("/api/auth/me", cookies={"yaaos_session": a_sess.raw_token})
         m_resp = await c.get("/api/auth/me", cookies={"yaaos_session": m_sess.raw_token})
 
-    a_org = next(o for o in a_resp.json()["orgs"] if o["slug"] == "brokens-org")
-    m_org = next(o for o in m_resp.json()["orgs"] if o["slug"] == "brokens-org")
-    assert [b["provider"] for b in a_org["broken_integrations"]] == ["linear"]
-    assert m_org["broken_integrations"] == []
+    a_membership = next(m for m in a_resp.json()["memberships"] if m["slug"] == "brokens-org")
+    m_membership = next(m for m in m_resp.json()["memberships"] if m["slug"] == "brokens-org")
+    assert [b["provider"] for b in a_membership["broken_integrations"]] == ["linear"]
+    assert m_membership["broken_integrations"] == []

@@ -1,20 +1,35 @@
 /**
- * Current org context. Routes update this in their `beforeLoad`; the
- * `apiFetch` wrapper reads it and injects `X-Org-Slug` so individual
- * domain hooks don't need to thread the slug through every call site.
+ * Current org slug — derived from the URL on every read. The URL path is
+ * the only source of truth: `/orgs/$slug/...` ⇒ `$slug`; everything else
+ * (including `/login`, `/orgs` picker, and any non-org route) ⇒ `null`.
  *
- * Stored as a module-global because:
- *  - React context can't reach the `apiFetch` plain function.
- *  - The slug is part of the URL, so it's already global state.
- *  - Tests can `setCurrentOrgSlug(...)` directly.
+ * There is no module-global cache. Two browser tabs in different orgs
+ * stay independent because each reads its own `window.location`.
+ *
+ * `getCurrentOrgSlug()` is a plain function for `apiFetch` (no React
+ * context available); `useCurrentOrgSlug()` is the reactive hook chrome
+ * components use — it re-renders on SPA navigation via TanStack Router.
  */
+import { useRouterState } from "@tanstack/react-router";
 
-let _slug: string | null = null;
+const ORG_PATH_RE = /^\/orgs\/([^/]+)/;
 
-export function setCurrentOrgSlug(slug: string | null): void {
-  _slug = slug;
+function extractSlug(pathname: string): string | null {
+  const m = pathname.match(ORG_PATH_RE);
+  if (!m) return null;
+  const slug = m[1];
+  // `/orgs` (the picker, no slug after it) and stale "undefined"/"null"
+  // strings from earlier-bug URLs both resolve to no-slug.
+  if (!slug || slug === "undefined" || slug === "null") return null;
+  return slug;
 }
 
 export function getCurrentOrgSlug(): string | null {
-  return _slug;
+  if (typeof window === "undefined") return null;
+  return extractSlug(window.location.pathname);
+}
+
+export function useCurrentOrgSlug(): string | null {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  return extractSlug(pathname);
 }

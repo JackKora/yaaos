@@ -74,7 +74,7 @@ apps/backend/bin/bootstrap
 
 Five prompts: your email, your GitHub username, your display name, the org name, the org slug (URL-safe). The script resolves the username to GitHub's stable numeric id via `GET https://api.github.com/users/<login>` and writes everything in one transaction. Idempotent — re-running with the same inputs prints `<row>=exists` instead of erroring.
 
-After bootstrap, sign in via the "Sign in with GitHub" button on the login page. Without bootstrap, the first sign-in still works — it auto-creates a new yaaos user — but that user has no memberships and no Owner role.
+After bootstrap, sign in via the "Sign in with GitHub" button on the login page. Bootstrap is mandatory: OAuth never auto-provisions a yaaos user. Signing in without a pre-existing user — matched either by `(provider, external_subject)` or by verified email — redirects you back to `/login?reason=not_provisioned`. New teammates join via `/api/memberships/accept` (the email-invitation flow).
 
 ## 2. Bring up the stack
 

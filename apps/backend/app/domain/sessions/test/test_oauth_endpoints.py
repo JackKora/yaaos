@@ -94,7 +94,10 @@ async def test_callback_existing_identity_issues_session(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_callback_unknown_email_creates_user_and_signs_in(db_session) -> None:
+async def test_callback_unknown_user_redirects_to_login_with_reason(db_session) -> None:
+    """OAuth never provisions: unknown `(provider, external_subject)` + unknown
+    primary email → redirect to `/login?reason=not_provisioned` with NO cookie
+    set and NO rows created. The user must be invited first."""
     state = await _begin_login_and_get_state()
     set_next_profile(
         ProviderProfile(
@@ -113,12 +116,11 @@ async def test_callback_unknown_email_creates_user_and_signs_in(db_session) -> N
         )
 
     assert resp.status_code in (302, 303)
-    assert "yaaos_session" in resp.cookies
-    # The user row + identity row were created on the fly.
-    found = await repo.find_user_by_email(db_session, "nobody@example.com")
-    assert found is not None
-    identity = await repo.find_oauth_identity(db_session, provider="test", external_subject="ex-2")
-    assert identity is not None and identity.user_id == found.id
+    assert resp.headers["location"] == "/login?reason=not_provisioned"
+    assert "yaaos_session" not in resp.cookies
+    # No rows were written.
+    assert await repo.find_user_by_email(db_session, "nobody@example.com") is None
+    assert await repo.find_oauth_identity(db_session, provider="test", external_subject="ex-2") is None
 
 
 @pytest.mark.asyncio
@@ -175,7 +177,11 @@ async def test_callback_email_not_verified_returns_403(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_callback_invitation_creates_user(db_session) -> None:
+async def test_callback_invitation_alone_does_not_provision(db_session) -> None:
+    """A pending invitation for a stranger's email is no longer enough to sign
+    them in — OAuth never creates users. The invitation must be explicitly
+    accepted via `/api/memberships/accept` (which creates the user if needed).
+    Here we assert the legacy "invitation-on-first-login" pathway is gone."""
     org = await orgs_repo.insert_org(db_session, slug="inviteorg")
     db_session.add(
         InvitationRow(
@@ -209,7 +215,8 @@ async def test_callback_invitation_creates_user(db_session) -> None:
         )
 
     assert resp.status_code in (302, 303)
-    assert "yaaos_session" in resp.cookies
+    assert resp.headers["location"] == "/login?reason=not_provisioned"
+    assert "yaaos_session" not in resp.cookies
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,4 @@
-import { setCurrentOrgSlug } from "@core/api";
 import { AppShell } from "@core/layout";
-import { DetailsPage, SecurityPage } from "@domain/account";
-import { MessagingPage } from "@domain/account/MessagingPage";
 import { LoginPage } from "@domain/auth";
 import { DashboardPage } from "@domain/dashboard";
 import { LessonsPage } from "@domain/lessons";
@@ -19,6 +16,7 @@ import {
 } from "@domain/org_settings";
 import { OrgPickerPage } from "@domain/orgs/OrgPickerPage";
 import { TicketDetailPage, TicketsPage } from "@domain/tickets";
+import { DetailsPage, SecurityPage } from "@domain/user";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 
 const rootRoute = createRootRoute({ component: AppShell });
@@ -27,17 +25,23 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: async () => {
-    // Probe `/api/auth/me`; on 401, send to login. Otherwise pick the first org.
+    // Probe `/api/auth/me`. 401 → login. 200 with exactly one membership →
+    // that org's dashboard (sole option, no picker needed). 200 with zero
+    // or multiple → the picker. The server has no "current org" concept;
+    // picking is explicit, by the user.
     const r = await fetch("/api/auth/me", { credentials: "include" });
     if (r.status === 401) throw redirect({ to: "/login" });
     if (r.ok) {
-      const body = (await r.json()) as { current_org_slug: string | null };
-      if (body.current_org_slug) {
+      const body = (await r.json()) as { memberships: { slug: string }[] };
+      const only = body.memberships.length === 1 ? body.memberships[0] : null;
+      if (only) {
         throw redirect({
           to: "/orgs/$slug/dashboard",
-          params: { slug: body.current_org_slug },
+          params: { slug: only.slug },
         });
       }
+      // 0 → empty-state picker; >1 → user must pick.
+      throw redirect({ to: "/orgs" });
     }
     throw redirect({ to: "/login" });
   },
@@ -47,73 +51,24 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   component: LoginPage,
-  beforeLoad: () => {
-    setCurrentOrgSlug(null);
+  // Guard against bouncing back to /login when the user already has a
+  // valid session — that's the loop that produces "frozen spinner" when
+  // someone navigates here from a deep link with a live cookie.
+  beforeLoad: async () => {
+    const r = await fetch("/api/auth/me", { credentials: "include" });
+    if (r.ok) throw redirect({ to: "/" });
   },
 });
 
-// `/user/*` and `/notifications` deliberately do NOT clear the current org
-// slug — the user is still semantically in their org while reading their
-// personal account / cross-org notifications, and the sidebar + nav links
-// depend on the slug staying populated. The backend routes these pages
-// call are `RouteSecurity.USER_SCOPED`, so the header is optional.
-// Only `/login` and `/orgs` (the picker) explicitly clear it.
-
-const accountRedirectRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/user",
-  beforeLoad: () => {
-    throw redirect({ to: "/user/details" });
-  },
-});
-
-const accountDetailsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/user/details",
-  component: DetailsPage,
-});
-
-const accountSecurityRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/user/security",
-  component: SecurityPage,
-});
-
-// User-scoped placeholder routes — sidebar links work; full implementations
-// land later.
-const userMessagingRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/user/messaging",
-  component: MessagingPage,
-});
-
-const notificationsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/notifications",
-  component: NotificationsPage,
-});
-
-// The picker is the explicit "no org selected" surface — clear the slug so
-// the sidebar collapses and the apiFetch client omits `X-Org-Slug`.
 const orgsPickerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/orgs",
   component: OrgPickerPage,
-  beforeLoad: () => setCurrentOrgSlug(null),
 });
 
 const orgScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/orgs/$slug",
-  beforeLoad: ({ params }) => {
-    // Stale URLs from earlier failed-login flows can leave the literal
-    // string "undefined" in the slug. Bounce through / so indexRoute
-    // re-probes /me and picks the right org.
-    if (!params.slug || params.slug === "undefined" || params.slug === "null") {
-      throw redirect({ to: "/" });
-    }
-    setCurrentOrgSlug(params.slug);
-  },
 });
 
 const orgIndexRoute = createRoute({
@@ -219,14 +174,43 @@ const orgSettingsWorkspaceRoute = createRoute({
   component: WorkspaceSettingsPage,
 });
 
+// User-area pages nest under the current org so the URL alone carries
+// all routing context (no module-global current-org, no localStorage).
+// The backend routes they call (`/api/user/*`, `/api/notifications/*`)
+// stay USER_SCOPED and ignore `X-Org-Slug`; the slug in the path is
+// purely a frontend routing concern.
+const orgUserRedirectRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/user",
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/orgs/$slug/user/details",
+      params: { slug: params.slug },
+    });
+  },
+});
+
+const orgUserDetailsRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/user/details",
+  component: DetailsPage,
+});
+
+const orgUserSecurityRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/user/security",
+  component: SecurityPage,
+});
+
+const orgUserNotificationsRoute = createRoute({
+  getParentRoute: () => orgScopeRoute,
+  path: "/user/notifications",
+  component: NotificationsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
-  accountRedirectRoute,
-  accountDetailsRoute,
-  accountSecurityRoute,
-  userMessagingRoute,
-  notificationsRoute,
   orgsPickerRoute,
   orgScopeRoute.addChildren([
     orgIndexRoute,
@@ -244,6 +228,10 @@ const routeTree = rootRoute.addChildren([
     orgSettingsByokRoute,
     orgSettingsIntegrationsRoute,
     orgSettingsWorkspaceRoute,
+    orgUserRedirectRoute,
+    orgUserDetailsRoute,
+    orgUserSecurityRoute,
+    orgUserNotificationsRoute,
   ]),
 ]);
 

@@ -1,16 +1,18 @@
-# domain_account
+# domain_user
 
 > User-scoped settings: profile, per-org handles, GitHub link, 2FA, sessions, messaging placeholder.
 
 ## Surfaces
 
-- `/user/details` — `DetailsPage`. Display name, per-org handles table, verified emails list, GitHub association.
-- `/user/security` — `SecurityPage`. TOTP enrollment + sign-out-all-sessions.
-- `/user/messaging` — `MessagingPage`. Placeholder (empty-state only) — Slack / email integration is post-M06.
+- `/orgs/$slug/user/details` — `DetailsPage`. Display name, per-org handles table, verified emails list, GitHub association.
+- `/orgs/$slug/user/security` — `SecurityPage`. TOTP enrollment + sign-out-all-sessions.
+- `/orgs/$slug/user/notifications` — cross-org notifications.
+
+User pages are nested under the current org slug so the URL alone carries all routing context. The backend routes they call (`/api/user/*`, `/api/notifications/*`, `/api/auth/totp/*`) are `USER_SCOPED` and ignore `X-Org-Slug` — the slug in the path is purely a frontend routing concern.
 
 ## Data flow
 
-- `useAccountMe` → `GET /api/account/me`. Source of truth for the page; carries display name, emails, github_username, and the user's org memberships with their handles.
+- `useUserMe` → `GET /api/user/me`. Source of truth for the page; carries display name, emails, github_username, and the user's memberships with their handles.
 - Display name + handle edits go through `useUpdateDisplayName` / `useUpdateOrgHandle` (PATCH); GitHub clear goes through `useClearGithubUsername`.
 - TOTP enroll + verify mutations talk to `/api/auth/totp/{enroll,verify}` directly via `apiFetch` (state is local to the page; no shared cache).
 - `useLogoutAll` lives in `domain_auth`; SecurityPage imports it.
@@ -23,5 +25,5 @@
 
 ## Where the code lives
 
-- `apps/web/src/domain/account/{DetailsPage,SecurityPage,MessagingPage}.tsx`
-- Vitest smoke tests in `apps/web/src/domain/account/test/`.
+- `apps/web/src/domain/user/{DetailsPage,SecurityPage,MessagingPage}.tsx`
+- Vitest smoke tests in `apps/web/src/domain/user/test/`.

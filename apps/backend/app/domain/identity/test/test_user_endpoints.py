@@ -1,4 +1,4 @@
-"""Coverage for /api/account/emails — list/add/delete + last-verified guard."""
+"""Coverage for /api/user/emails — list/add/delete + last-verified guard."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ import pytest_asyncio
 from fastapi import FastAPI
 
 from app.core.auth import AuthMiddleware
-from app.domain.identity import account_web as _account_web  # noqa: F401
 from app.domain.identity import repository as identity_repo
 from app.domain.identity import sessions as session_lifecycle
+from app.domain.identity import user_web as _user_web  # noqa: F401
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.types import Role
 from app.domain.sessions import web as _auth_web  # noqa: F401
@@ -22,7 +22,7 @@ def _app() -> FastAPI:
     app.add_middleware(AuthMiddleware)
     from app.core.webserver import mount_specs  # noqa: PLC0415
 
-    mount_specs(app, only={"account"})
+    mount_specs(app, only={"user"})
     return app
 
 
@@ -52,7 +52,7 @@ async def seeded(db_session):
 async def test_list_emails(seeded) -> None:
     async with _client() as c:
         r = await c.get(
-            "/api/account/emails",
+            "/api/user/emails",
             cookies={"yaaos_session": seeded["session"].raw_token},
             headers={"X-Org-Slug": seeded["org"].slug},
         )
@@ -66,7 +66,7 @@ async def test_list_emails(seeded) -> None:
 async def test_delete_non_last_verified_email_ok(seeded) -> None:
     async with _client() as c:
         r = await c.delete(
-            f"/api/account/emails/{seeded['e2'].id}",
+            f"/api/user/emails/{seeded['e2'].id}",
             cookies={
                 "yaaos_session": seeded["session"].raw_token,
                 "yaaos_csrf": seeded["session"].csrf_token,
@@ -91,7 +91,7 @@ async def test_delete_last_verified_email_blocked(db_session) -> None:
 
     async with _client() as c:
         r = await c.delete(
-            f"/api/account/emails/{only.id}",
+            f"/api/user/emails/{only.id}",
             cookies={"yaaos_session": s.raw_token, "yaaos_csrf": s.csrf_token},
             headers={"X-Org-Slug": org.slug, "X-CSRF-Token": s.csrf_token},
         )
@@ -103,7 +103,7 @@ async def test_delete_last_verified_email_blocked(db_session) -> None:
 async def test_add_email_unverified(seeded) -> None:
     async with _client() as c:
         r = await c.post(
-            "/api/account/emails",
+            "/api/user/emails",
             json={"email": "third@x.test"},
             cookies={
                 "yaaos_session": seeded["session"].raw_token,

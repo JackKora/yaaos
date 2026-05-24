@@ -3,10 +3,10 @@ import { render, screen } from "@testing-library/react";
 import type React from "react";
 import { describe, expect, it, vi } from "vitest";
 
-const accountMeMock = vi.fn();
+const userMeMock = vi.fn();
 
 vi.mock("../queries", () => ({
-  useAccountMe: () => accountMeMock(),
+  useUserMe: () => userMeMock(),
   useUpdateDisplayName: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateOrgHandle: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
   useClearGithubUsername: () => ({ mutate: vi.fn(), isPending: false }),
@@ -27,7 +27,7 @@ const baseData = {
     { id: "e1", email: "jane@x.test", is_primary: true, verified: true },
     { id: "e2", email: "alt@x.test", is_primary: false, verified: true },
   ],
-  orgs: [
+  memberships: [
     {
       org_id: "00000000-0000-0000-0000-000000000001",
       slug: "acme",
@@ -47,13 +47,13 @@ const baseData = {
 
 describe("DetailsPage", () => {
   it("loading state when query pending", () => {
-    accountMeMock.mockReturnValue({ data: null, isLoading: true });
+    userMeMock.mockReturnValue({ data: null, isLoading: true });
     render(wrap(<DetailsPage />));
     expect(screen.getByText(/Loading/)).toBeInTheDocument();
   });
 
   it("renders display name, per-org handles, emails, GitHub connect CTA", () => {
-    accountMeMock.mockReturnValue({ data: baseData, isLoading: false });
+    userMeMock.mockReturnValue({ data: baseData, isLoading: false });
     render(wrap(<DetailsPage />));
     expect(screen.getByTestId("display-name-input")).toHaveValue("Jane Doe");
     // Two handle rows, each editable + savable.
@@ -69,7 +69,7 @@ describe("DetailsPage", () => {
   });
 
   it("renders verified GitHub state when username is set", () => {
-    accountMeMock.mockReturnValue({
+    userMeMock.mockReturnValue({
       data: { ...baseData, github_username: "octocat" },
       isLoading: false,
     });

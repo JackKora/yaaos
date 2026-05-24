@@ -6,10 +6,10 @@
  * Per B3: lives at the top of the sidebar, above the org-scoped nav block.
  */
 
-import { useMyOrgs } from "@core/api";
-import { useCurrentUser } from "@domain/auth";
+import { useCurrentOrgSlug, useMyOrgs } from "@core/api";
 import { Popover, PopoverContent, PopoverTrigger } from "@shared/components/ui/popover";
 import { cn } from "@shared/utils/cn";
+import { Link } from "@tanstack/react-router";
 import { Building2, Check, ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 
@@ -19,11 +19,10 @@ interface OrgSwitcherProps {
 }
 
 export function OrgSwitcher({ expanded, className }: OrgSwitcherProps) {
-  const { data: user } = useCurrentUser();
   const { data: orgs } = useMyOrgs();
   const [open, setOpen] = useState(false);
 
-  const currentSlug = user?.current_org_slug ?? null;
+  const currentSlug = useCurrentOrgSlug();
   const currentOrg = orgs?.find((o) => o.slug === currentSlug);
 
   const onPick = (slug: string) => {
@@ -83,13 +82,13 @@ export function OrgSwitcher({ expanded, className }: OrgSwitcherProps) {
         ) : (
           <p className="px-2 py-2 text-xs text-muted-foreground">No organizations yet.</p>
         )}
-        <a
-          href="/orgs"
+        <Link
+          to="/orgs"
           onClick={() => setOpen(false)}
           className="block px-2 py-1.5 rounded text-[12.5px] text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
         >
           View all organizations
-        </a>
+        </Link>
       </PopoverContent>
     </Popover>
   );

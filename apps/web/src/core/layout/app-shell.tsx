@@ -2,10 +2,10 @@ import { Sidebar } from "@core/sidebar";
 import { Outlet, useRouterState } from "@tanstack/react-router";
 import { BrokenIntegrationsBanner } from "./broken-integrations-banner";
 
-// User-scoped pages render outside the app shell — no sidebar, no chrome,
-// no org nav. The login page in particular must not surface dashboard
-// links to anonymous visitors.
-const STANDALONE_PATHS = new Set(["/login", "/user", "/orgs"]);
+// Two routes render outside the shell: `/login` (anonymous, no nav) and
+// `/orgs` (the picker — explicit "no org selected" surface). Every other
+// authenticated route lives under `/orgs/$slug/...` and gets the sidebar.
+const STANDALONE_PATHS = new Set(["/login", "/orgs"]);
 
 export function AppShell() {
   const { location } = useRouterState();

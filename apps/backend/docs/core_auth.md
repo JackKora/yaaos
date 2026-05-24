@@ -29,7 +29,7 @@ Every `/api/*` path classifies as exactly one of three:
 | `RouteSecurity` | Session required? | `X-Org-Slug` required? | Role check? | Examples |
 |---|---|---|---|---|
 | `PUBLIC` | no | no | n/a | `/api/auth/login`, `/api/auth/logout`, `/api/health`, `/api/sso/*`, `/api/mcp/*`, OAuth callbacks |
-| `USER_SCOPED` | yes (via route dep) | **no** | n/a | `/api/account/*`, `/api/auth/me`, `/api/notifications`, `/api/orgs/mine`, `POST /api/orgs` |
+| `USER_SCOPED` | yes (via route dep) | **no** | n/a | `/api/user/*`, `/api/auth/me`, `/api/notifications`, `/api/orgs/mine`, `POST /api/orgs` |
 | `ORG_SCOPED` | yes (via route dep) | **yes** | yes (`require(action)`) | `/api/memberships/*`, `/api/audit`, `/api/vcs/*`, `/api/coding-agents/*`, `GET /api/orgs/*`, `/api/tickets/*`, `/api/lessons/*`, `/api/reviewer/*` |
 
 `classify_route(path, method)` is the single source of truth. Method-specific exact matches win over exact matches; exact wins over prefix. `POST /api/orgs` lives in `USER_SCOPED_METHOD_EXACT` so org-create works before the SPA has selected an org, while `GET /api/orgs` stays `ORG_SCOPED`.

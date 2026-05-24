@@ -19,8 +19,8 @@ export function RequireMembership(props: {
   const { data, isLoading } = useCurrentUser();
   if (isLoading) return null;
   if (!data) return props.fallback ?? null;
-  const m = data.orgs.find((o) => o.slug === props.orgSlug);
-  if (!m) return props.fallback ?? null;
-  if (RANK[m.role] < RANK[props.role]) return props.fallback ?? null;
+  const membership = data.memberships.find((m) => m.slug === props.orgSlug);
+  if (!membership) return props.fallback ?? null;
+  if (RANK[membership.role] < RANK[props.role]) return props.fallback ?? null;
   return props.children;
 }

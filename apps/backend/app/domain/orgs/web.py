@@ -167,7 +167,7 @@ class _PatchOwnHandleRequest(BaseModel):
     handle: str
 
 
-@router.patch("/me/{org_id}", dependencies=[Depends(require(Action.ACCOUNT_UPDATE_SELF))])
+@router.patch("/me/{org_id}", dependencies=[Depends(require(Action.USER_UPDATE_SELF))])
 @limiter.limit(MUTATE_LIMIT)
 async def patch_own_membership_handle(
     request: Request,

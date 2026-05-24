@@ -49,11 +49,26 @@ vi.mock("@core/api", () => ({
   getCurrentOrgSlug: () => "acme",
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  // Stub `Link` so it renders a plain `<a>` — the production component
+  // needs a router context, the test only asserts the rendered href.
+  Link: ({
+    to,
+    children,
+    ...props
+  }: { to: string; children: React.ReactNode } & Record<string, unknown>) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
 vi.mock("@domain/auth", () => ({
   useCurrentUser: () => ({
     data: {
-      orgs: [{ slug: "acme", role: "owner", handle: "j", display_name: "Acme" }],
-      current_org_slug: "acme",
+      memberships: [
+        { slug: "acme", role: "owner", handle: "j", display_name: "Acme", broken_integrations: [] },
+      ],
       user: { id: "u", display_name: "u", primary_email: "u@x", emails: [] },
     },
   }),

@@ -1,14 +1,14 @@
-"""HTTP routes for `/api/account/*` — `RouteSecurity.USER_SCOPED`.
+"""HTTP routes for `/api/user/*` — `RouteSecurity.USER_SCOPED`.
 
-| Method | Path                                       | Action                 |
-|--------|--------------------------------------------|------------------------|
-| GET    | `/api/account/emails`                      | `ACCOUNT_UPDATE_SELF`  |
-| POST   | `/api/account/emails`                      | `ACCOUNT_UPDATE_SELF`  |
-| DELETE | `/api/account/emails/{email_id}`           | `ACCOUNT_UPDATE_SELF`  |
-| GET    | `/api/account/me`                          | `ACCOUNT_UPDATE_SELF` — user profile (display_name, github_username, emails, per-org handles) |
-| PATCH  | `/api/account/me`                          | `ACCOUNT_UPDATE_SELF` — update display_name; clear github_username |
+| Method | Path                                    | Action              |
+|--------|-----------------------------------------|---------------------|
+| GET    | `/api/user/emails`                      | `USER_UPDATE_SELF`  |
+| POST   | `/api/user/emails`                      | `USER_UPDATE_SELF`  |
+| DELETE | `/api/user/emails/{email_id}`           | `USER_UPDATE_SELF`  |
+| GET    | `/api/user/me`                          | `USER_UPDATE_SELF` — user profile (display_name, github_username, emails, per-org handles) |
+| PATCH  | `/api/user/me`                          | `USER_UPDATE_SELF` — update display_name; clear github_username |
 
-Session is enforced by `_require_account()`. No `X-Org-Slug` header is
+Session is enforced by `_require_user()`. No `X-Org-Slug` header is
 required — these endpoints operate on the user, not on a single org.
 
 `users.github_username` is written automatically by the "Sign in with
@@ -30,7 +30,7 @@ from app.core.auth.rate_limit import MUTATE_LIMIT, limiter
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
 
-log = structlog.get_logger("identity.account.web")
+log = structlog.get_logger("identity.user.web")
 
 router = APIRouter()
 
@@ -50,7 +50,7 @@ def _err(status: int, code: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"error": code})
 
 
-def _require_account():
+def _require_user():
     """Session-only auth: resolves the cookie → `user_id_var`. No org context.
     Lazy import because `domain/sessions` depends on `domain/identity`."""
     from app.domain.sessions.dependencies import require_session  # noqa: PLC0415
@@ -58,7 +58,7 @@ def _require_account():
     return require_session
 
 
-@router.get("/emails", dependencies=[Depends(_require_account())])
+@router.get("/emails", dependencies=[Depends(_require_user())])
 async def list_emails() -> list[EmailView]:
     from app.domain.identity import repository as identity_repo  # noqa: PLC0415
 
@@ -73,7 +73,7 @@ async def list_emails() -> list[EmailView]:
     ]
 
 
-@router.post("/emails", dependencies=[Depends(_require_account())])
+@router.post("/emails", dependencies=[Depends(_require_user())])
 @limiter.limit(MUTATE_LIMIT)
 async def add_email(
     request: Request,
@@ -93,7 +93,7 @@ async def add_email(
     return EmailView(id=row.id, email=row.email, is_primary=row.is_primary, verified=False)
 
 
-@router.delete("/emails/{email_id}", dependencies=[Depends(_require_account())])
+@router.delete("/emails/{email_id}", dependencies=[Depends(_require_user())])
 @limiter.limit(MUTATE_LIMIT)
 async def remove_email(request: Request, email_id: UUID) -> dict[str, str]:
     from sqlalchemy import select  # noqa: PLC0415
@@ -124,24 +124,24 @@ async def remove_email(request: Request, email_id: UUID) -> dict[str, str]:
     return {"ok": "deleted"}
 
 
-class _AccountMeResponse(BaseModel):
+class _UserMeResponse(BaseModel):
     user_id: UUID
     display_name: str
     github_username: str | None
     emails: list[EmailView]
-    orgs: list[dict]  # [{slug, display_name, role, handle}]
+    memberships: list[dict]  # [{org_id, slug, display_name, role, handle}]
 
 
-class _PatchAccountRequest(BaseModel):
+class _PatchUserRequest(BaseModel):
     display_name: str | None = None
     # If True, clears users.github_username. Setting it is done by signing
     # in with GitHub — never directly.
     clear_github_username: bool = False
 
 
-@router.get("/me", dependencies=[Depends(_require_account())])
-async def account_me() -> _AccountMeResponse:
-    """Profile payload for the Account > Details page."""
+@router.get("/me", dependencies=[Depends(_require_user())])
+async def user_me() -> _UserMeResponse:
+    """Profile payload for the User > Details page."""
     from app.domain.identity import repository as identity_repo  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
 
@@ -153,13 +153,13 @@ async def account_me() -> _AccountMeResponse:
         if user is None:
             raise _err(404, "user_not_found")
         emails = await identity_repo.list_emails_for_user(s, user_id)
-        memberships = await orgs_repo.list_memberships_for_user(s, user_id)
-        orgs_view = []
-        for m in memberships:
+        rows = await orgs_repo.list_memberships_for_user(s, user_id)
+        memberships_view = []
+        for m in rows:
             org = await orgs_repo.get_org(s, m.org_id)
             if org is None:
                 continue
-            orgs_view.append(
+            memberships_view.append(
                 {
                     "org_id": str(org.id),
                     "slug": org.slug,
@@ -168,7 +168,7 @@ async def account_me() -> _AccountMeResponse:
                     "handle": m.handle,
                 }
             )
-    return _AccountMeResponse(
+    return _UserMeResponse(
         user_id=user.id,
         display_name=user.display_name,
         github_username=user.github_username,
@@ -176,17 +176,17 @@ async def account_me() -> _AccountMeResponse:
             EmailView(id=r.id, email=r.email, is_primary=r.is_primary, verified=r.verified_at is not None)
             for r in emails
         ],
-        orgs=orgs_view,
+        memberships=memberships_view,
     )
 
 
-@router.patch("/me", dependencies=[Depends(_require_account())])
+@router.patch("/me", dependencies=[Depends(_require_user())])
 @limiter.limit(MUTATE_LIMIT)
-async def patch_account_me(
+async def patch_user_me(
     request: Request,
-    body: _PatchAccountRequest,
+    body: _PatchUserRequest,
     yaaos_csrf: Annotated[str | None, Cookie()] = None,
-) -> _AccountMeResponse:
+) -> _UserMeResponse:
     """Update profile fields. `display_name` accepted as plain text; the
     `github_username` denorm is owned by the login flow and is never written
     here. `clear_github_username=true` removes the verified value."""
@@ -201,10 +201,10 @@ async def patch_account_me(
         if body.clear_github_username:
             await identity_repo.set_user_github_username(s, user_id=user_id, github_username=None)
         await s.commit()
-    return await account_me()
+    return await user_me()
 
 
-register_routes(RouteSpec(module_name="account", router=router, url_prefix="/api/account"))
+register_routes(RouteSpec(module_name="user", router=router, url_prefix="/api/user"))
 
 
 __all__ = ["router"]

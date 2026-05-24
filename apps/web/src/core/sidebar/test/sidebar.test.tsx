@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Mocks must run before the module under test is imported.
 vi.mock("@core/api", () => ({
   getCurrentOrgSlug: () => "acme",
+  useCurrentOrgSlug: () => "acme",
   useMyOrgs: () => ({
     data: [{ id: "o1", slug: "acme", name: "Acme", role: "admin", last_used_at: null }],
   }),
@@ -17,6 +18,17 @@ const pathnameMock = vi.fn(() => "/orgs/acme/dashboard");
 
 vi.mock("@tanstack/react-router", () => ({
   useRouterState: () => ({ location: { pathname: pathnameMock() } }),
+  // Stub `Link` so it renders a plain `<a>` — production code uses it for
+  // SPA nav, the assertions in this file only care about the rendered href.
+  Link: ({
+    to,
+    children,
+    ...props
+  }: { to: string; children: React.ReactNode } & Record<string, unknown>) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
 }));
 
 const currentUserMock = vi.fn();
@@ -37,8 +49,9 @@ function userResp(role: "owner" | "admin" | "builder") {
         primary_email: "j@x.test",
         emails: [],
       },
-      orgs: [{ slug: "acme", display_name: "Acme", role, handle: "jane" }],
-      current_org_slug: "acme",
+      memberships: [
+        { slug: "acme", display_name: "Acme", role, handle: "jane", broken_integrations: [] },
+      ],
     },
   };
 }

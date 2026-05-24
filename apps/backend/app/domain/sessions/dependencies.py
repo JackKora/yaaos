@@ -37,7 +37,7 @@ _REQUIRED_ROLE: dict[Action, Role] = {
     Action.ORG_READ: Role.BUILDER,
     Action.MEMBERS_READ: Role.BUILDER,
     Action.AUDIT_READ: Role.ADMIN,
-    Action.ACCOUNT_UPDATE_SELF: Role.BUILDER,
+    Action.USER_UPDATE_SELF: Role.BUILDER,
     Action.MEMBERS_INVITE: Role.ADMIN,
     Action.MEMBERS_REMOVE: Role.ADMIN,
     Action.MEMBERS_CHANGE_ROLE: Role.ADMIN,

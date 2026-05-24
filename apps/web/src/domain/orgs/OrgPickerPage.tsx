@@ -27,6 +27,7 @@ import {
 import { Input } from "@shared/components/ui/input";
 import { Skeleton } from "@shared/components/ui/skeleton";
 import { cn } from "@shared/utils/cn";
+import { Link } from "@tanstack/react-router";
 import { Building2, Plus } from "lucide-react";
 import { useState } from "react";
 
@@ -63,8 +64,8 @@ export function OrgPickerPage() {
       ) : !orgs || orgs.length === 0 ? (
         <EmptyState
           icon={Building2}
-          headline="No organizations yet."
-          body="Create one to get started."
+          headline="You don't belong to any organizations yet."
+          body="Ask an admin to invite your email, or create one yourself."
           action={
             <Button onClick={() => setShowCreate(true)}>
               <Plus className="w-3.5 h-3.5" />
@@ -76,8 +77,9 @@ export function OrgPickerPage() {
         <ul className="flex flex-col gap-2" data-testid="org-picker-list">
           {orgs.map((o) => (
             <li key={o.slug}>
-              <a
-                href={`/orgs/${o.slug}/dashboard`}
+              <Link
+                to="/orgs/$slug/dashboard"
+                params={{ slug: o.slug }}
                 data-testid={`org-picker-row-${o.slug}`}
                 className="flex items-center gap-3 px-4 py-3 rounded-md border border-border hover:bg-accent hover:text-accent-foreground transition-colors"
               >
@@ -94,7 +96,7 @@ export function OrgPickerPage() {
                 >
                   {ROLE_LABEL[o.role].label}
                 </span>
-              </a>
+              </Link>
             </li>
           ))}
         </ul>

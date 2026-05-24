@@ -4,6 +4,7 @@ import { Badge } from "@shared/components/ui/badge";
 import { Button } from "@shared/components/ui/button";
 import { PluginPicker, useAvailablePlugins } from "@shared/plugin_picker";
 import type { PluginMeta } from "@shared/plugin_picker";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { OrgSettingsLayout } from "../OrgSettingsLayout";
 import {
@@ -134,9 +135,9 @@ function InstallCard({
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <a href={settingsHref} data-testid={`ca-settings-${row.plugin_id}`}>
+          <Link to={settingsHref} data-testid={`ca-settings-${row.plugin_id}`}>
             Settings
-          </a>
+          </Link>
         </Button>
         <Button
           variant="destructive"

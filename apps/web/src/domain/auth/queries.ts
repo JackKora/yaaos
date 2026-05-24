@@ -20,6 +20,14 @@ export interface EmailSummary {
   verified: boolean;
 }
 
+/**
+ * Response of `GET /api/auth/me`.
+ *
+ * `memberships` are the authenticated user's *current* memberships — the
+ * orgs they have access to in this session. Revoked memberships disappear
+ * on the next call. The server has no opinion about which org is "current";
+ * that's view state and lives in the URL.
+ */
 export interface CurrentUser {
   user: {
     id: string;
@@ -27,8 +35,7 @@ export interface CurrentUser {
     primary_email: string | null;
     emails: EmailSummary[];
   };
-  orgs: MembershipSummary[];
-  current_org_slug: string | null;
+  memberships: MembershipSummary[];
 }
 
 /** Fetches `/api/auth/me`. Returns `null` (not throws) when unauthenticated. */

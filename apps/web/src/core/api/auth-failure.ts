@@ -26,7 +26,7 @@
  * so `next` is sane before it ever hits the URL.
  */
 
-export type AuthFailureReason = "expired" | "idle" | "signed_out";
+export type AuthFailureReason = "expired" | "idle" | "signed_out" | "not_provisioned";
 
 /** Thrown from `apiFetch` after the redirect is triggered. React Query
  * sets `isError`/`data: undefined` on the calling hook; no page-level

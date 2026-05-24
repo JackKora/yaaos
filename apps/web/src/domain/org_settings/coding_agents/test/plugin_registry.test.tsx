@@ -7,8 +7,9 @@ vi.mock("@core/api", () => ({
 vi.mock("@domain/auth", () => ({
   useCurrentUser: () => ({
     data: {
-      orgs: [{ slug: "acme", role: "owner", handle: "j", display_name: "Acme" }],
-      current_org_slug: "acme",
+      memberships: [
+        { slug: "acme", role: "owner", handle: "j", display_name: "Acme", broken_integrations: [] },
+      ],
       user: { id: "u", display_name: "u", primary_email: "u@x", emails: [] },
     },
   }),

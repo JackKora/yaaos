@@ -13,20 +13,20 @@ import {
 } from "@shared/components/ui/table";
 import { useState } from "react";
 import {
-  type AccountOrg,
-  useAccountMe,
+  type UserMembership,
   useClearGithubUsername,
   useUpdateDisplayName,
   useUpdateOrgHandle,
+  useUserMe,
 } from "./queries";
 
 /**
- * `/user/details` — name + per-org handles + verified emails + GitHub
- * association. The GitHub username is written by the "Sign in with GitHub"
- * login flow; this page only displays it (and offers a Clear button).
+ * `/orgs/$slug/user/details` — name + per-org handles + verified emails +
+ * GitHub association. The GitHub username is written by the "Sign in with
+ * GitHub" login flow; this page only displays it (and offers a Clear button).
  */
 export function DetailsPage() {
-  const { data, isLoading } = useAccountMe();
+  const { data, isLoading } = useUserMe();
   if (isLoading) {
     return <div className="p-6 text-muted-foreground text-sm">Loading…</div>;
   }
@@ -39,7 +39,7 @@ export function DetailsPage() {
     // that masked a recent missing_org_slug bug.
     return (
       <div className="p-6 text-sm text-destructive">
-        Couldn't load your account. Refresh to try again.
+        Couldn't load your user profile. Refresh to try again.
       </div>
     );
   }
@@ -51,7 +51,7 @@ export function DetailsPage() {
         subtitle="Your profile, per-org handles, emails, and linked GitHub username."
       />
       <DisplayNameSection current={data.display_name} />
-      <HandlesSection orgs={data.orgs} />
+      <HandlesSection memberships={data.memberships} />
       <EmailsSection
         emails={data.emails.map((e) => ({
           email: e.email,
@@ -112,13 +112,13 @@ function DisplayNameSection({ current }: { current: string }) {
   );
 }
 
-function HandlesSection({ orgs }: { orgs: AccountOrg[] }) {
+function HandlesSection({ memberships }: { memberships: UserMembership[] }) {
   return (
     <Section
       title="Per-org handles"
       description="The handle other members of each org see when you act in their workspace."
     >
-      {orgs.length === 0 ? (
+      {memberships.length === 0 ? (
         <p className="text-muted-foreground text-xs">No org memberships yet.</p>
       ) : (
         <Table data-testid="handles-table">
@@ -131,8 +131,8 @@ function HandlesSection({ orgs }: { orgs: AccountOrg[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orgs.map((o) => (
-              <HandleRow key={o.org_id} org={o} />
+            {memberships.map((m) => (
+              <HandleRow key={m.org_id} membership={m} />
             ))}
           </TableBody>
         </Table>
@@ -141,35 +141,38 @@ function HandlesSection({ orgs }: { orgs: AccountOrg[] }) {
   );
 }
 
-function HandleRow({ org }: { org: AccountOrg }) {
-  const [value, setValue] = useState(org.handle);
+function HandleRow({ membership }: { membership: UserMembership }) {
+  const [value, setValue] = useState(membership.handle);
   const update = useUpdateOrgHandle();
-  const dirty = value !== org.handle;
+  const dirty = value !== membership.handle;
   return (
     <TableRow>
-      <TableCell className="font-medium">{org.display_name || org.slug}</TableCell>
+      <TableCell className="font-medium">{membership.display_name || membership.slug}</TableCell>
       <TableCell>
-        <Badge variant="secondary">{org.role}</Badge>
+        <Badge variant="secondary">{membership.role}</Badge>
       </TableCell>
       <TableCell>
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          data-testid={`handle-input-${org.slug}`}
+          data-testid={`handle-input-${membership.slug}`}
           className="h-8 w-[180px]"
         />
       </TableCell>
       <TableCell className="text-right">
         <Button
           size="sm"
-          data-testid={`handle-save-${org.slug}`}
+          data-testid={`handle-save-${membership.slug}`}
           disabled={!dirty || update.isPending}
-          onClick={() => update.mutate({ orgId: org.org_id, handle: value })}
+          onClick={() => update.mutate({ orgId: membership.org_id, handle: value })}
         >
           Save
         </Button>
         {update.isError && (
-          <span className="ml-2 text-xs text-destructive" data-testid={`handle-err-${org.slug}`}>
+          <span
+            className="ml-2 text-xs text-destructive"
+            data-testid={`handle-err-${membership.slug}`}
+          >
             {(update.error as Error)?.message || "Failed"}
           </span>
         )}

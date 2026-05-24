@@ -1,5 +1,7 @@
+import { useCurrentOrgSlug } from "@core/api";
 import { useCurrentUser, useLogout } from "@domain/auth";
 import { cn } from "@shared/utils/cn";
+import { Link } from "@tanstack/react-router";
 import { ChevronUp, Lock, LogOut, Moon, Sun, User as UserIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toggleTheme } from "../layout/theme";
@@ -13,6 +15,7 @@ import { toggleTheme } from "../layout/theme";
  */
 export function UserCard({ expanded }: { expanded: boolean }) {
   const { data } = useCurrentUser();
+  const slug = useCurrentOrgSlug();
   const logout = useLogout();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
@@ -34,7 +37,7 @@ export function UserCard({ expanded }: { expanded: boolean }) {
   }, [open]);
 
   if (!data) return null;
-  const currentOrg = data.orgs.find((o) => o.slug === data.current_org_slug);
+  const currentOrg = slug ? data.memberships.find((m) => m.slug === slug) : null;
   const initials = (data.user.display_name || data.user.primary_email || "?")
     .split(/\s+/)
     .map((p) => p[0])
@@ -91,20 +94,26 @@ export function UserCard({ expanded }: { expanded: boolean }) {
           data-testid="user-card-popover"
           className="absolute bottom-full left-2 right-2 mb-1 rounded border border-border bg-card py-1 shadow-lg"
         >
-          <a
-            href="/user/details"
-            className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
-            data-testid="user-nav-details"
-          >
-            <UserIcon className="h-3.5 w-3.5" /> Details
-          </a>
-          <a
-            href="/user/security"
-            className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
-            data-testid="user-nav-security"
-          >
-            <Lock className="h-3.5 w-3.5" /> Security
-          </a>
+          {slug && (
+            <>
+              <Link
+                to="/orgs/$slug/user/details"
+                params={{ slug }}
+                className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
+                data-testid="user-nav-details"
+              >
+                <UserIcon className="h-3.5 w-3.5" /> Details
+              </Link>
+              <Link
+                to="/orgs/$slug/user/security"
+                params={{ slug }}
+                className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
+                data-testid="user-nav-security"
+              >
+                <Lock className="h-3.5 w-3.5" /> Security
+              </Link>
+            </>
+          )}
           <button
             type="button"
             onClick={onToggleTheme}

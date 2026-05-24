@@ -28,11 +28,13 @@ const REASON_COPY: Record<AuthFailureReason, string> = {
   idle: "Your session timed out from inactivity. Sign in to continue.",
   expired: "Your session expired. Sign in to continue.",
   signed_out: "You were signed out. Sign in to continue.",
+  not_provisioned:
+    "Your account doesn't exist in yaaos yet. Ask an admin to invite your email, then sign in again.",
 };
 
 function reasonFromQuery(search: string): AuthFailureReason | null {
   const v = new URLSearchParams(search).get("reason");
-  if (v === "idle" || v === "expired" || v === "signed_out") return v;
+  if (v === "idle" || v === "expired" || v === "signed_out" || v === "not_provisioned") return v;
   return null;
 }
 

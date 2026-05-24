@@ -50,7 +50,7 @@ class Action(StrEnum):
     AUDIT_READ = "audit.read"
 
     # Org-scoped mutating endpoints — Builder/Admin/Owner depending on action.
-    ACCOUNT_UPDATE_SELF = "account.update_self"
+    USER_UPDATE_SELF = "user.update_self"
     MEMBERS_INVITE = "members.invite"
     MEMBERS_REMOVE = "members.remove"
     MEMBERS_CHANGE_ROLE = "members.change_role"
@@ -118,7 +118,7 @@ PUBLIC_EXACT: frozenset[str] = frozenset(
         "/api/auth/providers",
         "/api/auth/sso/discover",
         # TOTP flow is used both during login (no session yet) and after
-        # login from /user/security; handlers gate by their own state.
+        # login from the user security page; handlers gate by their own state.
         "/api/auth/totp/enroll",
         "/api/auth/totp/challenge",
         "/api/auth/totp/verify",
@@ -141,8 +141,8 @@ PUBLIC_PREFIX_VARIABLE: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 USER_SCOPED_PREFIXES: tuple[str, ...] = (
-    # User profile + email management. Session via `_require_account()`.
-    "/api/account/",
+    # User profile + email management. Session via `_require_user()`.
+    "/api/user/",
     # Cross-org notification stream. Session cookie identifies the recipient;
     # org filters are optional query params.
     "/api/notifications",

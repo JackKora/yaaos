@@ -1,4 +1,4 @@
-"""Coverage for the account surface: GET/PATCH /api/account/me + the
+"""Coverage for the user surface: GET/PATCH /api/user/me + the
 membership handle update endpoint. The GitHub username denorm is owned by
 the login flow now; there's no verify-only flow to test here."""
 
@@ -10,9 +10,9 @@ import pytest_asyncio
 from fastapi import FastAPI
 
 from app.core.auth import AuthMiddleware
-from app.domain.identity import account_web as _account_web  # noqa: F401
 from app.domain.identity import repository as identity_repo
 from app.domain.identity import sessions as session_lifecycle
+from app.domain.identity import user_web as _user_web  # noqa: F401
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.types import Role
 from app.domain.sessions import web as _auth_web  # noqa: F401
@@ -24,7 +24,7 @@ def _app() -> FastAPI:
     app.add_middleware(AuthMiddleware)
     from app.core.webserver import mount_specs  # noqa: PLC0415
 
-    mount_specs(app, only={"account"})
+    mount_specs(app, only={"user"})
     return app
 
 
@@ -51,21 +51,21 @@ async def seeded(db_session):
     yield {"user": user, "org_a": org_a, "org_b": org_b, "session": s}
 
 
-# ── GET /api/account/me ──────────────────────────────────────────────────────
+# ── GET /api/user/me ──────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_account_me_unauthenticated_401(seeded) -> None:
+async def test_user_me_unauthenticated_401(seeded) -> None:
     async with _client() as c:
-        r = await c.get("/api/account/me", headers={"X-Org-Slug": seeded["org_a"].slug})
+        r = await c.get("/api/user/me", headers={"X-Org-Slug": seeded["org_a"].slug})
     assert r.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_account_me_returns_orgs_and_handles(seeded) -> None:
+async def test_user_me_returns_memberships_and_handles(seeded) -> None:
     async with _client() as c:
         r = await c.get(
-            "/api/account/me",
+            "/api/user/me",
             cookies={"yaaos_session": seeded["session"].raw_token},
             headers={"X-Org-Slug": seeded["org_a"].slug},
         )
@@ -73,44 +73,45 @@ async def test_account_me_returns_orgs_and_handles(seeded) -> None:
     body = r.json()
     assert body["display_name"] == "Acc"
     assert body["github_username"] is None
-    handles = {o["slug"]: o["handle"] for o in body["orgs"]}
+    handles = {m["slug"]: m["handle"] for m in body["memberships"]}
     assert handles == {"org-a": "alpha", "org-b": "beta"}
 
 
 @pytest.mark.asyncio
-async def test_account_me_works_without_org_slug_header(seeded) -> None:
-    """The /user/details SPA page clears the org slug before calling this
-    endpoint — it's user-scoped, not org-scoped. The middleware must let
-    the request through without `X-Org-Slug`."""
+async def test_user_me_works_without_org_slug_header(seeded) -> None:
+    """`/api/user/me` is USER_SCOPED — the middleware must let the request
+    through without `X-Org-Slug`. Whether the SPA happens to be on an
+    org-scoped URL when calling it (which would attach the header) is
+    irrelevant; the route ignores it."""
     async with _client() as c:
         r = await c.get(
-            "/api/account/me",
+            "/api/user/me",
             cookies={"yaaos_session": seeded["session"].raw_token},
         )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["display_name"] == "Acc"
-    assert {o["slug"] for o in body["orgs"]} == {"org-a", "org-b"}
+    assert {m["slug"] for m in body["memberships"]} == {"org-a", "org-b"}
 
 
 @pytest.mark.asyncio
-async def test_account_me_anonymous_without_header_is_401(seeded) -> None:
+async def test_user_me_anonymous_without_header_is_401(seeded) -> None:
     """No session, no header → 401 from `require_session`, not 400 from
     the middleware. The route is USER_SCOPED, not ORG_SCOPED."""
     async with _client() as c:
-        r = await c.get("/api/account/me")
+        r = await c.get("/api/user/me")
     assert r.status_code == 401
 
 
-# ── PATCH /api/account/me ────────────────────────────────────────────────────
+# ── PATCH /api/user/me ────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_patch_account_updates_display_name(seeded) -> None:
+async def test_patch_user_updates_display_name(seeded) -> None:
     sess = seeded["session"]
     async with _client() as c:
         r = await c.patch(
-            "/api/account/me",
+            "/api/user/me",
             json={"display_name": "New Name"},
             cookies={"yaaos_session": sess.raw_token, "yaaos_csrf": sess.csrf_token},
             headers={"X-Org-Slug": seeded["org_a"].slug, "X-CSRF-Token": sess.csrf_token},
@@ -128,7 +129,7 @@ async def test_patch_clears_github_username(seeded, db_session) -> None:
     sess = seeded["session"]
     async with _client() as c:
         r = await c.patch(
-            "/api/account/me",
+            "/api/user/me",
             json={"clear_github_username": True},
             cookies={"yaaos_session": sess.raw_token, "yaaos_csrf": sess.csrf_token},
             headers={"X-Org-Slug": seeded["org_a"].slug, "X-CSRF-Token": sess.csrf_token},

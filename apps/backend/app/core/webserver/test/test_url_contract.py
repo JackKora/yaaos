@@ -33,8 +33,8 @@ LOAD_BEARING_URLS: set[tuple[str, str]] = {
     ("GET", "/api/auth/callback/{provider}"),
     ("POST", "/api/auth/logout"),
     ("GET", "/api/auth/me"),
-    # M03 settings / account (SPA settings pages).
-    ("GET", "/api/account/me"),
+    # M03 settings / user (SPA settings pages).
+    ("GET", "/api/user/me"),
     # Webhook ingress (GitHub App webhook).
     ("POST", "/api/intake/{type}"),
     # Org membership surface (SPA invite + role flows).

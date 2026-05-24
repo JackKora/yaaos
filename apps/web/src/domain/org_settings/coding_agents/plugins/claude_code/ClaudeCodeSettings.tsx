@@ -1,3 +1,4 @@
+import { useCurrentOrgSlug } from "@core/api";
 import { useCurrentUser } from "@domain/auth";
 import { ConfirmModal } from "@shared/components/layout";
 import { Badge } from "@shared/components/ui/badge";
@@ -200,8 +201,9 @@ function DangerZone({ pluginId }: { pluginId: string }) {
  *  is the source of truth; the banner is UI affordance. */
 function BuilderReadOnlyBanner() {
   const { data } = useCurrentUser();
-  if (!data) return null;
-  const currentOrg = data.orgs.find((o) => o.slug === data.current_org_slug);
+  const slug = useCurrentOrgSlug();
+  if (!data || !slug) return null;
+  const currentOrg = data.memberships.find((m) => m.slug === slug);
   if (!currentOrg) return null;
   if (currentOrg.role !== "builder") return null;
   return (
@@ -221,8 +223,9 @@ function BuilderReadOnlyBanner() {
  *  the appropriate role context anyway. */
 function BrokenIntegrationsNotice() {
   const { data } = useCurrentUser();
-  if (!data) return null;
-  const currentOrg = data.orgs.find((o) => o.slug === data.current_org_slug);
+  const slug = useCurrentOrgSlug();
+  if (!data || !slug) return null;
+  const currentOrg = data.memberships.find((m) => m.slug === slug);
   if (!currentOrg || currentOrg.broken_integrations.length === 0) return null;
   const providers = currentOrg.broken_integrations.map((b) => b.provider).join(", ");
   return (

@@ -18,6 +18,7 @@ Errors:
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any
 
 import structlog
@@ -82,6 +83,34 @@ def _safe_next(value: str | None) -> str:
     return value
 
 
+_ORG_SLUG_RE = re.compile(r"^/orgs/([^/]+)(/|$)")
+
+
+async def _safe_next_for_user(s, value: str | None, *, user_id) -> str:
+    """`_safe_next` plus membership validation. If the path points at
+    `/orgs/$slug/...`, require `user_id` to have a membership in `$slug`;
+    otherwise collapse to `/`. Prevents post-login redirects to orgs the
+    user no longer belongs to (or never did). Same allowlist semantics as
+    `_safe_next` otherwise.
+    """
+    from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
+
+    path = _safe_next(value)
+    m = _ORG_SLUG_RE.match(path)
+    if not m:
+        return path
+    slug = m.group(1)
+    if not slug or slug in {"undefined", "null"}:
+        return "/"
+    org = await orgs_repo.get_org_by_slug(s, slug)
+    if org is None:
+        return "/"
+    membership = await orgs_repo.get_membership(s, user_id=user_id, org_id=org.id)
+    if membership is None:
+        return "/"
+    return path
+
+
 @router.get("/login", dependencies=[Depends(public_route)])
 @limiter.limit(AUTH_LIMIT)
 async def login(
@@ -138,6 +167,19 @@ async def callback(
     async with db_session() as s:
         login_result = await login_via_oauth(s, provider_id=provider, profile=profile)
 
+        # No matching yaaos user (neither by (provider, external_subject) nor
+        # by verified email). OAuth never auto-provisions; the user must be
+        # invited first. Drop them on /login with a banner and no cookie.
+        if login_result.user is None:
+            await s.rollback()
+            log.info(
+                "auth.callback.not_provisioned",
+                provider=provider,
+                external_subject=profile.external_subject,
+                primary_email=profile.primary_email,
+            )
+            return RedirectResponse("/login?reason=not_provisioned", status_code=303)
+
         # Step-up: if the user has a verified TOTP secret and the provider
         # didn't satisfy MFA, defer session creation and send the user
         # through `/totp-challenge`.
@@ -177,6 +219,10 @@ async def callback(
             provider=provider,
             newly_created=login_result.newly_created,
         )
+        # Validate next now that we know who's signing in. If next points
+        # at /orgs/$slug/... but the user has no membership in $slug, fall
+        # back to `/` (indexRoute will route them to a real destination).
+        next_path = await _safe_next_for_user(s, next_path, user_id=login_result.user.id)
         await s.commit()
 
     resp = RedirectResponse(next_path, status_code=303)
@@ -233,11 +279,15 @@ async def logout_all(
 async def me(
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> Response:
-    """Return `{user, orgs, current_org_slug}` for the cookie-bearer.
+    """Return `{user, memberships}` for the cookie-bearer.
 
-    Lives on the public allowlist because the SPA hits it before the org
-    is known; on success the SPA picks an org and sets `X-Org-Slug` on
-    subsequent calls. 401 when there's no session.
+    `memberships` is the authenticated user's current memberships (revoked
+    ones disappear next call). The server has no opinion about which org is
+    "current" — that's view state and lives in the URL.
+
+    Lives on the public allowlist because the SPA hits it before any org
+    URL is selected; on routes that need it, the SPA adds `X-Org-Slug` from
+    the URL path. 401 when there's no session.
     """
     from sqlalchemy import select as _select  # noqa: PLC0415
 
@@ -254,9 +304,9 @@ async def me(
             return auth_failure_response("unauthenticated")
         user_row = await identity_repo.get_user(s, session.user_id)
         emails = await identity_repo.list_emails_for_user(s, session.user_id)
-        memberships = await orgs_repo.list_memberships_for_user(s, session.user_id)
-        orgs_view = []
-        for m in memberships:
+        membership_rows = await orgs_repo.list_memberships_for_user(s, session.user_id)
+        memberships_view = []
+        for m in membership_rows:
             org = await orgs_repo.get_org(s, m.org_id)
             if org is None:
                 continue
@@ -285,7 +335,7 @@ async def me(
                     }
                     for r in broken_rows
                 ]
-            orgs_view.append(
+            memberships_view.append(
                 {
                     "slug": org.slug,
                     "display_name": org.display_name,
@@ -306,8 +356,7 @@ async def me(
                     for e in emails
                 ],
             },
-            "orgs": orgs_view,
-            "current_org_slug": orgs_view[0]["slug"] if orgs_view else None,
+            "memberships": memberships_view,
         }
     )
 
@@ -426,12 +475,13 @@ async def totp_challenge(
         user_id = _UUID(payload["user_id"])
     except (KeyError, ValueError):
         return JSONResponse(status_code=400, content={"error": "challenge_invalid"})
-    next_path = _safe_next(payload.get("next"))
+    raw_next = _safe_next(payload.get("next"))
 
     async with db_session() as s:
         ok = await totp_lifecycle.verify(s, user_id=user_id, code=body.code)
         if not ok:
             return JSONResponse(status_code=400, content={"error": "totp_invalid"})
+        next_path = await _safe_next_for_user(s, raw_next, user_id=user_id)
         await _revoke_pre_auth_session(s, request)
         created = await session_lifecycle.create(
             s,

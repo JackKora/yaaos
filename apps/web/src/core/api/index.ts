@@ -1,4 +1,4 @@
-export { getCurrentOrgSlug, setCurrentOrgSlug } from "./org-context";
+export { getCurrentOrgSlug, useCurrentOrgSlug } from "./org-context";
 export {
   apiClient,
   apiFetch,

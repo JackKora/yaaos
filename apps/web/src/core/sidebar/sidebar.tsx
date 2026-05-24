@@ -1,9 +1,9 @@
-import { getCurrentOrgSlug } from "@core/api";
+import { useCurrentOrgSlug } from "@core/api";
 import { useCurrentUser } from "@domain/auth";
 import { NotificationsBell, OrgSwitcher } from "@shared/components/chrome";
 import { Popover, PopoverContent, PopoverTrigger } from "@shared/components/ui/popover";
 import { cn } from "@shared/utils/cn";
-import { useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Brain,
   ChevronRight,
@@ -110,7 +110,7 @@ export function Sidebar() {
   const [pinned, setPinned] = useState<boolean>(() => getSidebarPinned());
   const { location } = useRouterState();
   const active = location.pathname;
-  const slug = getCurrentOrgSlug();
+  const slug = useCurrentOrgSlug();
   const { data: user } = useCurrentUser();
   const { isCollapsed, toggle, setCollapsed } = useCollapseState();
 
@@ -127,7 +127,7 @@ export function Sidebar() {
     }
   }, [active, slug, setCollapsed]);
 
-  const currentMembership = user?.orgs.find((o) => o.slug === user?.current_org_slug);
+  const currentMembership = slug ? user?.memberships.find((m) => m.slug === slug) : undefined;
   // Owner satisfies any admin-gated nav item (Owner > Admin > Builder).
   const effectiveRole: NavRole | undefined =
     currentMembership?.role === "owner" || currentMembership?.role === "admin"
@@ -167,7 +167,7 @@ export function Sidebar() {
           pinned ? "px-3 py-3" : "justify-center h-[56px]",
         )}
       >
-        <a href="/" className={cn("block", pinned && "w-full")} aria-label="yaaos home">
+        <Link to="/" className={cn("block", pinned && "w-full")} aria-label="yaaos home">
           {pinned ? (
             <>
               <img
@@ -195,7 +195,7 @@ export function Sidebar() {
               />
             </>
           )}
-        </a>
+        </Link>
       </div>
 
       {/* Org switcher chip — defines the current org context. */}
@@ -267,9 +267,9 @@ function renderLink(item: NavLink, ctx: RenderContext, depth: 0 | 1 = 0) {
   // Active state is ONLY a background color change — no border, no margin shift,
   // so the item stays in the exact same position whether selected or not.
   return (
-    <a
+    <Link
       key={item.id}
-      href={href}
+      to={href}
       data-testid={`nav-${item.id}`}
       data-active={isActive || undefined}
       className={cn(
@@ -284,7 +284,7 @@ function renderLink(item: NavLink, ctx: RenderContext, depth: 0 | 1 = 0) {
     >
       <Icon className="w-4 h-4 shrink-0" />
       {ctx.pinned && <span>{item.label}</span>}
-    </a>
+    </Link>
   );
 }
 
@@ -326,9 +326,9 @@ function renderGroup(
               const href = ctx.absolutePath(c.path);
               const isActive = ctx.active.startsWith(href);
               return (
-                <a
+                <Link
                   key={c.id}
-                  href={href}
+                  to={href}
                   data-testid={`nav-${c.id}`}
                   data-active={isActive || undefined}
                   className={cn(
@@ -340,7 +340,7 @@ function renderGroup(
                 >
                   <ChildIcon className="w-4 h-4 shrink-0" />
                   <span>{c.label}</span>
-                </a>
+                </Link>
               );
             })}
           </div>

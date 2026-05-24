@@ -57,7 +57,7 @@ Single source of truth mapping `Action → Role`. Per-endpoint overrides are exp
 | `ORG_READ` | Builder |
 | `MEMBERS_READ` | Builder |
 | `AUDIT_READ` | Admin |
-| `ACCOUNT_UPDATE_SELF` | Builder |
+| `USER_UPDATE_SELF` | Builder |
 | `MEMBERS_INVITE` | Admin |
 | `MEMBERS_REMOVE` | Admin |
 | `MEMBERS_CHANGE_ROLE` | Admin |
@@ -94,4 +94,4 @@ None — reads `sessions`, `orgs`, `memberships` via the identity/orgs repositor
 ## How it's tested
 
 - `test/test_middleware.py` — middleware header check, dep resolution, role check, contextvar propagation. See [`core/auth`](core_auth.md) for the test inventory.
-- `test/test_oauth_endpoints.py` — ASGI-driven coverage of `/api/auth/login` and `/api/auth/callback/test` through the `oauth_test` stub: login redirect, unknown-provider 404, existing-identity issues session, unknown-email auto-creates a user, email-match auto-links a new identity, invitation accept creates user, unverified email 403, invalid state 400, logout clears cookies.
+- `test/test_oauth_endpoints.py` — ASGI-driven coverage of `/api/auth/login` and `/api/auth/callback/test` through the `oauth_test` stub: login redirect, unknown-provider 404, existing-identity issues session, unknown user (no identity + no verified-email match) redirects to `/login?reason=not_provisioned` with no cookie / no rows, verified-email auto-links a new identity, an invitation-alone does NOT provision (OAuth never auto-creates), unverified email 403, invalid state 400, logout clears cookies.

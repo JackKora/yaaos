@@ -1,7 +1,7 @@
 import { apiFetch } from "@core/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-export interface AccountOrg {
+export interface UserMembership {
   org_id: string;
   slug: string;
   display_name: string;
@@ -9,27 +9,29 @@ export interface AccountOrg {
   handle: string;
 }
 
-export interface AccountEmail {
+export interface UserEmail {
   id: string;
   email: string;
   is_primary: boolean;
   verified: boolean;
 }
 
-export interface AccountMe {
+export interface UserMe {
   user_id: string;
   display_name: string;
   github_username: string | null;
-  emails: AccountEmail[];
-  orgs: AccountOrg[];
+  emails: UserEmail[];
+  memberships: UserMembership[];
 }
 
-/** Fetches `/api/account/me`. The /api/auth/me endpoint is the M02 surface;
- * this richer payload (per-org handles + github_username) lands with M03. */
-export function useAccountMe() {
-  return useQuery<AccountMe>({
-    queryKey: ["account", "me"],
-    queryFn: () => apiFetch<AccountMe>("/api/account/me"),
+/** Fetches `/api/user/me` — the richer per-user payload (per-org handles +
+ * github_username). The skinnier `/api/auth/me` (user + memberships) stays
+ * separate; chrome reads from `useCurrentUser`, this is the User
+ * details/security page payload. */
+export function useUserMe() {
+  return useQuery<UserMe>({
+    queryKey: ["user", "me"],
+    queryFn: () => apiFetch<UserMe>("/api/user/me"),
     staleTime: 30_000,
   });
 }
@@ -38,11 +40,11 @@ export function useUpdateDisplayName() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (display_name: string) =>
-      apiFetch<AccountMe>("/api/account/me", {
+      apiFetch<UserMe>("/api/user/me", {
         method: "PATCH",
         body: JSON.stringify({ display_name }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "me"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),
   });
 }
 
@@ -50,11 +52,11 @@ export function useClearGithubUsername() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiFetch<AccountMe>("/api/account/me", {
+      apiFetch<UserMe>("/api/user/me", {
         method: "PATCH",
         body: JSON.stringify({ clear_github_username: true }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "me"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),
   });
 }
 
@@ -66,6 +68,6 @@ export function useUpdateOrgHandle() {
         method: "PATCH",
         body: JSON.stringify({ handle }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["account", "me"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),
   });
 }

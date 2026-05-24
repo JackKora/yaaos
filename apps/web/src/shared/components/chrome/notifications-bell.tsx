@@ -8,6 +8,7 @@
  */
 
 import {
+  useCurrentOrgSlug,
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotificationsPopover,
@@ -15,6 +16,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@shared/components/ui/popover";
 import { ago } from "@shared/utils/ago";
 import { cn } from "@shared/utils/cn";
+import { Link } from "@tanstack/react-router";
 import { Bell } from "lucide-react";
 
 interface NotificationsBellProps {
@@ -24,6 +26,7 @@ interface NotificationsBellProps {
 
 export function NotificationsBell({ expanded, className }: NotificationsBellProps) {
   const { data } = useNotificationsPopover();
+  const slug = useCurrentOrgSlug();
   const markOne = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
   const unreadCount = data?.unread_count ?? 0;
@@ -64,12 +67,15 @@ export function NotificationsBell({ expanded, className }: NotificationsBellProp
       <PopoverContent align="start" side="right" sideOffset={8} className="w-[340px] p-2">
         <div className="flex items-center justify-between px-1 pb-2 border-b border-border">
           <h3 className="text-sm font-medium">Notifications</h3>
-          <a
-            href="/notifications"
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            See all
-          </a>
+          {slug && (
+            <Link
+              to="/orgs/$slug/user/notifications"
+              params={{ slug }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              See all
+            </Link>
+          )}
         </div>
         {items.length === 0 ? (
           <p className="text-xs text-muted-foreground py-6 text-center">You're all caught up.</p>

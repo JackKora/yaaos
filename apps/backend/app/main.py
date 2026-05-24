@@ -37,7 +37,7 @@ from app.domain import sessions as _domain_sessions  # noqa: F401, E402
 # and `domain.sessions` are loaded — `orgs.web` imports `domain.sessions.dependencies`,
 # which imports back into `domain.orgs`, so the cycle must break here, not in
 # `orgs/__init__`.
-from app.domain.identity import account_web as _identity_account_web  # noqa: F401, E402
+from app.domain.identity import user_web as _identity_user_web  # noqa: F401, E402
 from app.domain.orgs import audit_web as _orgs_audit_web  # noqa: F401, E402
 from app.domain.orgs import sso_web as _orgs_sso_web  # noqa: F401, E402
 from app.domain.orgs import web as _orgs_web  # noqa: F401, E402
