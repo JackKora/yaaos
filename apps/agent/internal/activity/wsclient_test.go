@@ -32,7 +32,7 @@ func newFakeServer() *fakeServer {
 		inboundC: make(chan []byte, 16),
 	}
 	fs.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fs.AuthCh <- r.Header.Get("Authorization")
+		auth := r.Header.Get("Authorization")
 		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
@@ -40,6 +40,9 @@ func newFakeServer() *fakeServer {
 		fs.mu.Lock()
 		fs.conns = append(fs.conns, c)
 		fs.mu.Unlock()
+		// Signal *after* the connection is registered so tests that wait
+		// on AuthCh and then call pushFromServer don't race the append.
+		fs.AuthCh <- auth
 		// Read loop until the client disconnects. Captured frames go
 		// into fs.inbound + fs.inboundC.
 		ctx := r.Context()

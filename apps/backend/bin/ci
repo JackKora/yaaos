@@ -18,9 +18,6 @@ bin/sync_modules --check
 echo "==> bin/check_table_access"
 bin/check_table_access
 
-echo "==> bin/check_doc_links (cross-app docs)"
-bin/check_doc_links
-
 echo "==> pytest"
 mkdir -p tmp
 uv run pytest -q --report-log=tmp/pytest-reportlog.json

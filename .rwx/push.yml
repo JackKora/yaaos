@@ -27,13 +27,7 @@ tasks:
   - key: backend-ci
     use: [code]
     docker: true
-    # bin/check_doc_links walks the whole repo's docs and verifies cross-app
-    # links resolve. The prod image only ships `apps/backend` (line 60 of the
-    # Dockerfile), so we read-only-mount the other doc trees + `plan/` + the
-    # repo root markdown files so the check can see them. No image change —
-    # production images stay lean.
-    #
-    # bin/ci's pytest also exercises real Postgres (transactional rollback
+    # bin/ci's pytest exercises real Postgres (transactional rollback
     # pattern per apps/backend/docs/patterns.md). We bring up the postgres
     # service from docker-compose.test.yml, run backend-ci on the same compose
     # network, and tear it down on exit.
@@ -42,6 +36,10 @@ tasks:
     # produced inside the container survives `--rm` and is picked up by
     # outputs.test-results. The mount is chmod 777 because the container
     # runs as uid 1000 (yaaos), which won't match the RWX runner uid.
+    #
+    # Cross-app doc-link checks live in the `docs-ci` task — running them
+    # here previously required bind-mounting the other apps' docs + `.git`
+    # into this container, which was a fragility tax for no payoff.
     run: |
       mkdir -p apps/backend/tmp && chmod 777 apps/backend/tmp
       docker compose -f docker/docker-compose.test.yml up -d --wait postgres redis
@@ -52,15 +50,6 @@ tasks:
         -e DATABASE_URL=postgresql+asyncpg://yaaos:yaaos@postgres:5432/yaaos \
         -e REDIS_URL=redis://redis:6379/0 \
         -e YAAOS_ENV=dev \
-        -v "$(pwd)/docs:/app/docs:ro" \
-        -v "$(pwd)/docker:/app/docker:ro" \
-        -v "$(pwd)/plan:/app/plan:ro" \
-        -v "$(pwd)/CLAUDE.md:/app/CLAUDE.md:ro" \
-        -v "$(pwd)/apps/web/docs:/app/apps/web/docs:ro" \
-        -v "$(pwd)/apps/e2e/docs:/app/apps/e2e/docs:ro" \
-        -v "$(pwd)/apps/fake-github/docs:/app/apps/fake-github/docs:ro" \
-        -v "$(pwd)/apps/agent/docs:/app/apps/agent/docs:ro" \
-        -v "$(pwd)/.git:/app/.git:ro" \
         -v "$(pwd)/apps/backend/tmp:/app/apps/backend/tmp" \
         yaaos-backend-ci sh -c "cd apps/backend && bin/ci"
     outputs:
@@ -69,6 +58,18 @@ tasks:
           options:
             language: Python
             framework: pytest
+
+  - key: docs-ci
+    use: [code]
+    # Cross-app documentation gates. Runs directly on the cloned working
+    # tree — no Docker, no bind mounts. Add more doc checks here over time
+    # rather than spawning new tasks.
+    #
+    # apps/backend/bin/check_doc_links is intentionally self-locating
+    # (resolves REPO_ROOT from __file__) so it works from any cwd, and has
+    # zero deps beyond Python stdlib so we don't need uv or a venv here.
+    run: |
+      python3 apps/backend/bin/check_doc_links
 
   - key: web-ci
     use: [code]

@@ -17,12 +17,15 @@ What it does NOT check:
 - Anchor validity (would need to parse target headings).
 - Broken images.
 
-Existence is checked against `git ls-files` when available — i.e. against
-the *repo* contents, not the local filesystem. This decouples the check
-from which subtrees happen to be mounted in the test environment (RWX's
-backend-ci container ships `apps/backend/` + a few read-only doc-tree
-mounts, but no source trees like `apps/web/src/`). Falling back to FS
-when git isn't available keeps the script useful in stripped sandboxes.
+Existence is checked against `git ls-files` when available — directories
+(which git doesn't track directly) are treated as present if any tracked
+file lives under them. Falls back to FS when git isn't available.
+
+This script has zero deps beyond the Python stdlib and is meant to run
+directly against a real working tree (locally, or in the RWX `docs-ci`
+task that runs against the cloned repo). Do not run it from inside a
+Docker container that bind-mounts a partial tree — that's what made
+this check fragile in the past.
 """
 
 from __future__ import annotations
@@ -36,29 +39,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]  # apps/backend/bin/check_doc_li
 
 
 def _git_tracked_paths() -> set[str] | None:
-    """Repo-relative paths tracked by git, or None if git or `.git/` is unavailable.
-
-    `-c safe.directory=*` disables the dubious-ownership guard. In CI the
-    repo's `.git` is bind-mounted into a container that runs as a non-root
-    user, so on Linux the in-container uid won't match the host uid that
-    owns `.git` and git refuses to read it by default. Falling back to FS
-    silently here would mask cross-app links into source trees that aren't
-    mounted (e.g. `apps/web/src/`) — so any unexpected git failure is also
-    surfaced to stderr instead of being swallowed.
-    """
+    """Repo-relative paths tracked by git, or None if git or `.git/` is unavailable."""
     try:
         out = subprocess.run(
-            ["git", "-c", "safe.directory=*", "-C", str(REPO_ROOT), "ls-files"],
+            ["git", "-C", str(REPO_ROOT), "ls-files"],
             check=True,
             capture_output=True,
             text=True,
             timeout=30,
         )
-    except FileNotFoundError:
-        return None
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        stderr = getattr(e, "stderr", "") or ""
-        sys.stderr.write(f"warning: `git ls-files` failed, falling back to FS check: {e}\n{stderr}\n")
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
     return set(out.stdout.splitlines())
 
