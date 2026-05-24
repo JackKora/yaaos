@@ -26,7 +26,7 @@ Reads `settings.log_level` and `settings.yaaos_env`. Processor chain: `merge_con
 
 `_configure_otel` (called from `configure()` regardless of endpoint):
 
-- Builds a `TracerProvider` with `service.name = settings.otel_service_name`.
+- Builds a `TracerProvider` with `service.name` set per role: `settings.otel_service_name_app` (web process, default `yaaos-app`) or `settings.otel_service_name_worker` (taskiq worker, default `yaaos-worker`). `configure(role=...)` picks the field — `app/main.py` calls it with `"app"`, `app/core/tasks/worker.py` with `"worker"`.
 - Sets `TraceContextTextMapPropagator` as the global propagator so W3C `traceparent` headers cross every HTTP boundary by default.
 - Attaches a `BatchSpanProcessor(OTLPSpanExporter(endpoint))` **only when** `otel_exporter_otlp_endpoint` is set. Without an endpoint, spans are still created and discarded — code that emits spans never needs feature flags.
 - Runs `FastAPIInstrumentor().instrument()` + `SQLAlchemyInstrumentor().instrument()`. Both calls swallow "already instrumented" errors so test reloads stay benign.

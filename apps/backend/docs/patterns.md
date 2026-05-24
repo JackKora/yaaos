@@ -140,9 +140,17 @@ Task bodies must be idempotent — a drain crash between dispatch and `dispatche
 
 ## Secrets
 
-Every sensitive value crosses module boundaries as Pydantic `SecretStr`: encryption keys, OAuth client secrets, TOTP master key, session tokens, invitation tokens, SMTP password, third-party API keys (Braintrust, Anthropic via BYOK), GitHub App private keys. `SecretStr` renders as `'**********'` in `repr`, `str`, `model_dump`, and `model_dump_json` so logs / tracebacks / audit payloads never carry plaintext.
+Every sensitive value crosses module boundaries as Pydantic `SecretStr`: encryption keys, OAuth client secrets + access/refresh tokens, TOTP master key, session tokens, invitation tokens, SMTP password, third-party API keys (Braintrust, Anthropic via BYOK), GitHub App private keys. `SecretStr` renders as `'**********'` in `repr`, `str`, `model_dump`, and `model_dump_json` so logs / tracebacks / audit payloads never carry plaintext.
 
-Call `.get_secret_value()` only at the byte boundary — Fernet construction, JWT sign, HTTP `Authorization` header, subprocess argv, broker payload heading out the door. Never put a raw secret into: a log call, a Pydantic `model_dump` output, an exception message, an outbox payload, an audit-log entry, or an SSE event. The config layer is covered today; new sensitive request-body fields should follow the same pattern.
+`SecretStr` applies at **every** module boundary, not just Settings:
+
+- **Request schemas** — any Pydantic `BaseModel` field that carries a user-submitted credential (API key set endpoints, OAuth callback bodies, etc.).
+- **Value objects + dataclasses** — `Tokens.access_token`, `ProviderConfig.client_secret`, any frozen-dataclass field that holds a token, key, or secret in flight.
+- **Function signatures** — parameters that pass a secret between modules, including provider Protocol methods (`validate(access_token: SecretStr)`) and constructors of typed contexts.
+
+Call `.get_secret_value()` only at the byte boundary — Fernet construction, JWT sign, HTTP `Authorization` header, subprocess argv, broker payload heading out the door, the env dict of a wire-bound exec block. Never put a raw secret into: a log call, a Pydantic `model_dump` output, an exception message, an outbox payload, an audit-log entry, or an SSE event.
+
+When decrypting a ciphertext column for use, wrap the plaintext in `SecretStr(...)` immediately on emergence so the rest of the call chain stays uniform.
 
 ## WorkflowCommand discipline
 

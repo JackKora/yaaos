@@ -91,7 +91,7 @@ FROM backend AS web
 # `--ws-ping-interval=30 --ws-ping-timeout=10` keeps the WorkspaceAgent
 # activity WebSocket alive behind ALB/nginx idle-timeouts (typically 60s);
 # see docs/setup.md § Networking.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--app-dir", "apps/backend", "--ws-ping-interval=30", "--ws-ping-timeout=10"]
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${YAAOS_PORT:-8080} --app-dir apps/backend --ws-ping-interval=30 --ws-ping-timeout=10
 
 # ────────────────────────────────────────────────────────────────────────
 # Stage 3b: yaaos-worker — taskiq consumer + outbox drain process

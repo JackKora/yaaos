@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.oauth import ProviderConfig
@@ -33,7 +34,7 @@ def _stub_config() -> ProviderConfig:
         refresh_url="https://stub.test/token",
         mcp_url="https://stub.test/mcp",
         client_id="cid",
-        client_secret="csecret",
+        client_secret=SecretStr("csecret"),
         scope_separator=" ",
         default_scopes=("read",),
         known_read_tools=("get_issue", "search"),
@@ -46,7 +47,7 @@ class _StubProvider:
     provider_id: str
     config: ProviderConfig = field(default_factory=_stub_config)
 
-    async def validate(self, access_token: str) -> bool:
+    async def validate(self, access_token: SecretStr) -> bool:
         del access_token
         return True
 

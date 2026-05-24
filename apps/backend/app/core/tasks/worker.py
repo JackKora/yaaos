@@ -18,7 +18,7 @@ import signal
 import structlog
 from taskiq.receiver import Receiver
 
-from app.core import database
+from app.core import database, observability
 from app.core import redis as redis_client
 from app.core.tasks.broker import get_broker
 from app.core.tasks.drain import drain_loop
@@ -31,6 +31,7 @@ async def run() -> None:
     bodies with the broker, then run drain + consumer side by side.
     Cancels both gracefully on SIGTERM/SIGINT.
     """
+    observability.configure(role="worker")
     await database.migrate()
 
     broker = get_broker()

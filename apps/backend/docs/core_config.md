@@ -26,7 +26,7 @@ Optional, with defaults:
 - `yaaos_port` (8080).
 - `yaaos_cors_origins` — comma-separated; honored only when env is not `dev`.
 - `db_pool_size` (10), `db_max_overflow` (5) — SQLAlchemy QueuePool sizing for the prod-path engine (see [core/database](core_database.md) § Pool sizing).
-- `otel_exporter_otlp_endpoint`, `otel_service_name` (`yaaos`).
+- `otel_exporter_otlp_endpoint`, `otel_service_name_app` (`yaaos-app`), `otel_service_name_worker` (`yaaos-worker`).
 - `log_level` (`INFO`).
 - `github_api_base_url` (`https://api.github.com`; overridden by e2e stack to `apps/fake-github`).
 - Time controls: `yaaos_review_debounce_seconds` (30), `yaaos_reaper_interval_seconds` (30), `yaaos_heartbeat_interval_seconds` (10).

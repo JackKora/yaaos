@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,8 +94,10 @@ async def connect_callback(
     expires_at = datetime.now(UTC) + timedelta(seconds=tokens.expires_in)
 
     existing = await get(session, org_id, provider)
-    encrypted_access = encrypt(tokens.access_token).decode()
-    encrypted_refresh = encrypt(tokens.refresh_token).decode() if tokens.refresh_token else None
+    encrypted_access = encrypt(tokens.access_token.get_secret_value()).decode()
+    encrypted_refresh = (
+        encrypt(tokens.refresh_token.get_secret_value()).decode() if tokens.refresh_token else None
+    )
     if existing is None:
         existing = McpCredentialRow(
             org_id=org_id,
@@ -180,7 +182,7 @@ async def validate(
     if row is None:
         raise IntegrationNotConnectedError(provider)
     try:
-        access = decrypt(row.encrypted_access_token.encode()).decode()
+        access = SecretStr(decrypt(row.encrypted_access_token.encode()).decode())
     except SecretsDecryptError as exc:
         raise BrokenCredentialsError("could not decrypt access token") from exc
 

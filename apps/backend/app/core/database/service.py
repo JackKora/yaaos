@@ -185,11 +185,21 @@ async def _apply_create_all(conn) -> None:  # type: ignore[no-untyped-def]
 
 
 async def _apply_add_github_settings_slug(conn) -> None:  # type: ignore[no-untyped-def]
-    # Idempotent ALTER — works on fresh DBs where `create_all` already added the
-    # column from the model, and on existing DBs where 001 ran before the column
-    # was added to the model.
+    # No-op when `github_settings` is absent. The table's model was deleted as
+    # part of the M04 platform-app cutover (migration 030 drops it on legacy
+    # DBs); fresh DBs never create it, so this column-add is meaningless and
+    # the bare ALTER would 42P01 with `relation "github_settings" does not
+    # exist`. Skip cleanly when the table isn't there.
     await conn.execute(
-        text("ALTER TABLE github_settings ADD COLUMN IF NOT EXISTS slug TEXT NOT NULL DEFAULT ''")
+        text(
+            "DO $$ BEGIN "
+            "  IF EXISTS (SELECT 1 FROM information_schema.tables "
+            "             WHERE table_name = 'github_settings') THEN "
+            "    ALTER TABLE github_settings "
+            "      ADD COLUMN IF NOT EXISTS slug TEXT NOT NULL DEFAULT ''; "
+            "  END IF; "
+            "END $$"
+        )
     )
 
 

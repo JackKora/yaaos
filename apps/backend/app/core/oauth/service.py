@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 
 import httpx
 import structlog
+from pydantic import SecretStr
 
 log = structlog.get_logger("core.oauth")
 
@@ -45,7 +46,7 @@ class ProviderConfig:
     refresh_url: str
     mcp_url: str
     client_id: str
-    client_secret: str
+    client_secret: SecretStr
     scope_separator: str  # " " for most; commas for some
     default_scopes: tuple[str, ...]
     known_read_tools: tuple[str, ...]
@@ -66,8 +67,8 @@ class Tokens:
     absolute `expires_at` when persisting.
     """
 
-    access_token: str
-    refresh_token: str | None
+    access_token: SecretStr
+    refresh_token: SecretStr | None
     expires_in: int
     scope: str
     raw: dict[str, Any]
@@ -114,12 +115,12 @@ async def exchange_code(
 async def refresh_access_token(
     config: ProviderConfig,
     *,
-    refresh_token: str,
+    refresh_token: SecretStr,
 ) -> Tokens:
     """Exchange a refresh token for a new access token (+ possibly rotated refresh)."""
     data = {
         "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
+        "refresh_token": refresh_token.get_secret_value(),
     }
     return await _post_token(config, data, refresh_url=True)
 
@@ -137,10 +138,14 @@ async def _post_token(
     # token endpoint; Linear (and most others) accept form-encoded client_id
     # + client_secret. `ProviderConfig.token_auth_style` decides.
     if config.token_auth_style == "basic":
-        creds = f"{config.client_id}:{config.client_secret}".encode()
+        creds = f"{config.client_id}:{config.client_secret.get_secret_value()}".encode()
         headers["Authorization"] = "Basic " + base64.b64encode(creds).decode()
     else:
-        data = {**data, "client_id": config.client_id, "client_secret": config.client_secret}
+        data = {
+            **data,
+            "client_id": config.client_id,
+            "client_secret": config.client_secret.get_secret_value(),
+        }
 
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http:
@@ -160,9 +165,10 @@ async def _post_token(
     access = body.get("access_token")
     if not access:
         raise OAuthError("missing access_token in response")
+    refresh = body.get("refresh_token")
     return Tokens(
-        access_token=access,
-        refresh_token=body.get("refresh_token"),
+        access_token=SecretStr(access),
+        refresh_token=SecretStr(refresh) if refresh else None,
         expires_in=int(body.get("expires_in") or 3600),
         scope=body.get("scope") or "",
         raw=body,

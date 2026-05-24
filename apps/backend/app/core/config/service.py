@@ -58,7 +58,13 @@ class Settings(BaseSettings):
     db_max_overflow: int = 5
     yaaos_cors_origins: str | None = None  # comma-separated; only honored in non-dev
     otel_exporter_otlp_endpoint: str | None = None
-    otel_service_name: str = "yaaos"
+    # OTel `service.name` per role. App + worker deploy as separate processes
+    # so they get distinct service identities — per OTel semconv, service.name
+    # must differ across separately-deployed roles even when they share a code
+    # base. Both env-overridable for downstream collectors that need a custom
+    # naming scheme.
+    otel_service_name_app: str = "yaaos-app"
+    otel_service_name_worker: str = "yaaos-worker"
     log_level: str = "INFO"
 
     # GitHub API base URL — overridden in the test stack to point at `apps/fake-github`.

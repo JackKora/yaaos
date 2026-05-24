@@ -3,7 +3,7 @@
 
 Walks every markdown file under `docs/`, `apps/*/docs/`, plus `CLAUDE.md`,
 and checks that every relative `[text](path)` link resolves to a file that
-exists. Fails on any broken link.
+exists in the repo. Fails on any broken link.
 
 What it DOES check:
 - Relative file paths in markdown links (e.g. `[X](../foo/bar.md)`).
@@ -17,17 +17,56 @@ What it does NOT check:
 - Anchor validity (would need to parse target headings).
 - Broken images.
 
-Cheap, no third-party deps, zero infrastructure. Run as part of
-`apps/backend/bin/ci`.
+Existence is checked against `git ls-files` when available — i.e. against
+the *repo* contents, not the local filesystem. This decouples the check
+from which subtrees happen to be mounted in the test environment (RWX's
+backend-ci container ships `apps/backend/` + a few read-only doc-tree
+mounts, but no source trees like `apps/web/src/`). Falling back to FS
+when git isn't available keeps the script useful in stripped sandboxes.
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]  # apps/backend/bin/check_doc_links → repo root
+
+
+def _git_tracked_paths() -> set[str] | None:
+    """Repo-relative paths tracked by git, or None if git or `.git/` is unavailable."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-files"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    return set(out.stdout.splitlines())
+
+
+def _target_exists(resolved: Path, tracked: set[str] | None) -> bool:
+    """A target counts as present if git lists it OR (fallback) the FS has it.
+
+    Many doc links point at directories (e.g. `../src/core/sidebar/`) — git
+    doesn't track directories, only files, so we treat the target as
+    present iff at least one tracked path lives under that prefix.
+    """
+    if tracked is not None:
+        try:
+            rel = resolved.relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            return resolved.exists()  # link escapes the repo — fall through
+        if rel in tracked:
+            return True
+        prefix = rel.rstrip("/") + "/"
+        return any(p.startswith(prefix) for p in tracked)
+    return resolved.exists()
 
 # Anchor file paths under these dirs:
 DOC_GLOBS = [
@@ -58,6 +97,7 @@ def strip_anchor_and_line(target: str) -> str:
 
 def main() -> int:
     broken: list[tuple[Path, int, str]] = []
+    tracked = _git_tracked_paths()
 
     files: list[Path] = []
     for glob in DOC_GLOBS:
@@ -78,7 +118,7 @@ def main() -> int:
                 if not cleaned:
                     continue
                 resolved = (file.parent / cleaned).resolve()
-                if not resolved.exists():
+                if not _target_exists(resolved, tracked):
                     broken.append((file.relative_to(REPO_ROOT), i, target))
 
     if broken:

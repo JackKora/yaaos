@@ -20,6 +20,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi import FastAPI
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.audit_log.models import AuditEntryRow
@@ -47,7 +48,7 @@ def _config() -> ProviderConfig:
         refresh_url="https://stub.test/token",
         mcp_url="https://stub.test/mcp",
         client_id="cid",
-        client_secret="csecret",
+        client_secret=SecretStr("csecret"),
         scope_separator=" ",
         default_scopes=("read",),
         known_read_tools=("get_issue",),
@@ -60,7 +61,7 @@ class _StubProvider:
     provider_id: str = "stub_pipeline"
     config: ProviderConfig = field(default_factory=_config)
 
-    async def validate(self, access_token: str) -> bool:
+    async def validate(self, access_token: SecretStr) -> bool:
         del access_token
         return True
 

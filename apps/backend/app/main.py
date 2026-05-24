@@ -10,7 +10,7 @@ from app.core import config  # noqa: F401
 # 2. Configure core infrastructure.
 from app.core import database, observability  # noqa: F401
 
-observability.configure()
+observability.configure(role="app")
 
 # 3. Events bus must exist before any domain module subscribes.
 from app.core import events  # noqa: F401, E402

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import SecretStr
 
 from app.core.config import get_settings
 from app.plugins.notion.service import NotionProvider
@@ -20,7 +21,7 @@ def test_config_uses_settings(monkeypatch) -> None:
 
     cfg = NotionProvider().config
     assert cfg.client_id == "notion-id"
-    assert cfg.client_secret == "notion-secret"
+    assert cfg.client_secret.get_secret_value() == "notion-secret"
     assert cfg.authorize_url == "http://example/authorize"
     # Notion-specific quirks live in the provider config, not in
     # domain/integrations.
@@ -42,7 +43,7 @@ async def test_validate_returns_true_on_2xx(monkeypatch, httpx_mock) -> None:
         url="http://stub.notion.test/v1/users/me",
         json={"object": "user", "id": "u1"},
     )
-    assert await NotionProvider().validate("access-1") is True
+    assert await NotionProvider().validate(SecretStr("access-1")) is True
 
 
 @pytest.mark.asyncio
@@ -55,7 +56,7 @@ async def test_validate_returns_false_on_4xx(monkeypatch, httpx_mock) -> None:
         status_code=401,
         json={"error": "unauthenticated"},
     )
-    assert await NotionProvider().validate("bad-token") is False
+    assert await NotionProvider().validate(SecretStr("bad-token")) is False
 
 
 @pytest.mark.asyncio
@@ -64,4 +65,4 @@ async def test_validate_returns_false_on_transport_error(monkeypatch) -> None:
     same-shape error UX from the BYOK validator."""
     monkeypatch.setenv("NOTION_API_BASE_URL", "http://no-such-host.test")
     get_settings.cache_clear()
-    assert await NotionProvider().validate("access-1") is False
+    assert await NotionProvider().validate(SecretStr("access-1")) is False

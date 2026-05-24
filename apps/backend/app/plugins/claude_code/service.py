@@ -23,7 +23,7 @@ from uuid import UUID
 import httpx
 import structlog
 from cryptography.fernet import Fernet, InvalidToken
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -432,18 +432,18 @@ class ClaudeCodePlugin:
             settings = {"orchestrator": d["orchestrator"], "agents": d["agents"]}
         return _validate(settings)
 
-    async def _load_settings_for_invocation(self) -> tuple[str | None, str | None]:
+    async def _load_settings_for_invocation(self) -> tuple[SecretStr | None, str | None]:
         """Returns (decrypted_api_key, cli_path). Timeout is a constant — see
         `_DEFAULT_TIMEOUT_SECONDS`. Per-call override via `agent_config["timeout_seconds"]`."""
         async with db_session() as s:
             row = (await s.execute(select(ClaudeCodeSettingsRow).limit(1))).scalar_one_or_none()
         if row is None:
             return None, None
-        api_key: str | None = None
+        api_key: SecretStr | None = None
         if row.encrypted_anthropic_api_key:
             try:
                 fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
-                api_key = fernet.decrypt(row.encrypted_anthropic_api_key).decode()
+                api_key = SecretStr(fernet.decrypt(row.encrypted_anthropic_api_key).decode())
             except InvalidToken:
                 log.warning("claude_code.api_key_decrypt_failed")
         return api_key, row.cli_path
@@ -531,7 +531,7 @@ class ClaudeCodePlugin:
             )
 
         env = os.environ.copy()
-        env["ANTHROPIC_API_KEY"] = api_key
+        env["ANTHROPIC_API_KEY"] = api_key.get_secret_value()
         timeout = agent_config.get("timeout_seconds") or _DEFAULT_TIMEOUT_SECONDS
         argv = [
             cli_path,
@@ -926,7 +926,7 @@ def _key_fingerprint(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-async def _probe_anthropic_auth(api_key: str) -> tuple[bool, str]:
+async def _probe_anthropic_auth(api_key: SecretStr) -> tuple[bool, str]:
     """Return (healthy, message). Cached for `_AUTH_TTL` per key fingerprint.
 
     In stub mode (`YAAOS_CODING_AGENT_STUB`), the e2e test stack has no
@@ -937,7 +937,8 @@ async def _probe_anthropic_auth(api_key: str) -> tuple[bool, str]:
     """
     if os.environ.get("YAAOS_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
         return (True, "ok (stub)")
-    fp = _key_fingerprint(api_key)
+    raw_key = api_key.get_secret_value()
+    fp = _key_fingerprint(raw_key)
     now = _utcnow()
     cached = _AUTH_CACHE.get(fp)
     if cached and cached[2] > now:
@@ -946,7 +947,7 @@ async def _probe_anthropic_auth(api_key: str) -> tuple[bool, str]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
                 "https://api.anthropic.com/v1/models",
-                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                headers={"x-api-key": raw_key, "anthropic-version": "2023-06-01"},
             )
         if r.status_code == 200:
             result = (True, "ok")
@@ -984,19 +985,20 @@ async def _onboarding_anthropic_key_set(org_id: UUID) -> bool:
         return False
     try:
         fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
-        api_key = fernet.decrypt(row.encrypted_anthropic_api_key).decode()
+        api_key = SecretStr(fernet.decrypt(row.encrypted_anthropic_api_key).decode())
     except InvalidToken:
         return False
     healthy, _ = await _probe_anthropic_auth(api_key)
     return healthy
 
 
-async def _set_anthropic_key(org_id: UUID, raw_key: str) -> None:
+async def _set_anthropic_key(org_id: UUID, raw_key: SecretStr) -> None:
     """Encrypt + upsert the Anthropic key on `claude_code_settings`."""
     from uuid import uuid4  # noqa: PLC0415
 
+    plaintext = raw_key.get_secret_value()
     fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
-    enc = fernet.encrypt(raw_key.encode())
+    enc = fernet.encrypt(plaintext.encode())
     async with db_session() as s:
         row = (
             await s.execute(select(ClaudeCodeSettingsRow).where(ClaudeCodeSettingsRow.org_id == org_id))
@@ -1016,7 +1018,7 @@ async def _set_anthropic_key(org_id: UUID, raw_key: str) -> None:
     # Make the key visible to `core/llm` (LangChain `init_chat_model` resolves
     # auth via `ANTHROPIC_API_KEY`) immediately — fresh onboarding shouldn't
     # require a backend restart before the classifier can authenticate.
-    os.environ["ANTHROPIC_API_KEY"] = raw_key
+    os.environ["ANTHROPIC_API_KEY"] = plaintext
 
 
 async def bootstrap_anthropic_env() -> None:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import httpx
 import structlog
+from pydantic import SecretStr
 
 from app.core.config import get_settings
 from app.core.oauth import ProviderConfig
@@ -41,7 +42,7 @@ def _build_config() -> ProviderConfig:
         refresh_url=s.notion_oauth_refresh_url,
         mcp_url=s.notion_mcp_url,
         client_id=s.yaaos_oauth_notion_client_id,
-        client_secret=s.yaaos_oauth_notion_client_secret.get_secret_value(),
+        client_secret=s.yaaos_oauth_notion_client_secret,
         scope_separator=" ",
         # Notion uses capabilities at the integration level rather than
         # OAuth scopes. yaaos passes an explicit `owner=user` flag via the
@@ -69,14 +70,14 @@ class NotionProvider:
     def config(self) -> ProviderConfig:
         return _build_config()
 
-    async def validate(self, access_token: str) -> bool:
+    async def validate(self, access_token: SecretStr) -> bool:
         """Minimal upstream call — `/v1/users/me`. Real Notion requires the
         `Notion-Version` header; we send a recent value. 2xx is the only
         success signal."""
         s = get_settings()
         url = f"{s.notion_api_base_url.rstrip('/')}/v1/users/me"
         headers = {
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {access_token.get_secret_value()}",
             "Notion-Version": "2022-06-28",
         }
         try:

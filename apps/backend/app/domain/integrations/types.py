@@ -12,6 +12,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Protocol, runtime_checkable
 
+from pydantic import SecretStr
+
 from app.core.oauth import ProviderConfig
 
 
@@ -23,7 +25,7 @@ class IntegrationProvider(Protocol):
     provider_id: str
     config: ProviderConfig
 
-    async def validate(self, access_token: str) -> bool:
+    async def validate(self, access_token: SecretStr) -> bool:
         """Minimal upstream call — returns True on 2xx, False otherwise."""
         ...
 
@@ -46,7 +48,7 @@ def known_providers() -> list[str]:
     return sorted(_REGISTRY.keys())
 
 
-ValidateCallable = Callable[[str], Awaitable[bool]]
+ValidateCallable = Callable[[SecretStr], Awaitable[bool]]
 
 
 class IntegrationError(Exception):

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import httpx
 import structlog
+from pydantic import SecretStr
 
 from app.core.config import get_settings
 from app.core.oauth import ProviderConfig
@@ -33,7 +34,7 @@ def _build_config() -> ProviderConfig:
         refresh_url=s.linear_oauth_refresh_url,
         mcp_url=s.linear_mcp_url,
         client_id=s.yaaos_oauth_linear_client_id,
-        client_secret=s.yaaos_oauth_linear_client_secret.get_secret_value(),
+        client_secret=s.yaaos_oauth_linear_client_secret,
         scope_separator=",",
         default_scopes=("read",),
         known_read_tools=(
@@ -59,7 +60,7 @@ class LinearProvider:
         # without requiring a process restart.
         return _build_config()
 
-    async def validate(self, access_token: str) -> bool:
+    async def validate(self, access_token: SecretStr) -> bool:
         """Minimal upstream call — hits the configured Linear API host. The
         fake-linear test stack provides this endpoint; real Linear exposes
         `/api/me` via its GraphQL surface, but the simple HTTP endpoint
@@ -68,7 +69,9 @@ class LinearProvider:
         url = f"{s.linear_api_base_url.rstrip('/')}/api/me"
         try:
             async with httpx.AsyncClient(timeout=_VALIDATE_TIMEOUT_SECONDS) as http:
-                resp = await http.get(url, headers={"Authorization": f"Bearer {access_token}"})
+                resp = await http.get(
+                    url, headers={"Authorization": f"Bearer {access_token.get_secret_value()}"}
+                )
         except httpx.HTTPError as exc:
             log.warning("linear.validate.transport_error", error=str(exc))
             return False

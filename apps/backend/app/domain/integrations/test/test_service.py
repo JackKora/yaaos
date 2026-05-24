@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.audit_log import Actor
@@ -26,7 +27,7 @@ def _make_stub_config() -> ProviderConfig:
         refresh_url="https://stub.test/token",
         mcp_url="https://stub.test/mcp",
         client_id="cid",
-        client_secret="csecret",
+        client_secret=SecretStr("csecret"),
         scope_separator=" ",
         default_scopes=("read",),
         known_read_tools=("get_thing",),
@@ -40,7 +41,7 @@ class _StubProvider:
     config: ProviderConfig = field(default_factory=_make_stub_config)
     validate_returns: bool = True
 
-    async def validate(self, access_token: str) -> bool:
+    async def validate(self, access_token: SecretStr) -> bool:
         del access_token
         return self.validate_returns
 
@@ -67,8 +68,8 @@ def stub_exchange(monkeypatch):
     async def fake_exchange(config, *, code, redirect_uri):
         del config, code, redirect_uri
         return Tokens(
-            access_token="access-1",
-            refresh_token="refresh-1",
+            access_token=SecretStr("access-1"),
+            refresh_token=SecretStr("refresh-1"),
             expires_in=3600,
             scope="read",
             raw={},

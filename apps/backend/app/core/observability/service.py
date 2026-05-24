@@ -22,30 +22,38 @@ single env-var flip.
 import logging
 import re
 import sys
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 
 from app.core.config import get_settings
 
+Role = Literal["app", "worker"]
+
 _initialized = False
 
 
-def configure() -> None:
-    """Initialize structlog + OTel SDK. Idempotent — safe to call twice."""
+def configure(role: Role = "app") -> None:
+    """Initialize structlog + OTel SDK. Idempotent — safe to call twice.
+
+    `role` selects the OTel `service.name`: `app` (FastAPI process) or
+    `worker` (taskiq consumer + outbox drain). The two processes deploy
+    separately so they report under distinct service identities.
+    """
     global _initialized
     if _initialized:
         return
     _initialized = True
 
     settings = get_settings()
+    service_name = settings.otel_service_name_worker if role == "worker" else settings.otel_service_name_app
 
     # ── OTel — TracerProvider + W3C propagator, no exporter unless set ──
     # Initialize BEFORE structlog so the structlog processor below can
     # capture the active tracer/span.
     _configure_otel(
         endpoint=settings.otel_exporter_otlp_endpoint,
-        service_name=settings.otel_service_name,
+        service_name=service_name,
     )
 
     # ── structlog ───────────────────────────────────────────────────────

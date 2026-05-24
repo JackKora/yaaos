@@ -10,7 +10,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from app.core.auth import public_route
 from app.core.auth.types import Action
@@ -26,12 +26,12 @@ router = APIRouter()
 
 
 class SetApiKeyRequest(BaseModel):
-    api_key: str
+    api_key: SecretStr
 
 
 @router.post("/api_key", dependencies=[Depends(public_route)])
 async def set_api_key(req: SetApiKeyRequest) -> dict[str, str]:
-    if not req.api_key.strip():
+    if not req.api_key.get_secret_value().strip():
         raise HTTPException(status_code=400, detail={"api_key": "must not be empty"})
     await _set_anthropic_key(M01_ORG_ID, req.api_key)
     return {"status": "saved"}

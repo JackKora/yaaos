@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.audit_log.models import AuditEntryRow
@@ -32,7 +33,7 @@ def _config() -> ProviderConfig:
         refresh_url="https://stub.test/token",
         mcp_url="https://stub.test/mcp",
         client_id="cid",
-        client_secret="csecret",
+        client_secret=SecretStr("csecret"),
         scope_separator=" ",
         default_scopes=("read",),
         known_read_tools=("get",),
@@ -46,7 +47,7 @@ class _StubProvider:
     config: ProviderConfig = field(default_factory=_config)
     next_validate: bool = True
 
-    async def validate(self, access_token: str) -> bool:
+    async def validate(self, access_token: SecretStr) -> bool:
         del access_token
         return self.next_validate
 

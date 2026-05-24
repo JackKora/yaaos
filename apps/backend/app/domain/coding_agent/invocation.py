@@ -45,7 +45,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from app.domain.coding_agent.prompts import (
     AnswerQuestionDto,
@@ -106,7 +106,7 @@ def _exec_block(
     context: _Context,
     model: str,
     effort: str,
-    anthropic_api_key: str | None,
+    anthropic_api_key: SecretStr | None,
 ) -> dict[str, Any]:
     """Render the prompt + assemble argv/env/stdin for the Claude Code
     subprocess. Pure function — no I/O, no DB reads. The agent reads the
@@ -132,8 +132,10 @@ def _exec_block(
         f"--allowed-tools={allowed_tools}",
     ]
     env: dict[str, str] = {}
-    if anthropic_api_key:
-        env["ANTHROPIC_API_KEY"] = anthropic_api_key
+    if anthropic_api_key is not None:
+        # Byte-boundary unwrap: this dict is JSON-serialized into the
+        # WorkspaceAgent payload, which sets it as a subprocess env var.
+        env["ANTHROPIC_API_KEY"] = anthropic_api_key.get_secret_value()
     return {"argv": argv, "stdin": stdin, "env": env}
 
 
@@ -171,7 +173,7 @@ def build_invocation(
     context: _Context,
     model: str | None = None,
     effort: str | None = None,
-    anthropic_api_key: str | None = None,
+    anthropic_api_key: SecretStr | None = None,
 ) -> dict[str, Any]:
     """Build the `invocation` dict for `InvokeClaudeCodeCommand.invocation`.
 

@@ -44,12 +44,13 @@ tasks:
     # runs as uid 1000 (yaaos), which won't match the RWX runner uid.
     run: |
       mkdir -p apps/backend/tmp && chmod 777 apps/backend/tmp
-      docker compose -f docker/docker-compose.test.yml up -d --wait postgres
+      docker compose -f docker/docker-compose.test.yml up -d --wait postgres redis
       trap "docker compose -f docker/docker-compose.test.yml down -v" EXIT
       docker build -f docker/Dockerfile --target backend-ci -t yaaos-backend-ci .
       docker run --rm \
         --network yaaos-test_default \
         -e DATABASE_URL=postgresql+asyncpg://yaaos:yaaos@postgres:5432/yaaos \
+        -e REDIS_URL=redis://redis:6379/0 \
         -e YAAOS_ENV=dev \
         -v "$(pwd)/docs:/app/docs:ro" \
         -v "$(pwd)/docker:/app/docker:ro" \
@@ -59,6 +60,7 @@ tasks:
         -v "$(pwd)/apps/e2e/docs:/app/apps/e2e/docs:ro" \
         -v "$(pwd)/apps/fake-github/docs:/app/apps/fake-github/docs:ro" \
         -v "$(pwd)/apps/agent/docs:/app/apps/agent/docs:ro" \
+        -v "$(pwd)/.git:/app/.git:ro" \
         -v "$(pwd)/apps/backend/tmp:/app/apps/backend/tmp" \
         yaaos-backend-ci sh -c "cd apps/backend && bin/ci"
     outputs:

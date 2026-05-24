@@ -28,7 +28,7 @@ services:
       YAAOS_ENCRYPTION_KEY: ${YAAOS_ENCRYPTION_KEY:?set YAAOS_ENCRYPTION_KEY in .env}
       YAAOS_ENV: ${YAAOS_ENV:-prod}
       YAAOS_PORT: "8080"
-      OTEL_SERVICE_NAME: yaaos
+      # `service.name` is split per-role; observability.configure() picks the right field.
       # OTEL_EXPORTER_OTLP_ENDPOINT is intentionally unset — OTel disabled silently
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Optional Braintrust gateway routing for direct LLM calls (core/llm).
