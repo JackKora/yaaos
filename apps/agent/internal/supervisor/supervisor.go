@@ -30,10 +30,66 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/yaaos/agent/internal/activity"
+	"github.com/yaaos/agent/internal/backoff"
 	"github.com/yaaos/agent/internal/observability"
 	"github.com/yaaos/agent/internal/protocol"
 	"github.com/yaaos/agent/internal/tracing"
 )
+
+// connection surface tags for the connection.failures / connection.backoff_seconds
+// metric attributes. Centralized here so call sites can't typo a label.
+const (
+	surfaceSTS       = "sts"
+	surfaceClaim     = "claim"
+	surfaceHeartbeat = "heartbeat"
+	surfaceWS        = "ws"
+)
+
+// classifyConnErr returns "auth" if the error carries a 401 or 403
+// status indication, "network" otherwise. The protocol client wraps
+// HTTP failures as `fmt.Errorf("%s %s: %d %s", method, path, status, body)`
+// so a substring check on the status segment is sufficient for the
+// metric attribute. Same ramp applies either way — the label is for
+// dashboarding, not for cadence selection.
+func classifyConnErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	s := err.Error()
+	if containsStatus(s, "401") || containsStatus(s, "403") {
+		return "auth"
+	}
+	return "network"
+}
+
+func containsStatus(s, code string) bool {
+	// Look for `: <code> ` to match the doJSON formatting and avoid
+	// matching a substring of a port / latency / unrelated number.
+	needle := ": " + code + " "
+	for i := 0; i+len(needle) <= len(s); i++ {
+		if s[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// recordBackoff bumps the connection.failures counter and sets the
+// connection.backoff_seconds gauge to the schedule's next delay BEFORE
+// calling Sleep. Centralizes the boilerplate so each retry site stays
+// readable.
+func recordBackoff(ctx context.Context, sched *backoff.Schedule, surface string, err error) {
+	class := classifyConnErr(err)
+	observability.Metrics().ConnectionFailures.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("surface", surface),
+			attribute.String("class", class),
+		),
+	)
+	observability.Metrics().ConnectionBackoffSeconds.Record(ctx, sched.Peek().Seconds(),
+		metric.WithAttributes(attribute.String("surface", surface)),
+	)
+}
 
 // Config carries the supervisor's runtime knobs.
 type Config struct {
@@ -121,6 +177,17 @@ type Supervisor struct {
 	// streaming is on the WS.
 	conductor *activity.Conductor
 	wsConn    *activity.WSConn
+	// wsReadLoopDone is closed when the active activity-WS read loop
+	// returns. wsReconnectLoop reads from it to decide when to re-dial.
+	wsReadLoopDone chan struct{}
+
+	// Per-surface backoff schedules. A misconfigured ARN slowing down
+	// STS exchange must not slow heartbeat retries on an unrelated
+	// transient blip; each surface owns its own attempt counter.
+	stsBackoff       *backoff.Schedule
+	claimBackoff     *backoff.Schedule
+	heartbeatBackoff *backoff.Schedule
+	wsBackoff        *backoff.Schedule
 }
 
 // New constructs a Supervisor. The client is wired but identity hasn't
@@ -145,21 +212,46 @@ func New(cfg Config, client *protocol.Client, log Logger) *Supervisor {
 		cfg.ActivityBatchInterval = 250 * time.Millisecond
 	}
 	return &Supervisor{
-		cfg:            cfg,
-		client:         client,
-		log:            log,
-		inventory:      make(map[string]protocol.HeartbeatWorkspaceEntry),
-		workspacePaths: make(map[string]string),
-		pool:           NewPool(cfg.Spawn, log),
+		cfg:              cfg,
+		client:           client,
+		log:              log,
+		inventory:        make(map[string]protocol.HeartbeatWorkspaceEntry),
+		workspacePaths:   make(map[string]string),
+		pool:             NewPool(cfg.Spawn, log),
+		stsBackoff:       backoff.New(),
+		claimBackoff:     backoff.New(),
+		heartbeatBackoff: backoff.New(),
+		wsBackoff:        backoff.New(),
 	}
 }
 
 // Run exchanges identity and starts the claim + heartbeat goroutines.
 // Blocks until ctx is cancelled or identity exchange fails fatally.
 func (s *Supervisor) Run(ctx context.Context) error {
-	resp, err := s.exchangeIdentity(ctx)
-	if err != nil {
-		return fmt.Errorf("identity exchange: %w", err)
+	// STS bootstrap: retry forever on the 1m/3m/5m/15m/60m schedule.
+	// A misconfigured ARN (403) doesn't fix itself by us crashing-and-
+	// restarting the process; staying alive lets the local log + OTel
+	// metrics show the operator what's wrong without a restart loop.
+	var resp *protocol.IdentityExchangeResponse
+	for {
+		var err error
+		resp, err = s.exchangeIdentity(ctx)
+		if err == nil {
+			s.stsBackoff.Reset()
+			break
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		recordBackoff(ctx, s.stsBackoff, surfaceSTS, err)
+		s.log.Warn("supervisor.identity_exchange_failed",
+			"err", err.Error(),
+			"class", classifyConnErr(err),
+			"next_sleep_seconds", int(s.stsBackoff.Peek().Seconds()),
+		)
+		if sleepErr := s.stsBackoff.Sleep(ctx); sleepErr != nil {
+			return sleepErr
+		}
 	}
 	s.agentID = resp.AgentID
 	s.client.SetBearer(resp.Bearer)
@@ -230,31 +322,81 @@ func (s *Supervisor) Run(ctx context.Context) error {
 }
 
 // setupActivityWS dials the activity-stream WebSocket and wires the
-// Conductor. Failure is logged but not fatal — the supervisor falls
-// back to HTTP-only progress posts.
+// Conductor. Dial failure is logged but not fatal — the supervisor
+// falls back to HTTP-only progress posts. A read-loop transport error
+// triggers a reconnect attempt on the WS backoff schedule (1m/3m/5m/...).
 func (s *Supervisor) setupActivityWS(ctx context.Context, bearer string) {
-	// 5s dial timeout — production WS handshakes shouldn't take this
-	// long; if it does, the network is hosed and we move on.
+	if s.dialAndStartWS(ctx, bearer) {
+		s.wsBackoff.Reset()
+	}
+	// Reconnect goroutine: if the initial dial failed OR the read-loop
+	// later exits, sleep on the WS backoff and re-try. Lives for the
+	// life of ctx.
+	go s.wsReconnectLoop(ctx, bearer)
+}
+
+// dialAndStartWS performs one dial attempt + wires the Conductor + spawns
+// the read-loop. Returns true on success. Read-loop exit signals
+// `s.wsReadLoopDone` (a channel created per-attempt) so the reconnect
+// loop can detect it.
+func (s *Supervisor) dialAndStartWS(ctx context.Context, bearer string) bool {
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	url := s.cfg.ActivityWSURL
 	conn, err := activity.Dial(dialCtx, url, bearer)
 	if err != nil {
-		s.log.Warn("supervisor.activity_ws_dial_failed", "url", url, "err", err.Error())
-		return
+		recordBackoff(ctx, s.wsBackoff, surfaceWS, err)
+		s.log.Warn("supervisor.activity_ws_dial_failed",
+			"url", url,
+			"err", err.Error(),
+			"class", classifyConnErr(err),
+			"next_sleep_seconds", int(s.wsBackoff.Peek().Seconds()),
+		)
+		return false
 	}
 	s.wsConn = conn
 	s.conductor = activity.NewConductor(s.cfg.ActivityBatchInterval, conn.Send)
 	s.conductor.Start(ctx)
+	s.wsReadLoopDone = make(chan struct{})
 	// Read-loop: ctx cancel unblocks Read. RunInbound returns on the
-	// first transport error; we log and let the supervisor continue
-	// (progress events stop reaching the UI but commands keep flowing).
+	// first transport error; we log and let the reconnect loop re-dial.
 	go func() {
+		defer close(s.wsReadLoopDone)
 		if err := activity.RunInbound(ctx, conn, s.conductor); err != nil && ctx.Err() == nil {
 			s.log.Warn("supervisor.activity_ws_read_loop_exited", "err", err.Error())
 		}
 	}()
 	s.log.Info("supervisor.activity_ws_connected", "url", url)
+	return true
+}
+
+// wsReconnectLoop waits for the active read-loop to exit, then re-dials
+// the activity WS on the WS backoff schedule. Runs for the life of ctx.
+// First call here may also handle the case where the initial dial in
+// setupActivityWS failed — wsReadLoopDone is nil then, so we go straight
+// to the backoff Sleep + re-dial.
+func (s *Supervisor) wsReconnectLoop(ctx context.Context, bearer string) {
+	for {
+		if s.wsReadLoopDone != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.wsReadLoopDone:
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// Sleep before re-dialing. Reset is called inside dialAndStartWS
+		// (via the caller in setupActivityWS) on success; here we're
+		// post-failure so the schedule advances.
+		if err := s.wsBackoff.Sleep(ctx); err != nil {
+			return
+		}
+		if s.dialAndStartWS(ctx, bearer) {
+			s.wsBackoff.Reset()
+		}
+	}
 }
 
 func (s *Supervisor) exchangeIdentity(ctx context.Context) (*protocol.IdentityExchangeResponse, error) {
@@ -345,20 +487,25 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 		})
 		if err != nil {
 			if err == protocol.ErrNoCommand {
+				s.claimBackoff.Reset()
 				continue
 			}
 			if ctx.Err() != nil {
 				return
 			}
-			s.log.Warn("supervisor.claim_error", "worker", workerNum, "err", err.Error())
-			// Backoff before retrying so a broken backend doesn't tight-loop.
-			select {
-			case <-ctx.Done():
+			recordBackoff(ctx, s.claimBackoff, surfaceClaim, err)
+			s.log.Warn("supervisor.claim_error",
+				"worker", workerNum,
+				"err", err.Error(),
+				"class", classifyConnErr(err),
+				"next_sleep_seconds", int(s.claimBackoff.Peek().Seconds()),
+			)
+			if sleepErr := s.claimBackoff.Sleep(ctx); sleepErr != nil {
 				return
-			case <-time.After(2 * time.Second):
 			}
 			continue
 		}
+		s.claimBackoff.Reset()
 		observability.Metrics().CommandsClaimed.Add(ctx, 1)
 		s.routeCommand(ctx, cmd)
 	}
@@ -386,9 +533,19 @@ func (s *Supervisor) sendHeartbeat(ctx context.Context) {
 		Workspaces: s.snapshotInventory(),
 	})
 	if err != nil {
-		s.log.Warn("supervisor.heartbeat_error", "err", err.Error())
+		recordBackoff(ctx, s.heartbeatBackoff, surfaceHeartbeat, err)
+		s.log.Warn("supervisor.heartbeat_error",
+			"err", err.Error(),
+			"class", classifyConnErr(err),
+			"next_sleep_seconds", int(s.heartbeatBackoff.Peek().Seconds()),
+		)
+		// Sleep absorbs the configured HeartbeatInterval — the ticker
+		// will still fire at its cadence, but the next attempt only
+		// proceeds after the backoff window elapses.
+		_ = s.heartbeatBackoff.Sleep(ctx)
 		return
 	}
+	s.heartbeatBackoff.Reset()
 	if len(resp.ForgottenWorkspaces) == 0 {
 		return
 	}

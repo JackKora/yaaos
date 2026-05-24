@@ -206,6 +206,23 @@ Resource attributes: `service.name=yaaos-workspace-agent`, `service.version`, `s
 
 Standard env vars: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (`http/protobuf` default), `OTEL_METRIC_EXPORT_INTERVAL` (ms, 30 s default), `OTEL_SDK_DISABLED`. No yaaos-prefixed variants — customers reuse whatever OTel config their other services already use.
 
+### Connection resilience
+
+Every control-plane interaction is wrapped in a backoff schedule from [`internal/backoff`](../internal/backoff):
+
+**Schedule:** `1m → 3m → 5m → 15m → 60m forever`, with ±20 % jitter on every step. The jitter defeats thundering-herd reconnects when N agents recover simultaneously after a backend outage. Same ramp applies to **auth** (401/403) and **network** (5xx, connection refused, timeout) failures — operators distinguish via the local log file, not via different cadences.
+
+**Per-surface counters** (4 independent schedules so a misconfigured ARN doesn't slow heartbeat retries on an unrelated transient blip):
+
+| Surface | Site | Behavior |
+|---|---|---|
+| `sts` | bootstrap identity exchange in `Run()` | Retries forever on the schedule instead of crashing the agent. Operator sees the failure class in the local log; the process stays up so OTel metrics keep flowing. |
+| `claim` | long-poll loop | On `ErrNoCommand` the counter resets (a 204 isn't a failure). On any other error, sleep on the schedule and retry. |
+| `heartbeat` | 30 s ticker | On failure, sleep on the schedule before letting the next tick fire. Reset on first successful heartbeat. |
+| `ws` | activity-WS dial + read loop | On dial fail OR read-loop exit, `wsReconnectLoop` re-dials on the schedule. WS is best-effort; commands keep flowing via HTTP fallback while it's down. |
+
+Each failure logs a `WARN` line with `surface`, `class` (`auth` / `network`), and `next_sleep_seconds`. The OTel `yaaos.agent.connection.failures{surface,class}` counter increments on each failure; `yaaos.agent.connection.backoff_seconds{surface}` gauge tracks the upcoming sleep so dashboards can chart "which surface is in backoff and how deep."
+
 The `workspace` subcommand routes its console sink to **stderr** instead of stdout, because stdout there is the supervisor↔workspace IPC pipe. The file sink is identical in both modes.
 
 ### Health + scaling
