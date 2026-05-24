@@ -120,7 +120,7 @@ tasks:
         golang:1.25-alpine \
         sh -c "
           set -e
-          apk add --no-cache git bash py3-pip curl
+          apk add --no-cache git bash py3-pip curl gcc musl-dev
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
             | sh -s -- -b \$(go env GOPATH)/bin v2.12.2
           go install golang.org/x/vuln/cmd/govulncheck@latest
