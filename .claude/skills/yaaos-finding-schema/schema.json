@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yaaos/schemas/finding.json",
+  "title": "yaaos review finding",
+  "description": "A single finding emitted by a reviewer or revised by an adversary in the yaaos-review pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file", "line", "category", "severity", "confidence", "rationale", "suggested_fix"],
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "Repo-relative path with forward slashes.",
+      "minLength": 1
+    },
+    "line": {
+      "type": "integer",
+      "description": "1-based line number; first affected line for multi-line issues.",
+      "minimum": 1
+    },
+    "category": {
+      "type": "string",
+      "enum": ["security", "architecture", "code"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["blocker", "should_fix", "nit"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["verified", "plausible", "speculative"]
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Must satisfy the evidence guardrail: includes a file:line reference, a quoted code snippet, and the rule/principle violated.",
+      "minLength": 1
+    },
+    "suggested_fix": {
+      "type": "string",
+      "description": "Concrete actionable next step.",
+      "minLength": 1
+    }
+  }
+}
