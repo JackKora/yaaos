@@ -3,6 +3,8 @@ on:
     push:
       init:
         commit-sha: ${{ event.git.sha }}
+      status-checks:
+        name: CI
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
