@@ -6,6 +6,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# ruff/pytest/tach/semgrep live in [project.optional-dependencies].dev
+# in pyproject.toml. uv run auto-syncs base deps but not extras, so we
+# explicitly sync with --extra dev before any `uv run`.
+echo "==> uv sync --extra dev"
+uv sync --extra dev
+
 echo "==> ruff format --check"
 uv run ruff format --check .
 

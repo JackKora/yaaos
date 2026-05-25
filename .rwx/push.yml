@@ -74,10 +74,13 @@ tasks:
     # docker-compose.test.yml).
     run: |
       set -e
+      # Capture compose file as an absolute path BEFORE any `cd`, so the
+      # EXIT trap finds it after bin/ci cds into apps/backend/.
+      COMPOSE_FILE="$(pwd)/docker/docker-compose.test.yml"
       curl -LsSf https://astral.sh/uv/install.sh | sh
       export PATH="$HOME/.local/bin:$PATH"
-      docker compose -f docker/docker-compose.test.yml up -d --wait postgres redis
-      trap "docker compose -f docker/docker-compose.test.yml down -v" EXIT
+      docker compose -f "$COMPOSE_FILE" up -d --wait postgres redis
+      trap "docker compose -f '$COMPOSE_FILE' down -v" EXIT
       export DATABASE_URL="postgresql+asyncpg://yaaos:yaaos@localhost:55432/yaaos"
       export REDIS_URL="redis://localhost:56379/0"
       export YAAOS_ENV=dev
@@ -126,7 +129,7 @@ tasks:
   - key: golang
     call: golang/install 1.2.1
     with:
-      go-version: "1.25.0"
+      go-version: "1.25.10"
 
   - key: agent-ci
     use: [code, golang, python]
