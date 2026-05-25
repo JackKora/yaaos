@@ -1,4 +1,4 @@
-"""domain/notifications — cross-org user inbox (M06)."""
+"""domain/notifications — cross-org user inbox."""
 
 from app.domain.notifications import web  # noqa: F401
 from app.domain.notifications.models import NotificationRow

@@ -32,9 +32,9 @@ from app.domain.tickets import models as _ticket_models  # noqa: F401
 from app.plugins.claude_code.models import ClaudeCodeSettingsRow
 from app.plugins.github.models import GitHubAppInstallationRow
 
-# The whole codebase pins org_id to this constant in M01. Same value the
+# The whole codebase pins org_id to this constant in . Same value the
 # domain modules use as the system-actor org.
-M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
 async def truncate_all_tables() -> None:
@@ -99,7 +99,7 @@ async def seed_github_install(
 
     `org_login` is the GitHub-side `account_login` on the install row.
     `target_org_slug`, when provided, picks the yaaos-side org row to attach
-    the rows to (looked up by slug); otherwise the legacy `M01_ORG_ID` stub
+    the rows to (looked up by slug); otherwise the legacy `DEFAULT_ORG_ID` stub
     is used. Specs that also log a user in via `bootstrap_owner` pass the
     bootstrapped org's slug here so the install lives on the same org as the
     authenticated user — `/orgs/<slug>/tickets` then surfaces webhook-created
@@ -120,7 +120,7 @@ async def seed_github_install(
                 raise ValueError(f"org {target_org_slug!r} not found — seed it first via bootstrap_owner")
             target_org_id = org.id
         else:
-            target_org_id = M01_ORG_ID
+            target_org_id = DEFAULT_ORG_ID
         s.add(
             GitHubAppInstallationRow(
                 id=uuid4(),
@@ -137,7 +137,7 @@ async def seed_github_install(
                 encrypted_anthropic_api_key=fernet.encrypt(b"TEST-FAKE-NOT-FOR-PROD-ANTHROPIC-KEY"),
             )
         )
-        # M06 — also write the OrgCodingAgentRow so the bespoke Coding Agent
+        # also write the OrgCodingAgentRow so the bespoke Coding Agent
         # settings page (claude_code's AgentEditor) renders against the
         # configured defaults instead of an empty-state placeholder.
         from app.domain.orgs.models import OrgCodingAgentRow  # noqa: PLC0415
@@ -161,7 +161,7 @@ async def seed_lesson(*, repo_external_id: str, title: str, body: str) -> UUID:
         s.add(
             LessonRow(
                 id=lesson_id,
-                org_id=M01_ORG_ID,
+                org_id=DEFAULT_ORG_ID,
                 plugin_id="github",
                 repo_external_id=repo_external_id,
                 title=title,
@@ -352,7 +352,7 @@ def read_and_clear_email_inbox() -> list[dict[str, str]]:
 
 
 __all__ = [
-    "M01_ORG_ID",
+    "DEFAULT_ORG_ID",
     "is_dev_env",
     "read_and_clear_email_inbox",
     "reset",

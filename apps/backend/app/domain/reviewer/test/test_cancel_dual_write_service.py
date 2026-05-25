@@ -35,10 +35,10 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=_app()), base_url="http://test")
 
 
-# M01 single-tenant org id — the same constant /api/reviewer routes used to
-# hard-bind to before M06 made the routers org-scoped. Tests still use it
+# single-tenant org id — the same constant /api/reviewer routes used to
+# hard-bind to before made the routers org-scoped. Tests still use it
 # as a stable test-fixture id; production code no longer references it.
-_M01_ORG_ID = "00000000-0000-0000-0000-000000000001"
+_DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001"
 _ORG_SLUG = "m01"
 
 
@@ -48,7 +48,7 @@ async def _seed_ticket(db_session) -> tuple[TicketRow, object]:  # type: ignore[
     existing = await orgs_repo.get_org_by_slug(db_session, _ORG_SLUG)
     if existing is None:
         org = await orgs_repo.insert_org(db_session, slug=_ORG_SLUG)
-        org.id = type(org.id)(_M01_ORG_ID)  # rebind to the M01 id
+        org.id = type(org.id)(_DEFAULT_ORG_ID)  # rebind to the id
         await db_session.flush()
         existing = org
     user = await identity_repo.insert_user(db_session, display_name="Builder")
@@ -59,7 +59,7 @@ async def _seed_ticket(db_session) -> tuple[TicketRow, object]:  # type: ignore[
 
     ticket = TicketRow(
         id=uuid4(),
-        org_id=type(uuid4())(_M01_ORG_ID),
+        org_id=type(uuid4())(_DEFAULT_ORG_ID),
         source="github_pr",
         source_external_id=f"pr-{uuid4()}",
         title="cancel-test",

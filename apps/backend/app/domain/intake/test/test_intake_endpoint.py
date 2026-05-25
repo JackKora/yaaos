@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID, uuid4
 
 import httpx
@@ -10,6 +11,14 @@ import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy import select
 
+from app.core.events import (
+    Event,
+    EventFilter,
+    subscribe,
+)
+from app.core.events import (
+    _reset_for_tests as _reset_events,
+)
 from app.core.tasks.models import OutboxEntryRow
 from app.core.workflow import (
     CommandCategory,
@@ -37,7 +46,6 @@ class _StubIntakeType:
     required (a missing/wrong header maps to `bad_signature` → 401)."""
 
     name = "stub_pr"
-    workflow_name = "stub_pr_v1"
 
     def __init__(self, org_id: UUID) -> None:
         self._org_id = org_id
@@ -48,6 +56,7 @@ class _StubIntakeType:
         idempotency_key = headers.get("x-stub-idempotency", "default-key")
         return IntakePrepared(
             org_id=self._org_id,
+            workflow_name="stub_pr_v1",
             idempotency_key=idempotency_key,
             title="stub-pr",
             description="",
@@ -179,6 +188,39 @@ async def test_happy_path_creates_ticket_and_workflow(db_session, stub_intake) -
         and row.payload.get("args", {}).get("workflow_execution_id") == str(workflow_execution_id)
         for row in outbox_rows
     )
+
+
+@pytest.mark.asyncio
+async def test_happy_path_publishes_ticket_status_changed_event(db_session, stub_intake) -> None:
+    """Intake-created tickets must broadcast TicketStatusChanged so the SSE
+    subscriber invalidates the list query — otherwise the row is invisible
+    in the UI until something else nudges the cache."""
+    _reset_events()
+    seen: list[Event] = []
+
+    async def consume() -> None:
+        async for ev in subscribe(EventFilter(kinds=["ticket_status_changed"])):
+            seen.append(ev)
+            return
+
+    consumer = asyncio.create_task(consume())
+    await asyncio.sleep(0.01)
+
+    async with _client() as c:
+        r = await c.post(
+            "/api/intake/stub_pr",
+            content=b"{}",
+            headers={"x-stub-auth": "ok", "x-stub-idempotency": "event-key"},
+        )
+    assert r.status_code == 200, r.text
+
+    await asyncio.wait_for(consumer, timeout=1.0)
+    assert len(seen) == 1
+    evt = seen[0]
+    assert evt.kind == "ticket_status_changed"
+    assert evt.new_status == "pending"  # type: ignore[attr-defined]
+    assert evt.previous_status is None  # type: ignore[attr-defined]
+    assert str(evt.ticket_id) == r.json()["ticket_id"]
 
 
 @pytest.mark.asyncio

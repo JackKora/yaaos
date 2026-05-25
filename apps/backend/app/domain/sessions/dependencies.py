@@ -54,7 +54,7 @@ _REQUIRED_ROLE: dict[Action, Role] = {
     Action.ORG_SETTINGS_READ: Role.ADMIN,
     Action.INTEGRATIONS_READ: Role.ADMIN,
     Action.INTEGRATIONS_WRITE: Role.ADMIN,
-    # M06 — Builder-grade access for the three M01 routers. Builders are
+    # Builder-grade access for the three routers. Builders are
     # the people who actually work tickets / write lessons / ack findings.
     Action.TICKETS_READ: Role.BUILDER,
     Action.LESSONS_READ: Role.BUILDER,

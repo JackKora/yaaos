@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Single home for SAML SP mechanics. M04 absorbed the M02 `plugins/saml` adapter + the SP-keypair generator from `domain/orgs/sso` so the protocol bits live in one module that's free of domain awareness. `domain/orgs/sso` imports the verifier at module load and registers it into its assertion-verifier list; test stubs (`plugins/saml_test`) register their own verifier into the same list (first non-None wins).
+Single home for SAML SP mechanics. absorbed the `plugins/saml` adapter + the SP-keypair generator from `domain/orgs/sso` so the protocol bits live in one module that's free of domain awareness. `domain/orgs/sso` imports the verifier at module load and registers it into its assertion-verifier list; test stubs (`plugins/saml_test`) register their own verifier into the same list (first non-None wins).
 
 ## Public interface
 

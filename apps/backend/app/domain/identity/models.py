@@ -109,7 +109,7 @@ class SessionRow(Base):
 
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     # Principal — exactly one of user_id / workspace_id is set (POC). Tokens
-    # surface in M03; the row shape extends with another nullable id then.
+    # surface in ; the row shape extends with another nullable id then.
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )

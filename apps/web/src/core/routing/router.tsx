@@ -103,7 +103,7 @@ const orgLessonsRoute = createRoute({
   component: LessonsPage,
 });
 
-// M03: /orgs/$slug/settings → /orgs/$slug/settings/auth. The shell + per-tab
+// : /orgs/$slug/settings → /orgs/$slug/settings/auth. The shell + per-tab
 // pages live under /settings/{section}; the bare /settings path redirects so
 // older bookmarks don't 404 silently.
 const orgSettingsIndexRoute = createRoute({

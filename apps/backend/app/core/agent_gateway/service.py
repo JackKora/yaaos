@@ -4,9 +4,7 @@ The control plane keeps one FIFO per `agent_id`. Workflows write commands
 into the queue via `enqueue_command(agent_id, command)`; the agent's
 long-poll consumes them with `claim_next(agent_id, *, wait_seconds)`.
 The queue is process-local — single-instance backends only at the POC
-scale. Persisting across restarts is post-M05.
-
-Event ingestion (`record_agent_event`) consults the workspace claim
+scale. Persisting across restarts is .Event ingestion (`record_agent_event`) consults the workspace claim
 columns set by `core/workspace.dispatch.try_claim` to apply the
 stale-claim guard, then enqueues `core/workflow.handle_agent_event` via
 the outbox in the same transaction.

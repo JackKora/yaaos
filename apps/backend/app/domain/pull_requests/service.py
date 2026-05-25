@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import Actor, audit_for_pr
 from app.core.database import session as db_session
@@ -87,75 +88,85 @@ async def upsert(
     *,
     ticket_id: UUID | None = None,
     org_id: UUID,
+    session: AsyncSession,
 ) -> PullRequest:
-    async with db_session() as s:
-        existing = (
-            await s.execute(
-                select(PullRequestRow).where(
-                    PullRequestRow.plugin_id == pr.plugin_id,
-                    PullRequestRow.external_id == pr.external_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if existing is None:
-            if ticket_id is None:
-                raise ValueError("ticket_id required on insert")
-            row = PullRequestRow(
-                id=uuid4(),
-                org_id=org_id,
-                plugin_id=pr.plugin_id,
-                external_id=pr.external_id,
-                repo_external_id=pr.repo_external_id,
-                ticket_id=ticket_id,
-                number=pr.number,
-                title=pr.title,
-                body=pr.body,
-                author_login=pr.author_login,
-                author_type=pr.author_type,
-                base_branch=pr.base_branch,
-                head_branch=pr.head_branch,
-                base_sha=pr.base_sha,
-                head_sha=pr.head_sha,
-                is_draft=pr.is_draft,
-                is_fork=pr.is_fork,
-                state=pr.state,
-                html_url=pr.html_url,
-            )
-            s.add(row)
-            await s.commit()
-            await s.refresh(row)
-            return PullRequest.from_row(row)
+    """Service: insert or refresh a PR row on the caller's session.
 
-        changed: list[str] = []
-        for field in (
-            "title",
-            "body",
-            "base_sha",
-            "head_sha",
-            "is_draft",
-            "state",
-            "html_url",
-        ):
-            new = getattr(pr, field)
-            if getattr(existing, field) != new:
-                setattr(existing, field, new)
-                changed.append(field)
-        existing.last_synced_at = datetime.now(UTC)
-        row_id = existing.id
-        if changed:
-            await audit_for_pr(
-                row_id,
-                "pull_request.synced",
-                _PRSyncedPayload(changed_fields=changed),
-                actor=Actor.system(),
-                org_id=org_id,
-                session=s,
-            )
-        await s.commit()
+    The caller owns the transaction. We `flush()` so server-side defaults
+    (`created_at`, `last_synced_at`) are populated on the in-memory row,
+    but we never commit — the orchestrator decides when the work lands.
 
-    async with db_session() as s:
-        existing = (await s.execute(select(PullRequestRow).where(PullRequestRow.id == row_id))).scalar_one()
-        return PullRequest.from_row(existing)
+    The session parameter is what lets intake compose ticket + PR insert
+    atomically: without it, the cross-session FK on `pull_requests.ticket_id`
+    fires against the uncommitted ticket and blows up the request.
+    """
+    existing = (
+        await session.execute(
+            select(PullRequestRow).where(
+                PullRequestRow.plugin_id == pr.plugin_id,
+                PullRequestRow.external_id == pr.external_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        if ticket_id is None:
+            raise ValueError("ticket_id required on insert")
+        row = PullRequestRow(
+            id=uuid4(),
+            org_id=org_id,
+            plugin_id=pr.plugin_id,
+            external_id=pr.external_id,
+            repo_external_id=pr.repo_external_id,
+            ticket_id=ticket_id,
+            number=pr.number,
+            title=pr.title,
+            body=pr.body,
+            author_login=pr.author_login,
+            author_type=pr.author_type,
+            base_branch=pr.base_branch,
+            head_branch=pr.head_branch,
+            base_sha=pr.base_sha,
+            head_sha=pr.head_sha,
+            is_draft=pr.is_draft,
+            is_fork=pr.is_fork,
+            state=pr.state,
+            html_url=pr.html_url,
+        )
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        return PullRequest.from_row(row)
+
+    changed: list[str] = []
+    for field in (
+        "title",
+        "body",
+        "base_sha",
+        "head_sha",
+        "is_draft",
+        "state",
+        "html_url",
+    ):
+        new = getattr(pr, field)
+        if getattr(existing, field) != new:
+            setattr(existing, field, new)
+            changed.append(field)
+    existing.last_synced_at = datetime.now(UTC)
+    if changed:
+        await audit_for_pr(
+            existing.id,
+            "pull_request.synced",
+            _PRSyncedPayload(changed_fields=changed),
+            actor=Actor.system(),
+            org_id=org_id,
+            session=session,
+        )
+    await session.flush()
+    # Refresh so `updated_at` (server-side onupdate) is populated on the
+    # in-memory row before `from_row` reads it — without this, the attribute
+    # is expired and the lazy-load triggers outside the greenlet context.
+    await session.refresh(existing)
+    return PullRequest.from_row(existing)
 
 
 async def update_state(pr_id: UUID, new_state: PRState, *, org_id: UUID) -> None:

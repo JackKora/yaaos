@@ -19,11 +19,11 @@ How to get yaaos running. Covers the Docker stack (recommended) and the no-Docke
 
 The full env-var list is in [`apps/backend/docs/core_config.md`](../apps/backend/docs/core_config.md).
 
-### GitHub OAuth (M02)
+### GitHub OAuth
 
 Dev login uses a real GitHub **OAuth App** (distinct from the GitHub App used for installs) — credentials provisioned out-of-band and pasted into `.env` as `YAAOS_GITHUB_OAUTH_CLIENT_ID` + `YAAOS_GITHUB_OAUTH_CLIENT_SECRET`. The callback URL is the dev origin's `/api/auth/callback/github`. Production uses its own OAuth App.
 
-### M02 env vars (full inventory)
+### env vars (full inventory)
 
 Required in prod; defaults shipped for dev/test:
 
@@ -42,15 +42,15 @@ Required in prod; defaults shipped for dev/test:
 
 The backend refuses to start in `prod` with any *required* secret unset; dev/test boot with stub defaults.
 
-### Linear + Notion OAuth (M04 — optional)
+### Linear + Notion OAuth (— optional)
 
-M04 adds hosted-MCP integrations for Linear and Notion. The autonomous test suite runs against the in-tree `apps/fake-linear` and `apps/fake-notion` fakes — no real OAuth apps are required to ship M04 end-to-end. You only need to register real apps when you want to use yaaos against production Linear / Notion data.
+adds hosted-MCP integrations for Linear and Notion. The autonomous test suite runs against the in-tree `apps/fake-linear` and `apps/fake-notion` fakes — no real OAuth apps are required to ship end-to-end. You only need to register real apps when you want to use yaaos against production Linear / Notion data.
 
 **Linear OAuth App** — register at <https://linear.app/settings/api> → OAuth applications. Scopes: `read`. Production callback at `https://<your-domain>/api/mcp-proxy/linear/callback`. Drop `client_id` + `client_secret` into `.env` as `YAAOS_OAUTH_LINEAR_CLIENT_ID` / `YAAOS_OAUTH_LINEAR_CLIENT_SECRET`.
 
 **Notion OAuth App** — register at <https://notion.so/my-integrations> as a **Public integration**. Capabilities: read content + read comments + read user info. Production callback at `https://<your-domain>/api/mcp-proxy/notion/callback`. Drop credentials into `.env` as `YAAOS_OAUTH_NOTION_CLIENT_ID` / `YAAOS_OAUTH_NOTION_CLIENT_SECRET`.
 
-M04 also adds these provider URL env vars (defaults point at the real upstreams; test compose overrides to the fakes):
+also adds these provider URL env vars (defaults point at the real upstreams; test compose overrides to the fakes):
 
 | Var | Default |
 |---|---|
@@ -83,9 +83,9 @@ From the repo root:
 - `docker compose -f docker/docker-compose.yml --env-file .env up -d --build` brings up Postgres + Redis + the yaaos backend (which serves the API on `:8080` and the bundled SPA).
 - Visit `http://localhost:8080`. The dashboard renders the onboarding stepper because no GitHub App is installed and no Anthropic key is set.
 
-### M05 dev story (in progress)
+### dev story (in progress)
 
-M05 adds a separate worker process (`apps/backend/bin/worker`) that runs taskiq workers + the outbox drain in a single Python process against Redis. Local dev uses the in-memory `WorkspaceProvider` so no Go `apps/agent/` container is required; remote-agent provisioning is exercised in the test stack only. Wire-up lands across Phases 0b–9 — until then, the worker process and Go agent are scaffolds and review work still runs in-process via the legacy reviewer queue.
+adds a separate worker process (`apps/backend/bin/worker`) that runs taskiq workers + the outbox drain in a single Python process against Redis. Local dev uses the in-memory `WorkspaceProvider` so no Go `apps/agent/` container is required; remote-agent provisioning is exercised in the test stack only. Wire-up lands across Phases 0b–9 — until then, the worker process and Go agent are scaffolds and review work still runs in-process via the legacy reviewer queue.
 
 #### Running the WorkspaceAgent locally (Phase 9)
 
@@ -122,8 +122,8 @@ GitHub names them confusingly. They are not interchangeable; do not paste GitHub
    - **Homepage URL:** your yaaos deployment URL.
    - **Setup URL:** `<deployment>/api/github/install_callback` and check "Redirect on update."
    - **Webhook URL:**
-     - Production: `<deployment>/api/github/webhook`.
-     - Laptop dev: smee channel URL (`smee --url https://smee.io/<your-channel> --target http://localhost:8080/api/github/webhook`).
+     - Production: `<deployment>/api/intake/github`.
+     - Laptop dev: smee channel URL (`smee --url https://smee.io/<your-channel> --target http://localhost:8080/api/intake/github`).
    - **Webhook secret:** generate a high-entropy string; keep it.
    - **Repository permissions:** Contents (read), Pull requests (write), Metadata (read), Issues (write — for top-level PR comments).
    - **Subscribe to events:** Pull request, Pull request review comment, Issue comment, Installation.

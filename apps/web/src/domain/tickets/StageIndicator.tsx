@@ -1,7 +1,7 @@
 /**
  * Stage indicator — visualizes the ticket's current and historical stages.
  *
- * M06 E2a.4 — Ticket detail header band. Single-stage tickets render as a
+ * Ticket detail header band. Single-stage tickets render as a
  * compact "Stage: <name> · <state>" line; multi-stage tickets show each
  * stage in order with the active one highlighted.
  *

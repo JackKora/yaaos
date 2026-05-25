@@ -1,4 +1,4 @@
-"""Coverage for POST /api/orgs (M06 Phase 8).
+"""Coverage for POST /api/orgs ().
 
 Powers the `/orgs` picker page's "Create org" modal (E2a.19). The caller
 becomes Admin of the new org. Slug must be lowercase a-z / 0-9 / hyphens

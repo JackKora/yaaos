@@ -9,7 +9,7 @@ import { toggleTheme } from "../layout/theme";
 /**
  * Bottom-of-sidebar user card. Shows the cookie-bearer's display name + their
  * `@handle` for the current org. Click opens a popover with `User > Details`,
- * `User > Security`, theme toggle, and `Log off` — the canonical M03 User
+ * `User > Security`, theme toggle, and `Log off` — the canonical User
  * section nav, now also hosting global chrome (theme) since the topbar was
  * removed.
  */

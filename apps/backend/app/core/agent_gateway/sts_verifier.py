@@ -158,7 +158,7 @@ class _NonceLRU:
     """In-process bounded TTL cache for replay protection.
 
     Keyed on a stable hash of the signed request envelope (Authorization
-    header + X-Amz-Date). Single-process for POC — fly.io M05 target is
+    header + X-Amz-Date). Single-process for POC — fly.io target is
     a single backend machine. Multi-replica deployments would lift this
     to Redis.
     """

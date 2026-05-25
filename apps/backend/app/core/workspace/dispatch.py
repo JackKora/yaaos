@@ -1,4 +1,4 @@
-"""Single-flight claim + recovery-policy registry — M05 Phase 3.
+"""Single-flight claim + recovery-policy registry — .
 
 The workspace state machine has one in-flight AgentCommand at a time.
 `try_claim()` atomically assigns `current_command_id` + `current_holder_workflow_id`
@@ -124,7 +124,7 @@ def _reset_recovery_policies_for_tests() -> None:
     _RECOVERY_POLICIES.clear()
 
 
-# M05's only Tier-1 policy at boot. The actual `RefreshWorkspaceAuth`
+# only Tier-1 policy at boot. The actual `RefreshWorkspaceAuth`
 # WorkflowCommand registers in Phase 4 alongside the rest of the reviewer
 # workflow; recording the mapping here keeps it close to the workspace
 # state machine that consumes it.

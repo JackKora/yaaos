@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import Actor, audit_for_ticket
 from app.core.database import session as db_session
-from app.core.events import Event, publish
+from app.core.events import Event, publish_after_commit
 from app.domain.tickets.models import TicketRow
 
-# M06 collapse: single 5-state vocabulary. The legacy 4-state lifecycle
+# collapse: single 5-state vocabulary. The legacy 4-state lifecycle
 # (open / in_review / complete / abandoned) was mapped one-shot in migration
 # 023; this is the canonical name now. `hitl` and `failed` are populated by
 # the workflow-state projection (reviewer/workflow_review_view.py); the
@@ -42,7 +42,7 @@ class Ticket(BaseModel):
     is_draft: bool | None = None
     created_at: datetime
     updated_at: datetime
-    # M06 fields (nullable until the projections that populate them ship).
+    # fields (nullable until the projections that populate them ship).
     current_stage: str | None = None
     findings_count: int = 0
     max_severity: Literal["low", "medium", "high"] | None = None
@@ -76,7 +76,7 @@ class TicketFilter(BaseModel):
     created_after: datetime | None = None
     created_before: datetime | None = None
     statuses: list[TicketStatus] | None = None
-    # M06 additions — see `plan/milestones/M06-design-refresh/api-changes.md`.
+    # additions — see .
     q: str | None = None
     sort: TicketSort = "updated_desc"
     cursor: str | None = None
@@ -176,6 +176,16 @@ async def create(
         org_id=org_id,
         session=session,
     )
+    publish_after_commit(
+        session,
+        TicketStatusChanged(
+            ticket_id=row.id,
+            repo_external_id=repo_external_id,
+            pr_id=None,
+            previous_status=None,
+            new_status="pending",
+        ),
+    )
     return row.id, True
 
 
@@ -242,16 +252,17 @@ async def create_for_pr(
             org_id=org_id,
             session=s,
         )
-        await s.commit()
-    await publish(
-        TicketStatusChanged(
-            ticket_id=row_id,
-            repo_external_id=repo_external_id,
-            pr_id=pr_id,
-            previous_status=None,
-            new_status="running",
+        publish_after_commit(
+            s,
+            TicketStatusChanged(
+                ticket_id=row_id,
+                repo_external_id=repo_external_id,
+                pr_id=pr_id,
+                previous_status=None,
+                new_status="running",
+            ),
         )
-    )
+        await s.commit()
     return await get(row_id, org_id=org_id)
 
 
@@ -279,7 +290,7 @@ async def get(ticket_id: UUID, *, org_id: UUID) -> Ticket:
 
 async def get_payload(ticket_id: UUID, *, session: AsyncSession) -> dict[str, Any]:
     """Return the ticket's intake payload dict. Required session — read-only,
-    no commits. M05 reviewer commands read admission signals (`is_draft`,
+    no commits. reviewer commands read admission signals (`is_draft`,
     `is_fork`, `labels`, etc.) from here without re-fetching from GitHub."""
     row = (await session.execute(select(TicketRow).where(TicketRow.id == ticket_id))).scalar_one_or_none()
     if row is None:
@@ -457,14 +468,15 @@ async def _transition(
             org_id=org_id,
             session=s,
         )
-        await s.commit()
-    await publish(
-        TicketStatusChanged(
-            ticket_id=ticket_id,
-            repo_external_id=repo_external_id,
-            pr_id=pr_id,
-            previous_status=prev,
-            new_status=new_status,
-            reason=reason,
+        publish_after_commit(
+            s,
+            TicketStatusChanged(
+                ticket_id=ticket_id,
+                repo_external_id=repo_external_id,
+                pr_id=pr_id,
+                previous_status=prev,
+                new_status=new_status,
+                reason=reason,
+            ),
         )
-    )
+        await s.commit()

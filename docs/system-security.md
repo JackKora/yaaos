@@ -25,7 +25,7 @@ Three processes hold different secrets and run with different privileges.
 ### Authorization
 
 - Per-action `Role` mapping in [`domain/sessions/dependencies._REQUIRED_ROLE`](../apps/backend/app/domain/sessions/dependencies.py): `BUILDER` < `ADMIN` < `OWNER`. `Action` enum in [`core/auth/types.py`](../apps/backend/app/core/auth/types.py).
-- Owner/Admin-gated M05 endpoints: `PATCH /api/orgs` (workspace_provider + registered_iam_arn), `GET /api/workspaces/connection_status`.
+- Owner/Admin-gated endpoints: `PATCH /api/orgs` (workspace_provider + registered_iam_arn), `GET /api/workspaces/connection_status`.
 
 ### Secrets at rest
 
@@ -42,13 +42,13 @@ Three processes hold different secrets and run with different privileges.
 
 Each customer registers an IAM-role ARN at `PATCH /api/orgs` (`registered_iam_arn`). The agent in their ECS task assumes that role; the placeholder identity-exchange verifier today accepts any non-empty signed-STS string, and the Phase 7 follow-on replays the SigV4 signature against AWS STS and verifies the resulting ARN matches the org's registration.
 
-### Workspace isolation (what M05 ships)
+### Workspace isolation (what ships)
 
 - **OS-process isolation per workspace** — the supervisor spawns one OS process per workspace; IPC over stdin/stdout pipes. Phase 6 foundations ships the supervisor skeleton; the workspace subprocess body lands in the follow-on.
 - **Container filesystem read-only** except `/var/agent/workspaces/` (deployment configuration; documented in [`apps/agent/docs/README.md`](../apps/agent/docs/README.md)).
 - **`os.RLimit` per workspace process** — Phase 6 follow-on, alongside the subprocess body.
 
-### What M05 deliberately doesn't ship
+### What deliberately doesn't ship
 
 - No landlock / seccomp / per-workspace UID / network namespaces. The risk surface is the workspace process (single tenant, customer code already trusted to that level) + the supervisor (which holds the control-plane bearer, audited via the structured log + OTel spans).
 
@@ -92,7 +92,7 @@ W3C trace context is a required field on every AgentCommand, AgentEvent, Workspa
 | MCP review bearer | `mcp_review_tokens.token_hash` | sha256 — raw value never persists. |
 | Activity events | n/a — never persisted | n/a |
 
-## Threat model — what M05 explicitly defends against
+## Threat model — what explicitly defends against
 
 | Threat | Defense |
 |---|---|
@@ -104,10 +104,9 @@ W3C trace context is a required field on every AgentCommand, AgentEvent, Workspa
 | Activity events leaking source content | `domain/coding_agent` ActivityEvent pre-renderer audit — Phase 8b follow-on. Foundations: the WebSocket plumbing exists; the trust-boundary audit lands alongside the in-memory provider's direct-publish path. |
 | Worker exhaustion under long-running AgentCommands | Async event-driven workflow engine — workers exit after dispatch and resume on the terminal event. Verified by the workflow state-machine tests. |
 
-## Threats M05 does NOT defend against (yet)
+## Threats does NOT defend against (yet)
 
-- Compromised agent pod (running as customer's IAM role with workspace state on disk). Out of scope per architecture — workspace-process sandbox hardening is post-M05.
-- Activity event payload tampering. WebSocket is TLS-protected but events are not signed. Architectural assumption: customer's network is trusted to ECS.
+- Compromised agent pod (running as customer's IAM role with workspace state on disk). Out of scope per architecture — workspace-process sandbox hardening is .- Activity event payload tampering. WebSocket is TLS-protected but events are not signed. Architectural assumption: customer's network is trusted to ECS.
 - Side-channel via prompt content. Out of scope.
 
 ## Cross-references

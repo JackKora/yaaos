@@ -1,12 +1,13 @@
-"""plugins/github — GitHub VCSPlugin + OAuth identity provider + webhook receiver.
+"""plugins/github — GitHub VCSPlugin, OAuth identity provider, and the
+`github` intake type that routes every GitHub webhook event into the
+domain/intake registry.
 
-M04 absorbed the older `plugins/oauth_github` plugin. The OAuth identity
-provider (`GitHubOAuthProvider`) now lives alongside the VCS plugin since
-they share credentials, settings, and the test stack.
+The OAuth identity provider (`GitHubOAuthProvider`) lives alongside the
+VCS plugin because they share credentials, settings, and the test stack.
 """
 
-from app.plugins.github import web  # noqa: F401 — registers webhook route
-from app.plugins.github.intake_type import GithubPrIntakeType
+from app.plugins.github import web  # noqa: F401 — registers install-state read routes
+from app.plugins.github.intake_type import GithubIntakeType
 from app.plugins.github.models import (
     GitHubAppInstallationRow,
     GitHubWebhookEventRow,
@@ -26,7 +27,7 @@ __all__ = [
     "GitHubOAuthProvider",
     "GitHubPlugin",
     "GitHubWebhookEventRow",
-    "GithubPrIntakeType",
+    "GithubIntakeType",
     "bootstrap",
     "bootstrap_oauth",
     "get_plugin",
@@ -37,14 +38,14 @@ __all__ = [
 
 # Register at import time: the VCS plugin (always) + the OAuth identity
 # provider (skips itself when client_id / client_secret are unset) + the
-# `github_pr` intake type (M05 Phase 2).
+# `github` intake type.
 bootstrap()
 bootstrap_oauth()
 
 from app.domain.intake import register_intake_type  # noqa: E402
 
 try:
-    register_intake_type(GithubPrIntakeType())
+    register_intake_type(GithubIntakeType())
 except ValueError:
     # Re-import in the same process (e.g., test reload). The previously
     # registered handler is still in place.

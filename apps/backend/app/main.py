@@ -21,7 +21,7 @@ from app.core import webserver  # noqa: E402
 # 5. Core modules whose plugins are domain-facing.
 from app.core import audit_log, workspace  # noqa: F401, E402
 
-# 5a. M05 workflow engine + agent gateway. Workflow engine registers the
+# 5a. workflow engine + agent gateway. Workflow engine registers the
 # three taskiq task names at import; agent_gateway registers `/v1/*` routes.
 from app.core import workflow as _core_workflow  # noqa: F401, E402
 from app.core import agent_gateway as _core_agent_gateway  # noqa: F401, E402
@@ -70,7 +70,7 @@ from app.domain import integrations as _domain_integrations  # noqa: F401, E402
 # 7. Plugins.
 from app.plugins import in_memory_workspace, claude_code, github, linear, notion  # noqa: F401, E402
 
-# M04: GitHub OAuth identity provider lives inside `plugins/github` now —
+# GitHub OAuth identity provider lives inside `plugins/github` now —
 # `plugins/oauth_github` was deleted. The github plugin's __init__ calls
 # both bootstrap() (VCS) and bootstrap_oauth() (identity).
 from app.core.config import get_settings  # noqa: E402

@@ -1,4 +1,4 @@
-"""Workflow definitions for the five M05 reviewer task modes.
+"""Workflow definitions for the five reviewer task modes.
 
 Each `Workflow` is registered against `core/workflow.get_engine()` at
 import time (via `domain/reviewer/__init__.py`). The matching commands

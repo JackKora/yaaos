@@ -144,7 +144,7 @@ export function Sidebar() {
 
   const isItemVisible = (item: NavItem) => _roleCovers(effectiveRole, item.role);
 
-  // Org-scoped path or naked path when no org context — keeps M02 legacy
+  // Org-scoped path or naked path when no org context — keeps legacy
   // routes (`/dashboard` etc.) working.
   const absolutePath = (relativePath: string) =>
     slug ? `/orgs/${slug}${relativePath}` : relativePath;

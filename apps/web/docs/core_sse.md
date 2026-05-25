@@ -36,7 +36,7 @@ Invalidations are deduped on a 200 ms trailing debounce keyed by `JSON.stringify
 
 ### Reconnection
 
-Native `EventSource` auto-reconnects on socket drop with exponential backoff. `onerror` is a logger; the browser handles retry. The safety-net 3-5s polling on the underlying queries covers any state drift during a long disconnect.
+Native `EventSource` auto-reconnects on socket drop with exponential backoff. `onerror` is a logger; the browser handles retry. After a long disconnect, tanstack-query's mount + window-focus refetch behaviour resyncs queries on the next interaction; detail-page queries that still carry a `refetchInterval` cover state drift continuously.
 
 ### Why a subscriber, not per-component listeners
 

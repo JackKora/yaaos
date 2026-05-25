@@ -76,7 +76,7 @@ async def clear_vcs(
     `vcs.cleared` only when something was actually cleared.
 
     Also wipes plugin-owned credentials/install rows so Remove means "fully
-    disconnected" — the next Add starts from a blank slate. M01 has one VCS
+    disconnected" — the next Add starts from a blank slate. has one VCS
     plugin (github), so the cleanup is inlined here rather than dispatched
     through a plugin hook; revisit when a second VCS plugin ships.
     """

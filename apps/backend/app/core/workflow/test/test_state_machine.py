@@ -143,9 +143,9 @@ class _WorkspaceStub:
 
 async def _drain_workflow_outbox(db_session, *, max_iterations: int = 50) -> int:
     """Pull `taskiq_enqueue` rows out of the outbox and re-dispatch them
-    into the matching task body via `core/tasks.get_registered`. Loops until
+    into the matching task body via the broker's task registry. Loops until
     the outbox is empty or `max_iterations` hit (a runaway loop is a bug)."""
-    from app.core.tasks.service import get_registered  # noqa: PLC0415
+    from app.core.tasks.broker import get_broker  # noqa: PLC0415
 
     total = 0
     for _ in range(max_iterations):
@@ -165,20 +165,10 @@ async def _drain_workflow_outbox(db_session, *, max_iterations: int = 50) -> int
 
         async def _dispatcher(kind: str, payload: dict) -> None:
             assert kind == "taskiq_enqueue"
-            body = get_registered(payload["task_name"])
-            if body is None:
+            decorated = get_broker().find_task(payload["task_name"])
+            if decorated is None:
                 raise RuntimeError(f"no registered task body for {payload['task_name']}")
-            ctx = type(
-                "Ctx",
-                (),
-                {
-                    "session": None,
-                    "traceparent": payload.get("args", {}).get("traceparent"),
-                    "attempt": 0,
-                    "job_id": "test",
-                },
-            )()
-            await body(ctx, **payload["args"])
+            await decorated.original_func(**payload["args"])
 
         delivered = await drain_once(db_session, dispatcher=_dispatcher)
         await db_session.commit()

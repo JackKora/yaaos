@@ -92,7 +92,7 @@ log = structlog.get_logger("claude_code")
 # `ReviewContext.agent_config["timeout_seconds"]`.
 _DEFAULT_TIMEOUT_SECONDS = 1200
 
-# Hardcoded model + effort for M01. Future UI work moves these to a settings
+# Hardcoded model + effort for . Future UI work moves these to a settings
 # row + per-job override. `--model opus` resolves to the latest Opus alias;
 # `--effort medium` is a Claude Code reasoning level (low / medium / high /
 # xhigh / max).
@@ -544,7 +544,7 @@ class ClaudeCodePlugin:
             "--output-format=stream-json",
             "--verbose",
             "--permission-mode=bypassPermissions",
-            # Model + effort hardcoded for M01 (future UI configures them).
+            # Model + effort hardcoded (future UI configures them).
             "--model",
             _MODEL,
             "--effort",
@@ -1055,7 +1055,7 @@ def bootstrap() -> None:
 
     register_coding_agent_plugin(_plugin)
     register_onboarding_contributor("anthropic_key_set", _onboarding_anthropic_key_set)
-    # M03 BYOK: the `/api/api-keys/anthropic/validate` endpoint dispatches to this
+    # BYOK: the `/api/api-keys/anthropic/validate` endpoint dispatches to this
     # callable so core/byok stays free of provider-specific HTTP.
     _byok_register_validator("anthropic", validate_anthropic_key)
     # Install yaaos-* subagent definitions so the parent reviewer can dispatch

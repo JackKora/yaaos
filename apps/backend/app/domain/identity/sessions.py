@@ -62,8 +62,7 @@ async def create(
     lifetime: timedelta | None = None,
 ) -> CreatedSession:
     """Mint a new session row. Exactly one of `user_id` / `workspace_id` must
-    be set; the other stays None. Workspace sessions are reserved for M03+
-    but the column shape lands now to avoid a later migration."""
+    be set; the other stays None. Workspace sessions are reserved for but the column shape lands now to avoid a later migration."""
     if (user_id is None) == (workspace_id is None):
         raise ValueError("exactly one of user_id / workspace_id must be set")
     raw = _new_raw_token()

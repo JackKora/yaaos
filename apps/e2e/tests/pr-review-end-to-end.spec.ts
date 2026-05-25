@@ -51,9 +51,9 @@ async function setupAuthedAcmeOwner(page: Page, request: APIRequestContext): Pro
 }
 
 /**
- * Both tests below depend on the M05 outbox → taskiq dispatcher to
+ * Both tests below depend on the outbox → taskiq dispatcher to
  * actually run the workflow. That infrastructure was scaffolded in
- * Phase 0b of M05 but the broker + drain loop ("Phase 0c/1") never
+ * the broker + drain loop ("Phase 0c/1") never
  * landed — `taskiq_enqueue` outbox rows pile up and `workflow_executions`
  * stay in `pending` forever. Backend service tests cover the workflow
  * engine itself; the e2e flow stays skipped until the dispatcher exists.
@@ -83,7 +83,7 @@ test("PR open → reviewer posts; ticket detail renders findings", async ({ page
 
   // Open the ticket and wait for the review to post findings to GitHub.
   // The end-to-end signal we care about: yaaos posted at least one
-  // review comment to fake-github (the M06 SPA dropped the M01-era
+  // review comment to fake-github (the SPA dropped the earlier
   // agent-card pattern; the actual cross-system contract is the
   // posted comments).
   await page.getByText("Add /metrics endpoint").click();

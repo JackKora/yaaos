@@ -8,7 +8,7 @@ from enum import StrEnum
 class Role(StrEnum):
     """Three-enum org role; Owner ≥ Admin ≥ Builder. Fixed for POC.
 
-    M06 renamed the lowest tier from `member` → `builder`. `Owner` is the
+    renamed the lowest tier from `member` → `builder`. `Owner` is the
     creator-distinct role; `Admin` mutates org-wide settings; `Builder` is
     every other member with full action access but no org-wide mutate rights.
     """

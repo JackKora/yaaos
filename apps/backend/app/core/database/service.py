@@ -186,7 +186,7 @@ async def _apply_create_all(conn) -> None:  # type: ignore[no-untyped-def]
 
 async def _apply_add_github_settings_slug(conn) -> None:  # type: ignore[no-untyped-def]
     # No-op when `github_settings` is absent. The table's model was deleted as
-    # part of the M04 platform-app cutover (migration 030 drops it on legacy
+    # part of the platform-app cutover (migration 030 drops it on legacy
     # DBs); fresh DBs never create it, so this column-add is meaningless and
     # the bare ALTER would 42P01 with `relation "github_settings" does not
     # exist`. Skip cleanly when the table isn't there.
@@ -289,7 +289,7 @@ async def _table_exists(conn, name: str) -> bool:  # type: ignore[no-untyped-def
 async def _apply_add_review_jobs_triggered_by_destination(conn) -> None:  # type: ignore[no-untyped-def]
     """Promote audit-only `trigger_reason` into a queryable column and add
     `destination` so future `run_review` callers can be distinguished from
-    the legacy `schedule_review → post-to-VCS` flow (retired in M05).
+    the legacy `schedule_review → post-to-VCS` flow (retired).
 
     No-op on fresh DBs (post-cutover `001_create_all` produces `reviews`, not
     `review_jobs` — and `008_reviews_cutover` drops the old table anyway).
@@ -427,7 +427,7 @@ async def _apply_reviews_cutover(conn) -> None:  # type: ignore[no-untyped-def]
     await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
 
 
-async def _apply_create_all_m02(conn) -> None:  # type: ignore[no-untyped-def]
+async def _apply_create_all_identity(conn) -> None:  # type: ignore[no-untyped-def]
     """Identity + orgs + sessions migration.
 
     Adds: users, user_emails, oauth_identities, user_totp_secrets, orgs,
@@ -502,8 +502,8 @@ async def _apply_drop_classification_confidence(conn) -> None:  # type: ignore[n
         await conn.execute(text(stmt))
 
 
-async def _apply_create_all_m04(conn) -> None:  # type: ignore[no-untyped-def]
-    """M04 — MCP context for coding agents.
+async def _apply_create_all_mcp(conn) -> None:  # type: ignore[no-untyped-def]
+    """MCP context for coding agents.
 
     Adds `mcp_credentials` (per-(org, provider) OAuth tokens + allowlist) and
     `mcp_review_tokens` (per-review yaaos bearer for the proxy). `create_all`
@@ -524,11 +524,11 @@ async def _apply_create_all_m04(conn) -> None:  # type: ignore[no-untyped-def]
 
 
 async def _apply_create_outbox_entries(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 Phase 0b — DB-atomic outbound message queue table.
+    """DB-atomic outbound message queue table.
 
-    Backs `core/outbox.write()` + the drain loop in `apps/backend/bin/worker`.
-    Future M05 phases add their own migrations as more tables come online
-    (see plan/milestones/M05-workspace-agent/DECISIONS.md). Idempotent.
+     Backs `core/outbox.write()` + the drain loop in `apps/backend/bin/worker`.
+     Future phases add their own migrations as more tables come online
+    . Idempotent.
     """
     import importlib  # noqa: PLC0415
 
@@ -538,7 +538,7 @@ async def _apply_create_outbox_entries(conn) -> None:  # type: ignore[no-untyped
 
 
 async def _apply_orgs_workspace_provider(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 Phase 7 — per-org workspace provider selection columns. Idempotent."""
+    """per-org workspace provider selection columns. Idempotent."""
     statements: list[str] = [
         "ALTER TABLE orgs ADD COLUMN IF NOT EXISTS workspace_provider TEXT",
         "ALTER TABLE orgs ADD COLUMN IF NOT EXISTS registered_iam_arn TEXT",
@@ -548,7 +548,7 @@ async def _apply_orgs_workspace_provider(conn) -> None:  # type: ignore[no-untyp
 
 
 async def _apply_rename_member_to_builder(conn) -> None:  # type: ignore[no-untyped-def]
-    """M06 Phase 2 — rename the `member` role to `builder`.
+    """rename the `member` role to `builder`.
 
     `memberships.role` is a `TEXT` column (no enum type), so a row-level UPDATE
     is all the rename needs. Idempotent: re-running matches zero rows.
@@ -557,7 +557,7 @@ async def _apply_rename_member_to_builder(conn) -> None:  # type: ignore[no-unty
 
 
 async def _apply_create_notifications(conn) -> None:  # type: ignore[no-untyped-def]
-    """M06 Phase 7 — create the `notifications` table + indexes.
+    """create the `notifications` table + indexes.
 
     Idempotent: imports the model and runs `Base.metadata.create_all`
     which is `CREATE TABLE IF NOT EXISTS` underneath. The
@@ -571,20 +571,20 @@ async def _apply_create_notifications(conn) -> None:  # type: ignore[no-untyped-
 
 
 async def _apply_lessons_created_by(conn) -> None:  # type: ignore[no-untyped-def]
-    """M06 audit follow-up — add `lessons.created_by` (nullable UUID).
+    """add `lessons.created_by` (nullable UUID).
 
     Records the user who created the lesson when the SPA fired the
-    request; nullable because pre-M06 rows have no attribution and
+    request; nullable because pre-rows have no attribution and
     system-created lessons (workspace agent, reviewer) stay anonymous.
     """
     await conn.execute(text("ALTER TABLE lessons ADD COLUMN IF NOT EXISTS created_by UUID"))
 
 
 async def _apply_collapse_ticket_status(conn) -> None:  # type: ignore[no-untyped-def]
-    """M06 audit follow-up — collapse `tickets.status` to the 5-state vocab.
+    """collapse `tickets.status` to the 5-state vocab.
 
     Legacy lifecycle (open / in_review / complete / abandoned) is
-    rewritten to the M06 display vocab (running / hitl / done / failed
+    rewritten to the display vocab (running / hitl / done / failed
     / cancelled) one-shot. `hitl` and `failed` are reserved for the
     workflow-state projection to populate on later transitions; the
     static migration only maps the four legacy values. Idempotent:
@@ -607,7 +607,7 @@ async def _apply_drop_github_poller_state(conn) -> None:  # type: ignore[no-unty
 
 
 async def _apply_create_bearer_tokens(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 close-out — bearer-token ledger table.
+    """bearer-token ledger table.
 
     Backs the real `/identity/exchange` issuance (replaces the
     `placeholder-{uuid4()}` returned by the Phase 7 stub) and the bearer
@@ -632,7 +632,7 @@ async def _apply_create_bearer_tokens(conn) -> None:  # type: ignore[no-untyped-
 
 
 async def _apply_orgs_aws_region_and_arn_uniqueness(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 close-out — finalize org-level AWS-IAM config.
+    """finalize org-level AWS-IAM config.
 
     Adds `orgs.aws_region` (the STS region the org's agent runs in — used to
     pin the signed-request endpoint and defend against cross-region replay).
@@ -692,8 +692,8 @@ async def _apply_drop_github_settings(conn) -> None:  # type: ignore[no-untyped-
 async def _apply_tickets_dedupe_external_id(conn) -> None:  # type: ignore[no-untyped-def]
     """Add `(org_id, source, source_external_id)` UNIQUE on `tickets`.
 
-    Pre-existing duplicates (produced by a race in `refresh_pr_metadata` —
-    two concurrent webhook deliveries both pass the existence check and both
+    Pre-existing duplicates (produced by a pre-constraint race where two
+    concurrent webhook deliveries both pass the existence check and both
     insert a fresh ticket row for the same PR) are deleted outright. The
     canonical row is the one a `pull_requests` row points at via `ticket_id`,
     falling back to the oldest by `created_at`. Audit rows for the deleted
@@ -752,7 +752,7 @@ async def _apply_tickets_dedupe_external_id(conn) -> None:  # type: ignore[no-un
 
 
 async def _apply_sso_email_domains(conn) -> None:  # type: ignore[no-untyped-def]
-    """M06 audit follow-up — add `sso_configs.email_domains` JSONB column.
+    """add `sso_configs.email_domains` JSONB column.
 
     Drives the real `/api/auth/sso/discover` lookup: when a user types
     `*@acme.com` on the Login page, we look up the matching SSO config
@@ -767,7 +767,7 @@ async def _apply_sso_email_domains(conn) -> None:  # type: ignore[no-untyped-def
 
 
 async def _apply_create_workspace_agents(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 Phase 7 — `workspace_agents` table: per-pod identity rows.
+    """`workspace_agents` table: per-pod identity rows.
 
     Each agent pod that successfully exchanges identity gets a row. The
     `(org_id, agent_pod_id)` uniqueness constraint dedups across re-exchange
@@ -779,8 +779,8 @@ async def _apply_create_workspace_agents(conn) -> None:  # type: ignore[no-untyp
     await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
 
 
-async def _apply_workspaces_m05_columns(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 Phase 3 — extend `workspaces` with the M05 dispatch + claim
+async def _apply_workspaces_dispatch_columns(conn) -> None:  # type: ignore[no-untyped-def]
+    """extend `workspaces` with the dispatch + claim
     columns. `provider` discriminates in-memory vs remote-agent;
     `current_command_id` + `current_holder_workflow_id` back the single-flight
     claim; `max_idle_seconds` feeds the idle-timeout sweep. Idempotent
@@ -797,8 +797,8 @@ async def _apply_workspaces_m05_columns(conn) -> None:  # type: ignore[no-untype
         await conn.execute(text(stmt))
 
 
-async def _apply_tickets_m05_columns(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 Phase 2 — extend `tickets` with `type`, `idempotency_key`,
+async def _apply_tickets_workflow_columns(conn) -> None:  # type: ignore[no-untyped-def]
+    """extend `tickets` with `type`, `idempotency_key`,
     `payload`, and `current_workflow_execution_id`. Idempotent ALTERs;
     existing rows backfill `type='pr_review'` via the column default."""
     statements: list[str] = [
@@ -815,7 +815,7 @@ async def _apply_tickets_m05_columns(conn) -> None:  # type: ignore[no-untyped-d
 
 
 async def _apply_create_workflow_tables(conn) -> None:  # type: ignore[no-untyped-def]
-    """M05 Phase 1 — workflow engine tables.
+    """workflow engine tables.
 
     `workflow_executions` is the in-flight workflow state machine; one row
     per `core/workflow` execution. `pending_human_decisions` holds HITL
@@ -828,8 +828,8 @@ async def _apply_create_workflow_tables(conn) -> None:  # type: ignore[no-untype
     await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
 
 
-async def _apply_create_all_m03(conn) -> None:  # type: ignore[no-untyped-def]
-    """M03 — settings + sidebar restructure.
+async def _apply_create_all_settings(conn) -> None:  # type: ignore[no-untyped-def]
+    """settings + sidebar restructure.
 
     Adds: `users.github_username`, `orgs.session_timeout_override`,
     `orgs.vcs_plugin_id`, `orgs.vcs_settings`, `org_coding_agents`, `byok_keys`.
@@ -901,21 +901,21 @@ async def migrate() -> None:
             elif kind == "drop_classification_confidence":
                 await _apply_drop_classification_confidence(conn)
             elif kind == "create_all_m02":
-                await _apply_create_all_m02(conn)
+                await _apply_create_all_identity(conn)
             elif kind == "drop_claude_code_default_timeout_seconds":
                 await _apply_drop_claude_code_default_timeout_seconds(conn)
             elif kind == "create_all_m03":
-                await _apply_create_all_m03(conn)
+                await _apply_create_all_settings(conn)
             elif kind == "create_all_m04":
-                await _apply_create_all_m04(conn)
+                await _apply_create_all_mcp(conn)
             elif kind == "create_outbox_entries":
                 await _apply_create_outbox_entries(conn)
             elif kind == "create_workflow_tables":
                 await _apply_create_workflow_tables(conn)
             elif kind == "tickets_m05_columns":
-                await _apply_tickets_m05_columns(conn)
+                await _apply_tickets_workflow_columns(conn)
             elif kind == "workspaces_m05_columns":
-                await _apply_workspaces_m05_columns(conn)
+                await _apply_workspaces_dispatch_columns(conn)
             elif kind == "create_workspace_agents":
                 await _apply_create_workspace_agents(conn)
             elif kind == "orgs_workspace_provider":

@@ -1,6 +1,6 @@
 """`RouteSpec` model + `register_routes` registry with one-prefix-per-module enforcement.
 
-See `plan/milestones/M01-code-review/internals/webserver.md` for the full contract.
+See  for the full contract.
 """
 
 from collections.abc import Awaitable, Callable

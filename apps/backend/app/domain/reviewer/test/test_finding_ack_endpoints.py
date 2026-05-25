@@ -1,4 +1,4 @@
-"""Service-level coverage for the M06 finding ack/push-back endpoints.
+"""Service-level coverage for the finding ack/push-back endpoints.
 
 - POST /api/reviewer/findings/{finding_id}/ack
 - POST /api/reviewer/findings/{finding_id}/push-back

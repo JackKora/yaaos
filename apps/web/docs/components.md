@@ -36,7 +36,7 @@ Primitives are thin wrappers over Radix UI (focus management, ARIA correctness) 
 | `popover.tsx` | Anchored floating panel. Used by Org switcher, Notifications. |
 | `dropdown-menu.tsx` | Menu list anchored to a trigger. |
 | `tooltip.tsx` | Hover/focus tooltip. |
-| `sheet.tsx` | Side-anchored drawer. Required transitively by the shadcn `sidebar` primitive's mobile collapse — yaaos's M06 navigation doesn't expose a drawer pattern. |
+| `sheet.tsx` | Side-anchored drawer. Required transitively by the shadcn `sidebar` primitive's mobile collapse — yaaos's navigation doesn't expose a drawer pattern. |
 
 ### Display
 
@@ -74,7 +74,7 @@ Primitives are thin wrappers over Radix UI (focus management, ARIA correctness) 
 
 | File | Purpose |
 |---|---|
-| `page-header.tsx` | `PageHeader` — title + optional subtitle + right-aligned actions slot. The first composite on every M06 surface. |
+| `page-header.tsx` | `PageHeader` — title + optional subtitle + right-aligned actions slot. The first composite on every surface. |
 | `empty-state.tsx` | `EmptyState` — icon + headline + body + optional action; the C2 empty-list pattern. |
 | `error-banner.tsx` | `ErrorBanner` — in-page error with optional Retry. Voice rule (D3): blames the system, not the user. |
 | `confirm-modal.tsx` | `ConfirmModal` — destructive + cost-protective variants share the shell; copy differs (D3). |

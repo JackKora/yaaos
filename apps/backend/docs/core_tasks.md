@@ -4,25 +4,26 @@
 
 ## Purpose
 
-Owns the `@task` decorator, the `TaskContext` shape every task body receives, the `enqueue(task, args, *, session)` API, and the worker process that runs tasks. Atomic-in-session: `enqueue` writes a row to the private `outbox_entries` table inside the caller's transaction, so the task is durable iff the commit lands. Hides taskiq broker details from domain code — swapping the scheduler is contained here.
+Owns the `@task` decorator, the `enqueue(task, args, *, session)` API, and the worker process that runs tasks. Atomic-in-session: `enqueue` writes a row to the private `outbox_entries` table inside the caller's transaction, so the task is durable iff the commit lands. Hides taskiq broker details from domain code — swapping the scheduler is contained here.
+
+The taskiq broker is the single task registry; `@task` registers directly with `broker.task(...)`. `broker.find_task(name)` is the lookup (used by the drain dispatcher and by in-process test drains).
 
 ## Public interface
 
-Exports `task`, `enqueue`, `TaskContext`, `TaskRef`, plus `OutboxEntryRow`, `drain_once`, `write` for the worker entrypoint and tests. See `apps/backend/app/core/tasks/__init__.py`.
+Exports `task`, `enqueue`, `TaskRef`, plus `OutboxEntryRow`, `drain_once`, `write` for the worker entrypoint and tests. See `apps/backend/app/core/tasks/__init__.py`.
 
-- `@task(name, *, queue="default", max_retries=1)` — registers a task body; returns a `TaskRef` callers `enqueue` against.
+- `@task(name, *, queue="default", max_retries=1)` — registers a task body with the broker; returns a `TaskRef` callers `enqueue` against. `queue` / `max_retries` ride as taskiq labels (no consumer today; future brokers / middleware pick them up without API churn).
 - `enqueue(task_ref, args, *, session)` — writes a `taskiq_enqueue` outbox row in the caller's session. Returns the row id. Required `session` — there is no fire-and-forget path.
-- `TaskContext` — first positional arg of every task body. Carries `session`, `traceparent`, `attempt`, `job_id`. The worker wrapper opens the session per-task and commits on success.
 - `TaskRef` — frozen handle to a registered task name + queue + retry policy.
 
 ## Module architecture
 
 ### Core flow
 
-1. Task author writes `@task("route_workflow") async def route_workflow(ctx, ...)`. The decorator registers the body in an in-process registry.
+1. Task author writes `@task("route_workflow") async def route_workflow(*, exec_id, ...)`. The decorator registers the body with the taskiq broker.
 2. Domain caller inside a transaction: `await enqueue(route_workflow, args={...}, session=s); await s.commit()`. The `outbox_entries` row commits atomically with the rest of the caller's writes.
 3. The worker's drain loop polls `outbox_entries WHERE dispatched_at IS NULL` with `FOR UPDATE SKIP LOCKED`, dispatches `kind='taskiq_enqueue'` rows to the taskiq broker (LPUSH to a Redis list), then stamps `dispatched_at`.
-4. The same worker process runs `broker.listen()` — it BRPOPs tasks from Redis and invokes the registered body with a fresh `TaskContext`. On successful return the worker commits the task's session and ACKs; on raise it retries per `max_retries`.
+4. The same worker process runs `broker.listen()` — it BRPOPs tasks from Redis and invokes the registered body with the kwargs the caller passed to `enqueue`. Bodies own their own session (they open one via `core/database.session()`). Retry middleware to honor `max_retries` isn't wired yet; for now the drain re-loops on failure.
 
 ### Worker process
 

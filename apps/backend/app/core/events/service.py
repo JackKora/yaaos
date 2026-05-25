@@ -10,6 +10,9 @@ from uuid import UUID, uuid4
 
 import structlog
 from pydantic import BaseModel, Field
+from sqlalchemy import event as sa_event
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 log = structlog.get_logger("events")
 
@@ -83,3 +86,46 @@ async def stream_events_for_filter(filter: EventFilter) -> AsyncIterator[str]:
 
 # Re-export common typing alias for callers
 EventDict = dict[str, Any]
+
+
+# --- publish-after-commit ---------------------------------------------------
+#
+# Domain code that owns a write transaction needs to publish an event tied to
+# the transaction's outcome: fire if the caller commits, discard if the caller
+# rolls back. Stashing the event on `session.info` and flushing it from a
+# SQLAlchemy `after_commit` listener gives us exactly that semantics, with no
+# ceremony at the call site beyond `publish_after_commit(session, evt)`.
+#
+# The listener is sync (SQLAlchemy event), so it schedules `publish()` (async)
+# onto the running loop via `create_task`.
+
+_PENDING_EVENTS_KEY = "yaaos_pending_events"
+
+# Strong refs to in-flight publish() tasks so asyncio doesn't GC them mid-fan-out
+# (Python's event loop only holds weak refs to tasks created via create_task).
+_inflight_publish_tasks: set[asyncio.Task[None]] = set()
+
+
+def publish_after_commit(session: AsyncSession, evt: Event) -> None:
+    """Queue an event to be published when this session commits. Rollback
+    discards. No await — events fan out on the next loop tick after commit."""
+    pending: list[Event] = session.sync_session.info.setdefault(_PENDING_EVENTS_KEY, [])
+    pending.append(evt)
+
+
+@sa_event.listens_for(Session, "after_commit")
+def _flush_pending_events(sync_session: Session) -> None:
+    pending: list[Event] | None = sync_session.info.pop(_PENDING_EVENTS_KEY, None)
+    if not pending:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — should not happen in production (AsyncSession.commit
+        # is awaited). Drop with a warning rather than crash the commit path.
+        log.warning("event.flush.no_loop", count=len(pending))
+        return
+    for evt in pending:
+        task = loop.create_task(publish(evt))
+        _inflight_publish_tasks.add(task)
+        task.add_done_callback(_inflight_publish_tasks.discard)

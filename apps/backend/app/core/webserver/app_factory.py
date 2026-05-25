@@ -1,6 +1,6 @@
 """FastAPI app factory + lifespan composition.
 
-Lifespan order (matches `plan/milestones/M01-code-review/patterns.md` § Bootstrap):
+Lifespan order (matches `Bootstrap):
   1. Mount registered domain routers (from RouteSpec registry).
   2. Run on_startup hooks.
   3. Mount SPA static files (production only; skipped when dist is absent).
@@ -126,7 +126,7 @@ def _install_middleware(app: FastAPI) -> None:
 
     # OTel auto-instrumentation (no-op if OTel isn't initialized).
     try:
-        # lazy: OTel is optional in M01
+        # OTel is optional.
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # noqa: PLC0415
 
         FastAPIInstrumentor.instrument_app(app)

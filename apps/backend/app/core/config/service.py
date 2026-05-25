@@ -6,7 +6,7 @@ Reads from process env, falling back to `.env` files in the multi-file precedenc
   .env.local        (gitignored)
   .env
 
-See `plan/milestones/M01-code-review/architecture.md` § Boot-time environment
+See `Boot-time environment
 variables for the canonical list.
 """
 
@@ -85,8 +85,7 @@ class Settings(BaseSettings):
     braintrust_project: str = "yaaos"
 
     # Time controls. Production defaults are reasonable; tests set short.
-    # See plan/milestones/M01-code-review/patterns.md § Time controls.
-    yaaos_review_debounce_seconds: int = 30
+    # yaaos_review_debounce_seconds: int = 30
     yaaos_reaper_interval_seconds: int = 30
     yaaos_heartbeat_interval_seconds: int = 10
 
@@ -133,7 +132,7 @@ class Settings(BaseSettings):
     # unset so dev/test only need one key. Production must set this.
     yaaos_totp_master_key: SecretStr = SecretStr("")
 
-    # M04 — Linear OAuth + hosted MCP. Defaults point at the real upstreams;
+    # Linear OAuth + hosted MCP. Defaults point at the real upstreams;
     # the test compose overrides to fake-linear hostnames.
     yaaos_oauth_linear_client_id: str = ""
     yaaos_oauth_linear_client_secret: SecretStr = SecretStr("")
@@ -143,7 +142,7 @@ class Settings(BaseSettings):
     linear_mcp_url: str = "https://mcp.linear.app/sse"
     linear_api_base_url: str = "https://api.linear.app"
 
-    # M04 — Notion OAuth + hosted MCP. Same shape; Notion uses HTTP Basic
+    # Notion OAuth + hosted MCP. Same shape; Notion uses HTTP Basic
     # on the token endpoint, encoded in the provider config rather than here.
     yaaos_oauth_notion_client_id: str = ""
     yaaos_oauth_notion_client_secret: SecretStr = SecretStr("")

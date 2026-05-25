@@ -80,7 +80,7 @@ class _StaticContextProvider:
 
 
 async def _drain_workflow_outbox(db_session, *, max_iterations: int = 50) -> int:
-    from app.core.tasks.service import get_registered  # noqa: PLC0415
+    from app.core.tasks.broker import get_broker  # noqa: PLC0415
 
     total = 0
     for _ in range(max_iterations):
@@ -100,19 +100,9 @@ async def _drain_workflow_outbox(db_session, *, max_iterations: int = 50) -> int
 
         async def _dispatcher(kind: str, payload: dict) -> None:
             assert kind == "taskiq_enqueue"
-            body = get_registered(payload["task_name"])
-            assert body is not None
-            ctx = type(
-                "Ctx",
-                (),
-                {
-                    "session": None,
-                    "traceparent": payload.get("args", {}).get("traceparent"),
-                    "attempt": 0,
-                    "job_id": "test",
-                },
-            )()
-            await body(ctx, **payload["args"])
+            decorated = get_broker().find_task(payload["task_name"])
+            assert decorated is not None
+            await decorated.original_func(**payload["args"])
 
         delivered = await drain_once(db_session, dispatcher=_dispatcher)
         await db_session.commit()

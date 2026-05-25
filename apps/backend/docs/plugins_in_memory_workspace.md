@@ -4,7 +4,7 @@
 
 ## Purpose
 
-The only concrete `core/workspace.WorkspaceProvider` in M01. Implements `provision`, `run_coding_agent_cli`, `destroy`, `health_check`. Provisions by `mkdtemp` + `git clone --depth=1`, runs coding-agent CLIs in that tempdir, rmtrees on destroy. Provider singleton holds no state — per-workspace state lives in the `plugin_state` dict returned from `provision` and passed back into every call.
+The only concrete `core/workspace.WorkspaceProvider` in . Implements `provision`, `run_coding_agent_cli`, `destroy`, `health_check`. Provisions by `mkdtemp` + `git clone --depth=1`, runs coding-agent CLIs in that tempdir, rmtrees on destroy. Provider singleton holds no state — per-workspace state lives in the `plugin_state` dict returned from `provision` and passed back into every call.
 
 ## Public interface
 
@@ -58,7 +58,7 @@ Provider does not interpret `argv` or `stdout`; schema-aware logic lives in the 
 
 ### `health_check`
 
-Always `healthy=True, message="ok"` in M01. Tempdir is part of the host filesystem; nothing to probe.
+Always `healthy=True, message="ok"` in . Tempdir is part of the host filesystem; nothing to probe.
 
 ### Internal helpers
 

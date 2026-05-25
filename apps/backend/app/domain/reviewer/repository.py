@@ -279,7 +279,7 @@ class SqlAlchemyAggregateRepository:
         # ReviewRow externally before kicking off the runner; the aggregate
         # mutations (mark_review_running, complete_review, supersede_review,
         # set_pending_replay) flow through here as UPDATEs to an existing
-        # row. The M05 `admission.admit_raw_findings` path calls
+        # row. The `admission.admit_raw_findings` path calls
         # `aggregate.start_review` and expects the repo to materialize the
         # row — so when `pending.new_reviews` carries an id that's NOT yet
         # in the DB, we INSERT it. Existing rows fall through to the UPDATE

@@ -110,7 +110,7 @@ async def classify_reply(input: ClassifyReplyInput) -> ClassifyReplyOutput:
 def _stub_classify(input: ClassifyReplyInput) -> ClassifyReplyOutput:
     """Deterministic content-aware stub used in the e2e docker stack.
 
-    Matches the keyword conventions used by the M01 e2e specs:
+    Matches the keyword conventions used by the e2e specs:
       - `wontfix` / `won't fix` / `not a real issue` → high-confidence
         `acknowledgment_clear` with `kind=wontfix`.
       - `fixed in <sha>` / `addressed in commit <sha>` → `verify_fix`

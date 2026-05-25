@@ -40,7 +40,7 @@ class OrgRow(Base):
     # Chosen VCS plugin (one per org). `vcs_settings` carries plugin-specific config.
     vcs_plugin_id: Mapped[str | None] = mapped_column(String, nullable=True)
     vcs_settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    # M05 Phase 7: per-org workspace provider selection. `in_memory` (default)
+    # per-org workspace provider selection. `in_memory` (default)
     # runs workspaces in-process; `remote_agent` dispatches to a customer-
     # deployed WorkspaceAgent via `core/agent_gateway`. `registered_iam_arn` is
     # the canonical IAM role ARN the customer registered; the identity-exchange

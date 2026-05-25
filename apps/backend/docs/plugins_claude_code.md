@@ -9,9 +9,9 @@ Adapter for [Claude Code](https://docs.claude.com/en/docs/claude-code), the only
 ## Public interface
 
 - Singleton `ClaudeCodePlugin` registered into `domain/coding_agent` at `bootstrap()`; also registers `anthropic_key_set` onboarding contributor, the `anthropic` BYOK validator (`byok_validator.validate_anthropic_key`), and installs subagent definitions.
-- M03 settings model in `settings_schema.py`: orchestrator + sub-agents validated as a single Pydantic tree — agents list bounded to 1..8, sub-agent names unique within `agents`, name length ≤ 64, `model`/`version`/`effort` checked against the enums in `defaults.py`. The plugin's `validate_settings({})` substitutes the code defaults so the picker's install path doesn't have to pre-populate the JSONB.
+- settings model in `settings_schema.py`: orchestrator + sub-agents validated as a single Pydantic tree — agents list bounded to 1..8, sub-agent names unique within `agents`, name length ≤ 64, `model`/`version`/`effort` checked against the enums in `defaults.py`. The plugin's `validate_settings({})` substitutes the code defaults so the picker's install path doesn't have to pre-populate the JSONB.
 - Side-effect import of `web.py` wires HTTP routes (prefix `/api/claude_code`) and an `on_startup` hook:
-  - `POST /api_key` (`public_route`) — set/rotate the Anthropic key (M01 setup flow; M03 BYOK at `/api/api-keys/anthropic` supersedes for per-org storage).
+  - `POST /api_key` (`public_route`) — set/rotate the Anthropic key (setup flow; BYOK at `/api/api-keys/anthropic` supersedes for per-org storage).
   - `GET /health` (`public_route`) — wraps `health_check()`.
   - `GET /defaults` (`CODING_AGENT_READ`) — orchestrator + sub-agent defaults + model/version/effort dropdown enums. Imported at request time so a code change to `defaults.py` surfaces on the next request — never cached at module load. Consumed by the bespoke Claude Code settings page to render "Reset to default" + "Overridden" badges.
   - `bootstrap_anthropic_env` (startup hook) — decrypts the stored key into `os.environ["ANTHROPIC_API_KEY"]` at app boot so direct LLM calls (e.g., `domain/reviewer/llm/classifier.classify_reply`) authenticate via LangChain's default env resolution. No-op if the env var is already set (Braintrust gateway, test env) or no row exists yet (pre-onboarding).
@@ -28,7 +28,7 @@ Singleton constructed at import time. Holds no decrypted credentials — setting
 
 Name prefix is mandatory: `yaaos-architecture`, `yaaos-security`, `yaaos-line-level`, `yaaos-tests`, `yaaos-docs`, `yaaos-skill`. Project-level agents in the target repo win over user-level in Claude Code's resolution — the prefix makes collisions impossible while leaving a deliberate override seam (a repo can ship its own `.claude/agents/yaaos-architecture.md` to replace ours).
 
-Per-workspace install at provision time would be the M02+ Docker-workspace shape. Today there's one HOME shared by every review; startup-time install is correct and cheaper.
+Per-workspace install at provision time would be the Docker-workspace shape. Today there's one HOME shared by every review; startup-time install is correct and cheaper.
 
 ### Prompt files
 
@@ -46,7 +46,7 @@ When `ReviewContext.agent_config["mcp"]` is set (populated by `domain/reviewer.q
 
 `_load_settings_for_invocation` selects the single `claude_code_settings` row and decrypts the Anthropic key. Returns `(api_key, cli_path)`. No key or no CLI path: early `AGENT_ERROR`. The default timeout is a module constant (`_DEFAULT_TIMEOUT_SECONDS = 1200`); per-call override via `agent_config["timeout_seconds"]`.
 
-Argv: `claude --print --output-format=stream-json --verbose --permission-mode=bypassPermissions --allowed-tools=Read,Glob,Grep,LS,NotebookRead,TodoWrite,WebFetch,WebSearch,Task,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(git ls-files:*),Bash(git rev-parse:*),Bash(git status) --model <alias> --effort <level>`. `Task` lets the parent dispatch yaaos-* subagents. `Bash` is restricted to read-only git commands so the agent can `git diff base_sha..HEAD` itself rather than yaaos inlining the diff into the prompt (saves tens of thousands of tokens on large PRs and avoids duplicating the diff across N subagent task briefs). No `Bash` for non-git, no `Write`, no `Edit`. Timeout: `agent_config["timeout_seconds"]` overrides the `_DEFAULT_TIMEOUT_SECONDS` module constant (1200s / 20 min) — sized for real-PR reviews where the parent fans out to multiple subagents. `--model` + `--effort` are hardcoded module constants (`_MODEL`, `_EFFORT`) at M01 — `opus` (alias resolves to latest Opus) and `medium`. UI to configure them is M02+ work; the resolved model name reported in the terminal `result` event is captured into `InvocationTelemetry.model` so consumers persist the actual name. `stream-json` (requires `--verbose`) emits one JSON event per line as work progresses — parsed inline so consumers can react live, with the same parsed stream also serving as the per-event log for stuck or timed-out runs.
+Argv: `claude --print --output-format=stream-json --verbose --permission-mode=bypassPermissions --allowed-tools=Read,Glob,Grep,LS,NotebookRead,TodoWrite,WebFetch,WebSearch,Task,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(git ls-files:*),Bash(git rev-parse:*),Bash(git status) --model <alias> --effort <level>`. `Task` lets the parent dispatch yaaos-* subagents. `Bash` is restricted to read-only git commands so the agent can `git diff base_sha..HEAD` itself rather than yaaos inlining the diff into the prompt (saves tens of thousands of tokens on large PRs and avoids duplicating the diff across N subagent task briefs). No `Bash` for non-git, no `Write`, no `Edit`. Timeout: `agent_config["timeout_seconds"]` overrides the `_DEFAULT_TIMEOUT_SECONDS` module constant (1200s / 20 min) — sized for real-PR reviews where the parent fans out to multiple subagents. `--model` + `--effort` are hardcoded module constants (`_MODEL`, `_EFFORT`) — `opus` (alias resolves to latest Opus) and `medium`. UI to configure them is work; the resolved model name reported in the terminal `result` event is captured into `InvocationTelemetry.model` so consumers persist the actual name. `stream-json` (requires `--verbose`) emits one JSON event per line as work progresses — parsed inline so consumers can react live, with the same parsed stream also serving as the per-event log for stuck or timed-out runs.
 
 Env: copy of `os.environ` with `ANTHROPIC_API_KEY` injected. Key never on argv.
 
@@ -88,9 +88,7 @@ Triggered when the reply classifier picks the `question` intent (see `domain_rev
 
 ### `validate_config`
 
-Schema check only. Allowed keys: `timeout_seconds` (positive int). Unknown keys error. Model + effort are hardcoded module constants at M01.
-
-### `health_check`
+Schema check only. Allowed keys: `timeout_seconds` (positive int). Unknown keys error. Model + effort are hardcoded module constants at . ### `health_check`
 
 Cascade:
 1. No API key → `"anthropic api key not set"`.

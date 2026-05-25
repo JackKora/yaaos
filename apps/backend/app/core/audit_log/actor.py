@@ -1,7 +1,7 @@
 """Actor value object — who-did-what for audit rows.
 
 Lives alongside the audit_log module since it is the row's `actor` column type.
-Previously in `core/primitives`; moved here in M04 Phase 6a so the type's
+Previously in `core/primitives`; moved here in so the type's
 ownership matches its usage.
 """
 

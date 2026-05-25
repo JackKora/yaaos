@@ -1,4 +1,4 @@
-"""Verifies the M05 reviewer workflow definitions thread `$ticket.<field>`
+"""Verifies the reviewer workflow definitions thread `$ticket.<field>`
 inputs through to the Workspace command body. Pure plumbing test —
 doesn't run a full workflow; checks that each workflow's step inputs
 declare the expected references.

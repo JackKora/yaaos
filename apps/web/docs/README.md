@@ -26,10 +26,10 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 
 | Module | Responsibility |
 |---|---|
-| [domain_dashboard](domain_dashboard.md) | M06 landing — 4 stat cards + In-flight band + Needs-attention band, with the NotConfiguredBanner on top when the org isn't ready. |
-| [domain_tickets](domain_tickets.md) | M06 tickets list + ticket detail (header band, StageIndicator, Findings / Activity / HITL tabs). |
+| [domain_dashboard](domain_dashboard.md) | landing — 4 stat cards + In-flight band + Needs-attention band, with the NotConfiguredBanner on top when the org isn't ready. |
+| [domain_tickets](domain_tickets.md) | tickets list + ticket detail (header band, StageIndicator, Findings / Activity / HITL tabs). |
 | [domain_lessons](domain_lessons.md) | Per-repo lessons CRUD. |
-| [domain_notifications](domain_notifications.md) | M06 cross-org inbox page + sidebar bell popover. |
+| [domain_notifications](domain_notifications.md) | cross-org inbox page + sidebar bell popover. |
 | [domain_org_settings](domain_org_settings.md) | Tabbed org-settings shell (Auth, Members, VCS, Coding Agents, API Keys, MCP Proxy, Audit). |
 | [domain_auth](domain_auth.md) | Login page (email-first SSO-discover) + logout. |
 | [domain_user](domain_user.md) | `/user/details`, `/user/security`, `/user/messaging` — self-service profile + 2FA. |

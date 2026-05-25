@@ -10,7 +10,7 @@ structured `AdmissionResult` callers can inspect.
 Used by:
 - `domain/reviewer/queue.py` (legacy `_run_review_job_inner`) — until the
   queue dismantle replaces it.
-- The future `PostFindings` WorkflowCommand body (M05 Phase 4 follow-on
+- The future `PostFindings` WorkflowCommand body (follow-on
   alongside the queue.py dismantle).
 
 Per the Phase 4 plan item, this consolidates what was previously inline
@@ -51,7 +51,7 @@ log = structlog.get_logger("reviewer.admission")
 class AdmissionResult:
     """Outcome of running `admit_raw_findings`. Callers can audit `drops`,
     post `admitted` to GitHub, persist `observations` against the legacy
-    review_jobs table (until the M05 dismantle), etc."""
+    review_jobs table (until the dismantle), etc."""
 
     admitted: list[Finding]
     observations: list[FindingObservation]
@@ -81,7 +81,7 @@ async def admit_raw_findings(
 
     `commit_sha`: head_sha at review start; stored on the Review row.
     `trigger`: `coding_agent.ReviewTrigger` literal (default `scheduled_full`
-    matches the M05 `pr_review_v1` full-review path).
+    matches the `pr_review_v1` full-review path).
     `scope`: `coding_agent.ReviewScope` literal (default `full`).
     `diff_files`: when supplied, the gate drops findings whose anchor file
     isn't in the set (plan §10.9 off-diff suppression). Pass None for
@@ -151,7 +151,7 @@ def findingdrafts_to_raw(
     reviews. Drafts whose file we can't read are dropped — no stable
     fingerprint without real content.
 
-    Shared between full review, incremental review, and the M05 PostFindings
+    Shared between full review, incremental review, and the PostFindings
     `WorkflowCommand` body (post queue.py dismantle). The `read_file`
     callback typically wraps `workspace.read_text()`.
     """

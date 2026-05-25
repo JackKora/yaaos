@@ -1,7 +1,7 @@
-"""Service-level coverage for GET /api/tickets (M06 Phase 3).
+"""Service-level coverage for GET /api/tickets ().
 
 Asserts the `{items, next_cursor}` response shape, the new filter / sort /
-search params, and the M06 fields (`status` in 5-state vocab, `findings_count`).
+search params, and the fields (`status` in 5-state vocab, `findings_count`).
 """
 
 from __future__ import annotations
@@ -96,11 +96,11 @@ async def test_list_returns_envelope_shape(seeded) -> None:
 
 
 @pytest.mark.asyncio
-async def test_each_row_carries_m06_fields(seeded) -> None:
+async def test_each_row_carries_status_meta_fields(seeded) -> None:
     async with _client() as c:
         r = await c.get("/api/tickets", **_auth(seeded["sess"], seeded["org"].slug))
     item = r.json()["items"][0]
-    # M06 fields populated by Ticket.from_row + the list_tickets findings join.
+    # fields populated by Ticket.from_row + the list_tickets findings join.
     assert item["status"] in {"running", "hitl", "done", "failed", "cancelled"}
     assert item["findings_count"] == 0
     assert item["builder_kind"] in {"user", "system"}

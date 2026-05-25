@@ -1,4 +1,4 @@
-"""M05 Phase 4 (foundations): the five reviewer workflows + their commands
+"""(foundations): the five reviewer workflows + their commands
 register against `core/workflow.get_engine()` at `domain/reviewer` import.
 
 These tests don't run the workflows end-to-end — Phase 4 cont'd wires the

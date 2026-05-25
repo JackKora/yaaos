@@ -74,7 +74,7 @@ async def list_(
     sort: str = Query(default="created_desc"),
     limit: int = Query(default=50, le=200),
 ) -> list[Lesson]:
-    """M06-era list: q + repo multi + created_by + date range + sort.
+    """list: q + repo multi + created_by + date range + sort.
 
     All filters are AND'd. `sort` accepts `created_desc` / `created_asc`
     / `updated_desc`; anything else falls back to `created_desc` in

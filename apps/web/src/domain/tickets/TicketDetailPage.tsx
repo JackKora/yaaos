@@ -1,5 +1,5 @@
 /**
- * Ticket detail — M06 anchor page (E2a.4).
+ * Ticket detail — anchor page (E2a.4).
  *
  * Composes the standalone composites built earlier in Phase 6:
  *   - StageIndicator
@@ -70,7 +70,7 @@ const DEFAULT_STATUS_META: StatusMeta = {
   chip: "bg-info text-info-foreground border-info",
 };
 
-const M06_STATUS_META: Record<string, StatusMeta> = {
+const STATUS_META: Record<string, StatusMeta> = {
   running: DEFAULT_STATUS_META,
   hitl: { label: "HITL", icon: Bell, chip: "bg-warning text-warning-foreground border-warning" },
   done: {
@@ -120,16 +120,16 @@ export function TicketDetailPage() {
     );
   }
 
-  const m06Status = ticket.status;
-  const meta = M06_STATUS_META[m06Status] ?? DEFAULT_STATUS_META;
+  const status = ticket.status;
+  const meta = STATUS_META[status] ?? DEFAULT_STATUS_META;
   const Icon = meta.icon;
-  const isTerminal = m06Status === "done" || m06Status === "failed" || m06Status === "cancelled";
+  const isTerminal = status === "done" || status === "failed" || status === "cancelled";
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-6" data-testid="ticket-detail">
       <Header
         ticket={ticket}
-        m06Status={m06Status}
+        status={status}
         meta={meta}
         Icon={Icon}
         onCancel={() => setShowCancel(true)}
@@ -212,7 +212,7 @@ function estimateUsd(findingsCount: number): string {
 
 function Header({
   ticket,
-  m06Status,
+  status,
   meta,
   Icon,
   onCancel,
@@ -222,7 +222,7 @@ function Header({
   pendingRerun,
 }: {
   ticket: Ticket;
-  m06Status: string;
+  status: string;
   meta: { label: string; chip: string };
   Icon: typeof Loader2;
   onCancel: () => void;
@@ -267,9 +267,9 @@ function Header({
               "inline-flex items-center gap-1.5 h-5 px-2 rounded text-[10.5px] font-medium border",
               meta.chip,
             )}
-            data-testid={`ticket-status-${m06Status}`}
+            data-testid={`ticket-status-${status}`}
           >
-            <Icon className={cn("w-3 h-3", m06Status === "running" && "animate-spin")} />
+            <Icon className={cn("w-3 h-3", status === "running" && "animate-spin")} />
             {meta.label}
           </span>
           <span className="text-muted-foreground">

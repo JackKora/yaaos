@@ -18,13 +18,13 @@ Every shipped module has one `apps/web/docs/<layer>_<module>.md` following this 
 
 Discipline still applies: terse, bullets, no code snippets, no `Decisions` section, link don't repeat. Modules with no state machines just omit that sub-section.
 
-## Auth + tenancy (M02 + M03)
+## Auth + tenancy
 
 - **API client auto-injects `X-Org-Slug`** — `apps/web/src/core/api/org-context.ts` holds the current slug. The `/orgs/$slug` router scope writes to it in `beforeLoad`; `/login` and `/user/*` clear it. `apiFetch` reads the slug and adds the header unless the caller already supplied one. Domain hooks stay org-agnostic at the call site.
 - **Use `RequireMembership` for role gates** — `<RequireMembership orgSlug="..." role="admin">` renders children only when the current user has at least `role` in that org. UI hint only; the backend's `require(action)` is the source of truth.
 - **Route → org slug** — `/orgs/$slug/...` is the canonical shape for every domain page. `/`, `/login`, `/user/*` stay user-scoped. The `/` route probes `/api/auth/me` and redirects to `/orgs/<first-slug>/dashboard` or `/login`.
 
-## Sidebar nav config (M03)
+## Sidebar nav config
 
 - **Typed nav, no per-route hardcoding** — `apps/web/src/core/sidebar/nav-config.ts` defines the `NavConfig` type (`link | group`). The Sidebar renders the static config; route paths inside the group are *relative* (`/dashboard`, `/settings/auth`) and prefixed with `/orgs/{slug}` by the renderer.
 - **Per-item role gates** — `role: "admin"` on a `link` or `group` hides it for `member`-role users. The group itself is hidden when no child survives the filter (matches the backend's per-action gate).
@@ -32,11 +32,10 @@ Discipline still applies: terse, bullets, no code snippets, no `Decisions` secti
 - **Rail-mode flyout for groups** — when the sidebar is unpinned, group icons open a right-anchored Popover with the sub-items instead of trying to render them in the 56px rail. Top-level link icons and the org switcher are centered in the rail.
 - **Active state is background-only** — selected nav items get `bg-accent` and nothing else. No border, no margin/padding shift; the item must occupy the exact same box whether selected or not.
 
-## Org Settings shell (M03)
+## Org Settings shell
 
 - **Passthrough wrapper, no top chrome** — `OrgSettingsLayout` is now a thin `<div>` that just renders its children. The sidebar's Org Settings group is the only nav into sub-pages; the layout itself adds nothing visual above the page content (see [design.md § Principles](design.md#principles): no top bar ever). Per-page role gating happens in each settings page, mirroring the sidebar gate.
-- **Bespoke React per plugin via the registry** — Coding-agent plugin settings dispatch through `apps/web/src/domain/org_settings/coding_agents/plugin_registry.ts`. First-party plugins register components at module load via a side-effect import (today: `claude_code`); unregistered plugins land on the built-in placeholder. No generic JSON-schema renderer in M03.
-- **Plugin picker is shared** — `apps/web/src/shared/plugin_picker/PluginPicker` is used by both the VCS empty-state and the Coding Agents Add flow. Backed by `useAvailablePlugins(type)` which hits `GET /api/plugins/available?type=...`.
+- **Bespoke React per plugin via the registry** — Coding-agent plugin settings dispatch through `apps/web/src/domain/org_settings/coding_agents/plugin_registry.ts`. First-party plugins register components at module load via a side-effect import (today: `claude_code`); unregistered plugins land on the built-in placeholder. No generic JSON-schema renderer in . - **Plugin picker is shared** — `apps/web/src/shared/plugin_picker/PluginPicker` is used by both the VCS empty-state and the Coding Agents Add flow. Backed by `useAvailablePlugins(type)` which hits `GET /api/plugins/available?type=...`.
 
 ## Dumb frontend
 
@@ -44,7 +43,7 @@ The SPA renders data and dispatches actions. It owns no rules yaaos's backend do
 
 - **Forms** — FE validations exist for input immediacy; the backend re-validates and returns 4xx with field-keyed errors that surface inline. No FE rule the backend doesn't also have.
 - **Verdicts / status / counts** — server-supplied. Never derived client-side.
-- **Permissions** — show/hide based on server-supplied capability flags. M01 has no auth; the shape is in place.
+- **Permissions** — show/hide based on server-supplied capability flags. has no auth; the shape is in place.
 - **Cache invalidation** — driven by mutation responses and SSE events. No "I bet this is stale" client heuristics.
 - **Client-side filter/sort** — fine for UX over an already-fetched list. Anything that changes which rows the user *acts on* (bulk-delete, bulk-export) goes through the API.
 

@@ -1,41 +1,42 @@
-"""domain/intake — inbound VCS event router + filters + M05 intake registry.
+"""domain/intake — inbound signal router.
 
-`POST /api/intake/{type}` is the M05 entry point; the registry maps a
-type name to an `IntakeType` handler. Plugins register their own intake
-types at bootstrap (e.g. `plugins/github` registers `github_pr` bound to
-`pr_review_v1`).
+`POST /api/intake/{type}` is the single entry point for external signals.
+The registry maps a type name to an `IntakeType` handler; plugins register
+their own intake types at bootstrap (e.g. `plugins/github` registers `github`
+which routes every GitHub webhook event).
+
+A handler returns either `IntakePrepared` (the endpoint creates a ticket and
+starts a workflow) or `IntakeSideEffect` (the handler already applied its
+mutations against the endpoint's session — used for events like PR close,
+install lifecycle, or comments on existing tickets).
 """
 
 from app.domain.intake import web  # noqa: F401 — registers POST /api/intake/{type}
 from app.domain.intake.parsing import is_skippable_path, parse_rereview
 from app.domain.intake.registry import (
+    IntakeOutcome,
     IntakePrepared,
     IntakeRejectedError,
+    IntakeSideEffect,
     IntakeType,
     _reset_registry_for_tests,
     get_intake_type,
     register_intake_type,
     registered_intake_types,
 )
-from app.domain.intake.service import (
-    IntakeError,
-    handle_vcs_events,
-    refresh_pr_metadata,
-    refresh_pr_metadata_by_id,
-)
+from app.domain.intake.service import IntakeError
 
 __all__ = [
     "IntakeError",
+    "IntakeOutcome",
     "IntakePrepared",
     "IntakeRejectedError",
+    "IntakeSideEffect",
     "IntakeType",
     "_reset_registry_for_tests",
     "get_intake_type",
-    "handle_vcs_events",
     "is_skippable_path",
     "parse_rereview",
-    "refresh_pr_metadata",
-    "refresh_pr_metadata_by_id",
     "register_intake_type",
     "registered_intake_types",
 ]

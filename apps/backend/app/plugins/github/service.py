@@ -187,7 +187,7 @@ class GitHubPlugin:
         }
 
     async def _resolve_org_id(self) -> UUID:
-        """M01: single org. Find via a github_app_installations row."""
+        """: single org. Find via a github_app_installations row."""
         async with db_session() as s:
             row = (await s.execute(select(GitHubAppInstallationRow).limit(1))).scalar_one_or_none()
         if row is None:

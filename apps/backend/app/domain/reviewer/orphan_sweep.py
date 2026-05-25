@@ -1,6 +1,6 @@
 """Periodic safeguard against `running` tickets that the reviewer never picked up.
 
-A ticket lands in `running` the moment `intake.refresh_pr_metadata` inserts it.
+A ticket lands in `running` the moment the github intake type inserts it.
 The reviewer then schedules a `reviews` row and drives the workflow forward.
 When that hand-off silently fails (missing BYOK key, transient crash mid-
 dispatch, etc.) the ticket is stranded — no `reviews` row ever appears, so the

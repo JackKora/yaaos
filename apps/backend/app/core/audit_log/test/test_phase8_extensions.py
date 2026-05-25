@@ -23,7 +23,7 @@ def _user_actor():
 
 
 def test_retention_is_15_days() -> None:
-    # Lowered from 30d in M04 Phase 6 — MCP-dispatch audit rows are the
+    # Lowered from 30d in — MCP-dispatch audit rows are the
     # dominant volume contributor, and 15d keeps the storage envelope sane.
     assert AUDIT_LOG_RETENTION == timedelta(days=15)
 

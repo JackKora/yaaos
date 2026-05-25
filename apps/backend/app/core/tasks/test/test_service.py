@@ -5,14 +5,10 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.core.tasks import TaskContext, enqueue, task
+from app.core.tasks import enqueue, task
+from app.core.tasks.broker import get_broker
 from app.core.tasks.models import OutboxEntryRow
-from app.core.tasks.service import (
-    _reset_for_tests,
-    _restore_after_tests,
-    get_registered,
-    registered_task_names,
-)
+from app.core.tasks.service import _reset_for_tests, _restore_after_tests
 
 
 @pytest.fixture(autouse=True)
@@ -24,30 +20,29 @@ def _isolate_registry() -> None:
 
 def test_task_decorator_registers_name() -> None:
     @task("alpha")
-    async def alpha(ctx: TaskContext) -> None:
-        del ctx
+    async def alpha() -> None:
+        return None
 
-    assert "alpha" in registered_task_names()
-    assert get_registered("alpha") is not None
+    assert get_broker().find_task("alpha") is not None
 
 
 def test_double_register_raises() -> None:
     @task("dup")
-    async def first(ctx: TaskContext) -> None:
-        del ctx
+    async def first() -> None:
+        return None
 
     with pytest.raises(ValueError):
 
         @task("dup")
-        async def second(ctx: TaskContext) -> None:
-            del ctx
+        async def second() -> None:
+            return None
 
 
 @pytest.mark.asyncio
 async def test_enqueue_writes_outbox_row(db_session) -> None:
     @task("beta", queue="workflow", max_retries=3)
-    async def beta(ctx: TaskContext, *, hint: str) -> None:
-        del ctx, hint
+    async def beta(*, hint: str) -> None:
+        del hint
 
     await enqueue(beta, args={"hint": "ok"}, session=db_session)
     await db_session.commit()

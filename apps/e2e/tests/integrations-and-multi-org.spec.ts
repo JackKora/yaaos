@@ -1,5 +1,5 @@
 /**
- * Phase 4 right-sizing — adds e2e coverage for three M04 user-visible flows
+ * Phase 4 right-sizing — adds e2e coverage for three user-visible flows
  * that today's vitest + service tests can't catch:
  *
  *  1. Broken-integrations banner + deep-link. An Owner whose org has a
@@ -61,7 +61,7 @@ test.describe("integrations + multi-org", () => {
     await expect(banner).toBeVisible();
     await expect(banner).toContainText("linear");
 
-    // Click the banner → land on the MCP Proxy settings page (M06
+    // Click the banner → land on the MCP Proxy settings page (
     // renamed `/settings/integrations` → `/settings/mcp-proxy`).
     await banner.click();
     await page.waitForURL(/\/orgs\/acme\/settings\/mcp-proxy$/);

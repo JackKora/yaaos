@@ -9,7 +9,7 @@ import type { ComponentType } from "react";
  * here at navigation time. Plugins without a registered component fall back
  * to a "settings not available" placeholder.
  *
- * Per architecture: M03 ships only `claude_code`'s registration in Phase 10.
+ * Per architecture: ships only `claude_code`'s registration in Phase 10.
  * Phase 9 wires the dispatch table itself.
  */
 export interface PluginSettingsComponentProps {

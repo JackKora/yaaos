@@ -1,6 +1,6 @@
 """SAML SP primitives: SP keypair, assertion verification, metadata.
 
-M04 — moved here from `domain/orgs/sso` (keypair) and `plugins/saml`
+Moved here from `domain/orgs/sso` (keypair) and `plugins/saml`
 (verifier) so the SAML mechanics live in one home that's free of domain
 concerns. `domain/orgs/sso` imports from here at module load and registers
 the verifier into its assertion-verifier list.

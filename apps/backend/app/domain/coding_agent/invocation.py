@@ -28,7 +28,7 @@ Wire shape:
     }
 
 `exec.argv` does NOT include the absolute binary path — the agent resolves
-`claude` via PATH (the Dockerfile installs it; M01 uses the `--cli_path`
+`claude` via PATH (the Dockerfile installs it; uses the `--cli_path`
 override on the in-process path only). `exec.env` carries the secrets the
 agent merges into the subprocess's environment (`os.Environ()` is
 inherited by default; this overrides keys per the `RunStreaming` contract).

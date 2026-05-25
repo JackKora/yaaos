@@ -2,10 +2,10 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 /**
- * Smoke tests for the M06 Tickets list page. Mocks the underlying API hooks
+ * Smoke tests for the Tickets list page. Mocks the underlying API hooks
  * so we don't depend on a backend; asserts that:
  *
- *   1. The filter chips render with M06 status vocab labels.
+ *   1. The filter chips render with status vocab labels.
  *   2. The empty-state branch renders when the API returns zero rows.
  *
  * Full filtering / Load-more behavior is exercised by the e2e PR-review
@@ -44,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
 import { TicketsListPage } from "../TicketsListPage";
 
 describe("TicketsListPage", () => {
-  it("renders the M06 status chips", () => {
+  it("renders the status chips", () => {
     render(<TicketsListPage />);
     for (const s of ["running", "hitl", "done", "failed", "cancelled"]) {
       expect(screen.getByTestId(`tickets-filter-${s}`)).toBeInTheDocument();

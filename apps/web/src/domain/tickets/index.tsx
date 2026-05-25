@@ -1,5 +1,5 @@
 /**
- * Tickets domain — M06 anchor pages.
+ * Tickets domain — anchor pages.
  *
  * The list page (E2a.1) lives at `./TicketsListPage.tsx`; the detail page
  * (E2a.4) lives at `./TicketDetailPage.tsx`. Both pages compose the

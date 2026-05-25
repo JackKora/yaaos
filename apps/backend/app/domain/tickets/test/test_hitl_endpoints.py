@@ -1,4 +1,4 @@
-"""Service-level coverage for the M06 Phase 6 HITL endpoints on /api/tickets.
+"""Service-level coverage for the HITL endpoints on /api/tickets.
 
 - GET /api/tickets/{id}/hitl/history — past exchanges for the ticket.
 - POST /api/tickets/{id}/hitl/respond — resolve the open decision.

@@ -1,6 +1,6 @@
 """Typed data structures for `core/workflow`.
 
-Mirrors `plan/milestones/M05-workspace-agent/architecture.md §
+Mirrors ` §
 Workflow + WorkflowCommand model`. Workflows are stored as typed Pydantic
 data; commands are objects implementing `WorkflowCommand`.
 

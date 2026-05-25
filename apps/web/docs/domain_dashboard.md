@@ -14,7 +14,7 @@ The `/orgs/:slug/dashboard` route. Single round-trip projection via `useDashboar
 
 ### File shape
 
-Single `apps/web/src/domain/dashboard/index.tsx` (~220 LOC). Composes the M06 layout primitives (`PageHeader`, `EmptyState`, `NotConfiguredBanner`) + shadcn primitives (`Skeleton`).
+Single `apps/web/src/domain/dashboard/index.tsx` (~220 LOC). Composes the layout primitives (`PageHeader`, `EmptyState`, `NotConfiguredBanner`) + shadcn primitives (`Skeleton`).
 
 ### Stat cards (4)
 
@@ -42,7 +42,7 @@ Up to 5 ticket rows whose computed `m06_status === "done"` AND have at least one
 ### Live updates
 
 - `useDashboard` polls every 5s.
-- SSE invalidation (`workflow_state_changed` → invalidate `["tickets", "dashboard"]`) is deferred until the dashboard kinds populate consistently; the 5s poll is the M06 floor.
+- SSE invalidation (`workflow_state_changed` → invalidate `["tickets", "dashboard"]`) is deferred until the dashboard kinds populate consistently; the 5s poll is the floor.
 
 ## Data owned
 

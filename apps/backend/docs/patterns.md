@@ -176,9 +176,9 @@ AgentCommand failure labels (e.g. `auth_expired`) map to lifecycle WorkflowComma
 
 ## WorkspaceProvider contract
 
-[`core/workspace`](core_workspace.md) declares the `WorkspaceProvider` Protocol; two implementations ship in M05: `InMemoryWorkspaceProvider` (existing in-process plugin) and `RemoteAgentWorkspaceProvider` (dispatches via [`core/agent_gateway`](core_agent_gateway.md)). The Protocol is the single seam between control plane and provider — both implementations enforce the same invariants (single-flight, failure-report-precedes-disposal, recovery). Per-org selection lives on `orgs.workspace_provider`.
+[`core/workspace`](core_workspace.md) declares the `WorkspaceProvider` Protocol; two implementations ship in : `InMemoryWorkspaceProvider` (existing in-process plugin) and `RemoteAgentWorkspaceProvider` (dispatches via [`core/agent_gateway`](core_agent_gateway.md)). The Protocol is the single seam between control plane and provider — both implementations enforce the same invariants (single-flight, failure-report-precedes-disposal, recovery). Per-org selection lives on `orgs.workspace_provider`.
 
-The Protocol's `run_coding_agent_cli` is synchronous-shaped — natural for the in-process provider, awkward for the remote provider. `RemoteAgentWorkspaceProvider` raises on those methods; the Phase 4 Workspace WorkflowCommands enqueue AgentCommands directly and the engine handles awaits through `handle_agent_event`. The Protocol shape is preserved for compatibility with the M01 callers that still rely on the in-process path.
+The Protocol's `run_coding_agent_cli` is synchronous-shaped — natural for the in-process provider, awkward for the remote provider. `RemoteAgentWorkspaceProvider` raises on those methods; the Phase 4 Workspace WorkflowCommands enqueue AgentCommands directly and the engine handles awaits through `handle_agent_event`. The Protocol shape is preserved for compatibility with the callers that still rely on the in-process path.
 
 ## Audit log discipline
 
@@ -208,7 +208,7 @@ Row shape:
 
 ## Org scoping
 
-Every domain function takes `org_id` kwarg or reads it from the `org_id_var` contextvar; every query filters by it. Two-track rule (M02):
+Every domain function takes `org_id` kwarg or reads it from the `org_id_var` contextvar; every query filters by it. Two-track rule:
 
 - **HTTP request handlers** — `Depends(require(Action.X))` resolves `X-Org-Slug` and sets the contextvar. Handlers can read it via `current_org_id()`.
 - **Background work** — every non-HTTP entry point opens `with org_context(org_id, actor_kind, actor_id=None)` from [`core/auth`](core_auth.md). This sets the same contextvars + OTel span attrs (`yaaos.org_id`, `yaaos.actor_kind`, `yaaos.actor_id`) + structlog bound vars so background log lines + audit rows attribute correctly. Wrapped today: GitHub catch-up poller, reviewer worker (`actor_kind=workspace`). Scheduler cleanup jobs that don't emit audit rows + don't read from org-scoped tables (session/invitation/totp/audit purges) do NOT need a wrap — they're global by design.
@@ -232,7 +232,7 @@ Handlers triggered by external events MUST be idempotent under retry.
 
 ## Bearer token discipline
 
-Every yaaos-issued bearer follows the same shape — adopted in M02 for sessions, in M02 again for signed invitations, and extended in M04 for MCP review tokens:
+Every yaaos-issued bearer follows the same shape — adopted in for sessions, in again for signed invitations, and extended in for MCP review tokens:
 
 - **Mint** with `secrets.token_urlsafe(32)` (32 random bytes, URL-safe base64). Return the raw token to the caller exactly once.
 - **Store** `sha256(raw_token)` as the primary key. Raw tokens never persist.

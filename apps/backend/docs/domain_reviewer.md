@@ -1,10 +1,10 @@
 # domain/reviewer
 
-> Review workflow orchestrator + durable findings. The M05 workflow engine drives every review run; `PRReviewAggregate` owns `Finding` / state machine / acknowledgments / threads as the durable layer.
+> Review workflow orchestrator + durable findings. The workflow engine drives every review run; `PRReviewAggregate` owns `Finding` / state machine / acknowledgments / threads as the durable layer.
 
 ## Purpose
 
-Owns every artifact tied to "what yaaos has said about a PR". The M05 workflow engine (`core/workflow`) routes every review run — pr-ready, push-incremental, re-review, verify-fix, stale-check, answer-question — through one of five typed workflows whose `WorkflowCommand` bodies live under [`commands/`](../app/domain/reviewer/commands/). The durable layer is `PRReviewAggregate` per PR: `Review`s, `Finding`s, `FindingObservation`s, `CommentThread`s, `CommentMessage`s, `AcknowledgmentDecision`s. Does not call LLMs for code review itself — `domain/coding_agent` plugins do; only the reply classifier here makes a direct LLM call (via `core/llm`).
+Owns every artifact tied to "what yaaos has said about a PR". The workflow engine (`core/workflow`) routes every review run — pr-ready, push-incremental, re-review, verify-fix, stale-check, answer-question — through one of five typed workflows whose `WorkflowCommand` bodies live under [`commands/`](../app/domain/reviewer/commands/). The durable layer is `PRReviewAggregate` per PR: `Review`s, `Finding`s, `FindingObservation`s, `CommentThread`s, `CommentMessage`s, `AcknowledgmentDecision`s. Does not call LLMs for code review itself — `domain/coding_agent` plugins do; only the reply classifier here makes a direct LLM call (via `core/llm`).
 
 The legacy `ReviewJob` per-PR queue + `schedule_review` runner was retired with the queue.py dismantle (slices 40-61). All call sites now route through `start_pr_review` (full review) and `handle_push` (incremental) which fan out via the workflow engine; cancellation routes through `cancel_workflows_for_ticket` which calls `workflow.request_cancel`.
 
@@ -47,21 +47,21 @@ The legacy `queue.py` monolith was dismantled across slices 40-61. Today's modul
 |---|---|
 | `__init__.py` | Public entry points — `start_pr_review`, `cancel_workflows_for_ticket`, plus generation-2 surface (aggregate, types, helpers). |
 | `web.py` | HTTP routes (`/rereview`, `/cancel`, `/jobs/by-ticket`, `/findings/by-ticket`, `/conversations/by-ticket`, `/reviews/by-ticket`, `/threads/by-finding`, `/metrics`). |
-| `incremental.py` | `handle_push` — auto-incremental review runner. Owns the trigger-policy decision + spawns a self-driving runner that writes through the aggregate. Slated to move onto the M05 engine path in a follow-on. |
+| `incremental.py` | `handle_push` — auto-incremental review runner. Owns the trigger-policy decision + spawns a self-driving runner that writes through the aggregate. Slated to move onto the engine path in a follow-on. |
 | `workflow_review_view.py` | Projects `workflow_executions` rows into the `ReviewJob` shape that `/jobs/by-ticket` + `/metrics` consume. |
 | `review_job.py` | `ReviewJob` + `ReviewJobInput` Pydantic value objects (SPA-facing shape). |
 | `secrets_detection.py` | `detect_secrets(diff)` + `secrets_warning_review(rule_id)`. Pure regex pre-flight. |
 | `mcp_wiring.py` | `build_mcp_payload`, `prefix_broken_creds_warning`. MCP-provider collection + the broken-creds GitHub callout. |
 | `diff_utils.py` | `detect_language`, `ticket_skip_reason`, `is_skip_path`. Pure `Diff` inspection. |
 | `constants.py` | `REVIEWER_TAG`, `CODING_AGENT_PLUGIN_ID`, `DEFAULT_MODEL`, `DEFAULT_EFFORT`. |
-| `admission.py` | `admit_raw_findings`, `findingdrafts_to_raw`, `raw_to_vcs_findings`, `post_admitted_findings_to_vcs`. The M05 `PostFindings` command + `incremental.py` both import from here. |
-| `commands/__init__.py` | M05 `WorkflowCommand` bodies (5 Workspace + 5 Local). |
-| `workflows/*` | M05 `Workflow` definitions for the 5 reviewer task modes. |
+| `admission.py` | `admit_raw_findings`, `findingdrafts_to_raw`, `raw_to_vcs_findings`, `post_admitted_findings_to_vcs`. The `PostFindings` command + `incremental.py` both import from here. |
+| `commands/__init__.py` | `WorkflowCommand` bodies (5 Workspace + 5 Local). |
+| `workflows/*` | `Workflow` definitions for the 5 reviewer task modes. |
 | `aggregate.py` + `repository.py` + `events.py` + `types.py` + `models.py` | Durable-findings layer. |
 | `service.py` + `replies.py` + `trigger.py` + `lock.py` + `anchor.py` | Reply classifier, trigger policy, advisory locking, anchor resolution. |
 | `orphan_sweep.py` | Periodic safeguard: tickets stuck `running` past the grace window with no `reviews` row → `tickets.fail(reason='orphaned_no_review_job')`. Spawned via the module's `on_startup` hook. Cadence + grace from `yaaos_ticket_orphan_{sweep_interval,grace}_seconds` (defaults 60 s / 300 s). |
 
-### M05 workflows + commands (Phase 4 foundations)
+### workflows + commands (Phase 4 foundations)
 
 Five typed `Workflow` definitions live in `domain/reviewer/workflows/` and register at module import:
 
@@ -124,7 +124,7 @@ Tests register a fake plugin via [`testing/fake_coding_agent`](testing_fake_codi
 
 #### Full-review flow — `pr_review_v1` (engine path)
 
-1. Intake's `_handle_pr_ready_for_review` (or `/rereview` / `/yaaos full review`) calls `start_pr_review(ticket_id, org_id=, trigger_reason=)`, which resolves the ticket via the registered `WorkflowContextProvider` and starts a `pr_review_v1` workflow execution via `core/workflow.engine.start(...)`.
+1. The github intake type's PR-opened branch (or `/yaaos full review` / `@yaaos rereview` on an existing PR) calls `start_pr_review(ticket_id, org_id=, trigger_reason=)`, which resolves the ticket via the registered `WorkflowContextProvider` and starts a `pr_review_v1` workflow execution via `core/workflow.engine.start(...)`.
 2. The engine routes the workflow step by step: `CheckShouldReview → SecretsScan → ProvisionWorkspace → CodeReview → PostFindings → CleanupWorkspace`. See [`commands/__init__.py`](../app/domain/reviewer/commands/__init__.py) for each command body and [`workflows/`](../app/domain/reviewer/workflows/) for the typed step lists.
 3. `CodeReview` resolves the workspace, fetches the ticket context, builds an MCP payload via `mcp_wiring.build_mcp_payload`, invokes `coding_agent.review(plugin_id="claude_code", ...)`, and emits `draft_findings` + `summary_body` + `state` for `PostFindings`. The `on_activity` callback publishes `ActivityEvent`s to `core/sse_pubsub` channel-per-workflow-execution.
 4. `PostFindings` deserializes the drafts, pre-fetches anchor contents, runs admission via `findingdrafts_to_raw` → `admit_raw_findings`, and calls `post_admitted_findings_to_vcs` (which posts each survivor via the registered VCS plugin and persists per-finding `external_comment_id` on the aggregate). Rejected drafts never reach GitHub.
@@ -224,6 +224,6 @@ Generation 2 (plan §4.1):
 - **Unit tests** for `state_machine.py`, `fingerprint.py`, `anchor.py`, `trigger.py`, the aggregate, the service helpers (`apply_classified_reply` / `apply_verify_fix_result` / `apply_stale_check_result` / `is_yaaos_command` / `is_off_topic_message`), and the classifier (with a canned-output runnable substituting `core/llm`).
 - **In-memory `AggregateRepository`** at `test/in_memory_repository.py` exercises full scenarios from plan §6 — admission pipeline (threshold, nit cap, top cap, cross-file dedup, fingerprint match vs prior open/acknowledged), state transitions, round-trip persistence.
 - **Integration coverage** for generation 1 (`test_detect_secrets.py`, plus the scheduling / supersession / handler / startup-recovery suites in `app/test/` + `apps/e2e/`) continues to gate today's flow.
-- **Service tests** (`@pytest.mark.service`, see [patterns.md § Testing](patterns.md)): `test_pr_review_v1_e2e_service.py` drives the full M05 `pr_review_v1` pipeline in-process using `app/testing/stub_vcs` + stub coding-agent + stub workspace. `test_mcp_review_pipeline_service.py` composes the MCP proxy + broken-creds tracker + review-output prefix. `test_secrets_scan_service.py` covers the `SecretsScan` Local command refusing to provision a workspace when the diff carries leaked secrets. `test_cancel_dual_write_service.py` covers `/api/reviewer/cancel` flipping non-terminal workflow executions via `request_cancel`. `test_all_workflows_smoke.py` exercises every one of the 5 reviewer workflows end-to-end via the engine.
+- **Service tests** (`@pytest.mark.service`, see [patterns.md § Testing](patterns.md)): `test_pr_review_v1_e2e_service.py` drives the full `pr_review_v1` pipeline in-process using `app/testing/stub_vcs` + stub coding-agent + stub workspace. `test_mcp_review_pipeline_service.py` composes the MCP proxy + broken-creds tracker + review-output prefix. `test_secrets_scan_service.py` covers the `SecretsScan` Local command refusing to provision a workspace when the diff carries leaked secrets. `test_cancel_dual_write_service.py` covers `/api/reviewer/cancel` flipping non-terminal workflow executions via `request_cancel`. `test_all_workflows_smoke.py` exercises every one of the 5 reviewer workflows end-to-end via the engine.
 - **E2E** for the durable-findings flow (multi-review render + single reply round-trip) lands with the UI commits.
 - **Evals** for the `classify_reply` prompt live under `domain/reviewer/eval/` (one `.eval.py` per prompt + fixtures); evals deliberately bypass `langchain.cache.SQLiteCache` so they always hit the model fresh.

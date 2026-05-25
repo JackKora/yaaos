@@ -45,7 +45,7 @@ def _org() -> UUID:
 
 @router.post("/rereview", dependencies=[Depends(require(Action.REVIEWER_WRITE))])
 async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
-    """Re-review a ticket — drives `pr_review_v1` via the M05 workflow engine.
+    """Re-review a ticket — drives `pr_review_v1` via the workflow engine.
 
     Replaces the legacy `schedule_review` / `review_jobs` flow. The SPA's
     only contract with this endpoint is the `scheduled_count` field; the
@@ -111,7 +111,7 @@ class _PushBackRequest(BaseModel):
     dependencies=[Depends(require(Action.REVIEWER_WRITE))],
 )
 async def ack_finding(finding_id: UUID) -> dict[str, Any]:
-    """M06: SPA "Ack" button. Marks the finding as `intentional` —
+    """: SPA "Ack" button. Marks the finding as `intentional` —
     Builder sees this and accepts it for future reviews."""
     return await _record_ack(finding_id, kind="intentional", rationale="ack")
 
@@ -121,7 +121,7 @@ async def ack_finding(finding_id: UUID) -> dict[str, Any]:
     dependencies=[Depends(require(Action.REVIEWER_WRITE))],
 )
 async def push_back_finding(finding_id: UUID, req: _PushBackRequest) -> dict[str, Any]:
-    """M06: SPA "Push back" button. Marks the finding as `wontfix` and
+    """: SPA "Push back" button. Marks the finding as `wontfix` and
     records the Builder's reason in the audit trail."""
     reason = req.reason.strip()
     if len(reason) < 10:

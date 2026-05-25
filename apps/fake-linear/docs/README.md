@@ -1,7 +1,7 @@
 # fake-linear
 
 Test-only fake Linear service. Implements just enough of Linear's OAuth +
-hosted-MCP surface to drive yaaos M04 end-to-end without registering a real
+hosted-MCP surface to drive yaaos end-to-end without registering a real
 Linear OAuth app.
 
 ## Emulated

@@ -1,7 +1,7 @@
 /**
  * Page header — title + optional subtitle + actions slot.
  *
- * Every M06 surface composes this at the top of its content area. Title is
+ * Every surface composes this at the top of its content area. Title is
  * h1; subtitle is muted text below; `actions` slot is right-aligned for
  * primary affordances (Save, Add, …).
  */

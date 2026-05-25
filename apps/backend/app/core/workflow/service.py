@@ -15,7 +15,7 @@ Phase 1 (cont'd) ships:
 
 The architecture's three-task split is what keeps workers free during
 long-running AgentCommands. See
-`plan/milestones/M05-workspace-agent/architecture.md § Workflow execution
+` § Workflow execution
 model`.
 """
 
@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import session as db_session
 from app.core.observability import with_remote_parent_span
-from app.core.tasks import TaskContext, TaskRef, enqueue, task
+from app.core.tasks import TaskRef, enqueue, task
 from app.core.workflow.models import PendingHumanDecisionRow, WorkflowExecutionRow
 from app.core.workflow.types import (
     TERMINAL_STATES,
@@ -85,7 +85,6 @@ def _get_workspace_provider(wfx: WorkflowExecutionRow) -> str:
 
 @task("workflow.start_step", queue="workflow", max_retries=1)
 async def start_step(
-    ctx: TaskContext,
     *,
     workflow_execution_id: str,
     step_id: str,
@@ -108,7 +107,6 @@ async def start_step(
     nest under the same trace ID. The span sets the `workflow_execution_id`
     + `step_id` + `attempt` attributes for observability.
     """
-    del ctx  # session is opened per-task here; future broker wiring may pass it via ctx
     with with_remote_parent_span(_tracer, "workflow.start_step", traceparent) as span:
         span.set_attribute("workflow.execution_id", workflow_execution_id)
         span.set_attribute("workflow.step_id", step_id)
@@ -273,7 +271,6 @@ async def _start_step_impl(
 
 @task("workflow.handle_agent_event", queue="workflow", max_retries=1)
 async def handle_agent_event(
-    ctx: TaskContext,
     *,
     workflow_execution_id: str,
     agent_command_id: str,
@@ -290,7 +287,6 @@ async def handle_agent_event(
     Span: nests under the upstream span from `traceparent` so the agent's
     work and the control-plane's resumption are one trace.
     """
-    del ctx
     with with_remote_parent_span(_tracer, "workflow.handle_agent_event", traceparent) as span:
         span.set_attribute("workflow.execution_id", workflow_execution_id)
         span.set_attribute("workflow.agent_command_id", agent_command_id)
@@ -358,7 +354,6 @@ async def _handle_agent_event_impl(
 
 @task("workflow.route_workflow", queue="workflow", max_retries=1)
 async def route_workflow(
-    ctx: TaskContext,
     *,
     workflow_execution_id: str,
     completed_step_id: str | None,
@@ -373,7 +368,6 @@ async def route_workflow(
 
     Span: nests under the upstream span from `traceparent`.
     """
-    del ctx
     with with_remote_parent_span(_tracer, "workflow.route_workflow", traceparent) as span:
         span.set_attribute("workflow.execution_id", workflow_execution_id)
         if completed_step_id is not None:

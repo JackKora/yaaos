@@ -1,4 +1,4 @@
-"""Coverage for GET /api/auth/sso/discover (M06 Phase 8 + audit follow-up).
+"""Coverage for GET /api/auth/sso/discover (+ audit follow-up).
 
 The endpoint is `public_route` — no session required (the Login page
 calls it before any cookie is set). Returns `{provider: "github"}` when

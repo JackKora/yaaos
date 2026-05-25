@@ -14,7 +14,7 @@ import {
 
 /**
  * Org Settings > API Keys (BYOK). Lists every provider the backend's
- * validator registry exposes (M03 ships Anthropic only). Each provider
+ * validator registry exposes (ships Anthropic only). Each provider
  * card is write-only: once a key is configured, the input is hidden
  * behind a Rotate button — the plaintext is never read back from the
  * backend, so we don't pretend it is. Test/Rotate/Clear actions surface

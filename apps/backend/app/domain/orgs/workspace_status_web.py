@@ -1,5 +1,5 @@
 """HTTP wiring for the workspace-agent connection status + per-workflow
-activity stream (M05 Phase 7 + Phase 8b follow-on).
+activity stream (+ Phase 8b follow-on).
 
 | Method | Path                                            | Action               |
 |--------|-------------------------------------------------|----------------------|

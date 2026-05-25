@@ -1,4 +1,4 @@
-/** Theme + sidebar-pin user preferences. localStorage-only in M01 (no auth). */
+/** Theme + sidebar-pin user preferences. localStorage-only (no auth). */
 
 export type Theme = "light" | "dark";
 

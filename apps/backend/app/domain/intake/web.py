@@ -1,21 +1,19 @@
-"""HTTP wiring for `domain/intake` — the generic `POST /api/intake/{type}`
-endpoint (M05 Phase 2).
+"""HTTP wiring for `domain/intake` — `POST /api/intake/{type}` is the only
+entry point for external signals.
 
 For each registered `IntakeType`, the endpoint:
 
 1. Reads body + headers.
 2. Hands them to `type.handle(...)` for verification + parsing.
-3. Calls `domain/tickets.create(type, payload, idempotency_key)` —
-   idempotent: a second request with the same key returns the same ticket
-   id without creating a workflow execution.
-4. On first creation, calls `core/workflow.start(type.workflow_name, ticket_id)`
-   and stamps the resulting execution id on the ticket.
-5. All in a single transaction; the outbox drain delivers the initial
-   routing task after commit.
-
-The legacy `POST /api/github/webhook` continues to handle the existing
-GitHub flows; the new endpoint is the M05 surface that funnels work
-through the workflow engine.
+3. Branches on the return type:
+   - `IntakePrepared` → call `domain/tickets.create(...)`. Idempotent on
+     `(org_id, idempotency_key)`. On first creation, call
+     `core/workflow.start(prepared.workflow_name, ticket_id)` and stamp the
+     execution id on the ticket.
+   - `IntakeSideEffect` → the handler already applied its mutations against
+     the endpoint's session; just commit and return 200.
+4. All in a single transaction; the outbox drain delivers any task enqueued
+   inside that transaction after commit.
 """
 
 from __future__ import annotations
@@ -31,7 +29,9 @@ from app.core.webserver import RouteSpec, register_routes
 from app.core.workflow import get_engine
 from app.domain import tickets
 from app.domain.intake.registry import (
+    IntakePrepared,
     IntakeRejectedError,
+    IntakeSideEffect,
     IntakeType,
     get_intake_type,
 )
@@ -59,7 +59,7 @@ async def post_intake(request: Request, type: str = Path(...)) -> JSONResponse:
 
     async with db_session() as s:
         try:
-            prepared = await handler.handle(headers=headers, body=body, session=s)
+            outcome = await handler.handle(headers=headers, body=body, session=s)
         except IntakeRejectedError as exc:
             log.info(
                 "intake.rejected",
@@ -69,6 +69,13 @@ async def post_intake(request: Request, type: str = Path(...)) -> JSONResponse:
             )
             code = _REJECTION_STATUS.get(exc.kind, 400)
             return JSONResponse(status_code=code, content={"error": exc.kind, "detail": str(exc)})
+
+        if isinstance(outcome, IntakeSideEffect):
+            await s.commit()
+            return JSONResponse(status_code=200, content={"status": "side_effect", "detail": outcome.detail})
+
+        assert isinstance(outcome, IntakePrepared)
+        prepared = outcome
 
         ticket_id, created = await tickets.create(
             type=type,
@@ -90,9 +97,6 @@ async def post_intake(request: Request, type: str = Path(...)) -> JSONResponse:
                 content={"status": "duplicate", "ticket_id": str(ticket_id)},
             )
 
-        # Snapshot the active OTel trace context so the workflow can stamp
-        # `otel_trace_context` on its execution row + propagate the same
-        # trace id across every downstream task hop (Phase 8).
         from app.core.observability import current_traceparent  # noqa: PLC0415
         from app.domain.orgs.models import OrgRow  # noqa: PLC0415
 
@@ -103,7 +107,7 @@ async def post_intake(request: Request, type: str = Path(...)) -> JSONResponse:
 
         engine = get_engine()
         workflow_execution_id = await engine.start(
-            workflow_name=handler.workflow_name,
+            workflow_name=prepared.workflow_name,
             ticket_id=str(ticket_id),
             traceparent=current_traceparent(),
             workspace_provider=workspace_provider,

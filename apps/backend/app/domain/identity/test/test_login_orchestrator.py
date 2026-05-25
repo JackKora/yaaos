@@ -58,7 +58,7 @@ async def test_email_match_without_identity_autolinks(db_session) -> None:
 async def test_unknown_user_returns_none_and_creates_no_rows(db_session) -> None:
     """No matching identity, no matching email → `user=None`. The orchestrator
     must NOT create a user / email / identity row in this branch — provisioning
-    is invitation-only post-M06."""
+    is invitation-only ."""
     result = await login_via_oauth(db_session, provider_id="github", profile=_profile())
     assert result.user is None
     assert result.newly_created is False

@@ -1,15 +1,15 @@
-"""HTTP wiring for top-level org settings + M06 user-scoped/readiness endpoints.
+"""HTTP wiring for top-level org settings + user-scoped/readiness endpoints.
 
 | Method | Path                       | Action / auth                                       |
 |--------|----------------------------|-----------------------------------------------------|
 | GET    | `/api/orgs`                | `ORG_SETTINGS_READ` — top-level settings for the current org. |
 | PATCH  | `/api/orgs`                | `ORG_SETTINGS_WRITE` — Owner/Admin update settings. |
-| GET    | `/api/orgs/mine`           | session cookie only (cross-org) — M06 picker + switcher. |
-| GET    | `/api/orgs/config-status`  | `ORG_READ` — M06 "not configured" gate aggregation. |
+| GET    | `/api/orgs/mine`           | session cookie only (cross-org) — picker + switcher. |
+| GET    | `/api/orgs/config-status`  | `ORG_READ` — "not configured" gate aggregation. |
 
 Org identified by `X-Org-Slug` header (RouteSecurity.ORG_SCOPED). Architecture.md documents
 the URL as `/api/orgs/{slug}` for readability; this implementation mirrors the
-other M03 endpoints which all take the slug via header. The single endpoint
+other endpoints which all take the slug via header. The single endpoint
 returns the updated org's relevant settings.
 
 `workspace_provider` is `in_memory` or `remote_agent`. When set to
@@ -19,8 +19,8 @@ verifier matches the agent's signed STS payload against this ARN.
 `/api/orgs/mine` lives on the public allowlist (see `core/auth/types.py`)
 because the SPA hits it before any org is selected — the session cookie
 identifies the user; no `X-Org-Slug` header is involved. `last_used_at` is
-null in M06 — there is no per-membership "last visited" column today
-(Open Question 3 in `plan/milestones/M06-design-refresh/api-changes.md`).
+null — there is no per-membership "last visited" column today
+(Open Question 3 in ).
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ async def create_org(
     body: _CreateOrgRequest,
     yaaos_session: Annotated[str | None, Cookie()] = None,
 ) -> JSONResponse:
-    """M06 Phase 8: create an org from the picker page (E2a.19).
+    """create an org from the picker page (E2a.19).
 
     The caller becomes Admin of the new org. Slug must be lowercase
     a-z / 0-9 / hyphens and unique. Returns 409 `slug_taken` if the slug
@@ -167,7 +167,7 @@ async def get_org_settings() -> _OrgSettingsResponse:
 @router.patch("", dependencies=[Depends(require(Action.ORG_SETTINGS_WRITE))])
 async def patch_org_settings(body: dict) -> _OrgSettingsResponse:
     """Update top-level org settings. Body is a JSON object; only the keys
-    actually present are touched. M03 supports `session_timeout_override`
+    actually present are touched. supports `session_timeout_override`
     (null clears it, positive int sets minutes)."""
     org_id = org_id_var.get()
     if org_id is None:
@@ -280,7 +280,7 @@ async def list_mine(
 
 @router.get("/config-status", dependencies=[Depends(require(Action.ORG_READ))])
 async def config_status() -> ConfigStatusResponse:
-    """Aggregated readiness for the M06 "not configured" gate."""
+    """Aggregated readiness for the "not configured" gate."""
     org_id = org_id_var.get()
     if org_id is None:
         raise _err(400, "no_org_context")

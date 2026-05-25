@@ -1,4 +1,4 @@
-"""Reviewer WorkflowCommands for the five M05 task modes.
+"""Reviewer WorkflowCommands for the five task modes.
 
 Five **Workspace** commands wrap `domain/coding_agent` invocations against
 a workspace:
@@ -885,7 +885,7 @@ class SecretsScan:
 
     Matches the legacy `_run_review_job_inner` behavior (slice 46) — the
     legacy path is the existing production owner of secrets detection;
-    the M05 workflow needs the same gate or it's a regression.
+    the workflow needs the same gate or it's a regression.
 
     No `pr_id`? The workflow can't fetch the diff yet; treat as no-op
     success (CheckShouldReview already handled the ticket-payload skip

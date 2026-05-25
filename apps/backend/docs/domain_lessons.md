@@ -23,7 +23,7 @@ HTTP routes (`/api/lessons`):
 | PUT    | `/api/lessons/{id}`  | `LESSONS_WRITE` |
 | DELETE | `/api/lessons/{id}`  | `LESSONS_WRITE` |
 
-Org context arrives via the `X-Org-Slug` header (M06 org-scoping); the
+Org context arrives via the `X-Org-Slug` header (org-scoping); the
 `require(Action.LESSONS_*)` dep resolves it. Mutations write
 `current_actor()` (the cookie-bearer's user) as the audit-log actor.
 

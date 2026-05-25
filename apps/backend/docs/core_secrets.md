@@ -16,7 +16,7 @@ No HTTP routes.
 
 ## Module architecture
 
-Master key resolution: `settings.yaaos_totp_master_key` if set, else `settings.yaaos_encryption_key`. Both are URL-safe base64 32-byte keys. The two-key story dates to M02 (TOTP wanted independent rotation from plugin-credential rotation); the fallback exists so dev/test stacks can run with a single key.
+Master key resolution: `settings.yaaos_totp_master_key` if set, else `settings.yaaos_encryption_key`. Both are URL-safe base64 32-byte keys. TOTP wants independent rotation from plugin-credential rotation; the fallback exists so dev/test stacks can run with a single key.
 
 Decryption maps `cryptography.fernet.InvalidToken` to a domain-level `SecretsDecryptError` so callers don't reach into `cryptography.fernet` directly.
 

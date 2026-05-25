@@ -13,7 +13,7 @@ Single dispatcher that, given a `PluginType` (`vcs` or `coding_agent`), returns 
 
 ## Module architecture
 
-Pure dispatcher — no storage, no business logic. The two underlying registries (`domain/vcs._PLUGINS`, `domain/coding_agent._PLUGINS`) own plugin instances; this module reads their `.meta`. Adding a new picker-visible plugin type means adding a branch here and a new registry; M03 ships two.
+Pure dispatcher — no storage, no business logic. The two underlying registries (`domain/vcs._PLUGINS`, `domain/coding_agent._PLUGINS`) own plugin instances; this module reads their `.meta`. Adding a new picker-visible plugin type means adding a branch here and a new registry; ships two.
 
 ## Data owned
 
@@ -22,4 +22,4 @@ None.
 ## How it's tested
 
 - `test_list_available.py` — service-level lookups + the endpoint's auth (401 unauthenticated, type filter actually filters, 422 on invalid type).
-- `test_plugin_contract.py` — the three shipped plugins (`github`, `claude_code`, `in_process`) expose the M03 contract methods (`install_url`, `validate_settings`).
+- `test_plugin_contract.py` — the three shipped plugins (`github`, `claude_code`, `in_process`) expose the contract methods (`install_url`, `validate_settings`).

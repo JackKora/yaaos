@@ -371,7 +371,7 @@ async def providers() -> dict[str, list[str]]:
 @router.get("/sso/discover", dependencies=[Depends(public_route)])
 @limiter.limit(AUTH_LIMIT)
 async def sso_discover(request: Request, email: str) -> dict[str, Any]:
-    """M06 Phase 8: find the SSO IdP (if any) matching the email's domain.
+    """find the SSO IdP (if any) matching the email's domain.
 
     Drives the Login page's provider-button rendering per E2a.18:
     `{provider: "github" | "saml", saml_org_slug?: str}`.

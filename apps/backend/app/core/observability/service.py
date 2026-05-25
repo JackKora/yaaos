@@ -1,14 +1,14 @@
 """structlog + OTel SDK initialization.
 
 structlog is always initialized. The OTel SDK is **also** always initialized
-as of M05 Phase 0c — a `TracerProvider` is configured, the W3C trace-context
+as of — a `TracerProvider` is configured, the W3C trace-context
 propagator is set as the global propagator, and FastAPI + SQLAlchemy auto-
 instrumentation runs. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, spans flow
 to that endpoint; when unset (the default today) spans are created and
 discarded.
 
 This shape lets:
-- M05's wire-protocol code propagate `traceparent` headers across the
+- wire-protocol code propagate `traceparent` headers across the
   agent boundary without runtime feature flags;
 - structlog log records carry `trace_id` + `span_id` whenever a span is
   active;

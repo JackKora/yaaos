@@ -1,4 +1,4 @@
-"""Single-flight claim CAS + recovery-policy registry — M05 Phase 3."""
+"""Single-flight claim CAS + recovery-policy registry — ."""
 
 from __future__ import annotations
 

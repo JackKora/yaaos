@@ -1,6 +1,6 @@
-"""Service-level coverage for GET /api/tickets/dashboard (M06 Phase 5).
+"""Service-level coverage for GET /api/tickets/dashboard ().
 
-Asserts the `{stats, in_flight, needs_attention}` shape, M06-status
+Asserts the `{stats, in_flight, needs_attention}` shape, status-meta
 projection, and Builder-grade auth.
 """
 
@@ -106,7 +106,7 @@ async def test_dashboard_returns_shape_and_projects_status(seeded) -> None:
         "completed_today",
         "failed_today",
     }
-    # Two in_review rows project to M06 status "running".
+    # Two in_review rows project to status "running".
     assert body["stats"]["in_flight"] == 2
     assert len(body["in_flight"]) == 2
     # No findings on any seeded ticket → needs_attention is empty.

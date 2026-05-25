@@ -1,7 +1,6 @@
 """HTTP routes owned by the claude_code plugin.
 
-Plugin-owned URL namespace per `plan/milestones/M01-code-review/backend.md` §
-2026-05-16 — each plugin's credential setter and health-check endpoint live
+Plugin-owned URL namespace per `2026-05-16 — each plugin's credential setter and health-check endpoint live
 under `/api/<plugin>/...`, not under a generic `/api/settings/...`.
 """
 
@@ -18,10 +17,9 @@ from app.core.webserver import RouteSpec, register_routes
 from app.domain.sessions.dependencies import require
 from app.plugins.claude_code.service import _set_anthropic_key, bootstrap_anthropic_env, get_plugin
 
-M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-# Default-deny: each route declares either `public_route` (M01-era
-# unscoped setup endpoints) or `require(action)` (M03 settings UI endpoints).
+# Default-deny: each route declares either `public_route` (# unscoped setup endpoints) or `require(action)` (settings UI endpoints).
 router = APIRouter()
 
 
@@ -33,7 +31,7 @@ class SetApiKeyRequest(BaseModel):
 async def set_api_key(req: SetApiKeyRequest) -> dict[str, str]:
     if not req.api_key.get_secret_value().strip():
         raise HTTPException(status_code=400, detail={"api_key": "must not be empty"})
-    await _set_anthropic_key(M01_ORG_ID, req.api_key)
+    await _set_anthropic_key(DEFAULT_ORG_ID, req.api_key)
     return {"status": "saved"}
 
 

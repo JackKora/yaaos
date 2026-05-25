@@ -1,5 +1,5 @@
 /**
- * Dashboard — M06 anchor page (E2a.3).
+ * Dashboard — anchor page (E2a.3).
  *
  * Two states:
  *   - Configured: stat cards (4) + "In flight" band + "Needs attention" band.

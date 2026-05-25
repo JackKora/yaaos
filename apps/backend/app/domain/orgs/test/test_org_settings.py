@@ -304,7 +304,7 @@ async def test_patch_org_rejects_invalid_workspace_provider(seeded) -> None:
         "not-an-arn",
         # Wrong service.
         "arn:aws:sts::123456789012:role/yaaos-agent",
-        # Wrong partition (only `aws` accepted in M05 — gov/cn deferred).
+        # Wrong partition (only `aws` accepted — gov/cn deferred).
         "arn:aws-us-gov:iam::123456789012:role/yaaos-agent",
         # Account isn't 12 digits.
         "arn:aws:iam::12345:role/yaaos-agent",
@@ -365,7 +365,7 @@ async def test_patch_org_lowercases_arn(seeded) -> None:
 @pytest.mark.asyncio
 async def test_patch_org_ignores_unrelated_keys(seeded, db_session) -> None:
     """Keys we don't recognise are silently ignored — the body schema is
-    open-ended so future M03 settings can be added without breaking older
+    open-ended so future settings can be added without breaking older
     clients."""
     sess = seeded["admin_sess"]
     async with _patch_client() as c:

@@ -1,18 +1,17 @@
 /**
- * Tickets list — M06 anchor page (E2a.1).
+ * Tickets list page.
  *
- * One row per ticket. M06 status vocab in the badge (running / hitl / done /
- * failed / cancelled). Filter bar: status multi-select chips, repo single-
- * select, free-text search over title, "My tickets" toggle. Load-more
+ * One row per ticket. Five-state status vocab in the badge (running / hitl /
+ * done / failed / cancelled). Filter bar: status multi-select chips, repo
+ * single-select, free-text search over title, "My tickets" toggle. Load-more
  * pagination (no infinite scroll). Row click → Ticket detail.
  *
- * State patterns per C2: skeleton on first load, EmptyState on zero-result,
+ * State patterns: skeleton on first load, EmptyState on zero-result,
  * filtered-empty when filters are applied, ErrorBanner on fetch failure.
  *
- * Per requirements.md § F1 the column source-of-truth is the backend's
- * extended `/api/tickets` response shape (`{items, next_cursor}` —
- * `next_cursor` is null in M06; we use naive limit pagination). See
- * `useTickets()` in `apps/web/src/core/api/queries.ts`.
+ * The column source-of-truth is the backend's `/api/tickets` response
+ * (`{items, next_cursor}`; cursor is null today — naive limit pagination).
+ * See `useTickets()` in `apps/web/src/core/api/queries.ts`.
  */
 
 import { type Ticket, useGithubRepositories, useTickets } from "@core/api";
@@ -43,41 +42,42 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-type M06Status = "running" | "hitl" | "done" | "failed" | "cancelled";
+type TicketStatus = "running" | "hitl" | "done" | "failed" | "cancelled";
 
 // Solid semantic-color chips pass WCAG AA contrast against the matching
 // `*-foreground` pair. The previous /15-tinted variant failed axe scans
 // because the same-color text on the same-color tint sat below the 4.5:1
 // contrast ratio.
-const STATUS_DISPLAY: Record<M06Status, { label: string; icon: typeof Loader2; chip: string }> = {
-  running: { label: "Running", icon: Loader2, chip: "bg-info text-info-foreground border-info" },
-  hitl: {
-    label: "HITL",
-    icon: Hand,
-    chip: "bg-warning text-warning-foreground border-warning",
-  },
-  done: {
-    label: "Done",
-    icon: CheckCircle2,
-    chip: "bg-success text-success-foreground border-success",
-  },
-  failed: {
-    label: "Failed",
-    icon: XCircle,
-    chip: "bg-destructive text-destructive-foreground border-destructive",
-  },
-  cancelled: {
-    label: "Cancelled",
-    icon: CircleDashed,
-    chip: "bg-muted text-muted-foreground border-border",
-  },
-};
+const STATUS_DISPLAY: Record<TicketStatus, { label: string; icon: typeof Loader2; chip: string }> =
+  {
+    running: { label: "Running", icon: Loader2, chip: "bg-info text-info-foreground border-info" },
+    hitl: {
+      label: "HITL",
+      icon: Hand,
+      chip: "bg-warning text-warning-foreground border-warning",
+    },
+    done: {
+      label: "Done",
+      icon: CheckCircle2,
+      chip: "bg-success text-success-foreground border-success",
+    },
+    failed: {
+      label: "Failed",
+      icon: XCircle,
+      chip: "bg-destructive text-destructive-foreground border-destructive",
+    },
+    cancelled: {
+      label: "Cancelled",
+      icon: CircleDashed,
+      chip: "bg-muted text-muted-foreground border-border",
+    },
+  };
 
-const ALL_STATUSES: M06Status[] = ["running", "hitl", "done", "failed", "cancelled"];
+const ALL_STATUSES: TicketStatus[] = ["running", "hitl", "done", "failed", "cancelled"];
 
 const PAGE_SIZE = 50;
 
-function getM06Status(t: Ticket): M06Status {
+function getTicketStatus(t: Ticket): TicketStatus {
   return t.status;
 }
 
@@ -85,9 +85,7 @@ export function TicketsListPage() {
   const { data: ticketsResp, isLoading, isError, error, refetch } = useTickets();
   const { data: repos } = useGithubRepositories();
   const { data: user } = useCurrentUser();
-  const [activeStatuses, setActiveStatuses] = useState<Set<M06Status>>(
-    new Set(["running", "hitl"]),
-  );
+  const [activeStatuses, setActiveStatuses] = useState<Set<TicketStatus>>(new Set(ALL_STATUSES));
   const [repo, setRepo] = useState<string>("all");
   const [query, setQuery] = useState<string>("");
   const [myOnly, setMyOnly] = useState(false);
@@ -102,7 +100,7 @@ export function TicketsListPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (ticketsResp ?? []).filter((t) => {
-      if (!activeStatuses.has(getM06Status(t))) return false;
+      if (!activeStatuses.has(getTicketStatus(t))) return false;
       if (repo !== "all" && t.repo_external_id !== repo) return false;
       if (q && !t.title.toLowerCase().includes(q)) return false;
       if (myOnly && user?.user.primary_email && t.author_login !== user.user.primary_email) {
@@ -116,7 +114,7 @@ export function TicketsListPage() {
   const pageRows = filtered.slice(0, visible);
   const hasMore = filtered.length > pageRows.length;
 
-  const toggleStatus = (s: M06Status) => {
+  const toggleStatus = (s: TicketStatus) => {
     setActiveStatuses((prev) => {
       const next = new Set(prev);
       if (next.has(s)) next.delete(s);
@@ -126,12 +124,7 @@ export function TicketsListPage() {
   };
 
   const hasFilters =
-    activeStatuses.size !== 2 ||
-    !activeStatuses.has("running") ||
-    !activeStatuses.has("hitl") ||
-    repo !== "all" ||
-    query.length > 0 ||
-    myOnly;
+    activeStatuses.size !== ALL_STATUSES.length || repo !== "all" || query.length > 0 || myOnly;
 
   return (
     <div className="mx-auto max-w-[1280px] px-6 py-6">
@@ -278,8 +271,8 @@ function TicketsTable({ rows }: { rows: Ticket[] }) {
 }
 
 function TicketRow({ ticket }: { ticket: Ticket }) {
-  const m06 = getM06Status(ticket);
-  const meta = STATUS_DISPLAY[m06];
+  const status = getTicketStatus(ticket);
+  const meta = STATUS_DISPLAY[status];
   const Icon = meta.icon;
   const builderName = ticket.builder_display_name ?? ticket.author_login ?? "—";
   const severity = ticket.max_severity;
@@ -300,7 +293,7 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
             meta.chip,
           )}
         >
-          <Icon className={cn("w-3 h-3", m06 === "running" && "animate-spin")} />
+          <Icon className={cn("w-3 h-3", status === "running" && "animate-spin")} />
           {meta.label}
         </span>
       </div>

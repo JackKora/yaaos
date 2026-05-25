@@ -33,16 +33,16 @@ LOAD_BEARING_URLS: set[tuple[str, str]] = {
     ("GET", "/api/auth/callback/{provider}"),
     ("POST", "/api/auth/logout"),
     ("GET", "/api/auth/me"),
-    # M03 settings / user (SPA settings pages).
+    # settings / user (SPA settings pages).
     ("GET", "/api/user/me"),
     # Webhook ingress (GitHub App webhook).
     ("POST", "/api/intake/{type}"),
     # Org membership surface (SPA invite + role flows).
     ("POST", "/api/memberships/invite"),
-    # Org settings (M05 WorkspaceSettingsCard depends on this).
+    # Org settings (WorkspaceSettingsCard depends on this).
     ("GET", "/api/orgs"),
     ("PATCH", "/api/orgs"),
-    # M05 wire protocol (Go agent depends on every one of these).
+    # wire protocol (Go agent depends on every one of these).
     ("POST", "/api/v1/identity/exchange"),
 }
 

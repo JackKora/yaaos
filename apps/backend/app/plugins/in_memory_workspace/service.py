@@ -364,7 +364,7 @@ class InMemoryWorkspaceProvider:
         log.info("workspace.in_process.destroyed", working_dir=working_dir)
 
     async def health_check(self) -> HealthStatus:
-        # tempdir is always available in M01.
+        # tempdir is always available.
         return HealthStatus(healthy=True, message="ok", checked_at=datetime.now(UTC))
 
     # ── private helpers ───────────────────────────────────────────────────

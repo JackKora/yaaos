@@ -1,13 +1,10 @@
-"""Task decorator + atomic-enqueue API (Phase 0b scaffold).
+"""Task decorator + atomic-enqueue API.
 
-Phase 0b ships:
-- `@task(name, queue=, max_retries=)` decorator that registers a task name +
-  the wrapped coroutine in an in-process registry. The actual taskiq broker
-  is wired in Phase 1.
+- `@task(name, queue=, max_retries=)` registers a task body with the taskiq
+  broker (single registry — `broker.find_task(name)` is the lookup). Returns
+  a `TaskRef` callers `enqueue(my_task, ...)` against.
 - `enqueue(task_ref, args, *, session)` writes a `taskiq_enqueue` outbox row
-  via `core/outbox.write`. The drain (Phase 1) pushes it to Redis.
-- `TaskContext`: dataclass passed as the first arg of every task body —
-  session opened per-task by the wrapper, traceparent, attempt, job_id.
+  via `core/outbox.write`. The drain pushes it to Redis.
 
 The "atomic-in-session" contract is the headline: if the caller's session
 commits, the task is durable; if it rolls back, the task never existed.
@@ -22,19 +19,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tasks.broker import get_broker
 from app.core.tasks.drain import write as outbox_write
-
-
-@dataclass(slots=True)
-class TaskContext:
-    """First positional arg of every task body. The wrapper opens `session`,
-    passes the others through. Task bodies must not commit themselves — the
-    wrapper commits at the end on success (or rolls back on raise)."""
-
-    session: AsyncSession
-    traceparent: str | None
-    attempt: int
-    job_id: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -47,38 +33,28 @@ class TaskRef:
     max_retries: int
 
 
-_REGISTRY: dict[str, tuple[TaskRef, Callable[..., Awaitable[Any]]]] = {}
-
-
 def task(
     name: str,
     *,
     queue: str = "default",
     max_retries: int = 1,
 ) -> Callable[[Callable[..., Awaitable[Any]]], TaskRef]:
-    """Decorator. Registers a task body under `name`. Returns a `TaskRef` —
-    callers `enqueue(my_task, ...)` against that ref."""
+    """Decorator. Registers a task body with the taskiq broker under `name`.
+    Returns a `TaskRef` — callers `enqueue(my_task, ...)` against that ref.
+    `queue` and `max_retries` ride as taskiq labels; the current
+    `ListQueueBroker` ignores them, but future brokers / middleware can pick
+    them up without API churn."""
     if not name:
         raise ValueError("task name required")
 
     def decorator(fn: Callable[..., Awaitable[Any]]) -> TaskRef:
-        if name in _REGISTRY:
+        broker = get_broker()
+        if broker.find_task(name) is not None:
             raise ValueError(f"task '{name}' already registered")
-        ref = TaskRef(name=name, queue=queue, max_retries=max_retries)
-        _REGISTRY[name] = (ref, fn)
-        return ref
+        broker.task(task_name=name, queue=queue, max_retries=max_retries)(fn)
+        return TaskRef(name=name, queue=queue, max_retries=max_retries)
 
     return decorator
-
-
-def get_registered(name: str) -> Callable[..., Awaitable[Any]] | None:
-    """Lookup helper — workers / tests pull task bodies by name."""
-    entry = _REGISTRY.get(name)
-    return entry[1] if entry else None
-
-
-def registered_task_names() -> list[str]:
-    return sorted(_REGISTRY.keys())
 
 
 async def enqueue(
@@ -97,18 +73,18 @@ async def enqueue(
     return await outbox_write(session, kind="taskiq_enqueue", payload=payload)
 
 
-_REGISTRY_SNAPSHOT: dict[str, tuple[TaskRef, Callable[..., Awaitable[Any]]]] | None = None
+_REGISTRY_SNAPSHOT: dict[str, Any] | None = None
 
 
 def _reset_for_tests() -> None:
-    """Save the current registry and clear it — used by tests that register
-    synthetic tasks. Pair every call with `_restore_after_tests()` so the
-    cross-test invariant (real module-level task registrations) is preserved.
-    Idempotent — repeated saves clobber the snapshot, which matches how the
-    autouse fixture pattern works (one save+one restore per test)."""
+    """Save the broker's task registry and clear it — used by tests that
+    register synthetic tasks. Pair every call with `_restore_after_tests()`
+    so cross-test invariants (real module-level registrations) are
+    preserved. Idempotent — repeated saves clobber the snapshot."""
     global _REGISTRY_SNAPSHOT
-    _REGISTRY_SNAPSHOT = dict(_REGISTRY)
-    _REGISTRY.clear()
+    registry = get_broker().local_task_registry
+    _REGISTRY_SNAPSHOT = dict(registry)
+    registry.clear()
 
 
 def _restore_after_tests() -> None:
@@ -116,6 +92,7 @@ def _restore_after_tests() -> None:
     global _REGISTRY_SNAPSHOT
     if _REGISTRY_SNAPSHOT is None:
         return
-    _REGISTRY.clear()
-    _REGISTRY.update(_REGISTRY_SNAPSHOT)
+    registry = get_broker().local_task_registry
+    registry.clear()
+    registry.update(_REGISTRY_SNAPSHOT)
     _REGISTRY_SNAPSHOT = None

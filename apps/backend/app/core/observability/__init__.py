@@ -1,6 +1,6 @@
 """core/observability — structlog + conditional OTel SDK + spawn helper.
 
-M05 Phase 8 adds wire-protocol trace propagation helpers
+adds wire-protocol trace propagation helpers
 (`current_traceparent`, `restore_traceparent_context`,
 `with_remote_parent_span`) so spans nest across the task / wire-protocol
 boundary.

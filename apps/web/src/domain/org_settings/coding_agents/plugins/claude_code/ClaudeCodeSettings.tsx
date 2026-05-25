@@ -195,7 +195,7 @@ function DangerZone({ pluginId }: { pluginId: string }) {
   );
 }
 
-/** M06 Phase 4: read-only banner for Builders. Per A1, Builders see Coding
+/** : read-only banner for Builders. Per A1, Builders see Coding
  *  Agent settings (read access on the listing endpoint) but can't mutate
  *  org-wide config — the server-side `require(Action.CODING_AGENT_WRITE)`
  *  is the source of truth; the banner is UI affordance. */
@@ -550,7 +550,7 @@ function AgentEditor({
           </div>
         )}
       </div>
-      {/* M06 Phase 4: system-prompt override per E2a.2. Toggle disables the
+      {/* : system-prompt override per E2a.2. Toggle disables the
           custom textarea; when off, the plugin uses its built-in system
           prompt for this agent. */}
       <div className="flex items-start gap-2">

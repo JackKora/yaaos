@@ -1,6 +1,6 @@
 """HTTP coverage for GET /api/tickets/{ticket_id}.
 
-Asserts the M06-extended shape: status (5-state collapsed vocab),
+Asserts the extended-projection shape: status (5-state collapsed vocab),
 findings_count, max_severity, builder, and the stages array when a
 workflow_execution exists.
 """
@@ -68,7 +68,7 @@ async def seeded(db_session):
 
 @pytest.mark.service
 @pytest.mark.asyncio
-async def test_detail_returns_m06_fields(seeded) -> None:
+async def test_detail_returns_status_meta_fields(seeded) -> None:
     async with _client() as c:
         r = await c.get(
             f"/api/tickets/{seeded['ticket_id']}",

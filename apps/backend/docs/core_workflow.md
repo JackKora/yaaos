@@ -33,7 +33,7 @@ Exports `Workflow`, `Step`, `RetryPolicy`, `WorkflowCommand`, `Outcome`, `Outcom
 
 1. **Register at startup.** Domain modules import `get_engine()` and call `register_command(...)` for each WorkflowCommand impl + `register_workflow(...)` for each typed `Workflow`.
 2. **Start.** `domain/intake` (or any orchestrator) calls `engine.start(workflow_name=..., ticket_id=..., session=s)`. The engine validates every step's `command_kind` is registered, writes a `pending` `workflow_executions` row, enqueues an initial `route_workflow(workflow_execution_id, completed_step_id=None, ...)` via `core/outbox` in the same session.
-3. **Route → start_step → handle_agent_event → route_workflow** — Phase 1 cont'd lands the state-machine bodies. See [architecture.md § Workflow execution model](../../../plan/milestones/M05-workspace-agent/architecture.md#workflow-execution-model).
+3. **Route → start_step → handle_agent_event → route_workflow** — Phase 1 cont'd lands the state-machine bodies. See [architecture.md § Workflow execution model](../../../#workflow-execution-model).
 
 ### State machines
 
@@ -61,7 +61,7 @@ Exports `Workflow`, `Step`, `RetryPolicy`, `WorkflowCommand`, `Outcome`, `Outcom
 
 ### Why three tasks (not two)
 
-Workspace commands can issue long-running AgentCommands. `start_step` exits after dispatch; `handle_agent_event` is enqueued when the terminal event arrives at `core/agent_gateway`; `route_workflow` does the routing. Workers stay free during the wait. See [architecture.md § Why three tasks (not two)](../../../plan/milestones/M05-workspace-agent/architecture.md#why-three-tasks-not-two).
+Workspace commands can issue long-running AgentCommands. `start_step` exits after dispatch; `handle_agent_event` is enqueued when the terminal event arrives at `core/agent_gateway`; `route_workflow` does the routing. Workers stay free during the wait. See [architecture.md § Why three tasks (not two)](../../../#why-three-tasks-not-two).
 
 ### Input-expression resolver
 

@@ -54,7 +54,7 @@ async def dashboard() -> dict[str, Any]:
        needs_attention: [TicketRow ≤5]}`.
 
     Avoids the SPA making three `/api/tickets?status=…` calls in a tight
-    polling loop. `t.status` is the M06 5-state vocab post-collapse
+    polling loop. `t.status` is the 5-state vocab post-collapse
     (running / hitl / done / failed / cancelled); precise hitl/failed
     counts depend on the workflow-state projection landing on every
     transition.
@@ -104,7 +104,7 @@ async def list_(
     created_before: datetime | None = Query(default=None),
     limit: int = Query(default=50, le=200),
 ) -> dict[str, Any]:
-    """List tickets per the M06 contract.
+    """List tickets per the contract.
 
     Returns `{items, next_cursor}` instead of a bare array so the SPA can
     drive Load-more pagination. `next_cursor` is null today — POC uses
@@ -231,7 +231,7 @@ async def hitl_history(ticket_id: UUID) -> list[dict[str, Any]]:
 
 @router.get("/{ticket_id}")
 async def detail(ticket_id: UUID) -> dict[str, Any]:
-    """Per-ticket detail with the M06 enrichment: `stages[]` (projected from
+    """Per-ticket detail with the enrichment: `stages[]` (projected from
     `workflow_executions`) + `builder` (the trigger identity).
 
     Returns the Ticket pydantic fields plus:

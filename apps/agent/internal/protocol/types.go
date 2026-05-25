@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// CommandKind enumerates the five M05 AgentCommand kinds.
+// CommandKind enumerates the five AgentCommand kinds.
 type CommandKind string
 
 const (

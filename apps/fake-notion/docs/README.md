@@ -1,7 +1,7 @@
 # fake-notion
 
 Test-only fake Notion service. Implements just enough of Notion's OAuth +
-hosted-MCP surface to drive yaaos M04 end-to-end without registering a real
+hosted-MCP surface to drive yaaos end-to-end without registering a real
 Notion public integration.
 
 ## Emulated

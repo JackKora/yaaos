@@ -1,7 +1,6 @@
 """HTTP routes owned by the in_memory_workspace plugin.
 
-Plugin-owned URL namespace per `plan/milestones/M01-code-review/backend.md` §
-2026-05-16 — each plugin exposes its health check under `/api/<plugin>/...`.
+Plugin-owned URL namespace per `2026-05-16 — each plugin exposes its health check under `/api/<plugin>/...`.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Service test (Phase 2 gap C): integration health-check → audit + email → next review's proxy → review-output prefix.
 
-The six broken-creds surfaces described in the M04 architecture are tested in
+The six broken-creds surfaces described in the architecture are tested in
 isolation today. This service test stitches the BACKEND half of the chain —
 health-check flips the credential status, audits, emails Owners; then the next
 review's proxy dispatch hits the broken row, records the provider, and the

@@ -1,15 +1,14 @@
 """Intake-type registry.
 
-A registered `IntakeType` is the M05 entry point for an inbound signal: it
-verifies authenticity, parses the payload, and produces an `IntakePrepared`
-that the `/api/intake/{type}` endpoint turns into a ticket + workflow start.
-
-Each type maps to exactly one workflow (`workflow_name`). M05 ships the
-`github_pr` type bound to `pr_review_v1`.
+A registered `IntakeType` is the entry point for an inbound signal: it
+verifies authenticity, parses the payload, and either prepares a ticket +
+workflow start (`IntakePrepared`) or applies its mutations directly inside
+the endpoint's session and returns `IntakeSideEffect` — for events that
+adjust existing state without spawning a new workflow (PR close/reopen,
+install lifecycle, comment threads on already-tracked tickets).
 
 Registry is process-local. Types register themselves at import time from
-within `domain/intake` (or via plugin bootstrap if we ever route external
-signals through plugins).
+within `domain/intake` or via plugin bootstrap.
 """
 
 from __future__ import annotations
@@ -37,11 +36,14 @@ class IntakeRejectedError(Exception):
 
 
 class IntakePrepared(BaseModel):
-    """The output of `IntakeType.handle()`. Drives `domain/tickets.create()`
-    and `core/workflow.start()`."""
+    """Ticket-creating outcome from `IntakeType.handle()`. Drives
+    `domain/tickets.create()` + `core/workflow.start()`. The handler picks
+    `workflow_name` per event so a single intake type can route different
+    actions to different workflows."""
 
     model_config = ConfigDict(frozen=True)
     org_id: UUID
+    workflow_name: str
     idempotency_key: str
     title: str | None = None
     description: str | None = None
@@ -50,13 +52,25 @@ class IntakePrepared(BaseModel):
     repo_external_id: str = ""
 
 
+class IntakeSideEffect(BaseModel):
+    """Non-ticket outcome from `IntakeType.handle()`. The handler already
+    applied its mutations against the endpoint's session; the endpoint just
+    commits and returns 200. `detail` is included in the response body for
+    observability."""
+
+    model_config = ConfigDict(frozen=True)
+    detail: str = "side_effect"
+
+
+IntakeOutcome = IntakePrepared | IntakeSideEffect
+
+
 @runtime_checkable
 class IntakeType(Protocol):
     """Per-type intake handler. Implementations register themselves with the
     process-wide registry via `register_intake_type`."""
 
     name: str
-    workflow_name: str
 
     async def handle(
         self,
@@ -64,7 +78,7 @@ class IntakeType(Protocol):
         headers: Mapping[str, str],
         body: bytes,
         session: AsyncSession,
-    ) -> IntakePrepared: ...
+    ) -> IntakeOutcome: ...
 
 
 _REGISTRY: dict[str, IntakeType] = {}

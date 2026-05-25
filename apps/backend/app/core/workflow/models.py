@@ -17,7 +17,7 @@ from app.core.database import Base
 class WorkflowExecutionRow(Base):
     """One row per in-flight workflow run. State machine:
     `pending → running → (awaiting_agent | awaiting_human)* → done | failed | cancelled`.
-    See `apps/backend/docs/core_workflow.md` + the M05 architecture doc."""
+    See `apps/backend/docs/core_workflow.md` + the architecture doc."""
 
     __tablename__ = "workflow_executions"
 

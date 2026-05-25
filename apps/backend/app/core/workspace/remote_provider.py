@@ -182,7 +182,7 @@ async def pick_agent_for_org(
     Returns None when no pod is reachable; caller should fail the
     provisioning step with a recoverable error.
 
-    The queue is process-local in the M01 POC. Multi-pod backends will
+    The queue is process-local in the POC. Multi-pod backends will
     swap the load signal for a cross-instance counter (Redis or a
     distributed in_flight_commands count per agent_id) — the policy
     here stays "least loaded → most recent heartbeat", just sourced

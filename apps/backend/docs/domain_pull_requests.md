@@ -26,6 +26,7 @@ Pydantic model mirroring the row. `PullRequest.from_row(row)` converts an ORM ro
 
 Called by `intake` on every webhook for a tracked PR. Insert if `(plugin_id, external_id)` is new; otherwise refresh mutable fields and stamp `last_synced_at`.
 
+- Service signature: required `session: AsyncSession`; never commits. The caller composes ticket-insert + PR-upsert + audit + workflow-start in one transaction so the FK on `pull_requests.ticket_id` resolves before commit.
 - On insert, `ticket_id` is required (raises `ValueError` otherwise).
 - On update, `ticket_id` is ignored — the existing FK stays.
 - Mutable: `title`, `body`, `base_sha`, `head_sha`, `is_draft`, `state`, `html_url`, `last_synced_at`.
@@ -34,7 +35,7 @@ Called by `intake` on every webhook for a tracked PR. Insert if `(plugin_id, ext
 
 ### `update_state`
 
-Updates the `state` column. No state-machine validation — VCS is source of truth, yaaos copies. Raises `PullRequestNotFoundError` on missing id; no-ops if state matches. Writes `audit_for_pr(kind="pull_request.state_changed", payload={from_state, to_state})`. Called by `intake._handle_pr_closed` and `intake._handle_pr_reopened`.
+Updates the `state` column. No state-machine validation — VCS is source of truth, yaaos copies. Raises `PullRequestNotFoundError` on missing id; no-ops if state matches. Writes `audit_for_pr(kind="pull_request.state_changed", payload={from_state, to_state})`. Called by the github intake type's `pull_request.closed` and `pull_request.reopened` branches.
 
 ### Reads
 

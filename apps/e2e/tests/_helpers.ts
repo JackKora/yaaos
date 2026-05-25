@@ -47,7 +47,7 @@ export async function resetStack(): Promise<void> {
  *
  *  `targetOrgSlug`, when set, attaches the install row to the yaaos org with
  *  that slug (seeded earlier via `bootstrap_owner`). Default behavior (no
- *  slug) keeps the legacy M01-org stub for unauthenticated specs.
+ *  slug) keeps the legacy single-org stub for unauthenticated specs.
  */
 export async function seedGithubInstall(
   opts: { orgLogin?: string; targetOrgSlug?: string } = {},
@@ -165,7 +165,7 @@ export async function dispatchWebhook(opts: {
   await jsonPost(`${FAKE_GITHUB_URL}/__test/dispatch_webhook`, {
     event: opts.event,
     payload: opts.payload,
-    target_url: `${YAAOS_INTERNAL_URL}/api/github/webhook`,
+    target_url: `${YAAOS_INTERNAL_URL}/api/intake/github`,
     delivery_id: opts.deliveryId ?? `delivery-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   });
 }

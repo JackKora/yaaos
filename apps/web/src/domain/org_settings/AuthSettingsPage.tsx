@@ -7,7 +7,7 @@ import { OrgSettingsLayout } from "./OrgSettingsLayout";
 import { useUpdateOrgSettings } from "./queries";
 
 /**
- * Org Settings > Auth: re-home of the M02 SSO config UI + a new
+ * Org Settings > Auth: re-home of the SSO config UI + a new
  * session-timeout override editor (Phase 4). Owner+Admin only.
  */
 export function AuthSettingsPage() {

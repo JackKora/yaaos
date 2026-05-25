@@ -1,88 +1,77 @@
 # domain/intake
 
-> Inbound VCS-event router — receives `VCSEvent`s from plugins, applies filters, parses re-review commands, syncs PR metadata, and dispatches into `tickets`, `pull_requests`, and `reviewer`.
+> Single inbound-signal endpoint. Plugins register `IntakeType` handlers; `POST /api/intake/{type}` verifies, dedups, and either creates a ticket + starts a workflow or applies a side-effect.
 
 ## Purpose
 
-The policy layer above VCS plugins. Plugins emit raw semantic events; intake decides what to do. Owns no DB tables — coordinates writes across other modules. Three external entry points: plugin webhook handlers (`handle_vcs_events`), the catch-up poller (`refresh_pr_metadata*`), and the reviewer's startup recovery (also via `refresh_pr_metadata*`). Every filter decision and every metadata sync flows through here.
+The policy layer between external signals (webhooks, etc.) and yaaos state. Owns no tables — coordinates writes across `tickets`, `pull_requests`, `reviewer`, and `core/audit_log` via plugin-supplied handlers.
 
 ## Public interface
 
 Exported from `app/domain/intake/__init__.py`:
 
-- `handle_vcs_events(events, *, org_id)` — main entry from plugins (legacy path; preserved).
-- `refresh_pr_metadata(repo_external_id, pr, *, org_id)` — caller has a `VCSPullRequest`.
-- `refresh_pr_metadata_by_id(repo_external_id, pr_external_id, *, org_id)` — only external id known (catch-up).
+- `IntakeType` (Protocol) — `name: str`; `handle(*, headers, body, session) -> IntakeOutcome`.
+- `IntakePrepared` — ticket-creating outcome (carries `workflow_name` per event).
+- `IntakeSideEffect` — non-ticket outcome (handler already mutated state via the endpoint's session; `detail: str` for the response body).
+- `IntakeOutcome = IntakePrepared | IntakeSideEffect`.
+- `IntakeRejectedError(kind, message)` — `bad_signature` → 401, `bad_request` → 400, `unsupported` → 422.
+- `register_intake_type`, `get_intake_type`, `registered_intake_types`.
 - `parse_rereview(body)` — pure helper, returns `(matched, agent_name | None)`.
-- `is_skippable_path(path)` — pure helper; `True` for lockfiles, vendor dirs, generated files, binary extensions. Also used by `domain/reviewer` for its trivial-diff check.
-- `IntakeError` — base exception; uncommon (most errors are audit-and-continue).
-- `IntakeType` (Protocol), `IntakePrepared`, `IntakeRejectedError`, `register_intake_type`, `get_intake_type`, `registered_intake_types`, `_reset_registry_for_tests` — the M05 intake-type registry.
+- `is_skippable_path(path)` — pure helper for lockfiles, vendor dirs, generated files, binary extensions. Re-used by `domain/reviewer`.
+- `IntakeError` — base exception (uncommon; most handlers prefer audit-and-continue).
 
-HTTP route: `POST /api/intake/{type}` (M05) — generic intake endpoint. Plugins register `IntakeType` handlers; the endpoint verifies, dedups via `idempotency_key`, calls `domain/tickets.create()`, and starts the bound workflow via `core/workflow.get_engine().start()`. The legacy `POST /api/github/webhook` (in `plugins/github`) is preserved for non-PR flows (push, install lifecycle).
+HTTP: `POST /api/intake/{type}`. The endpoint reads body + headers, dispatches to the registered handler, branches on the return:
+
+- `IntakePrepared` → `tickets.create(...)` (idempotent on `(org_id, idempotency_key)`); on first create, `engine.start(prepared.workflow_name, ticket_id, session=s)` and attach the execution id to the ticket; all in one transaction.
+- `IntakeSideEffect` → just commit the endpoint's session (the handler already wrote what it needed).
 
 ## Module architecture
 
 ### Files
 
-- `service.py` — entry points, per-event handlers, audit-payload models, `refresh_pr_metadata*` upsert.
-- `parsing.py` — `@yaaos rereview` regex and skip-path heuristics. Pure, unit-tested.
+- `registry.py` — `IntakeType` protocol, `IntakePrepared`, `IntakeSideEffect`, `IntakeRejectedError`, process-local registry.
+- `web.py` — `POST /api/intake/{type}` route; reads body, calls handler, branches on outcome.
+- `parsing.py` — `parse_yaaos_command`, `parse_rereview`, `is_skippable_path`. Pure, unit-tested.
+- `service.py` — `IntakeError` (placeholder).
 - `module.py` — `get_module_name() -> "intake"`.
 
-### Top-level dispatch
+### Registered handlers
 
-`handle_vcs_events` wraps each event in try/except. A single bad event writes `webhook_event.failed` with `{event_kind, source_event_id, exception_type, message}`; the loop continues. The plugin receives 200 regardless. Missed events are recovered by the plugin's catch-up poller on restart. `_dispatch_one` is an `isinstance` chain over the six concrete subclasses.
+- `github` (in `plugins/github.intake_type`) — single entry for every GitHub webhook event. Branches on `X-Github-Event` + `payload.action`. See [plugins_github.md](plugins_github.md).
 
-### Per-event handlers
+### Idempotency
 
-- `_handle_pr_ready_for_review` — filters forks and bot authors (writing `webhook_event.filtered`), calls `refresh_pr_metadata`, then `reviewer.start_pr_review(ticket.id, org_id=, trigger_reason="pr_ready")` which starts a `pr_review_v1` workflow execution via the engine. No repo-allowlist gate — the GitHub App install picks the access scope.
-- `_handle_pr_synchronized` — looks up the PR, refreshes via the by-id variant (fresh VCS fetch), then calls `reviewer.handle_push(pr.id, new_head_sha=..., prev_head_sha=event.prev_head_sha, org_id=...)`. `prev_head_sha` comes from the webhook payload's `before` field via `payload_parser`. `handle_push` runs the §7 trigger policy and spawns the incremental runner.
-- `_handle_pr_closed` — updates PR state to `merged` or `closed`, transitions the ticket to `complete` if `in_review`, calls `reviewer.cancel_workflows_for_ticket` which flips every non-terminal workflow execution for the ticket via `workflow.request_cancel`.
-- `_handle_pr_reopened` — updates PR state to `open`. No review triggered — the next commit does so via `pr_synchronized`.
-- `_handle_comment_created` — skips yaaos bot comments (`YAAOS_BOT_LOGIN = "yaaos[bot]"`) and `author_type == "bot"`. Then:
-  1. **Canonical commands** (`parse_yaaos_command`): `/yaaos cancel` calls `cancel_workflows_for_ticket`; `/yaaos full review` calls `start_pr_review(..., trigger_reason="manual_full")`; `/yaaos review` calls `handle_push` for an incremental run. Legacy `@yaaos rereview` maps to `full review` for backwards compat. Every match writes `ticket.rereview_requested` first.
-  2. **Inline replies are deferred.** A future `review_comments` table will own that lifecycle; intake silently drops them today.
-- `_handle_reaction_added` — looks up the comment in `posted_comments`. On hit: write `ticket.reaction_received`. Reactions are signal-only — no review triggered.
+Two layers:
 
-### Filtering rules
+- **Delivery-level** — handlers that record raw webhook payloads (the github type writes `github_webhook_events.source_event_id`) dedupe duplicate retries; a second delivery returns `IntakeSideEffect(detail="duplicate")` and the endpoint commits a no-op.
+- **Ticket-level** — `IntakePrepared.idempotency_key` is unique on `tickets`. The github type also keys ticket inserts on `(org_id, source, source_external_id)` to catch concurrent deliveries that arrive with different delivery ids.
 
-Centralized here, not in plugins. Plugins emit semantic events (e.g., `PullRequestReadyForReview` only when actually ready, not drafts); intake applies fork, bot author, trivial diff (delegated to `reviewer` via `is_skippable_path`), too-large diff (delegated to `reviewer`, 5000-line threshold). Drops write `webhook_event.filtered` with `{reason, event_kind, source_event_id}`.
+### Filtering
+
+Filters live inside each `IntakeType`'s `handle()`. The github type drops draft PRs, forks, and bot authors; each drop writes `webhook_event.filtered` with `{reason, event_kind, source_event_id}` so the audit log shows why nothing happened.
 
 ### `@yaaos rereview` parser
 
-Single case-insensitive regex compiled once: `@yaaos(?:-[a-z0-9-]+)?\s+rereview`. Legacy `@yaaos-<specialty>` forms still match for backwards compatibility; the specialty is ignored (one reviewer per ticket). Body-parsed token, not a GitHub user mention. Whitespace tolerant. Definition in `app/domain/intake/parsing.py`.
+Single case-insensitive regex in `parsing.py`: `@yaaos(?:-[a-z0-9-]+)?\s+rereview`. Legacy `@yaaos-<specialty>` forms still match for backwards compatibility; the specialty is ignored. Body-parsed token, not a GitHub mention. `parse_yaaos_command` handles the newer `/yaaos full review` / `/yaaos cancel` / `/yaaos review` forms.
 
 ### Skip-path heuristics
 
-`is_skippable_path` matches the requirements' trivial-diff skip list: lockfiles (`package-lock.json`, `yarn.lock`, `Cargo.lock`, `poetry.lock`, `Pipfile.lock`, `Gemfile.lock`, `go.sum`), vendor dirs (`node_modules/`, `vendor/`, `third_party/`, `dist/`, `build/`, `out/`), generated conventions (`*.pb.go`, `*.gen.*`, `_generated` substring), and binary extensions (images, archives, fonts, PDFs). Re-imported by `domain/reviewer.queue._is_skip_path` — intake is the single source of truth.
+`is_skippable_path` matches the trivial-diff skip list: lockfiles (`package-lock.json`, `yarn.lock`, `Cargo.lock`, `poetry.lock`, `Pipfile.lock`, `Gemfile.lock`, `go.sum`), vendor dirs (`node_modules/`, `vendor/`, `third_party/`, `dist/`, `build/`, `out/`), generated conventions (`*.pb.go`, `*.gen.*`, `_generated` substring), and binary extensions. `domain/reviewer` re-imports this so intake stays the single source of truth.
 
-### PR metadata sync
-
-Two functions share an internal upsert. Use `refresh_pr_metadata` when the caller has a `VCSPullRequest` (webhooks include it); use `refresh_pr_metadata_by_id` when only the external id is known (catch-up poller, reviewer recovery — fetches via `vcs.get_plugin("github").fetch_pr`).
-
-Handles the chicken-and-egg between `tickets.pr_id` and `pull_requests.ticket_id` via an idempotent claim:
-
-1. `INSERT ... ON CONFLICT DO NOTHING` on `tickets (org_id, source, source_external_id)` — exactly one concurrent caller wins the row (constraint `uq_tickets_org_source_external` from migration 025). The loser selects the existing ticket.
-2. `pull_requests.upsert(pr, ticket_id=)` — points the PR at whatever ticket id the previous step resolved.
-3. Patch `tickets.pr_id` (only if still NULL) so the FK direction closes.
-4. Winner emits `ticket.created` + publishes `TicketStatusChanged(previous=None, new='running')`. Loser re-syncs `title`/`description` via `_sync_ticket_titles` (no audit — metadata sync is not a status transition).
-
-This is the production write path for tickets. `tickets.create_for_pr` exists for direct callers and tests.
-
-### Audit-log entries written
+### Audit-log entries written by handlers
 
 | Kind | When | Payload |
 |---|---|---|
 | `webhook_event.filtered` | A filter rule rejects an event | `{reason, event_kind, source_event_id}` |
-| `webhook_event.failed` | Per-event try/except catches an exception | `{event_kind, source_event_id, exception_type, message}` |
 | `ticket.created` | First-time PR upsert creates the ticket | `{pr_id, repo_external_id}` |
-| `ticket.rereview_requested` | `@yaaos rereview` comment matched | `{comment_external_id}` |
+| `ticket.rereview_requested` | `/yaaos …` or `@yaaos rereview` matched | `{comment_external_id}` |
 | `ticket.reaction_received` | Reaction added to a yaaos comment | `{reaction, target_comment_external_id}` |
 
-`webhook_event.*` entries use a synthetic UUID as entity id (intake doesn't have the webhook row id at this layer).
+`webhook_event.filtered` uses a synthetic UUID as entity id (no webhook row id at the handler layer).
 
 ### Error handling
 
-Per-event isolation only. Systematic failures (DB down) propagate to the plugin's webhook receiver, which logs and still responds 200 — webhooks are best-effort and missed events recover via the catch-up poller. No retries inside intake.
+Per-event isolation lives inside each handler. The endpoint surfaces `IntakeRejectedError` as the matching HTTP status; uncaught exceptions roll back the endpoint's session and return 500. Missed events recover via the plugin's catch-up poller (where one exists).
 
 ## Data owned
 
@@ -90,4 +79,4 @@ None. Writes through `tickets`, `pull_requests`, `reviewer`, and `core/audit_log
 
 ## How it's tested
 
-`app/domain/intake/test/test_parsing.py` covers `parse_rereview` and `is_skippable_path` exhaustively (every agent variant, case-insensitivity, negatives, every skippable category). Dispatch + handler logic covered by backend integration tests in `app/test/` — drive real `VCSEvent` instances through `handle_vcs_events` and assert ticket / PR / review_job rows and audit entries. **Service test** `app/domain/intake/test/test_pr_resync_service.py` (`@pytest.mark.service`) drives the `pull_request.synchronize` path — after an initial review posts, a synchronize event with a new head SHA triggers an incremental review (`sequence_number=2`, `scope_kind="incremental"`).
+`app/domain/intake/test/test_parsing.py` covers `parse_rereview`, `parse_yaaos_command`, and `is_skippable_path` exhaustively. `app/domain/intake/test/test_intake_endpoint.py` drives `POST /api/intake/{type}` end-to-end against a stub `IntakeType`: happy path (ticket + workflow + outbox row), unknown type (404), bad signature (401), duplicate idempotency_key. Per-plugin handler logic is tested under each plugin (e.g., `apps/backend/app/plugins/github/test/`).

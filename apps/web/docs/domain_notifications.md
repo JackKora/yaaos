@@ -4,7 +4,7 @@
 
 ## Purpose
 
-The `/notifications` route + the sidebar `NotificationsBell` composite. M06 E2a.6 + E2a.7. The page renders the full chronological list with all/unread/read filter chips; the bell renders an unread-count badge + the latest 10 unread items in a popover.
+The `/notifications` route + the sidebar `NotificationsBell` composite. The page renders the full chronological list with all/unread/read filter chips; the bell renders an unread-count badge + the latest 10 unread items in a popover.
 
 ## Public interface
 

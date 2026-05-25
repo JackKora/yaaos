@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Owns the tenancy boundary. Every non-user yaaos data row is `org_id`-scoped; this module owns the table that defines an org and the membership rows that decide who's in it and what they can do. Invitations are the sole access gate (no self-signup). SAML SSO config lives here too — the IdP metadata + per-org SP private key + JIT toggle + break-glass exempt-Owner pointer. SSO config flows ship in Phase 12. M04 Phase 6b absorbed the legacy `domain/settings` onboarding-status aggregator: `register_onboarding_contributor(name, check)` lets plugins push readiness callbacks into a per-org registry, and `get_onboarding_status(org_id)` fans them out; `onboarding_web.py` re-exposes the legacy `/api/settings/onboarding` + `/api/settings/plugins` endpoints unchanged for the M01 settings page that consumes them.
+Owns the tenancy boundary. Every non-user yaaos data row is `org_id`-scoped; this module owns the table that defines an org and the membership rows that decide who's in it and what they can do. Invitations are the sole access gate (no self-signup). SAML SSO config lives here too — the IdP metadata + per-org SP private key + JIT toggle + break-glass exempt-Owner pointer. SSO config flows ship in Phase 12. absorbed the legacy `domain/settings` onboarding-status aggregator: `register_onboarding_contributor(name, check)` lets plugins push readiness callbacks into a per-org registry, and `get_onboarding_status(org_id)` fans them out; `onboarding_web.py` re-exposes the legacy `/api/settings/onboarding` + `/api/settings/plugins` endpoints unchanged for the settings page that consumes them.
 
 ## Public interface
 

@@ -1,6 +1,6 @@
 # domain/notifications
 
-> Cross-org user inbox. One row per user-targeted event; the SPA renders unread items in the sidebar bell + the `/notifications` page (M06 E2a.6 / E2a.7).
+> Cross-org user inbox. One row per user-targeted event; the SPA renders unread items in the sidebar bell + the `/notifications` page (E2a.6 / E2a.7).
 
 ## Purpose
 

@@ -3,7 +3,7 @@
  *
  * Pure-render: takes a `ReviewJobActivityEvent`-shaped object + an
  * optional `expanded` flag. Maps the freeform `kind` string to a lucide
- * icon per the M06 baseline taxonomy from requirements.md § E2a.4:
+ * icon per the baseline taxonomy from requirements.md § E2a.4:
  *
  *   session_start         → Play
  *   subagent_dispatched   → GitBranch

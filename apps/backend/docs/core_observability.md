@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Logging + tracing bootstrap. Configures structlog once at process start (console-pretty in `dev`, JSON in `prod`) and **always** wires the OpenTelemetry SDK — `TracerProvider` + W3C trace-context propagator + FastAPI/SQLAlchemy auto-instrumentation. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, spans flow to that endpoint via a `BatchSpanProcessor`; when unset (the default in M05) spans are created and discarded. structlog log records carry `trace_id` + `span_id` whenever a span is active.
+Logging + tracing bootstrap. Configures structlog once at process start (console-pretty in `dev`, JSON in `prod`) and **always** wires the OpenTelemetry SDK — `TracerProvider` + W3C trace-context propagator + FastAPI/SQLAlchemy auto-instrumentation. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, spans flow to that endpoint via a `BatchSpanProcessor`; when unset spans are created and discarded. structlog log records carry `trace_id` + `span_id` whenever a span is active.
 
 ## Public interface
 
@@ -20,7 +20,7 @@ No HTTP routes. No tables. See `app/core/observability/__init__.py`.
 
 ### structlog
 
-Reads `settings.log_level` and `settings.yaaos_env`. Processor chain: `merge_contextvars`, `_inject_trace_context` (M05 — pulls `trace_id` + `span_id` from the active OTel span), `add_log_level`, ISO-UTC `TimeStamper`, stack/exception formatters, then `ConsoleRenderer(colors=True)` in `dev` or `JSONRenderer` otherwise. `logging.basicConfig` is also called so non-structlog logs land on stdout at the same level.
+Reads `settings.log_level` and `settings.yaaos_env`. Processor chain: `merge_contextvars`, `_inject_trace_context` (— pulls `trace_id` + `span_id` from the active OTel span), `add_log_level`, ISO-UTC `TimeStamper`, stack/exception formatters, then `ConsoleRenderer(colors=True)` in `dev` or `JSONRenderer` otherwise. `logging.basicConfig` is also called so non-structlog logs land on stdout at the same level.
 
 ### OTel — always on, exporter optional
 
@@ -33,7 +33,7 @@ Reads `settings.log_level` and `settings.yaaos_env`. Processor chain: `merge_con
 
 ### No exporter in prod yet
 
-The boot path always sets up the SDK so M05 wire-protocol code (`traceparent` propagation, structlog correlation, ActivityEvent linkage) can rely on it without flags. Adding a real exporter in prod later (Datadog / Honeycomb / Tempo) is a single env-var flip — no code change.
+The boot path always sets up the SDK so wire-protocol code (`traceparent` propagation, structlog correlation, ActivityEvent linkage) can rely on it without flags. Adding a real exporter in prod later (Datadog / Honeycomb / Tempo) is a single env-var flip — no code change.
 
 ### Wire-protocol trace propagation (Phase 8)
 
@@ -59,4 +59,4 @@ None.
 
 `app/core/observability/test/test_otel.py` covers: `_inject_trace_context` adds `trace_id`/`span_id` only when a span is active, hex widths are correct, and the in-memory `SpanExporter` fixture captures emitted spans. Real exporter wiring is verified indirectly — every integration test runs `configure()` and the auto-instrumentation emits spans on every request.
 
-The in-memory exporter pattern (attach an `InMemorySpanExporter` via `SimpleSpanProcessor` for a test) is the M05-blessed way to assert on span shape — see the `in_memory_spans` fixture for an example.
+The in-memory exporter pattern (attach an `InMemorySpanExporter` via `SimpleSpanProcessor` for a test) is the recommended way to assert on span shape — see the `in_memory_spans` fixture for an example.

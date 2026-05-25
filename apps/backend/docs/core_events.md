@@ -8,11 +8,12 @@ Thin in-process transport. Domain modules `publish()` typed events; UI clients s
 
 ## Public interface
 
-Exports `Event`, `EventFilter`, `publish`, `subscribe`, `serialize_for_sse`, `stream_events_for_filter`, `subscriber_count`, `_reset_for_tests`. See `apps/backend/app/core/events/__init__.py`.
+Exports `Event`, `EventFilter`, `publish`, `publish_after_commit`, `subscribe`, `serialize_for_sse`, `stream_events_for_filter`, `subscriber_count`, `_reset_for_tests`. See `apps/backend/app/core/events/__init__.py`.
 
 - `Event` — base Pydantic class; domain modules subclass.
 - `EventFilter` — subscriber filter (`ticket_id`, `kinds`).
 - `publish(event)` — fire-and-forget dispatch to matching subscribers.
+- `publish_after_commit(session, event)` — canonical helper for write-path code: stash on `session.info`, flush via a SQLAlchemy `after_commit` listener. Commit publishes; rollback discards. Use this whenever the event is tied to a transaction the caller owns.
 - `subscribe(filter)` — async iterator over matching events; auto-unregisters on consumer exit.
 
 HTTP route registered by the module:
@@ -35,6 +36,10 @@ Module-level `_subscribers` dict keyed by UUID, holding `(EventFilter, asyncio.Q
 `subscribe(filter)` is an async generator: registers a UUID-keyed queue (`maxsize=100`), yields `queue.get()` in a loop, unregisters in `finally` when the consumer exits or is cancelled.
 
 The 100-event backpressure is generous for few-events-per-PR-per-minute traffic.
+
+### `publish_after_commit`
+
+Write paths need to publish events tied to a transaction outcome: fire on commit, discard on rollback. The helper stashes events under a sentinel key on the caller's `session.info`; a single module-level `Session.after_commit` listener pops them and schedules `publish()` onto the running loop (the listener is sync; `publish` is async). The hook fires under the SAVEPOINT-based test rollback fixture as well, so service tests see the same publish path production does.
 
 ### The SSE endpoint
 

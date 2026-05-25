@@ -72,7 +72,7 @@ def _ensure_plugins_registered() -> None:
     Some unit tests (e.g. `test_coding_agent/test_registry.py`) call
     `_reset_plugins_for_tests()` in teardown, which clears the global
     registries and leaks empty state to subsequent tests. Service tests that
-    drive `reviewer.start_pr_review` / `intake.handle_vcs_events` need the
+    drive `reviewer.start_pr_review` / the github intake type need the
     real plugin entries (wrapped by `stub_coding_agent` + `stub_workspace`)
     present regardless of test ordering. Idempotent + cheap.
     """

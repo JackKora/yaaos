@@ -22,7 +22,7 @@ export function useHealth() {
   });
 }
 
-/** Aggregated readiness for the M06 "not configured" gate. */
+/** Aggregated readiness for the "not configured" gate. */
 export interface ConfigStatus {
   configured: boolean;
   missing: Array<"vcs" | "coding_agent" | "api_key" | "workspace_provider">;
@@ -54,7 +54,7 @@ export function useMyOrgs() {
   });
 }
 
-/** M06 Phase 8 — Login page provider button (E2a.18). Returns the SSO IdP
+/** — Login page provider button (E2a.18). Returns the SSO IdP
  *  matching the email's domain, or github fallback. Today the backend
  *  always returns `provider: "github"` (D8.1). */
 export interface SsoDiscoverResult {
@@ -70,7 +70,7 @@ export function useSsoDiscover() {
   });
 }
 
-/** M06 Phase 8 — Org-picker "Create org" modal (E2a.19). On success the
+/** — Org-picker "Create org" modal (E2a.19). On success the
  *  caller is Admin of the new org; the SPA navigates into it. */
 export interface CreateOrgResponse {
   id: string;
@@ -186,7 +186,6 @@ export function useTickets() {
       const resp = await apiFetch<TicketsListResponse>("/api/tickets");
       return resp.items;
     },
-    refetchInterval: 3_000,
   });
 }
 
@@ -343,7 +342,7 @@ export function useThreadForFinding(finding_id: string | null) {
   });
 }
 
-/** M06: Builder confirms a finding ("yeah I'll fix this"). */
+/** : Builder confirms a finding ("yeah I'll fix this"). */
 export function useAckFinding(ticket_id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -357,7 +356,7 @@ export function useAckFinding(ticket_id: string) {
   });
 }
 
-/** M06: Builder rejects a finding with a reason. */
+/** : Builder rejects a finding with a reason. */
 export function usePushBackFinding(ticket_id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -372,7 +371,7 @@ export function usePushBackFinding(ticket_id: string) {
   });
 }
 
-/** M06: past HITL exchanges on a ticket — prompt + resolution + timestamps. */
+/** : past HITL exchanges on a ticket — prompt + resolution + timestamps. */
 export interface HitlHistoryEntry {
   id: string;
   workflow_execution_id: string;
@@ -390,7 +389,7 @@ export function useHitlHistory(ticket_id: string) {
   });
 }
 
-/** M06: submit a HITL response. The body shape is prompt-discriminated;
+/** : submit a HITL response. The body shape is prompt-discriminated;
  *  callers pass the dict the HITL renderer produced. */
 export function useHitlRespond(ticket_id: string) {
   const qc = useQueryClient();

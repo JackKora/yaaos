@@ -9,7 +9,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 
 ## Module map
 
-33 modules: **15 core · 10 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections. M05 scaffolding adds 5 core modules (`tasks`, `outbox`, `workflow`, `agent_gateway`, `sse_pubsub`) — most are skeletons in Phase 0b, fleshed out in later phases.
+33 modules: **15 core · 10 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections. scaffolding adds 5 core modules (`tasks`, `outbox`, `workflow`, `agent_gateway`, `sse_pubsub`) — most are skeletons in Phase 0b, fleshed out in later phases.
 
 ### Core — infrastructure, no business logic
 
@@ -27,9 +27,9 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [core_auth](core_auth.md) | Default-deny middleware, contextvars, `Action` enum, `RouteSecurity` taxonomy, `org_context()`. |
 | [core_redis](core_redis.md) | Single Redis access point — per-loop client cache, pub/sub primitives, health ping. |
 | [core_tasks](core_tasks.md) | `@task` decorator + atomic-in-session `enqueue()` over taskiq + Redis; owns the outbox table and worker process. |
-| [core_workflow](core_workflow.md) | Workflow engine — typed workflows + WorkflowCommand categories (M05 skeleton). |
-| [core_agent_gateway](core_agent_gateway.md) | Wire protocol to customer-deployed WorkspaceAgents (M05 skeleton). |
-| [core_sse_pubsub](core_sse_pubsub.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers (M05 skeleton). |
+| [core_workflow](core_workflow.md) | Workflow engine — typed workflows + WorkflowCommand categories (skeleton). |
+| [core_agent_gateway](core_agent_gateway.md) | Wire protocol to customer-deployed WorkspaceAgents (skeleton). |
+| [core_sse_pubsub](core_sse_pubsub.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers (skeleton). |
 
 ### Domain — business logic, vendor-neutral
 
@@ -42,15 +42,15 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [domain_tickets](domain_tickets.md) | Lifecycle `open → in_review → complete`. |
 | [domain_reviewer](domain_reviewer.md) | `ReviewJob` aggregate, per-PR queue, workflow. |
 | [domain_intake](domain_intake.md) | Inbound VCS event router; filters drafts/forks/bots. |
-| [domain_identity](domain_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP (M02). |
-| [domain_orgs](domain_orgs.md) | Orgs, memberships, roles, invitations, SSO config, onboarding-status aggregator (M02+). |
-| [domain_sessions](domain_sessions.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints (M02). |
+| [domain_identity](domain_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP. |
+| [domain_orgs](domain_orgs.md) | Orgs, memberships, roles, invitations, SSO config, onboarding-status aggregator (). |
+| [domain_sessions](domain_sessions.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints. |
 
 ### Plugins — vendor-specific implementations
 
 | Module | Responsibility |
 |---|---|
-| [plugins_github](plugins_github.md) | `VCSPlugin` + `Provider` for GitHub: App auth, HMAC, REST, Manifest Flow, catch-up poller, OAuth login (M04 collapsed `plugins/oauth_github` here). |
+| [plugins_github](plugins_github.md) | `VCSPlugin` + `Provider` for GitHub: App auth, HMAC, REST, Manifest Flow, catch-up poller, OAuth login (collapsed `plugins/oauth_github` here). |
 | [plugins_claude_code](plugins_claude_code.md) | `CodingAgentPlugin` wrapping the Claude Code CLI. |
 | [plugins_in_memory_workspace](plugins_in_memory_workspace.md) | `WorkspaceProvider` using tempdir + git clone (POC). |
 | [plugins_linear](plugins_linear.md) | `IntegrationProvider` for Linear (hosted MCP via `domain/integrations`). |

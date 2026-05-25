@@ -27,18 +27,18 @@ log = structlog.get_logger("core.tasks.worker")
 
 
 async def run() -> None:
-    """Worker process body. Migrate the schema, register all `@task`
-    bodies with the broker, then run drain + consumer side by side.
-    Cancels both gracefully on SIGTERM/SIGINT.
+    """Worker process body. Migrate the schema, import modules that carry
+    `@task` decorators (registers them with the broker as a side-effect),
+    then run drain + consumer side by side. Cancels both gracefully on
+    SIGTERM/SIGINT.
     """
     observability.configure(role="worker")
     await database.migrate()
 
     broker = get_broker()
-    # Import the modules that register @task bodies so the in-process
-    # registry is populated before the broker starts dispatching. The
-    # @task decorators run at import time and register with the broker
-    # singleton via `get_broker()`.
+    # Import each module whose `@task` decorators register task bodies
+    # with the broker. The decorator runs at import time and calls
+    # `broker.task(...)` — no separate bind step needed.
     import app.core.workflow.service  # noqa: F401, PLC0415
 
     log.info("tasks.worker.booting", broker=type(broker).__name__)

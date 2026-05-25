@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Per-org configuration the SPA surfaces under `/orgs/$slug/settings/*`. The pages share an `OrgSettingsLayout` shell + per-tab content. The Coding Agent detail (M06 Phase 4 anchor) is the most complex of the bunch; the rest are linear settings forms.
+Per-org configuration the SPA surfaces under `/orgs/$slug/settings/*`. The pages share an `OrgSettingsLayout` shell + per-tab content. The Coding Agent detail (anchor) is the most complex of the bunch; the rest are linear settings forms.
 
 ## Public interface
 
@@ -31,11 +31,11 @@ Each page is mounted by `core/routing` at its respective path:
 - "Remove" clears the org's VCS choice via `DELETE /api/vcs`; it does not uninstall the App on GitHub.
 - The "Install on GitHub" path goes through a backend JSON POST rather than a direct browser nav because the auth chain reads `X-Org-Slug` + CSRF from headers, which a `window.location.href` navigation can't carry.
 
-## Coding Agent detail — M06 Phase 4 anchor
+## Coding Agent detail — anchor
 
 `coding_agents/CodingAgentSettingsPage.tsx` dispatches to a per-plugin component registered via `coding_agents/plugin_registry.ts`. Today `claude_code` is the only registered plugin; future coding agents register here.
 
-`coding_agents/plugins/claude_code/ClaudeCodeSettings.tsx` is the M06 anchor implementation:
+`coding_agents/plugins/claude_code/ClaudeCodeSettings.tsx` is the anchor implementation:
 
 ### Composition
 
@@ -48,9 +48,9 @@ Each page is mounted by `core/routing` at its respective path:
 7. **Save button** — replaces the entire settings JSONB in one PATCH; disabled when there's a duplicate sub-agent name or the count is out of range.
 8. **`DangerZone`** — destructive `ConfirmModal` flow that fires `useUninstallCodingAgent`.
 
-### Per-agent M06 fields
+### Per-agent fields
 
-`AgentEditor` exposes all four M06 schema additions from `apps/backend/app/plugins/claude_code/settings_schema.py` (b36c824):
+`AgentEditor` exposes all four schema additions from `apps/backend/app/plugins/claude_code/settings_schema.py` (b36c824):
 
 - `name`, `prompt`, `model`, `version`, `effort` — legacy fields.
 - `use_default_system_prompt` (checkbox, default true) — when toggled off, reveals…

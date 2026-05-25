@@ -1,8 +1,8 @@
 /**
- * Accessibility — WCAG 2.1 AA via axe-core on every M06 anchor.
+ * Accessibility — WCAG 2.1 AA via axe-core on every anchor page.
  *
  * Asserts the four redesigned anchors (Dashboard / Tickets list / Ticket
- * detail / Coding Agent detail) leave a no-violation paper trail. M06's
+ * detail / Coding Agent detail) leave a no-violation paper trail.
  * F2 § D promised "axe-core clean in CI for every page-level E2E test."
  *
  * Each test reuses one stack-bring-up via Playwright's test.describe
@@ -50,7 +50,7 @@ async function expectNoViolations(page: Page): Promise<void> {
   expect(results.violations).toEqual([]);
 }
 
-test.describe("a11y — M06 anchors", () => {
+test.describe("a11y — anchor pages", () => {
   test("Dashboard has no WCAG AA violations", async ({ page, request }) => {
     await loginAsOwner(page, request);
     await expectNoViolations(page);

@@ -1,4 +1,4 @@
-"""domain/reviewer — M05 workflow-engine reviews + durable findings.
+"""domain/reviewer — workflow-engine reviews + durable findings.
 
 Entry points:
 
@@ -216,7 +216,7 @@ __all__ = [
 class _TicketWorkflowContextProvider:
     """Bridges core/workspace WorkflowCommands to domain/tickets without
     crossing the core → domain layer boundary at import time. Registered
-    by `_register_m05_workflows()` at module import."""
+    by `_register_workflows()` at module import."""
 
     async def get_workspace_ticket_context(self, ticket_id):  # type: ignore[no-untyped-def]
         from app.domain.tickets.service import get_workspace_ticket_context  # noqa: PLC0415
@@ -270,14 +270,13 @@ async def start_pr_review(
     org_id,
     trigger_reason: str = "pr_ready",
 ):
-    """Start an M05 `pr_review_v1` workflow for a ticket.
+    """Start a `pr_review_v1` workflow for a ticket.
 
     Replaces the legacy `schedule_review` call for the full-review path.
     Intake + the /rereview endpoint use this so production has a single
-    path into the M05 engine. Returns the workflow_execution_id.
+    path into the engine. Returns the workflow_execution_id.
 
-    `trigger_reason` is recorded on the workflow's audit trail; the M05
-    workflow doesn't gate behavior on it (legacy queue.py did) — kept
+    `trigger_reason` is recorded on the workflow's audit trail; the workflow doesn't gate behavior on it (legacy queue.py did) — kept
     for observability + audit-log compatibility.
     """
     from uuid import UUID  # noqa: PLC0415
@@ -307,8 +306,8 @@ async def start_pr_review(
     return wfx_id
 
 
-def _register_m05_workflows() -> None:
-    """Register the five M05 reviewer workflows + their WorkflowCommands +
+def _register_workflows() -> None:
+    """Register the five reviewer workflows + their WorkflowCommands +
     the three workspace lifecycle commands against `core/workflow`. Also
     installs the workflow-context provider so `ProvisionWorkspace` can
     read ticket fields. Called at import time; idempotent on re-import
@@ -338,4 +337,4 @@ def _register_m05_workflows() -> None:
     register_workflow_context_provider(_TicketWorkflowContextProvider())
 
 
-_register_m05_workflows()
+_register_workflows()

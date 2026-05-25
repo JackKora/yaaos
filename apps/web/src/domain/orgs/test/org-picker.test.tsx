@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 /**
- * Smoke tests for the M06 Org Picker. Mocks the two backend hooks
+ * Smoke tests for the Org Picker. Mocks the two backend hooks
  * (`useMyOrgs`, `useCreateOrg`) and asserts the three branches: empty
  * list, populated list, create-modal open.
  */

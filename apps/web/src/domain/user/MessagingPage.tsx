@@ -2,7 +2,7 @@
  * User — Messaging.
  *
  * Placeholder per E2a.17. The Messaging feature (Slack/Telegram/Email
- * destination opt-ins) is deferred to a future milestone; M06 ships the
+ * destination opt-ins) is deferred to a future milestone; ships the
  * route in place so the User popover's "Messaging" link doesn't 404.
  */
 

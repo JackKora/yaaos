@@ -1,8 +1,8 @@
 /**
  * Typed API client.
  *
- * M01: types are hand-declared inline rather than generated, because the
- * surface is small and adding the openapi codegen pipeline is M02+ polish.
+ * : types are hand-declared inline rather than generated, because the
+ * surface is small and adding the openapi codegen pipeline is polish.
  */
 
 import createClient from "openapi-fetch";
@@ -21,7 +21,7 @@ export type Ticket = {
   source_external_id: string;
   title: string;
   description: string | null;
-  // M06 collapsed status — 5-state UI vocab (the legacy 4-state values
+  // collapsed status — 5-state UI vocab (the legacy 4-state values
   // were rewritten one-shot in backend migration 023).
   status: "running" | "hitl" | "done" | "failed" | "cancelled";
   plugin_id: string;
@@ -68,7 +68,7 @@ export type Lesson = {
   body: string;
   source_pr_url: string | null;
   /** UUID of the user who created the lesson; null for system/reviewer-created
-   * rows (workspace agent, pre-M06 backfills). */
+   * rows (workspace agent, pre-backfills). */
   created_by: string | null;
   created_at: string;
   updated_at: string;

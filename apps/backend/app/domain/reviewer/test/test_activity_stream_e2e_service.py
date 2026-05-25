@@ -1,13 +1,13 @@
 """End-to-end activity-stream test for the in-memory provider path.
 
-Drives `pr_review_v1` through the M05 workflow engine with a Fake
+Drives `pr_review_v1` through the workflow engine with a Fake
 coding-agent that emits a canned `ActivityEvent` sequence. Asserts the
 SPA's SSE consumer (subscribing via `core/sse_pubsub.subscribe`) sees
 each event verbatim — proving the in-memory taskiq worker path
 publishes activity straight to `sse_pubsub` without needing the
 remote-agent WebSocket transport.
 
-Closes the M05 activity-stream-against-both-providers audit row for
+Closes the activity-stream-against-both-providers audit row for
 the in_memory side; the remote-agent side is covered by
 `core/agent_gateway/test/` activity WebSocket tests.
 """
@@ -102,7 +102,7 @@ def _engine_with_in_memory():
 
 
 async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]
-    from app.core.tasks.service import get_registered  # noqa: PLC0415
+    from app.core.tasks.broker import get_broker  # noqa: PLC0415
 
     for _ in range(50):
         rows = (
@@ -121,19 +121,9 @@ async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]
 
         async def _dispatcher(kind: str, payload: dict) -> None:
             assert kind == "taskiq_enqueue"
-            body = get_registered(payload["task_name"])
-            assert body is not None
-            ctx = type(
-                "Ctx",
-                (),
-                {
-                    "session": None,
-                    "traceparent": payload.get("args", {}).get("traceparent"),
-                    "attempt": 0,
-                    "job_id": "act-e2e",
-                },
-            )()
-            await body(ctx, **payload["args"])
+            decorated = get_broker().find_task(payload["task_name"])
+            assert decorated is not None
+            await decorated.original_func(**payload["args"])
 
         await drain_once(db_session, dispatcher=_dispatcher)
         await db_session.commit()

@@ -1,4 +1,4 @@
-"""Coverage for the M06 user-scoped + readiness endpoints on `/api/orgs`.
+"""Coverage for the user-scoped + readiness endpoints on `/api/orgs`.
 
 - `GET /api/orgs/mine` — cross-org list for the cookie-bearer.
 - `GET /api/orgs/config-status` — per-org readiness for the "not configured" gate.
@@ -74,7 +74,7 @@ async def test_mine_returns_user_memberships_sorted_by_slug(seeded) -> None:
     assert [o["slug"] for o in body] == ["alpha", "beta"]
     assert body[0]["role"] == "owner"
     assert body[1]["role"] == "builder"
-    # last_used_at is null in M06 — no per-membership column today.
+    # last_used_at is null — no per-membership column today.
     assert body[0]["last_used_at"] is None
 
 

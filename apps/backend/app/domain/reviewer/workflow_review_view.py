@@ -100,7 +100,7 @@ async def workflow_metrics_summary(*, org_id: UUID) -> dict[str, Any]:
     """Org-scoped counts-by-status over `workflow_executions`.
 
     NOTE: `workflow_executions` has no `org_id` column (it's per-ticket;
-    the org scope is enforced through the ticket). For the M01 POC we
+    the org scope is enforced through the ticket). For the POC we
     return ALL workflow_executions counts and let the legacy
     `metrics_summary` add the org-scoped review_jobs counts on top.
     """

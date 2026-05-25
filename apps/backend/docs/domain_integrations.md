@@ -19,7 +19,7 @@ Exported from `app/domain/integrations/__init__.py`:
 - `register_provider(provider)` / `get_provider(provider_id)` / `known_providers()` — bootstrap-time registry that keeps `domain/integrations` free of plugin imports.
 - Errors: `IntegrationError`, `ProviderNotRegisteredError`, `IntegrationNotConnectedError`, `BrokenCredentialsError`.
 
-Refresh-on-expiry is deferred — see `plan/milestones/M04-mcp/DECISIONS.md`. The proxy returns `broken_creds` when the stored access token's `expires_at < now()`; Phase 3b's hourly health-check + email notification surfaces the breakage so operators reconnect.
+Refresh-on-expiry is deferred — see . The proxy returns `broken_creds` when the stored access token's `expires_at < now()`; Phase 3b's hourly health-check + email notification surfaces the breakage so operators reconnect.
 
 HTTP routes (mounted at `/api/mcp-proxy` with `X-Org-Slug` header):
 

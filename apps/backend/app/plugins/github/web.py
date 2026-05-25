@@ -1,20 +1,18 @@
-"""HTTP routes owned by the github plugin: webhook receiver + plugin-owned settings/health.
-
-Per `plan/milestones/M01-code-review/backend.md` § 2026-05-16, plugin-owned data
-(install state, health) is served under the plugin's own `/api/github/...`
-namespace — not aggregated under `/api/settings/`.
+"""HTTP routes owned by the github plugin: install state + health + the
+install start/callback handshake. The GitHub webhook receiver lives at
+`POST /api/intake/github` (see `domain/intake.web`); GitHub events flow
+through the intake registry, not this module.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -25,125 +23,19 @@ from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
 from app.domain.sessions.dependencies import require
 from app.plugins.github.models import GitHubAppInstallationRow
-from app.plugins.github.payload_parser import parse_webhook
 from app.plugins.github.service import (
     fetch_install_account_login,
-    mark_installation_inactive,
-    mark_webhook_processed,
-    record_webhook_event,
     upsert_installation,
-    verify_webhook_signature,
 )
 
-log = structlog.get_logger("github.webhook")
+log = structlog.get_logger("github.web")
 
-M01_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
 
-# Default-deny: GitHub plugin routes declare `public_route`. The webhook
-# endpoint authenticates via HMAC signature; the install/install_callback
-# endpoints are SSO-style flows. M03+ may swap install_* to `require()`.
+# Default-deny: GitHub plugin routes declare `public_route`. The
+# install/install_callback endpoints are SSO-style flows; settings endpoints
+# go through `require(action)`.
 router = APIRouter(dependencies=[Depends(public_route)])
-
-
-# ─── Webhook receiver ────────────────────────────────────────────────────────
-
-
-@router.post("/webhook")
-async def webhook(
-    request: Request,
-    x_github_event: str = Header(default=""),
-    x_github_delivery: str = Header(default=""),
-    x_hub_signature_256: str | None = Header(default=None),
-) -> JSONResponse:
-    body = await request.body()
-
-    secret = get_settings().yaaos_github_app_webhook_secret.get_secret_value()
-    if not secret:
-        log.warning("github.webhook.no_secret_configured")
-        return JSONResponse(status_code=400, content={"error": "github app not configured"})
-    if not verify_webhook_signature(body, x_hub_signature_256, secret.encode()):
-        log.warning("github.webhook.bad_signature", delivery=x_github_delivery)
-        return JSONResponse(status_code=400, content={"error": "bad signature"})
-
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        return JSONResponse(status_code=400, content={"error": "bad json"})
-
-    # Resolve org via the installation lookup. M01 single-org default applies
-    # only when no install row matches the inbound delivery.
-    install_id = (payload.get("installation") or {}).get("id")
-    org_id = M01_ORG_ID
-    if install_id is not None:
-        async with db_session() as s:
-            install = (
-                await s.execute(
-                    select(GitHubAppInstallationRow).where(
-                        GitHubAppInstallationRow.install_external_id == str(install_id)
-                    )
-                )
-            ).scalar_one_or_none()
-        if install is not None:
-            org_id = install.org_id
-
-    row_id = await record_webhook_event(
-        x_github_delivery or f"event-{id(payload)}",
-        x_github_event,
-        payload,
-        org_id=org_id,
-    )
-    if row_id is None:
-        return JSONResponse(status_code=200, content={"status": "duplicate"})
-
-    # Install lifecycle events update `github_app_installations` directly —
-    # these are infrastructure state, not VCS events for intake. Doing it here
-    # keeps the plugin self-contained.
-    if x_github_event == "installation" and install_id is not None:
-        action = payload.get("action")
-        account = (payload.get("installation") or {}).get("account") or {}
-        account_login = account.get("login", "")
-        if action in ("created", "new_permissions_accepted", "unsuspend"):
-            await upsert_installation(
-                install_external_id=str(install_id),
-                account_login=account_login,
-                org_id=org_id,
-            )
-        elif action == "deleted":
-            await mark_installation_inactive(install_external_id=str(install_id), status="uninstalled")
-        elif action == "suspend":
-            await mark_installation_inactive(install_external_id=str(install_id), status="suspended")
-
-    events = parse_webhook(x_github_event, x_github_delivery or str(row_id), payload)
-    # Force-push enrichment: `pull_request.synchronize` events arrive with
-    # `force_push=False`; the authoritative answer requires a `/compare` call
-    # against GitHub. Do it here so the parsed event carries the true flag.
-    if events and x_github_event == "pull_request" and payload.get("action") == "synchronize":
-        from app.domain.vcs import PullRequestSynchronized  # noqa: PLC0415
-        from app.plugins.github.service import get_plugin as _get_plugin  # noqa: PLC0415
-
-        before_sha = payload.get("before") or ""
-        after_sha = payload.get("after") or (payload.get("pull_request") or {}).get("head", {}).get("sha", "")
-        repo_full = (payload.get("repository") or {}).get("full_name", "")
-        try:
-            is_force = await _get_plugin().detect_force_push(repo_full, before_sha, after_sha)
-        except Exception:
-            log.exception("github.webhook.force_push_detect_failed", delivery=x_github_delivery)
-            is_force = False
-        events = [
-            e.model_copy(update={"force_push": is_force}) if isinstance(e, PullRequestSynchronized) else e
-            for e in events
-        ]
-
-    if events:
-        from app.domain.intake import handle_vcs_events  # noqa: PLC0415
-
-        try:
-            await handle_vcs_events(events, org_id=org_id)
-        except Exception:
-            log.exception("github.webhook.dispatch_failed", delivery=x_github_delivery)
-
-    await mark_webhook_processed(row_id)
-    return JSONResponse(status_code=200, content={"status": "ok"})
 
 
 # ─── Installation state for the UI ───────────────────────────────────────────
@@ -182,7 +74,7 @@ async def installation() -> InstallationResponse:
     if not app_configured:
         return InstallationResponse(app_configured=False, installed=False)
 
-    org_id = org_id_var.get() or M01_ORG_ID
+    org_id = org_id_var.get() or DEFAULT_ORG_ID
     async with db_session() as s:
         install_row = (
             await s.execute(
@@ -226,7 +118,7 @@ async def repositories() -> dict[str, object]:
     from app.domain import vcs as vcs_mod  # noqa: PLC0415
     from app.plugins.github.service import get_plugin as get_github_plugin  # noqa: PLC0415
 
-    org_id = org_id_var.get() or M01_ORG_ID
+    org_id = org_id_var.get() or DEFAULT_ORG_ID
     try:
         token = await vcs_mod.get_installation_token("github", org_id)
     except Exception as e:
@@ -277,7 +169,7 @@ async def health() -> dict[str, object]:
         install = (
             await s.execute(
                 select(GitHubAppInstallationRow).where(
-                    GitHubAppInstallationRow.org_id == M01_ORG_ID,
+                    GitHubAppInstallationRow.org_id == DEFAULT_ORG_ID,
                     GitHubAppInstallationRow.status == "active",
                 )
             )

@@ -1,7 +1,7 @@
 """MCP-side wiring for the reviewer pipeline.
 
 Two pieces, both extracted from the legacy `queue.py` runner so future
-runners (the M05 workflow-engine path) and tests can share them:
+runners (the workflow-engine path) and tests can share them:
 
 - `build_mcp_payload(review_id, org_id)` — collect connected MCP
   providers for the org, mint a per-review bearer, and return the

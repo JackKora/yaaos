@@ -95,7 +95,7 @@ test.describe("auth + members", () => {
     await page.getByTestId("role-bob").click();
     await page.getByRole("option", { name: "admin" }).click();
 
-    // Sign out of every session. M03+ moved the action to the Security page.
+    // Sign out of every session. Action moved to the Security page.
     await page.goto(`${BASE}/orgs/acme/user/security`);
     await page.getByTestId("logout-all").click();
     await page.waitForURL(/\/login$/);

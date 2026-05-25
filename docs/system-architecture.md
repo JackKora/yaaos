@@ -24,9 +24,9 @@ How the apps fit together and the conventions spanning them. App-internal archit
 
 ### PR open → review posted
 
-1. GitHub (or `fake-github` in tests) sends HMAC-signed `pull_request.opened` to `POST /api/github/webhook`.
-2. `plugins/github` verifies HMAC, parses into a `VCSEvent`, hands to `domain/intake`.
-3. `domain/intake` upserts PR (`domain/pull_requests`) + ticket (`domain/tickets`), calls `reviewer.start_pr_review` which starts a `pr_review_v1` workflow execution via `core/workflow`.
+1. GitHub (or `fake-github` in tests) sends HMAC-signed `pull_request.opened` to `POST /api/intake/github`.
+2. `domain/intake.web` looks up the `github` IntakeType in the registry and calls `handle()` on it.
+3. The github intake type verifies HMAC, parses the payload, branches on the event + action, and (for opened/reopened/ready_for_review) inserts a race-safe ticket + PR row and starts a `pr_review_v1` workflow execution via `core/workflow` — all in the endpoint's session, single transaction.
 4. The workflow engine routes `CheckShouldReview → SecretsScan → ProvisionWorkspace → CodeReview → PostFindings → CleanupWorkspace`. Each step is a `WorkflowCommand` body under `domain/reviewer/commands/`.
 5. `CodeReview` provisions a workspace via the configured provider (in-memory locally; remote-agent in prod) and invokes `coding_agent.review`. The parent Claude Code agent dispatches `yaaos-*` subagents in parallel via the Task tool, synthesizes findings (re-reads cited code, dedupes, ranks), and returns one merged result. `PostFindings` runs admission, then posts a single `vcs.Review` to GitHub with each finding tagged by its `source_agent`. `CleanupWorkspace` always runs as the workflow's `final` step.
 
@@ -58,7 +58,7 @@ Two distinct yaaos-owned GitHub registrations, both env-only — credentials nev
 3. **Install (GitHub App):** Owner hits `Org Settings > VCS > Install yaaos on GitHub`. SPA POSTs `/api/github/install/start` (which signs `state={org_id}` and returns `${github_web_base_url}/apps/${slug}/installations/new?state=...`). Browser follows; user picks repos; GitHub redirects to `/api/github/install_callback`. Backend verifies state, looks up the install's `account.login` via App JWT, and writes a `github_app_installations` row.
 4. **Outbound API (GitHub App):** `plugins/github` signs a short-lived RS256 App JWT with the platform PEM, exchanges it at `POST /app/installations/{id}/access_tokens` for an installation token (~1h TTL, in-memory). Token used as Bearer for REST and `GIT_ASKPASS`-style for `git clone`.
 
-### MCP context for reviewer agents (M04)
+### MCP context for reviewer agents
 
 Per-org, per-review pipeline. Coding-agent CLIs call hosted MCP servers (Linear, Notion) through a yaaos-owned proxy so authorization happens in one place + every JSON-RPC method writes an audit row.
 
@@ -115,7 +115,7 @@ revoke_token(review_id) BEFORE workspace teardown
 One append-only `audit_log` table owned by `core/audit_log` records business-meaningful state changes. Row carries `{id, org_id, created_at, entity_kind, entity_id, kind ("<entity>.<verb_past>"), payload (Pydantic-validated JSONB), actor}`. Reads never write. Progress steps go to structlog, not audit. Each domain module writes its own entries.
 
 ### Org scoping
-Every domain function takes `org_id` kwarg; every query filters by it. Multi-org from M02 onward; per-request org comes from the `X-Org-Slug` header (HTTP) or the `org_context()` async-context-manager (background jobs).
+Every domain function takes `org_id` kwarg; every query filters by it. Multi-org from onward; per-request org comes from the `X-Org-Slug` header (HTTP) or the `org_context()` async-context-manager (background jobs).
 
 ### Identity & access
 
@@ -152,7 +152,7 @@ Per-module deep dives: [`core_auth`](../apps/backend/docs/core_auth.md), [`domai
 ### Secrets at rest
 All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secrets.md) — a single Fernet wrapper resolving the master key from `YAAOS_TOTP_MASTER_KEY` (fallback `YAAOS_ENCRYPTION_KEY` in non-prod). Callers: `domain/identity/totp`, `domain/orgs/sso`, [`core/byok`](../apps/backend/docs/core_byok.md), and legacy plugin-settings tables. Plaintext crosses the boundary only at write (caller → encrypt) and at the specific call site that needs the decrypted value; never logged, never echoed in errors, never placed in audit payloads.
 
-### Settings surface (M03)
+### Settings surface
 
 `/orgs/{slug}/settings/{section}` consolidates every per-org knob into one shell with six sub-pages: `auth` (SSO + session-timeout override), `members`, `vcs`, `coding-agents`, `byok`, `audit`. Member role sees only the Members tab; Owner+Admin see all. The shell + tab nav live in `apps/web/src/domain/org_settings/`.
 
@@ -165,9 +165,9 @@ All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secret
 ### Dumb frontend
 SPA renders data and dispatches actions. It does not compute verdicts, derive status, hold permissions, or own any rule the backend doesn't also enforce. FE validation is for UX immediacy; backend re-validates. See [`apps/web/docs/patterns.md`](../apps/web/docs/patterns.md).
 
-## M05 — workspace agent + workflow engine
+## Workspace agent + workflow engine
 
-M05 reshapes how reviews actually execute. Three new concepts cross every app:
+reshapes how reviews actually execute. Three new concepts cross every app:
 
 - **Workflow engine** (`core/workflow`) — typed `Workflow` definitions registered at startup, driven by three taskiq task bodies (`start_step`, `handle_agent_event`, `route_workflow`) over the existing `core/tasks` + `core/outbox` substrate. Workspace commands park in `awaiting_agent` and resume on the wire-protocol terminal event; workers never block on long-running agent work. Five workflows ship: `pr_review_v1`, `incremental_review_v1`, `verify_fix_v1`, `stale_check_v1`, `answer_question_v1`. Definitions in [`domain/reviewer/workflows/`](../apps/backend/app/domain/reviewer/workflows/); 13 commands across [`domain/reviewer/commands/`](../apps/backend/app/domain/reviewer/commands/) + [`core/workspace/commands.py`](../apps/backend/app/core/workspace/commands.py). See [`core_workflow.md`](../apps/backend/docs/core_workflow.md).
 - **Workspace provider abstraction** (`core/workspace`) — two implementations behind one Protocol: `InMemoryWorkspaceProvider` (existing in-process) and `RemoteAgentWorkspaceProvider` (new — dispatches via the wire protocol to a customer-deployed Go agent). Per-org config selects the provider (`orgs.workspace_provider`). Single-flight claim via `try_claim`/`release_claim` enforces "one in-flight AgentCommand per workspace"; the failure-report-precedes-disposal invariant preserves `current_holder_workflow_id` across release so reconciliation lookups always resolve.
@@ -193,9 +193,9 @@ M05 reshapes how reviews actually execute. Three new concepts cross every app:
 
 New tables: `workflow_executions`, `pending_human_decisions`, `outbox_entries`, `workspace_agents`, `bearer_tokens`. Existing tables extended: `tickets` (type, idempotency_key, payload, current_workflow_execution_id), `workspaces` (provider, current_command_id, current_holder_workflow_id, max_idle_seconds), `orgs` (workspace_provider, registered_iam_arn, aws_region). Activity events are **never persisted** — they exist only in flight from WebSocket → `core/sse_pubsub` → SSE → UI. State of record stays in audit + workflow rows.
 
-### M05 status
+### status
 
-M05 ships **foundations across every phase**: schema + module surfaces + Pydantic types + wire protocol + Go skeleton + Dockerfile + docs. Integration follow-on still required for the full milestone-done bar — see [`plan/milestones/M05-workspace-agent/PHASES.md`](../plan/milestones/M05-workspace-agent/PHASES.md) for the per-phase deferral annotations and what remains.
+ships **foundations across every phase**: schema + module surfaces + Pydantic types + wire protocol + Go skeleton + Dockerfile + docs. Integration follow-on still required for the full milestone-done bar — see [](../) for the per-phase deferral annotations and what remains.
 
 ## Stack at a glance
 

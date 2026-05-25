@@ -10,7 +10,7 @@ A small dev-only HTTP surface so each Playwright spec composes its own precondit
 
 `__init__.py` exports nothing — the module's job is the HTTP surface (side-effect import of `web.py`).
 
-`service.py` exposes pure-data helpers backend integration tests can call without going through HTTP: `M01_ORG_ID`, `is_dev_env`, `reset`, `seed_github_install`, `seed_lesson`, `truncate_all_tables`.
+`service.py` exposes pure-data helpers backend integration tests can call without going through HTTP: `DEFAULT_ORG_ID`, `is_dev_env`, `reset`, `seed_github_install`, `seed_lesson`, `truncate_all_tables`.
 
 HTTP routes (prefix `/api/testing`):
 

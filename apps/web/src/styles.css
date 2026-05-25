@@ -3,9 +3,7 @@
 @tailwind utilities;
 
 /*
- * Design tokens — shadcn-named semantic role tokens only. The yaaos-named
- * transitional tokens (`--bg`, `--text-2`, …) were removed at the end of M06
- * Phase 9.
+ * Design tokens — shadcn-named semantic role tokens only.
  *
  * Light + dark themes swap via [data-theme="…"] on <html>.
  */

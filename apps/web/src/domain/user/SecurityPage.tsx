@@ -10,7 +10,7 @@ import { useState } from "react";
 
 /**
  * `/user/security` — re-homed TOTP enrollment + sign-out-all-sessions from
- * the M02 `/account` page. Future security settings (recovery codes, passkeys,
+ * the `/account` page. Future security settings (recovery codes, passkeys,
  * hardware keys) land here.
  */
 export function SecurityPage() {

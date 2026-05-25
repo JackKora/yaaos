@@ -90,7 +90,7 @@ Module-level `_PROVIDERS: dict[str, WorkspaceProvider]`. `register_workspace_pro
 
 Operational endpoints, unauthenticated (documented POC limitation; tightened when auth lands).
 
-### M05 single-flight claim + recovery (Phase 3)
+### single-flight claim + recovery (Phase 3)
 
 The workspace state machine runs one in-flight AgentCommand at a time. `try_claim(workspace_id, *, command_id, workflow_execution_id, session)` performs an atomic conditional `UPDATE` that succeeds iff the row is `status='active'` AND `current_command_id IS NULL`; concurrent callers racing the same workspace see `rowcount=0` and back off. `release_claim(workspace_id, *, command_id, session)` clears the claim only when the supplied command id still owns it — making it idempotent and safe against stale event redelivery. The terminal event must arrive before disposal: `release_claim` clears `current_command_id` but **preserves** `current_holder_workflow_id` so reconciliation / audit lookups can still find which workflow last touched the workspace.
 
@@ -98,7 +98,7 @@ The recovery-policy registry (`register_recovery_policy(failure_label=, command_
 
 ### Lifecycle commands (Phase 4)
 
-`commands.py` ships three `WorkflowCommand`s — `ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`. All Workspace-category, all `restart_safe=True`. Registered against the engine via `domain/reviewer` bootstrap so the M05 reviewer workflows can reference them.
+`commands.py` ships three `WorkflowCommand`s — `ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`. All Workspace-category, all `restart_safe=True`. Registered against the engine via `domain/reviewer` bootstrap so the reviewer workflows can reference them.
 
 - `CleanupWorkspace` has a real body: reads `workspace_id` from inputs and calls `close_workspace()`. Idempotent — missing/invalid/unknown ids return success so partial-failure workflows still drain.
 - `ProvisionWorkspace` has a real body: fetches the ticket context via the registered `WorkflowContextProvider` (see [Workflow-context callback](#workflow-context-callback)), builds a `WorkspaceSpec`, calls `create_workspace()`, returns `workspace_id` in outputs. Fails cleanly when no provider is registered, the ticket isn't found, or the underlying create fails.
@@ -116,7 +116,7 @@ The reaper's second sweep marks any workspace that is `status='active'`, holds n
 
 ### Failsafe 6 — agent-loss recovery
 
-Third reaper sweep (`_failsafe_agent_loss`): every org in `workspace_provider='remote_agent'` mode whose `workspace_agents` rows all have stale `last_heartbeat_at` (>90s) — or none at all — gets every in-flight workspace transitioned to `expired` with reason `agent_loss`. The sweep also calls `bearers.revoke_all_for_org(org_id, 'agent_loss')` so the agent must re-exchange identity on reconnect. POC scope: per-org match (not per-pod) since `workspaces` has no `agent_id` column. M05 policy: no retry-on-different-agent — workflows referencing expired workspaces fail loud.
+Third reaper sweep (`_failsafe_agent_loss`): every org in `workspace_provider='remote_agent'` mode whose `workspace_agents` rows all have stale `last_heartbeat_at` (>90s) — or none at all — gets every in-flight workspace transitioned to `expired` with reason `agent_loss`. The sweep also calls `bearers.revoke_all_for_org(org_id, 'agent_loss')` so the agent must re-exchange identity on reconnect. POC scope: per-org match (not per-pod) since `workspaces` has no `agent_id` column. policy: no retry-on-different-agent — workflows referencing expired workspaces fail loud.
 
 ### Failsafe 7 — audit row per transition
 
@@ -134,8 +134,8 @@ Owned by `apps/agent/internal/supervisor` — not this module. Every 5 min the s
 
 ## Data owned
 
-- `workspaces` — `(id, org_id, provider_id, spec jsonb, plugin_state jsonb, status, provider, current_command_id, current_holder_workflow_id, max_idle_seconds, created_at, activated_at, expires_at, destroyed_at, destroy_attempts, last_destroy_attempt_at, last_destroy_error)`. M05 Phase 3 added `provider`, `current_command_id`, `current_holder_workflow_id`, `max_idle_seconds` via migration `017_workspaces_m05_columns`. Indexes: `(status, expires_at)` for the reaper's expiry sweep; `(org_id, created_at)` for org-scoped listings; `current_holder_workflow_id` for the M05 event-to-workflow lookup chain; `org_id` indexed independently.
+- `workspaces` — `(id, org_id, provider_id, spec jsonb, plugin_state jsonb, status, provider, current_command_id, current_holder_workflow_id, max_idle_seconds, created_at, activated_at, expires_at, destroyed_at, destroy_attempts, last_destroy_attempt_at, last_destroy_error)`. added `provider`, `current_command_id`, `current_holder_workflow_id`, `max_idle_seconds` via migration `017_workspaces_m05_columns`. Indexes: `(status, expires_at)` for the reaper's expiry sweep; `(org_id, created_at)` for org-scoped listings; `current_holder_workflow_id` for the event-to-workflow lookup chain; `org_id` indexed independently.
 
 ## How it's tested
 
-`app/core/workspace/test/test_dispatch.py` (M05 Phase 3) covers the single-flight claim + recovery registry directly: `try_claim` succeeds when unclaimed/active, loses on contention, refuses non-active rows; `release_claim` is idempotent and ignores wrong-command-id calls; the recovery registry idempotently re-registers the same target, raises on conflict, and the `auth_expired → RefreshWorkspaceAuth` boot policy is present. Lifecycle coverage (provision → active → close → expired → destroy → destroyed; destroy retries with attempt increment; `destroy_failed` after 3 attempts; `startup_recovery` flipping orphaned rows; admin endpoints via `TestClient`) is exercised end-to-end by reviewer integration tests and the workspace plugin's tests.
+`app/core/workspace/test/test_dispatch.py` () covers the single-flight claim + recovery registry directly: `try_claim` succeeds when unclaimed/active, loses on contention, refuses non-active rows; `release_claim` is idempotent and ignores wrong-command-id calls; the recovery registry idempotently re-registers the same target, raises on conflict, and the `auth_expired → RefreshWorkspaceAuth` boot policy is present. Lifecycle coverage (provision → active → close → expired → destroy → destroyed; destroy retries with attempt increment; `destroy_failed` after 3 attempts; `startup_recovery` flipping orphaned rows; admin endpoints via `TestClient`) is exercised end-to-end by reviewer integration tests and the workspace plugin's tests.

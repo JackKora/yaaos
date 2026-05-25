@@ -15,7 +15,7 @@ result to decide whether to enforce the `X-Org-Slug` header (only
 `ORG_SCOPED` requires it). The route's `Depends(...)` chain handles
 session lookup + role checks.
 
-Unclassified `/api/*` paths fall through as `PUBLIC` — the M01-era routers
+Unclassified `/api/*` paths fall through as `PUBLIC` — the routers
 predate this taxonomy and aren't backfilled yet. Adding a route under a
 new prefix without classifying it is a bug; the post-response guard in
 `middleware.py` shouts when a 2xx escapes without `route_security_resolved`

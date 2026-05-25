@@ -2,9 +2,7 @@
 
 > Customer-deployed Go binary that holds customer source code, runs coding agents locally, and reports findings + telemetry back to the yaaos control plane.
 
-## Phase
-
-M05 Phase 6 (foundations) ships the wire-protocol layer + supervisor skeleton:
+## Components
 
 - `internal/ipc/` — JSON-newline framing for supervisor↔workspace pipes (with partial-read tolerance + concurrency-safe encoder).
 - `internal/protocol/` — Go mirror of the OpenAPI spec at [`apps/backend/openapi/agent-api.yaml`](../../backend/openapi/agent-api.yaml) + HTTP client for the five backend endpoints.
@@ -85,7 +83,7 @@ The build is a two-stage `golang:1.22-alpine` → `gcr.io/distroless/static-debi
 
 ### Registry + tagging
 
-Published to **`ghcr.io/yaaos/yaaos-agent`** (decision logged in [plan/milestones/M05-workspace-agent/DECISIONS.md](../../../plan/milestones/M05-workspace-agent/DECISIONS.md)). Tags:
+Published to **`ghcr.io/yaaos/yaaos-agent`**. Tags:
 
 - `vX.Y.Z` — immutable release tag. Customer ECS task definitions pin this.
 - `latest` — most recent stable release. Getting-started flows only; production pins to a `vX.Y.Z`.
@@ -233,4 +231,4 @@ The `workspace` subcommand routes its console sink to **stderr** instead of stdo
 
 ## Local dev
 
-Local `docker compose up` brings up the backend + a dev-mode agent against the placeholder identity-exchange verifier (any non-empty `YAAOS_SIGNED_STS_REQUEST` works). See [`docs/setup.md`](../../../docs/setup.md) § M05 dev story.
+Local `docker compose up` brings up the backend + a dev-mode agent against the placeholder identity-exchange verifier (any non-empty `YAAOS_SIGNED_STS_REQUEST` works). See [`docs/setup.md`](../../../docs/setup.md).

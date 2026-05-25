@@ -45,10 +45,10 @@ def test_agent_names_must_be_unique() -> None:
         validate_settings({"orchestrator": _ok_orchestrator(), "agents": dupe})
 
 
-def test_legacy_settings_without_m06_fields_still_validate() -> None:
+def test_legacy_settings_without_optional_fields_still_validate() -> None:
     """Existing org_coding_agents.settings rows have no
     `use_default_system_prompt`, `system_prompt`, or `mcp_proxy_ids`. The
-    M06 schema extension must accept them and supply sensible defaults."""
+    schema extension must accept them and supply sensible defaults."""
     out = validate_settings({"orchestrator": _ok_orchestrator(), "agents": [_ok_agent("only")]})
     assert out["orchestrator"]["use_default_system_prompt"] is True
     assert out["orchestrator"]["system_prompt"] is None
@@ -57,7 +57,7 @@ def test_legacy_settings_without_m06_fields_still_validate() -> None:
     assert out["mcp_proxy_ids"] == []
 
 
-def test_m06_overrides_round_trip() -> None:
+def test_override_round_trip() -> None:
     """A settings dict that opts out of the default system prompt and supplies
     a custom one round-trips cleanly."""
     orch = _ok_orchestrator()

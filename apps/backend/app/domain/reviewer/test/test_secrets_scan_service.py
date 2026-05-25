@@ -1,6 +1,6 @@
 """SecretsScan Local WorkflowCommand — pre-flight secrets gate.
 
-Verifies the M05 workflow-engine equivalent of the legacy_runner.py
+Verifies the workflow-engine equivalent of the legacy_runner.py
 secrets detection: when the PR diff contains a known secret pattern,
 SecretsScan posts a warning Review via the VCS plugin and returns
 `Outcome.success(label="skip", outputs={"reason": "secrets_detected"})`

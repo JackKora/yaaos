@@ -156,7 +156,7 @@ class LessonFilter(BaseModel):
 
 
 async def list_lessons(filter_: LessonFilter, *, org_id: UUID, limit: int = 50) -> list[Lesson]:
-    """M06 audit follow-up — q / repo multi / created_by / date range / sort."""
+    """q / repo multi / created_by / date range / sort."""
     async with db_session() as s:
         stmt = select(LessonRow).where(LessonRow.org_id == org_id)
         if filter_.repo_external_ids:

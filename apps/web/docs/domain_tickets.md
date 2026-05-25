@@ -16,24 +16,24 @@ The only surface that exercises the full live-update path (webhook → reviewer 
 
 ## Module architecture
 
-- `apps/web/src/domain/tickets/TicketsListPage.tsx` — the M06 list page (E2a.1).
+- `apps/web/src/domain/tickets/TicketsListPage.tsx` — the list page (E2a.1).
 - `apps/web/src/domain/tickets/index.tsx` — re-exports `TicketsListPage as TicketsPage` and still holds the legacy `TicketDetailPage` until the Phase 6 rewrite lands.
 
-### List page (M06)
+### List page
 
 `TicketsListPage`:
-- **Status chips (multi-select)** — running / hitl / done / failed / cancelled, M06 vocab from `m06_status` on each row. Default active: running + hitl.
+- **Status chips (multi-select)** — running / hitl / done / failed / cancelled, vocab from `status` on each row. Default active: all five.
 - **Filters** — free-text search over title (`q`), repo single-select (`Select` primitive), "My tickets" toggle filtering by `t.author_login === user.primary_email`.
 - **Table columns** — Status (icon + label) · Title · Repo (mono) · Stage · Findings (count + severity dot when `max_severity` set) · Updated (ago) · Builder (display name, or "yaaos" badge when `builder_kind === "system"`).
 - **Load-more pagination** — reveals 50 more rows per click; no infinite scroll, no numbered pagination.
 - **State patterns** — `Skeleton` table on first load, `EmptyState` (Search icon) when filters bite, `EmptyState` (Ticket icon) when truly empty, `ErrorBanner` with Retry on fetch failure.
 - **Source of truth** — `useTickets()` → GET /api/tickets; the wire shape is `{items, next_cursor}` and the hook unwraps `items`.
 
-### Detail page (M06)
+### Detail page
 
 `TicketDetailPage` (apps/web/src/domain/tickets/TicketDetailPage.tsx):
 
-- **Header band** — repo · PR link (when present) · "updated <ago>"; title (h1); M06 status pill (running spins, others static-tinted via shared `M06_STATUS_META`); "by <builder.display_name>" or "by yaaos" when `builder_kind === "system"`. Right-aligned action buttons: **Cancel** (non-terminal status only, destructive `ConfirmModal`) and **Re-run** (cost-protective `ConfirmModal`).
+- **Header band** — repo · PR link (when present) · "updated <ago>"; title (h1); status pill (running spins, others static-tinted via shared `M06_STATUS_META`); "by <builder.display_name>" or "by yaaos" when `builder_kind === "system"`. Right-aligned action buttons: **Cancel** (non-terminal status only, destructive `ConfirmModal`) and **Re-run** (cost-protective `ConfirmModal`).
 - **Stage indicator** — composes `StageIndicator` against `ticket.stages` from the extended `GET /api/tickets/:id` (Phase 6 backend slice). Hides itself when the field is absent.
 - **3-tab strip** — Findings (default) / Activity / HITL.
 
@@ -43,7 +43,7 @@ The only surface that exercises the full live-update path (webhook → reviewer 
 
 #### Activity tab
 
-`useReviewJobsForTicket(ticketId)` — flattens every job's `activity_log[]` into one chronological stream. Each event renders via `ActivityEventRow` (lucide icon per the M06 kind taxonomy; long messages auto-collapse). `EmptyState` when the stream is empty.
+`useReviewJobsForTicket(ticketId)` — flattens every job's `activity_log[]` into one chronological stream. Each event renders via `ActivityEventRow` (lucide icon per the kind taxonomy; long messages auto-collapse). `EmptyState` when the stream is empty.
 
 #### HITL tab
 
@@ -64,7 +64,7 @@ Keeping each composite separately testable means the page-level rewrite stayed r
 
 ### Live updates
 
-Each query carries a `refetchInterval`: tickets 3s, findings 5s, jobs 3s, hitl history default. SSE invalidation hooks (`workflow_state_changed`, `finding_*`, `hitl_*`) are wired in `core/sse` per kind; the poll is the safety net.
+The tickets list (`useTickets`) relies entirely on SSE — `ticket_status_changed` invalidates `["tickets"]` via `core/sse/subscriber`, with the 200 ms debounce coalescing bursts. Detail-page queries (findings, jobs, hitl history) still carry a `refetchInterval` as a safety net for SSE gaps.
 
 ### Cancel / Re-run
 
@@ -76,6 +76,6 @@ None. State lives in `core/api` caches; mutations target endpoints owned by `dom
 
 ## How it's tested
 
-- `TicketsListPage`: `test/tickets-list.test.tsx` (M06 filter chips render, empty state).
+- `TicketsListPage`: `test/tickets-list.test.tsx` (filter chips render, empty state).
 - Per-composite: 4 Vitest files (above).
 - The page-level composition is exercised end-to-end by the PR-review e2e — see `apps/e2e/tests/pr-review-end-to-end.spec.ts`.

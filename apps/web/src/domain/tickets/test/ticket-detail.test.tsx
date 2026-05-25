@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 /**
- * Smoke tests for the M06 TicketDetailPage. Mocks every hook the page
+ * Smoke tests for the TicketDetailPage. Mocks every hook the page
  * touches; asserts that the header, stage indicator, and tab strip
  * render against a representative ticket.
  */

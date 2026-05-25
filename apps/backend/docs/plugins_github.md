@@ -66,13 +66,19 @@ Two-step (`service.py`):
 ### Webhook receiver (`POST /webhook`)
 
 1. Read raw body (signature verification needs unaltered bytes).
-2. HMAC-verify `X-Hub-Signature-256` against `yaaos_github_app_webhook_secret`. Missing or invalid → `400`.
-3. Parse JSON. Resolve `org_id` via `github_app_installations` lookup on `payload.installation.id`; falls back to the M01 single-org constant when no install row matches.
-4. **Idempotency** — `record_webhook_event` keyed on `X-GitHub-Delivery`. Duplicate → `200 {status: duplicate}`.
-5. **Install lifecycle short-circuit** — `installation` events update `github_app_installations` directly via `upsert_installation` / `mark_installation_inactive`. They never flow through `intake` — infrastructure state, not domain events.
-6. **Parse + enrich** — `parse_webhook` returns zero-or-more `VCSEvent`s. For `pull_request.synchronize`, handler does the force-push enrichment call and rebuilds events with the true flag.
-7. **Dispatch** — `domain.intake.handle_vcs_events`. Failures logged; handler still responds `200` — GitHub doesn't retry and a 5xx would only mask the failure.
-8. `mark_webhook_processed(row_id)` stamps `processed_at`. Respond `200`.
+2. HMAC-verify `X-Hub-Signature-256` against `yaaos_github_app_webhook_secret`. Missing or invalid → `401`.
+3. Parse JSON. Resolve `org_id` via `github_app_installations` lookup on `payload.installation.id`. `installation.created` events fall back to `DEFAULT_ORG_ID` (single-tenant POC); every other event rejects as `bad_request` when no install row matches.
+4. **Idempotency** — `record_webhook_event` keyed on `X-GitHub-Delivery`. Duplicate → `IntakeSideEffect(detail="duplicate")`, endpoint commits a no-op and returns 200.
+5. **Branch on event + action** inside `GithubIntakeType.handle()`:
+   - `pull_request.opened|reopened|ready_for_review` → filter forks / bots / drafts (writing `webhook_event.filtered`); race-safe ticket+PR upsert; `engine.start("pr_review_v1", …)` — all on the endpoint's session, single transaction.
+   - `pull_request.synchronize` → refresh PR metadata, call `reviewer.start_incremental_review`.
+   - `pull_request.closed` → update PR state, complete ticket, cancel workflows.
+   - `pull_request.reopened` → PR state → open.
+   - `issue_comment.created` / `pull_request_review_comment.created` → parse yaaos command or route as developer reply.
+   - `reaction.created` → audit row on the related ticket.
+   - `installation.created|unsuspend|new_permissions_accepted` → `upsert_installation`.
+   - `installation.deleted|suspend` → `mark_installation_inactive`.
+6. `mark_webhook_processed(row_id)` stamps `processed_at`. Endpoint commits and returns 200.
 
 ### Event mapping (`payload_parser.parse_webhook`)
 

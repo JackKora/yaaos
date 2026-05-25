@@ -15,8 +15,7 @@ from app.core.audit_log.models import AuditEntryRow
 from app.core.database import session as get_session
 
 # How long audit rows live before the periodic cleanup task purges them.
-# MCP-dispatch entries are by far the dominant volume contributor in M04+
-# (one row per JSON-RPC method), so retention is sized to keep storage bounded —
+# MCP-dispatch entries are by far the dominant volume contributor in # (one row per JSON-RPC method), so retention is sized to keep storage bounded —
 # 15 days strikes the right balance for the POC.
 AUDIT_LOG_RETENTION = timedelta(days=15)
 

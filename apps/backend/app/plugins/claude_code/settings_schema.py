@@ -12,7 +12,7 @@ Constraints:
 - Sub-agent names: unique within `agents`, length 1..64.
 - model, version, effort: must be from the enum lists in `defaults.py`.
 
-M06 Phase 4 additions (all optional, default-friendly so older DB rows
+additions (all optional, default-friendly so older DB rows
 continue to parse without migration):
 - `AgentSettings.use_default_system_prompt: bool = True` — when true the
   plugin uses its built-in system prompt and the per-agent `system_prompt`
@@ -43,7 +43,7 @@ class AgentSettings(BaseModel):
     version: str
     effort: str
     updated_at: str = ""
-    # M06 Phase 4 — system-prompt overrides per E2a.2. Optional so existing
+    # system-prompt overrides per E2a.2. Optional so existing
     # rows in `org_coding_agents.settings` keep parsing.
     use_default_system_prompt: bool = True
     system_prompt: str | None = None
@@ -75,7 +75,7 @@ class ClaudeCodeSettings(BaseModel):
 
     orchestrator: AgentSettings
     agents: list[AgentSettings] = Field(min_length=1, max_length=8)
-    # M06 Phase 4 — MCP-proxy connections to expose as context for this org's
+    # MCP-proxy connections to expose as context for this org's
     # runs. Optional with empty-default so legacy DB rows still parse.
     mcp_proxy_ids: list[UUID] = Field(default_factory=list)
 
