@@ -1,25 +1,16 @@
 # impl-log — <slug>
 
-Local-only. Records phase completions and controversial autonomous decisions. Resumption reads this file.
+Local-only. Records per-phase completions (or failures) and any autonomous decisions the subagent made during that phase. Resumption reads this file to find the last completed phase block. CI logs live alongside as `.ci-phase-<N>.log`.
 
 ---
-
-## Phase-complete entries
 
 ### Phase <N> — <phase goal>
 
-- **Commit:** `<short SHA>`  <!-- or `(no changes — nothing to commit)` -->
-- **Notes:** <one line if anything unusual; otherwise omit this line>
+- **Commit:** `<short SHA>`  <!-- or `(no changes — nothing to commit)`, or `(failed — see .ci-phase-<N>.log)` -->
+- **Summary:**
+  - <one-line bullet per meaningful file or test added>
+- **Autonomous decisions:** <!-- omit this whole field if empty -->
+  - **<one-line what>** — why: <one line>; where: `<file:line>` <!-- where is optional -->
+- **Notes:** <one line if anything unusual; otherwise omit this field>
 
 <repeat per phase>
-
----
-
-## Autonomous decisions
-
-<Only controversial or unclear ones. Obvious choices are not logged.>
-
-### <one-line what>
-
-- **Why:** <one line>
-- **Where:** `<file:line>` <!-- if applicable -->
