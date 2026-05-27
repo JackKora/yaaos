@@ -19,12 +19,11 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import Depends, FastAPI
-from sqlalchemy import select
 
 from app.core.audit_log import list_for_entity
 from app.core.auth import Action, AuthMiddleware, register_handler
-from app.domain.identity import SessionRow
 from app.domain.identity import repository as identity_repo
+from app.domain.identity import set_session_last_seen
 from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 from app.domain.sessions import require
@@ -140,10 +139,11 @@ async def test_org_scoped_idle_timeout_clears_cookies_and_writes_audit(seeded, d
     # default idle window has elapsed. SESSION_IDLE_TIMEOUT default is
     # measured in minutes; 1 day back is comfortably stale.
     token_hash = identity_repo.hash_token(seeded["token"])
-    session_row = (
-        await db_session.execute(select(SessionRow).where(SessionRow.token_hash == token_hash))
-    ).scalar_one()
-    session_row.last_seen_at = datetime.now(UTC) - timedelta(days=1)
+    await set_session_last_seen(
+        db_session,
+        token_hash=token_hash,
+        last_seen_at=datetime.now(UTC) - timedelta(days=1),
+    )
     await db_session.commit()
 
     async with _client() as c:

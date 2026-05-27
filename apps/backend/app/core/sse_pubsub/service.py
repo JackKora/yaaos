@@ -95,6 +95,13 @@ async def shutdown() -> None:
     _singleton = None
 
 
+def reset_pubsub() -> None:
+    """Drop the singleton synchronously. For test isolation only — production
+    code uses the async `shutdown()` via the web shutdown registry."""
+    global _singleton
+    _singleton = None
+
+
 async def publish(channel: str, event: dict[str, Any]) -> int:
     """Module-level convenience: publish to the process singleton."""
     return await get_pubsub().publish(channel, event)

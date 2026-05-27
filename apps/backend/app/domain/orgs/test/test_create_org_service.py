@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.audit_log import Actor, AuditEntryRow
-from app.domain.identity import service as identity_svc
+from app.domain.identity import create_user
 from app.domain.orgs import MembershipRow, OrgRow, create_membership, create_org
 from app.domain.orgs.types import Role
 
@@ -75,7 +75,7 @@ async def test_create_org_emits_audit_row(db_session) -> None:
 async def test_create_membership_persists_row(db_session) -> None:
     """Happy path: ``create_membership`` inserts a ``memberships`` row."""
     org = await create_org(db_session, slug="test-mem-org-1", display_name="Mem Org 1")
-    user = await identity_svc.create_user(db_session, display_name="Test Owner")
+    user = await create_user(db_session, display_name="Test Owner")
 
     membership = await create_membership(
         db_session,
@@ -105,7 +105,7 @@ async def test_create_membership_persists_row(db_session) -> None:
 async def test_create_membership_emits_audit_row(db_session) -> None:
     """``create_membership`` emits a ``membership.created`` audit row."""
     org = await create_org(db_session, slug="test-mem-audit-org", display_name="Audit Mem Org")
-    user = await identity_svc.create_user(db_session, display_name="Audit User")
+    user = await create_user(db_session, display_name="Audit User")
 
     await create_membership(
         db_session,

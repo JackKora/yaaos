@@ -24,6 +24,7 @@ from sqlalchemy import select
 from app.core.plugin_kit import PluginMeta
 from app.core.sse_pubsub import (
     channel_for,
+    reset_pubsub,
     subscribe,
 )
 from app.core.tasks import OutboxEntryRow, drain_once
@@ -80,11 +81,9 @@ class _StaticCtxProvider:
 
 @pytest.fixture
 def _engine_with_in_memory():  # type: ignore[no-untyped-def]
-    import app.core.sse_pubsub.service as _pubsub_svc  # noqa: PLC0415
-
     clear_workspace_providers()
     clear_workflow_context_provider()
-    _pubsub_svc._singleton = None
+    reset_pubsub()
     register_workspace_provider(_StubWorkspaceProvider())
     with scoped_engine() as eng:
         for cmd in (*ALL_LIFECYCLE_COMMANDS, *ALL_WORKSPACE_COMMANDS, *ALL_LOCAL_COMMANDS):
@@ -93,7 +92,7 @@ def _engine_with_in_memory():  # type: ignore[no-untyped-def]
         yield eng
     clear_workspace_providers()
     clear_workflow_context_provider()
-    _pubsub_svc._singleton = None
+    reset_pubsub()
 
 
 async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]

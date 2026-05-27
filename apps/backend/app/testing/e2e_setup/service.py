@@ -200,7 +200,11 @@ async def seed_bootstrap_owner(
     admin-onboarding path would produce.
     """
     from app.core.audit_log import Actor  # noqa: PLC0415
-    from app.domain.identity import service as identity_svc  # noqa: PLC0415
+    from app.domain.identity import (  # noqa: PLC0415
+        create_email,
+        create_oauth_identity,
+        create_user,
+    )
     from app.domain.orgs import (  # noqa: PLC0415
         Role,
         create_membership,
@@ -208,15 +212,15 @@ async def seed_bootstrap_owner(
     )
 
     async with db_session() as s:
-        user = await identity_svc.create_user(s, display_name=display_name)
-        await identity_svc.create_email(
+        user = await create_user(s, display_name=display_name)
+        await create_email(
             s,
             user_id=user.id,
             email=email.lower(),
             is_primary=True,
             verified=True,
         )
-        await identity_svc.create_oauth_identity(
+        await create_oauth_identity(
             s,
             user_id=user.id,
             provider=provider,
@@ -243,23 +247,23 @@ async def seed_user_with_session(*, email: str, raw_session_token: str) -> str:
     the session normally."""
     from datetime import UTC, datetime, timedelta  # noqa: PLC0415
 
+    from app.domain.identity import create_email, create_session, create_user  # noqa: PLC0415
     from app.domain.identity import repository as identity_repo  # noqa: PLC0415
-    from app.domain.identity import service as identity_svc  # noqa: PLC0415
 
     async with db_session() as s:
         existing = await identity_repo.find_user_by_email(s, email)
         if existing is not None:
             user = existing
         else:
-            user = await identity_svc.create_user(s, display_name=email.split("@", 1)[0])
-            await identity_svc.create_email(
+            user = await create_user(s, display_name=email.split("@", 1)[0])
+            await create_email(
                 s,
                 user_id=user.id,
                 email=email.lower(),
                 is_primary=True,
                 verified=True,
             )
-        await identity_svc.create_session(
+        await create_session(
             s,
             token_hash=identity_repo.hash_token(raw_session_token),
             user_id=user.id,

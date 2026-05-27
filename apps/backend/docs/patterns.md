@@ -299,11 +299,11 @@ Assert on the **durable state production reads** — audit rows by kind, posted-
 
 Tests obey the **same import rules as production code** — enforced by `tach check --interfaces` in CI, which covers `app/testing/` as well as production code. Violations fail CI.
 
-- Import only `__all__` exports — `from app.<module> import X`, never `from app.<module>.<submodule> import X`.
-- `*Row` types needed cross-module are exposed in the owning module's `__all__` and imported from the public path. If a test needs to inspect persisted state owned by another module, use the public `*Row` or the module's service query.
+- Import only `__all__` exports — `from app.<module> import X`, never `from app.<module>.<submodule> import X` across module boundaries. Within a module's own test directory, direct submodule imports are allowed.
+- No `*Row` types in cross-module imports. If a test in module B needs to inspect persisted state owned by module A, use module A's targeted public read function (e.g. `get_token_by_hash`, `get_session_by_hash`) or assert on the observable outcome instead.
 - No test-only seams that bypass module interfaces. If a seam is needed, it belongs in `app/testing/` — but `app/testing/` is itself tach-governed; it may only import from `__all__`-gated module paths.
 - Service tests of multi-hop pipelines are sliced per-hop: each service test exercises one entry point end-to-end; chain tests by asserting on the durable state that the next hop reads, not by calling internal functions of the next module.
-- Singleton reset for test isolation: modules with a `_singleton` global (e.g. `core/sse_pubsub.service`) expose a `shutdown()` callable in `__all__` for clean teardown, or expose the `service` submodule so tests can set `_singleton = None`. The `_reset_for_tests` pattern is abolished — use `shutdown()` or `_singleton = None` directly via the public `service` attribute.
+- Singleton reset for test isolation: use the module's public `shutdown()` or a dedicated reset function exposed in `__all__` (e.g. `sse_pubsub.reset_pubsub()`). Do not reach into private state via a submodule attribute.
 
 ### DI over `@patch`
 
@@ -353,7 +353,7 @@ Modules with this pattern today: `core.workflow` (`scoped_engine`, `scoped_workf
 `core.workflow.scoped_engine()` is the standard test-isolation helper for tests that register workflows or commands. It saves the current engine, creates a fresh one, yields it, then restores the prior one on exit — replacing the former `svc._engine = None; eng = get_engine(); svc._engine = eng; ... svc._engine = None` pattern.
 
 Rules:
-- No wholesale-wipe between tests (`_reset_for_tests` / `clear_plugins`). Test exactly what you need, clean it up with the scoped helper.
+- No wholesale-wipe between tests. Test exactly what you need, clean it up with the scoped helper.
 - `unregister_*` is a no-op if the id is absent — safe to call in finally blocks.
 - `scoped_*` registers on entry, unregisters on exit. The yielded value is the same object passed in.
 - `scoped_task_registration(task_ref)` is the tasks variant: call `@task(name)(fn)` to get a `TaskRef`, then wrap the test body in `with scoped_task_registration(ref)`. On exit the name is popped from the broker registry so subsequent tests can reuse the same name.

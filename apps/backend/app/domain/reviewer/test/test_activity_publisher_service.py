@@ -17,9 +17,9 @@ from uuid import uuid4
 
 import pytest
 
-import app.core.sse_pubsub.service as _pubsub_svc
 from app.core.sse_pubsub import (
     channel_for,
+    reset_pubsub,
     subscribe,
 )
 from app.core.workflow import CommandContext
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.usefixtures("redis_or_skip")
 async def test_activity_publisher_fans_out_to_subscribed_channel() -> None:
     """Subscribe to the workflow's activity channel; trigger the publisher;
     expect the event to land verbatim."""
-    _pubsub_svc._singleton = None
+    reset_pubsub()
     wfx_id = str(uuid4())
     ctx = CommandContext(
         workflow_execution_id=wfx_id,
@@ -75,7 +75,7 @@ async def test_activity_publisher_fans_out_to_subscribed_channel() -> None:
 async def test_activity_publisher_no_subscribers_is_silent() -> None:
     """Publishing to a channel with no subscribers is a no-op — the
     coding-agent invocation must not block waiting for an SSE reader."""
-    _pubsub_svc._singleton = None
+    reset_pubsub()
     ctx = CommandContext(
         workflow_execution_id=str(uuid4()),
         ticket_id=str(uuid4()),

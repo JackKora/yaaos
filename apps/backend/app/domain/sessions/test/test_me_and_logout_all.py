@@ -67,14 +67,13 @@ async def test_me_returns_user_and_memberships(db_session) -> None:
     from sqlalchemy import delete  # noqa: PLC0415
 
     from app.core.database import get_sessionmaker  # noqa: PLC0415
-    from app.domain.identity import UserEmailRow, UserRow  # noqa: PLC0415
+    from app.domain.identity import delete_user_artifacts  # noqa: PLC0415
     from app.domain.orgs import MembershipRow, OrgRow  # noqa: PLC0415
 
     async with get_sessionmaker()() as cleanup:
         await cleanup.execute(delete(MembershipRow).where(MembershipRow.user_id == user.id))
         await cleanup.execute(delete(OrgRow).where(OrgRow.id.in_([org_a.id, org_b.id])))
-        await cleanup.execute(delete(UserEmailRow).where(UserEmailRow.user_id == user.id))
-        await cleanup.execute(delete(UserRow).where(UserRow.id == user.id))
+        await delete_user_artifacts(cleanup, user_id=user.id)
         await cleanup.commit()
 
 
@@ -91,16 +90,13 @@ async def test_logout_all_revokes_every_session(db_session) -> None:
     assert resp.status_code == 200
 
     from app.core.database import get_sessionmaker  # noqa: PLC0415
+    from app.domain.identity import delete_user_artifacts  # noqa: PLC0415
 
     async with get_sessionmaker()() as cleanup:
         assert await session_lifecycle.lookup(cleanup, s1.raw_token) is None
         assert await session_lifecycle.lookup(cleanup, s2.raw_token) is None
         assert await session_lifecycle.lookup(cleanup, s3.raw_token) is None
-        from sqlalchemy import delete  # noqa: PLC0415
-
-        from app.domain.identity import UserRow  # noqa: PLC0415
-
-        await cleanup.execute(delete(UserRow).where(UserRow.id == user.id))
+        await delete_user_artifacts(cleanup, user_id=user.id)
         await cleanup.commit()
 
 

@@ -1,11 +1,11 @@
 """domain/mcp_proxy — per-review MCP bearer + proxy."""
 
-from app.domain.mcp_proxy.models import McpReviewTokenRow
 from app.domain.mcp_proxy.service import (
     REVIEW_TOKEN_TTL,
     McpToken,
-    _hash,
     consume_broken_creds,
+    get_token_by_hash,
+    hash_token,
     lookup_token,
     mint_token,
     record_broken_creds,
@@ -18,10 +18,10 @@ from app.domain.mcp_proxy.service import (
 
 __all__ = [
     "REVIEW_TOKEN_TTL",
-    "McpReviewTokenRow",
     "McpToken",
-    "_hash",
     "consume_broken_creds",
+    "get_token_by_hash",
+    "hash_token",
     "lookup_token",
     "mint_token",
     "record_broken_creds",

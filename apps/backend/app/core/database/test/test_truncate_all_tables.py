@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.core.audit_log import AuditEntryRow
 from app.core.database import truncate_all_tables
-from app.domain.identity import service as identity_svc
+from app.domain.identity import create_user
 from app.domain.orgs import MembershipRow, OrgRow, Role, create_membership, create_org
 
 
@@ -17,7 +17,7 @@ async def test_truncate_all_tables_clears_rows(db_session) -> None:
     """After ``truncate_all_tables`` every seeded row is gone."""
     # Seed a few rows across modules.
     org = await create_org(db_session, slug="truncate-test-org", display_name="Truncate Org")
-    user = await identity_svc.create_user(db_session, display_name="Truncate User")
+    user = await create_user(db_session, display_name="Truncate User")
     await create_membership(
         db_session,
         user_id=user.id,

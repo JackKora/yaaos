@@ -1,7 +1,6 @@
 """domain/identity — users, emails, OAuth identities, sessions, TOTP."""
 
 from app.domain.identity import repository, sessions, totp
-from app.domain.identity.models import OAuthIdentityRow, SessionRow, UserEmailRow, UserRow
 from app.domain.identity.providers import (
     ProviderError,
     ProviderProfile,
@@ -22,43 +21,41 @@ from app.domain.identity.service import (
     create_oauth_identity,
     create_session,
     create_user,
+    delete_user_artifacts,
     login_via_oauth,
+    set_session_last_seen,
 )
 from app.domain.identity.totp import can_be_sso_exempt_owner, has_verified_totp
 
-# NOTE: `identity.user_web` and `identity.web` are not imported here to avoid
-# circular imports at load time. They appear in `__all__` so tach allows
-# side-effect imports from other modules.
+# NOTE: `identity.user_web` is not imported here to avoid circular imports at
+# load time. It appears in `__all__` so tach allows side-effect imports from
+# `app/web.py` and tests that do `from app.domain.identity import user_web`.
 
 __all__ = [
     "EmailAlreadyLinkedError",
     "OAuthIdentity",
-    "OAuthIdentityRow",
     "ProviderError",
     "ProviderProfile",
     "Session",
     "SessionNotFoundError",
-    "SessionRow",
     "TotpError",
     "User",
     "UserEmail",
-    "UserEmailRow",
     "UserNotFoundError",
-    "UserRow",
     "can_be_sso_exempt_owner",
     "create_email",
     "create_oauth_identity",
     "create_session",
     "create_user",
+    "delete_user_artifacts",
     "get_provider",
     "has_verified_totp",
     "list_providers",
     "login_via_oauth",
     "register_provider",
     "repository",
-    "service",
     "sessions",
+    "set_session_last_seen",
     "totp",
     "user_web",
-    "web",
 ]

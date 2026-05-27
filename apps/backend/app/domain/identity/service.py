@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.identity import repository as repo
@@ -41,7 +42,9 @@ __all__ = [
     "create_oauth_identity",
     "create_session",
     "create_user",
+    "delete_user_artifacts",
     "login_via_oauth",
+    "set_session_last_seen",
 ]
 
 
@@ -160,3 +163,25 @@ async def create_session(
         user_agent=user_agent,
         expires_at=expires_at,
     )
+
+
+async def set_session_last_seen(
+    db: AsyncSession,
+    *,
+    token_hash: str,
+    last_seen_at: datetime,
+) -> None:
+    """Write `last_seen_at` for a session row identified by `token_hash`.
+    Used by tests to simulate idle sessions without importing `SessionRow`."""
+    row = await repo.get_session_by_hash(db, token_hash)
+    if row is not None:
+        row.last_seen_at = last_seen_at
+        await db.flush()
+
+
+async def delete_user_artifacts(db: AsyncSession, *, user_id: UUID) -> None:
+    """Delete all identity-owned rows for `user_id` (user, emails, OAuth
+    identities, sessions). DB-level CASCADE handles child rows when deleting
+    the user row via SQL DELETE — callers that need cross-module cleanup
+    (e.g. memberships) must handle those separately."""
+    await db.execute(delete(UserRow).where(UserRow.id == user_id))

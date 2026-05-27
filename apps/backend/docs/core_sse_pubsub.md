@@ -16,8 +16,8 @@ Exported from `app/core/sse_pubsub/__init__.py`:
 - `subscriber_count(channel)` — diagnostic; **local-process** subscriber count (Redis's `PUBSUB NUMSUB` is cluster-wide and not what callers want).
 - `RedisPubsub` — class form for callers that want to construct their own bus (mostly tests).
 - `get_pubsub()` — process-singleton accessor.
-- `shutdown()` — closes the singleton if it exists and sets it to `None`; self-registered with the web shutdown registry at import time (web only — the worker process doesn't serve SSE).
-- `service` — the submodule itself; exposed in `__all__` so tests outside this module can do `import app.core.sse_pubsub.service as _svc; _svc._singleton = None` for singleton isolation between test runs.
+- `shutdown()` — closes the singleton and sets it to `None`; self-registered with the web shutdown registry at import time (web only — the worker process doesn't serve SSE).
+- `reset_pubsub()` — drops the singleton synchronously; used by tests to isolate singleton state between runs without going through the async `shutdown()` path.
 
 ## Module architecture
 

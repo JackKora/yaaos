@@ -21,16 +21,15 @@ from uuid import uuid4
 
 import pytest
 
-import app.core.sse_pubsub.service as _pubsub_svc
-from app.core.sse_pubsub import channel_for, publish
+from app.core.sse_pubsub import channel_for, publish, reset_pubsub
 from app.domain.orgs.workspace_status_web import _activity_event_stream
 
 
 @pytest.fixture(autouse=True)
 def _isolate_pubsub() -> None:
-    _pubsub_svc._singleton = None
+    reset_pubsub()
     yield
-    _pubsub_svc._singleton = None
+    reset_pubsub()
 
 
 @pytest.mark.asyncio
