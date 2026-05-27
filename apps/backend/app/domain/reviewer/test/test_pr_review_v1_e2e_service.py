@@ -25,7 +25,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.plugin_kit import PluginMeta
-from app.core.tasks.drain import drain_once
+from app.core.tasks import drain_once
 from app.core.tasks.models import OutboxEntryRow
 from app.core.workflow import Outcome, WorkflowState, get_engine
 from app.core.workflow.models import WorkflowExecutionRow

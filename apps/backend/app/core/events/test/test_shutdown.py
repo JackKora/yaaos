@@ -6,14 +6,7 @@ import asyncio
 
 import pytest
 
-from app.core.events.service import _reset_for_tests, _subscribers, shutdown
-
-
-@pytest.fixture(autouse=True)
-def _isolate():
-    _reset_for_tests()
-    yield
-    _reset_for_tests()
+from app.core.events.service import _subscribers, shutdown
 
 
 @pytest.mark.asyncio

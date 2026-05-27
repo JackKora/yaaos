@@ -14,7 +14,6 @@ from uuid import uuid4
 import pytest
 
 from app.core.events import Event, EventFilter, subscribe
-from app.core.events.service import _reset_for_tests as _reset_events
 from app.core.workflow import (
     CommandCategory,
     CommandContext,
@@ -100,7 +99,6 @@ async def test_prepare_pr_review_publishes_ticket_status_changed(db_session, _st
     """A GitHub PR-opened webhook must broadcast `TicketStatusChanged` so
     the SSE subscriber invalidates the tickets list query. Without this,
     the new PR row stays invisible in the SPA until a hard refresh."""
-    _reset_events()
     seen: list[Event] = []
 
     async def consume() -> None:

@@ -26,9 +26,11 @@ from app.core.shutdown_registry import (
     register_web_shutdown_hook,
     register_worker_shutdown_hook,
 )
+from app.core.tasks.drain import drain_once
 from app.core.tasks.service import (
     TaskRef,
     enqueue,
+    scoped_task_registration,
     shutdown,
     task,
 )
@@ -36,9 +38,11 @@ from app.core.tasks.service import (
 __all__ = [
     "ShutdownHook",
     "TaskRef",
+    "drain_once",
     "enqueue",
     "iter_worker_shutdown_hooks",
     "register_worker_shutdown_hook",
+    "scoped_task_registration",
     "shutdown",
     "task",
 ]

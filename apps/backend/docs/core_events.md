@@ -73,4 +73,4 @@ None. Subscriber registry in-memory; reset on process restart.
 
 ## How it's tested
 
-`app/core/events/test/test_pubsub.py` covers the publish/subscribe contract — filter matching, queue overflow drop, unregistration on consumer exit. The SSE endpoint is exercised end-to-end against `TestClient`. Tests import `_reset_for_tests` directly from `app.core.events.service` to clear subscribers between cases. `shutdown()` smoke tests live in `app/core/events/test/test_shutdown.py`.
+`app/core/events/test/test_pubsub.py` covers the publish/subscribe contract — filter matching, queue overflow drop, unregistration on consumer exit. Tests use `async for ... return` inside a task coroutine; no `_reset_for_tests` needed because the async generator self-cleans on consumer exit. `app/core/events/test/test_subscribe_self_cleans.py` explicitly asserts subscriber count returns to baseline after consumer exit via both `async for ... return` and `async with aclosing(...)`. See [patterns.md § Subscription self-cleanup](patterns.md). `shutdown()` smoke tests live in `app/core/events/test/test_shutdown.py`. The SSE endpoint is exercised end-to-end against `TestClient`.

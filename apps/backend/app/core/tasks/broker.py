@@ -37,8 +37,3 @@ def shutdown() -> None:
     """
     global _broker
     _broker = None
-
-
-def _reset_for_tests() -> None:
-    """Alias for `shutdown()`. Existing tests call this name."""
-    shutdown()

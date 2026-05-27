@@ -16,8 +16,7 @@ from app.core.events import (
     EventFilter,
     subscribe,
 )
-from app.core.events.service import _reset_for_tests as _reset_events
-from app.core.tasks.drain import drain_once
+from app.core.tasks import drain_once
 from app.core.workflow import (
     CommandCategory,
     CommandContext,
@@ -202,7 +201,6 @@ async def test_happy_path_publishes_ticket_status_changed_event(db_session, stub
     """Intake-created tickets must broadcast TicketStatusChanged so the SSE
     subscriber invalidates the list query — otherwise the row is invisible
     in the UI until something else nudges the cache."""
-    _reset_events()
     seen: list[Event] = []
 
     async def consume() -> None:

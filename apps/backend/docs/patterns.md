@@ -347,12 +347,23 @@ Don't wrap every domain function — noise hurts more than detail helps.
 
 Modules with import-time registries expose `register_*`, `unregister_*`, and `scoped_*` in `__all__`. Tests use `with scoped_*(...)` for temporary registrations — cleanup is automatic on block exit, even on exception.
 
-Modules with this pattern today: `core.workflow` (`scoped_workflow`), `domain.vcs` (`scoped_vcs_plugin`), `domain.coding_agent` (`scoped_coding_agent`).
+Modules with this pattern today: `core.workflow` (`scoped_workflow`), `domain.vcs` (`scoped_vcs_plugin`), `domain.coding_agent` (`scoped_coding_agent`), `core.tasks` (`scoped_task_registration`).
 
 Rules:
 - No wholesale-wipe between tests (`_reset_for_tests` / `clear_plugins`). Test exactly what you need, clean it up with the scoped helper.
 - `unregister_*` is a no-op if the id is absent — safe to call in finally blocks.
 - `scoped_*` registers on entry, unregisters on exit. The yielded value is the same object passed in.
+- `scoped_task_registration(task_ref)` is the tasks variant: call `@task(name)(fn)` to get a `TaskRef`, then wrap the test body in `with scoped_task_registration(ref)`. On exit the name is popped from the broker registry so subsequent tests can reuse the same name.
+
+## Subscription self-cleanup (async generator pattern)
+
+`core.events.subscribe()` is the canonical example of an async generator whose `finally` clause does its own cleanup. The generator registers a subscriber queue on entry; `finally` pops it on any consumer exit — normal return, `break`, exception, or `aclose()`. Callers never call an explicit `unsubscribe()`.
+
+Preferred test shapes for consuming one event then exiting:
+- `async for ev in subscribe(filter): ...; return` — `return` exits the coroutine; the event loop's async-gen finalizer schedules `aclose()`. Yield one event-loop tick (`await asyncio.sleep(0)`) after the consumer finishes if the test asserts `subscriber_count() == 0`.
+- `async with aclosing(subscribe(filter)) as gen: ev = await gen.__anext__()` — `aclosing.__aexit__` awaits `gen.aclose()` synchronously, so cleanup is guaranteed before the `async with` block exits. Preferred when early exit is needed and the test asserts cleanup immediately.
+
+Use this pattern over a `register/unregister` pair whenever the consumer naturally iterates — the single-seam generator is simpler and harder to misuse.
 
 ## Module lifecycle — `shutdown()` convention
 

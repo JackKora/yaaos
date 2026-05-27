@@ -70,11 +70,6 @@ async def shutdown() -> None:
     _subscribers.clear()
 
 
-def _reset_for_tests() -> None:
-    """Alias for the sync side of `shutdown()`. Tests call this name."""
-    _subscribers.clear()
-
-
 def subscriber_count() -> int:
     return len(_subscribers)
 

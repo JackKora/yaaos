@@ -11,7 +11,7 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.core.tasks.drain import drain_once
+from app.core.tasks import drain_once
 from app.core.workflow import (
     CommandCategory,
     CommandContext,

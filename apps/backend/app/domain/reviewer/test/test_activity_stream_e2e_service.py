@@ -27,7 +27,7 @@ from app.core.sse_pubsub import (
     subscribe,
 )
 from app.core.sse_pubsub.service import _reset_for_tests as _reset_pubsub
-from app.core.tasks.drain import drain_once
+from app.core.tasks import drain_once
 from app.core.tasks.models import OutboxEntryRow
 from app.core.workflow import WorkflowState, get_engine
 from app.core.workflow.models import WorkflowExecutionRow

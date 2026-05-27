@@ -4,15 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.tasks.service import _reset_for_tests, _restore_after_tests, shutdown
-
-
-@pytest.fixture(autouse=True)
-def _isolate():
-    """Save/restore broker registry around each test."""
-    _reset_for_tests()
-    yield
-    _restore_after_tests()
+from app.core.tasks.service import shutdown
 
 
 @pytest.mark.asyncio

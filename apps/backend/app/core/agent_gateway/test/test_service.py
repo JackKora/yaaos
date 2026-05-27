@@ -31,7 +31,7 @@ from app.core.agent_gateway import (
     record_heartbeat,
     record_workspace_event,
 )
-from app.core.tasks.drain import drain_once
+from app.core.tasks import drain_once
 from app.core.workspace.models import WorkspaceRow
 
 
