@@ -108,11 +108,13 @@ path = "app.core.byok"
 depends_on = ["app.core.audit_log", "app.core.database", "app.core.secrets"]
 # interface_members = [
 #   "ByokDecryptError",
+#   "ByokKey",
 #   "ByokKeyRow",
 #   "clear",
 #   "get",
 #   "get_validator",
 #   "known_providers",
+#   "list_keys_for_org",
 #   "register_validator",
 #   "set",
 #   "validate",

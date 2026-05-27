@@ -216,6 +216,36 @@ async def test_validate_audit_records_success_flag(db_session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_keys_for_org_returns_only_requested_org(db_session) -> None:
+    """list_keys_for_org returns all keys for one org and excludes other orgs."""
+    user = await identity_repo.insert_user(db_session, display_name="U")
+    org_a = await orgs_repo.insert_org(db_session, slug="byok-list-a")
+    org_b = await orgs_repo.insert_org(db_session, slug="byok-list-b")
+    await orgs_repo.insert_membership(
+        db_session, user_id=user.id, org_id=org_a.id, role=Role.OWNER, handle="ua"
+    )
+    await orgs_repo.insert_membership(
+        db_session, user_id=user.id, org_id=org_b.id, role=Role.OWNER, handle="ub"
+    )
+    actor = Actor.user(user_id=user.id)
+
+    await byok.set(org_a.id, "anthropic", "key-a1", actor=actor, session=db_session)
+    await byok.set(org_a.id, "openai", "key-a2", actor=actor, session=db_session)
+    await byok.set(org_b.id, "anthropic", "key-b1", actor=actor, session=db_session)
+
+    keys = await byok.list_keys_for_org(org_a.id, session=db_session)
+    assert len(keys) == 2
+    providers = {k.provider for k in keys}
+    assert providers == {"anthropic", "openai"}
+    assert all(k.org_id == org_a.id for k in keys)
+
+    # org_b's key must not appear
+    keys_b = await byok.list_keys_for_org(org_b.id, session=db_session)
+    assert len(keys_b) == 1
+    assert keys_b[0].provider == "anthropic"
+
+
+@pytest.mark.asyncio
 async def test_set_rejects_empty_string(db_session) -> None:
     user = await identity_repo.insert_user(db_session, display_name="U")
     org = await orgs_repo.insert_org(db_session, slug="byok-empty-input")
