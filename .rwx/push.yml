@@ -109,6 +109,7 @@ tasks:
     # `use:` this so the install runs once per lockfile change, not once
     # per CI task per push.
     filter:
+      - .npmrc
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
