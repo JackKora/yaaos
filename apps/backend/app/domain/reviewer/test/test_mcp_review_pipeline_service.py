@@ -21,9 +21,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
-from sqlalchemy import select
 
-from app.core.audit_log.models import AuditEntryRow
+from app.core.audit_log import list_for_org
 from app.core.auth import AuthMiddleware
 from app.core.oauth import ProviderConfig
 from app.core.secrets import encrypt
@@ -204,16 +203,5 @@ async def test_review_with_broken_creds_yields_prefixed_summary(db_session, stub
     assert "Original review body." in summary_with_prefix
 
     # No `dispatched` audit row because the proxy short-circuited on broken_creds.
-    audits = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == review.org_id,
-                    AuditEntryRow.kind == "mcp.stub_pipeline.dispatched",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    audits = await list_for_org(org_id=review.org_id, actions=["mcp.stub_pipeline.dispatched"])
     assert audits == []

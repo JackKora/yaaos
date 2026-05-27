@@ -24,7 +24,7 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 from sqlalchemy import select
 
-from app.core.audit_log.models import AuditEntryRow
+from app.core.audit_log import list_for_org
 from app.core.auth import AuthMiddleware
 from app.core.oauth import ProviderConfig
 from app.core.secrets import encrypt
@@ -236,18 +236,7 @@ async def test_dispatch_success_audits_and_calls_upstream(db_session, stub_provi
     assert r.status_code == 200, r.text
     assert r.json()["result"] == {"ok": True}
 
-    audits = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == review.org_id,
-                    AuditEntryRow.kind == "mcp.stub_disp.dispatched",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    audits = await list_for_org(org_id=review.org_id, actions=["mcp.stub_disp.dispatched"])
     assert len(audits) == 1
     payload = audits[0].payload
     assert payload["method"] == "tools/call"
@@ -277,18 +266,7 @@ async def test_ten_dispatches_write_ten_audit_rows(db_session, stub_provider, st
             )
             assert r.status_code == 200
 
-    audits = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == review.org_id,
-                    AuditEntryRow.kind == "mcp.stub_disp.dispatched",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    audits = await list_for_org(org_id=review.org_id, actions=["mcp.stub_disp.dispatched"])
     assert len(audits) == 10
 
 

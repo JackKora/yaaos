@@ -6,10 +6,8 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from sqlalchemy import select
 
-from app.core.audit_log import Actor
-from app.core.audit_log.models import AuditEntryRow
+from app.core.audit_log import Actor, list_for_org
 from app.core.auth import AuthMiddleware
 from app.domain.identity import repository as identity_repo
 from app.domain.identity import sessions as session_lifecycle
@@ -109,18 +107,7 @@ async def test_install_emits_audit(seeded, db_session) -> None:
         settings={},
         actor=actor,
     )
-    rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == seeded["org"].id,
-                    AuditEntryRow.kind == "coding_agent.installed",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await list_for_org(org_id=seeded["org"].id, actions=["coding_agent.installed"])
     assert len(rows) == 1
     assert rows[0].payload == {"plugin_id": "claude_code"}
 
@@ -159,18 +146,7 @@ async def test_update_settings_and_audit(seeded, db_session) -> None:
         actor=actor,
     )
     assert updated.settings == {"orchestrator": {"name": "new"}, "agents": []}
-    rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == seeded["org"].id,
-                    AuditEntryRow.kind == "coding_agent.settings_updated",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await list_for_org(org_id=seeded["org"].id, actions=["coding_agent.settings_updated"])
     assert len(rows) == 1
 
 
@@ -197,18 +173,7 @@ async def test_uninstall_returns_true_and_audits(seeded, db_session) -> None:
         db_session, org_id=seeded["org"].id, plugin_id="claude_code", actor=actor
     )
     assert removed is True
-    rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == seeded["org"].id,
-                    AuditEntryRow.kind == "coding_agent.uninstalled",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await list_for_org(org_id=seeded["org"].id, actions=["coding_agent.uninstalled"])
     assert len(rows) == 1
 
 

@@ -6,8 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core import byok
-from app.core.audit_log import Actor
-from app.core.audit_log.models import AuditEntryRow
+from app.core.audit_log import Actor, list_for_org
 from app.core.byok.models import ByokKeyRow
 from app.domain.identity import repository as identity_repo
 from app.domain.orgs import repository as orgs_repo
@@ -130,15 +129,7 @@ async def test_set_emits_audit(db_session) -> None:
     actor = Actor.user(user_id=user.id)
 
     await byok.set(org.id, "anthropic", "sk-audit", actor=actor, session=db_session)
-    rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(AuditEntryRow.org_id == org.id, AuditEntryRow.kind == "byok.set")
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await list_for_org(org_id=org.id, actions=["byok.set"])
     assert len(rows) == 1
     assert rows[0].payload == {"provider": "anthropic"}
 
@@ -152,33 +143,13 @@ async def test_clear_emits_audit_only_on_actual_removal(db_session) -> None:
 
     # No-op clear: no audit row.
     await byok.clear(org.id, "anthropic", actor=actor, session=db_session)
-    rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == org.id, AuditEntryRow.kind == "byok.cleared"
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await list_for_org(org_id=org.id, actions=["byok.cleared"])
     assert rows == []
 
     # Real clear: one audit row.
     await byok.set(org.id, "anthropic", "v", actor=actor, session=db_session)
     await byok.clear(org.id, "anthropic", actor=actor, session=db_session)
-    rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.org_id == org.id, AuditEntryRow.kind == "byok.cleared"
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await list_for_org(org_id=org.id, actions=["byok.cleared"])
     assert len(rows) == 1
 
 
@@ -199,17 +170,9 @@ async def test_validate_audit_records_success_flag(db_session) -> None:
     await byok.validate(org.id, "anthropic", _ok, actor=actor, session=db_session)
     await byok.validate(org.id, "anthropic", _bad, actor=actor, session=db_session)
 
-    rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow)
-                .where(AuditEntryRow.org_id == org.id, AuditEntryRow.kind == "byok.validated")
-                .order_by(AuditEntryRow.created_at)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = await list_for_org(org_id=org.id, actions=["byok.validated"])
+    # list_for_org returns newest-first; reverse for chronological order.
+    rows = list(reversed(rows))
     assert len(rows) == 2
     assert rows[0].payload == {"provider": "anthropic", "success": True}
     assert rows[1].payload == {"provider": "anthropic", "success": False}
