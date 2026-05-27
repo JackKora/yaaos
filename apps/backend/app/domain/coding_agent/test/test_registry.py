@@ -17,10 +17,12 @@ from app.domain.coding_agent import (
     ReviewContext,
     ReviewResult,
     ValidationResult,
-    _reset_plugins_for_tests,
+    clear_plugins,
     get_plugin,
     health_check_all,
+    list_registered_plugins,
     register_coding_agent_plugin,
+    register_plugin,
     registered_plugin_ids,
     review,
     validate_config,
@@ -54,9 +56,9 @@ class _StubPlugin:
 
 @pytest.fixture(autouse=True)
 def _reset() -> None:
-    _reset_plugins_for_tests()
+    clear_plugins()
     yield
-    _reset_plugins_for_tests()
+    clear_plugins()
 
 
 def test_register_and_get_plugin() -> None:
@@ -138,3 +140,31 @@ async def test_health_check_all_handles_plugin_exception() -> None:
     out = await health_check_all()
     assert out["broken"].healthy is False
     assert "boom" in out["broken"].message
+
+
+def test_register_plugin_adds_and_is_retrievable() -> None:
+    plugin = _StubPlugin()
+    register_plugin(plugin)
+    assert get_plugin("stub") is plugin
+    assert "stub" in registered_plugin_ids()
+
+
+def test_list_registered_plugins_returns_insertion_order() -> None:
+    class _A:
+        meta = PluginMeta(id="aaa", type="coding_agent", display_name="A")
+
+    class _B:
+        meta = PluginMeta(id="bbb", type="coding_agent", display_name="B")
+
+    register_plugin(_A())
+    register_plugin(_B())
+    result = list_registered_plugins()
+    assert [p.meta.id for p in result] == ["aaa", "bbb"]
+
+
+def test_clear_plugins_empties_registry() -> None:
+    register_plugin(_StubPlugin())
+    assert len(list_registered_plugins()) == 1
+    clear_plugins()
+    assert list_registered_plugins() == []
+    assert registered_plugin_ids() == []
