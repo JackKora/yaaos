@@ -226,6 +226,7 @@ __marimo__/
 
 # Frontend
 node_modules/
+.pnpm-store/
 apps/web/dist/
 apps/e2e/test-results/
 apps/e2e/playwright-report/
