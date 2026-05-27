@@ -267,7 +267,7 @@ async def create_for_pr(
 
 
 async def get(ticket_id: UUID, *, org_id: UUID) -> Ticket:
-    from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+    from app.domain.pull_requests import get as get_pull_request  # noqa: PLC0415
 
     async with db_session() as s:
         row = (
@@ -276,15 +276,17 @@ async def get(ticket_id: UUID, *, org_id: UUID) -> Ticket:
         if row is None:
             raise TicketNotFoundError(str(ticket_id))
         t = Ticket.from_row(row)
-        if row.pr_id is not None:
-            pr = (
-                await s.execute(select(PullRequestRow).where(PullRequestRow.id == row.pr_id))
-            ).scalar_one_or_none()
-            if pr is not None:
-                t.pr_number = pr.number
-                t.pr_html_url = pr.html_url
-                t.author_login = pr.author_login
-                t.is_draft = pr.is_draft
+    if row.pr_id is not None:
+        from app.domain.pull_requests import PullRequestNotFoundError  # noqa: PLC0415
+
+        try:
+            pr = await get_pull_request(row.pr_id, org_id=row.org_id)
+            t.pr_number = pr.number
+            t.pr_html_url = pr.html_url
+            t.author_login = pr.author_login
+            t.is_draft = pr.is_draft
+        except PullRequestNotFoundError:
+            pass
     return t
 
 
@@ -345,7 +347,8 @@ async def list_tickets(
     """
     from sqlalchemy import case, func  # noqa: PLC0415
 
-    from app.domain.pull_requests.models import PullRequestRow  # noqa: PLC0415
+    from app.domain.pull_requests import PullRequest  # noqa: PLC0415
+    from app.domain.pull_requests import list_by_ids as list_prs_by_ids  # noqa: PLC0415
     from app.domain.reviewer.models import FindingRow  # noqa: PLC0415
 
     async with db_session() as s:
@@ -373,17 +376,9 @@ async def list_tickets(
 
         rows = (await s.execute(stmt)).scalars().all()
 
-        # Batch-enrich PR data (one query, not N+1).
-        pr_ids = [r.pr_id for r in rows if r.pr_id is not None]
-        prs_by_id: dict[UUID, PullRequestRow] = {}
-        if pr_ids:
-            pr_rows = (
-                (await s.execute(select(PullRequestRow).where(PullRequestRow.id.in_(pr_ids)))).scalars().all()
-            )
-            prs_by_id = {p.id: p for p in pr_rows}
-
         # Batch-aggregate findings per pr_id. Cheap GROUP BY scoped to the
         # listed tickets' PRs; one query regardless of result-set size.
+        pr_ids = [r.pr_id for r in rows if r.pr_id is not None]
         findings_by_pr: dict[UUID, tuple[int, str | None]] = {}
         if pr_ids:
             severity_rank = case(
@@ -405,25 +400,30 @@ async def list_tickets(
                 severity = {3: "high", 2: "medium", 1: "low"}.get(int(max_rank or 0))
                 findings_by_pr[pr_id] = (int(count), severity)
 
-        out: list[Ticket] = []
-        for r in rows:
-            t = Ticket.from_row(r)
-            if r.pr_id and r.pr_id in prs_by_id:
-                pr = prs_by_id[r.pr_id]
-                t.pr_number = pr.number
-                t.pr_html_url = pr.html_url
-                t.author_login = pr.author_login
-                t.is_draft = pr.is_draft
-                t.builder_display_name = pr.author_login
-            if r.pr_id and r.pr_id in findings_by_pr:
-                count, severity = findings_by_pr[r.pr_id]
-                t.findings_count = count
-                t.max_severity = severity  # type: ignore[assignment]
-            out.append(t)
+    # Batch-enrich PR data via the public pull_requests op (one query, not N+1).
+    prs_by_id: dict[UUID, PullRequest] = {}
+    if pr_ids:
+        prs_by_id = {p.id: p for p in await list_prs_by_ids(pr_ids)}
 
-        if filter.sort == "findings_count":
-            out.sort(key=lambda t: t.findings_count, reverse=True)
-        return out
+    out: list[Ticket] = []
+    for r in rows:
+        t = Ticket.from_row(r)
+        if r.pr_id and r.pr_id in prs_by_id:
+            pr = prs_by_id[r.pr_id]
+            t.pr_number = pr.number
+            t.pr_html_url = pr.html_url
+            t.author_login = pr.author_login
+            t.is_draft = pr.is_draft
+            t.builder_display_name = pr.author_login
+        if r.pr_id and r.pr_id in findings_by_pr:
+            count, severity = findings_by_pr[r.pr_id]
+            t.findings_count = count
+            t.max_severity = severity  # type: ignore[assignment]
+        out.append(t)
+
+    if filter.sort == "findings_count":
+        out.sort(key=lambda t: t.findings_count, reverse=True)
+    return out
 
 
 async def complete(ticket_id: UUID, *, org_id: UUID) -> None:
