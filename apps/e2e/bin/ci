@@ -11,7 +11,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+# Resolve repo root from script location, not `git rev-parse` — works even
+# in environments without a .git directory (e.g. RWX's git/clone checkout).
+REPO_ROOT="$(cd ../.. && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/docker/docker-compose.test.yml"
 
 echo "==> docker compose up (test stack)"
