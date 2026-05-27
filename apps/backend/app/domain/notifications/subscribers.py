@@ -24,12 +24,12 @@ from sqlalchemy import select
 
 from app.core.database import session as db_session
 from app.core.events import EventFilter, subscribe
-from app.core.observability.spawn import spawn
+from app.core.observability import spawn
 from app.domain.notifications import service as notif_service
 from app.domain.tickets.models import TicketRow
 
 if TYPE_CHECKING:
-    from app.domain.tickets.service import TicketStatusChanged
+    from app.domain.tickets import TicketStatusChanged
 
 log = structlog.get_logger("notifications.subscribers")
 

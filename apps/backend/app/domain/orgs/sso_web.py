@@ -22,9 +22,8 @@ from pydantic import BaseModel
 
 from app.core.audit_log import Actor
 from app.core.audit_log import audit as audit_write
-from app.core.auth.context import org_id_var
+from app.core.auth import Action, org_id_var
 from app.core.auth.rate_limit import AUTH_LIMIT, MUTATE_LIMIT, limiter
-from app.core.auth.types import Action
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes

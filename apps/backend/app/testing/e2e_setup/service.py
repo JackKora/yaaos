@@ -25,12 +25,12 @@ from app.core.config import get_settings
 from app.core.database import Base
 from app.core.database import session as db_session
 from app.core.workspace import models as _workspace_models  # noqa: F401
-from app.domain.lessons.models import LessonRow
+from app.domain.lessons import LessonRow
 from app.domain.pull_requests import models as _pr_models  # noqa: F401
 from app.domain.reviewer import models as _reviewer_models  # noqa: F401
 from app.domain.tickets import models as _ticket_models  # noqa: F401
-from app.plugins.claude_code.models import ClaudeCodeSettingsRow
-from app.plugins.github.models import GitHubAppInstallationRow
+from app.plugins.claude_code import ClaudeCodeSettingsRow
+from app.plugins.github import GitHubAppInstallationRow
 
 # The whole codebase pins org_id to this constant in . Same value the
 # domain modules use as the system-actor org.

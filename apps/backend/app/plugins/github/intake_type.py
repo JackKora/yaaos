@@ -48,11 +48,11 @@ from app.core.audit_log import Actor, audit_for_ticket, audit_for_webhook_event
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.workflow import get_engine
-from app.domain.intake.parsing import parse_rereview
-from app.domain.intake.registry import (
+from app.domain.intake import (
     IntakeOutcome,
     IntakeRejectedError,
     IntakeSideEffect,
+    parse_rereview,
 )
 
 log = structlog.get_logger("intake.github")

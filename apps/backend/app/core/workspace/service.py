@@ -12,8 +12,7 @@ import structlog
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
 
-from app.core.audit_log.actor import Actor, ActorKind
-from app.core.audit_log.service import audit_for_workspace
+from app.core.audit_log import Actor, ActorKind, audit_for_workspace
 from app.core.database import session as get_session
 from app.core.observability import spawn
 from app.core.workspace.models import WorkspaceRow

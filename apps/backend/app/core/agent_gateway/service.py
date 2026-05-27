@@ -30,7 +30,7 @@ from app.core.agent_gateway.types import (
     WorkspaceEvent,
 )
 from app.core.tasks import enqueue
-from app.core.workspace.models import WorkspaceRow
+from app.core.workspace import WorkspaceRow
 
 log = structlog.get_logger("core.agent_gateway")
 

@@ -43,8 +43,8 @@ from app.core.auth import public_route
 from app.core.database import session as db_session
 from app.core.secrets import SecretsDecryptError, decrypt
 from app.core.webserver import RouteSpec, register_routes
+from app.domain.integrations import get_provider
 from app.domain.integrations import service as integ
-from app.domain.integrations.types import get_provider
 from app.domain.mcp_proxy.service import lookup_token, record_broken_creds
 from app.domain.reviewer.models import ReviewRow
 

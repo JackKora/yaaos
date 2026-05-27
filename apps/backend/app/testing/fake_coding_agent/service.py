@@ -15,7 +15,7 @@ from uuid import UUID
 
 from app.core.plugin_kit import PluginMeta
 from app.core.workspace import Workspace
-from app.domain.coding_agent.types import (
+from app.domain.coding_agent import (
     AnswerQuestionContext,
     AnswerQuestionResult,
     FindingDraft,

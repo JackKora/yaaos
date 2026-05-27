@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
-from app.core.auth.context import public_route
+from app.core.auth import public_route
 from app.core.database import session as db_session
 from app.core.webserver import RouteSpec, register_routes
 from app.core.workflow import get_engine

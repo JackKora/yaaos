@@ -14,20 +14,19 @@ from typing import Annotated
 from fastapi import Cookie, Depends, Header, HTTPException, Request
 
 from app.core.audit_log import Actor, ActorKind
-from app.core.auth.auth_failure import AuthFailure
-from app.core.auth.context import (
+from app.core.auth import (
+    Action,
     actor_id_var,
     actor_kind_var,
     org_id_var,
     route_security_resolved,
     user_id_var,
 )
-from app.core.auth.types import Action
+from app.core.auth.auth_failure import AuthFailure
 from app.core.database import session as db_session
 from app.domain.identity import repository as identity_repo
+from app.domain.orgs import Membership, Role
 from app.domain.orgs import repository as orgs_repo
-from app.domain.orgs.service import Membership
-from app.domain.orgs.types import Role
 
 # Per-action required role minimum. Single source of truth; per-endpoint
 # overrides are explicit — write `Depends(require(Action.X))` with the
@@ -256,7 +255,7 @@ async def public_route(request: Request) -> None:
     """Compat re-export. The canonical definition lives in
     `core.auth.context.public_route` so non-domain modules can import it
     without layering cycles."""
-    from app.core.auth.context import public_route as _core_public_route  # noqa: PLC0415
+    from app.core.auth import public_route as _core_public_route  # noqa: PLC0415
 
     await _core_public_route()
 

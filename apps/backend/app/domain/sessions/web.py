@@ -29,14 +29,14 @@ from pydantic import BaseModel
 
 from app.core.audit_log import Actor
 from app.core.audit_log import audit as audit_write
-from app.core.auth.auth_failure import auth_failure_response
-from app.core.auth.cookies import (
+from app.core.auth import (
     CSRF_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     clear_cookie_attrs,
     csrf_cookie_attrs,
     session_cookie_attrs,
 )
+from app.core.auth.auth_failure import auth_failure_response
 from app.core.auth.rate_limit import AUTH_LIMIT, MUTATE_LIMIT, limiter
 from app.core.config import get_settings
 from app.core.database import session as db_session
@@ -291,8 +291,8 @@ async def me(
     """
     from app.domain.identity import repository as identity_repo  # noqa: PLC0415
     from app.domain.integrations import list_broken_credentials_for_org  # noqa: PLC0415
+    from app.domain.orgs import Role as _Role  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
-    from app.domain.orgs.types import Role as _Role  # noqa: PLC0415
 
     if not yaaos_session:
         return auth_failure_response("unauthenticated")

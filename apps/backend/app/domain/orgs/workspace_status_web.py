@@ -30,14 +30,13 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import StreamingResponse
 
 from app.core.agent_gateway.service import connection_status_for_org
-from app.core.auth.context import org_id_var
-from app.core.auth.types import Action
+from app.core.auth import Action, org_id_var
 from app.core.database import session as db_session
 from app.core.sse_pubsub import channel_for
 from app.core.sse_pubsub import subscribe as sse_subscribe
 from app.core.webserver import RouteSpec, register_routes
-from app.core.workflow.models import WorkflowExecutionRow
-from app.domain.sessions.dependencies import require
+from app.core.workflow import WorkflowExecutionRow
+from app.domain.sessions import require
 
 router = APIRouter()
 
