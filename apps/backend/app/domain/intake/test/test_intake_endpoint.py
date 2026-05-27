@@ -19,7 +19,7 @@ from app.core.events import (
 from app.core.events import (
     _reset_for_tests as _reset_events,
 )
-from app.core.tasks.models import OutboxEntryRow
+from app.core.tasks.drain import drain_once
 from app.core.workflow import (
     CommandCategory,
     CommandContext,
@@ -29,6 +29,7 @@ from app.core.workflow import (
     Workflow,
     WorkflowEngine,
     WorkflowExecutionRow,
+    WorkflowState,
     _reset_for_tests,
 )
 from app.domain.intake import (
@@ -177,17 +178,24 @@ async def test_happy_path_creates_ticket_and_workflow(db_session, stub_intake) -
     assert wfx.workflow_name == "stub_pr_v1"
     assert str(wfx.ticket_id) == str(ticket_id)
 
-    # Initial route_workflow task is in the outbox awaiting drain.
-    outbox_rows = (
-        (await db_session.execute(select(OutboxEntryRow).where(OutboxEntryRow.kind == "taskiq_enqueue")))
-        .scalars()
-        .all()
-    )
-    assert any(
-        row.payload.get("task_name") == "workflow.route_workflow"
-        and row.payload.get("args", {}).get("workflow_execution_id") == str(workflow_execution_id)
-        for row in outbox_rows
-    )
+    # Draining the enqueued route_workflow task drives the single-step
+    # workflow to DONE — proves the task was enqueued correctly at intake.
+    from app.core.tasks.broker import get_broker  # noqa: PLC0415
+
+    async def _dispatcher(kind: str, payload: dict) -> None:
+        assert kind == "taskiq_enqueue"
+        decorated = get_broker().find_task(payload["task_name"])
+        assert decorated is not None
+        await decorated.original_func(**payload["args"])
+
+    for _ in range(10):
+        n = await drain_once(db_session, dispatcher=_dispatcher)
+        await db_session.commit()
+        if n == 0:
+            break
+
+    await db_session.refresh(wfx)
+    assert wfx.state == WorkflowState.DONE.value
 
 
 @pytest.mark.asyncio

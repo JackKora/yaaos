@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 
 from app.core.agent_gateway import (
     AgentEvent,
@@ -29,7 +28,7 @@ from app.core.agent_gateway import (
     record_heartbeat,
     record_workspace_event,
 )
-from app.core.tasks.models import OutboxEntryRow
+from app.core.tasks.drain import drain_once
 from app.core.workspace.models import WorkspaceRow
 
 
@@ -169,10 +168,99 @@ async def test_heartbeat_with_no_workspaces_returns_empty_forget_list(db_session
 
 
 @pytest.mark.asyncio
-async def test_terminal_event_enqueues_workflow_handle_agent_event(db_session) -> None:
-    ws = await _seed_workspace(db_session)
-    cmd_id = ws.__dict__["_test_seeded_command_id"]
-    wfx_id = ws.__dict__["_test_seeded_workflow_id"]
+async def test_terminal_event_advances_workflow_to_done(db_session) -> None:
+    """A terminal AgentEvent for a Workspace step causes the workflow to
+    advance: record_agent_event enqueues handle_agent_event, and draining
+    that task drives the workflow to DONE."""
+    from app.core.tasks.broker import get_broker  # noqa: PLC0415
+    from app.core.workflow import (  # noqa: PLC0415
+        CommandCategory,
+        Outcome,
+        Step,
+        TerminalAction,
+        Workflow,
+        WorkflowExecutionRow,
+        WorkflowState,
+        _reset_for_tests,
+        get_engine,
+    )
+    from app.core.workflow.models import WorkflowExecutionRow  # noqa: PLC0415, F811
+
+    _reset_for_tests()
+
+    class _NoopWs:
+        kind = "NoopWs"
+        category = CommandCategory.WORKSPACE
+        restart_safe = True
+
+        async def execute(self, inputs, ctx):  # type: ignore[no-untyped-def]
+            del inputs, ctx
+            return Outcome.success()
+
+    eng = get_engine()
+    eng.register_command(_NoopWs())
+    eng.register_workflow(
+        Workflow(
+            name="gw-terminal-test",
+            version=1,
+            steps=(
+                Step(
+                    id="ws",
+                    command_kind="NoopWs",
+                    transitions={"success": TerminalAction.COMPLETE_WORKFLOW},
+                ),
+            ),
+            entry_step_id="ws",
+        )
+    )
+    import app.core.workflow.service as svc  # noqa: PLC0415
+
+    svc._engine = eng
+
+    exec_id = await eng.start(
+        workflow_name="gw-terminal-test",
+        ticket_id=str(uuid4()),
+        workspace_provider="remote_agent",
+        session=db_session,
+    )
+    await db_session.commit()
+
+    # Drain start_step → workspace stub dispatch → AWAITING_AGENT.
+    async def _dispatcher(kind: str, payload: dict) -> None:
+        assert kind == "taskiq_enqueue"
+        decorated = get_broker().find_task(payload["task_name"])
+        assert decorated is not None
+        await decorated.original_func(**payload["args"])
+
+    for _ in range(10):
+        n = await drain_once(db_session, dispatcher=_dispatcher)
+        await db_session.commit()
+        if n == 0:
+            break
+
+    wfx = await db_session.get(WorkflowExecutionRow, exec_id)
+    assert wfx.state == WorkflowState.AWAITING_AGENT.value
+    cmd_id = wfx.pending_agent_command_id
+    assert cmd_id is not None
+
+    # Seed the workspace row pointing at this execution so record_agent_event
+    # can look up the workspace by command_id.
+    ws = WorkspaceRow(
+        id=uuid4(),
+        org_id=uuid4(),
+        provider_id="in_memory",
+        provider="remote_agent",
+        spec={"sha": "deadbeef"},
+        plugin_state={},
+        status="active",
+        activated_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(seconds=600),
+        max_idle_seconds=600,
+        current_command_id=cmd_id,
+        current_holder_workflow_id=exec_id,
+    )
+    db_session.add(ws)
+    await db_session.flush()
 
     event = AgentEvent(
         command_id=cmd_id,
@@ -185,26 +273,111 @@ async def test_terminal_event_enqueues_workflow_handle_agent_event(db_session) -
     await record_agent_event(event, session=db_session)
     await db_session.commit()
 
-    rows = (
-        (await db_session.execute(select(OutboxEntryRow).where(OutboxEntryRow.kind == "taskiq_enqueue")))
-        .scalars()
-        .all()
-    )
-    matching = [
-        r
-        for r in rows
-        if r.payload.get("task_name") == "workflow.handle_agent_event"
-        and r.payload.get("args", {}).get("workflow_execution_id") == str(wfx_id)
-        and r.payload.get("args", {}).get("agent_command_id") == str(cmd_id)
-    ]
-    assert matching, "expected one workflow.handle_agent_event outbox row"
+    # Drain handle_agent_event + route_workflow → workflow reaches DONE.
+    for _ in range(10):
+        n = await drain_once(db_session, dispatcher=_dispatcher)
+        await db_session.commit()
+        if n == 0:
+            break
+
+    wfx = await db_session.get(WorkflowExecutionRow, exec_id)
+    assert wfx.state == WorkflowState.DONE.value
+    assert wfx.pending_agent_command_id is None
+
+    _reset_for_tests()
 
 
 @pytest.mark.asyncio
-async def test_progress_event_does_not_enqueue_workflow(db_session) -> None:
-    ws = await _seed_workspace(db_session)
-    cmd_id = ws.__dict__["_test_seeded_command_id"]
+async def test_progress_event_does_not_advance_workflow(db_session) -> None:
+    """A PROGRESS AgentEvent does not advance the workflow — the execution
+    stays in AWAITING_AGENT after the event is processed."""
+    from app.core.tasks.broker import get_broker  # noqa: PLC0415
+    from app.core.workflow import (  # noqa: PLC0415
+        CommandCategory,
+        Outcome,
+        Step,
+        TerminalAction,
+        Workflow,
+        WorkflowExecutionRow,
+        WorkflowState,
+        _reset_for_tests,
+        get_engine,
+    )
 
+    _reset_for_tests()
+
+    class _NoopWs2:
+        kind = "NoopWs2"
+        category = CommandCategory.WORKSPACE
+        restart_safe = True
+
+        async def execute(self, inputs, ctx):  # type: ignore[no-untyped-def]
+            del inputs, ctx
+            return Outcome.success()
+
+    eng = get_engine()
+    eng.register_command(_NoopWs2())
+    eng.register_workflow(
+        Workflow(
+            name="gw-progress-test",
+            version=1,
+            steps=(
+                Step(
+                    id="ws",
+                    command_kind="NoopWs2",
+                    transitions={"success": TerminalAction.COMPLETE_WORKFLOW},
+                ),
+            ),
+            entry_step_id="ws",
+        )
+    )
+    import app.core.workflow.service as svc  # noqa: PLC0415
+
+    svc._engine = eng
+
+    exec_id = await eng.start(
+        workflow_name="gw-progress-test",
+        ticket_id=str(uuid4()),
+        workspace_provider="remote_agent",
+        session=db_session,
+    )
+    await db_session.commit()
+
+    async def _dispatcher(kind: str, payload: dict) -> None:
+        assert kind == "taskiq_enqueue"
+        decorated = get_broker().find_task(payload["task_name"])
+        assert decorated is not None
+        await decorated.original_func(**payload["args"])
+
+    for _ in range(10):
+        n = await drain_once(db_session, dispatcher=_dispatcher)
+        await db_session.commit()
+        if n == 0:
+            break
+
+    wfx = await db_session.get(WorkflowExecutionRow, exec_id)
+    assert wfx.state == WorkflowState.AWAITING_AGENT.value
+    cmd_id = wfx.pending_agent_command_id
+    assert cmd_id is not None
+
+    ws = WorkspaceRow(
+        id=uuid4(),
+        org_id=uuid4(),
+        provider_id="in_memory",
+        provider="remote_agent",
+        spec={"sha": "deadbeef"},
+        plugin_state={},
+        status="active",
+        activated_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(seconds=600),
+        max_idle_seconds=600,
+        current_command_id=cmd_id,
+        current_holder_workflow_id=exec_id,
+    )
+    db_session.add(ws)
+    await db_session.flush()
+
+    # Post a PROGRESS event — workflow must stay in AWAITING_AGENT.
     event = AgentEvent(
         command_id=cmd_id,
         kind=AgentEventKind.PROGRESS,
@@ -214,12 +387,17 @@ async def test_progress_event_does_not_enqueue_workflow(db_session) -> None:
     await record_agent_event(event, session=db_session)
     await db_session.commit()
 
-    rows = (
-        (await db_session.execute(select(OutboxEntryRow).where(OutboxEntryRow.kind == "taskiq_enqueue")))
-        .scalars()
-        .all()
-    )
-    assert not any(r.payload.get("task_name") == "workflow.handle_agent_event" for r in rows)
+    # Drain anything that was enqueued (should be nothing for a progress event).
+    for _ in range(5):
+        n = await drain_once(db_session, dispatcher=_dispatcher)
+        await db_session.commit()
+        if n == 0:
+            break
+
+    wfx = await db_session.get(WorkflowExecutionRow, exec_id)
+    assert wfx.state == WorkflowState.AWAITING_AGENT.value, "progress event must not advance the workflow"
+
+    _reset_for_tests()
 
 
 @pytest.mark.asyncio
