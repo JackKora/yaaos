@@ -1,13 +1,6 @@
 """domain/identity — users, emails, OAuth identities, sessions, TOTP."""
 
 from app.domain.identity import sessions, web
-from app.domain.identity.models import (
-    OAuthIdentityRow,
-    SessionRow,
-    UserEmailRow,
-    UserRow,
-    UserTotpSecretRow,
-)
 from app.domain.identity.service import (
     EmailAlreadyLinkedError,
     OAuthIdentity,
@@ -17,22 +10,25 @@ from app.domain.identity.service import (
     User,
     UserEmail,
     UserNotFoundError,
+    create_email,
+    create_oauth_identity,
+    create_session,
+    create_user,
 )
 
 __all__ = [
     "EmailAlreadyLinkedError",
     "OAuthIdentity",
-    "OAuthIdentityRow",
     "Session",
     "SessionNotFoundError",
-    "SessionRow",
     "TotpError",
     "User",
     "UserEmail",
-    "UserEmailRow",
     "UserNotFoundError",
-    "UserRow",
-    "UserTotpSecretRow",
+    "create_email",
+    "create_oauth_identity",
+    "create_session",
+    "create_user",
     "sessions",
     "web",
 ]
