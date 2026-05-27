@@ -152,3 +152,37 @@ tasks:
       go install golang.org/x/vuln/cmd/govulncheck@latest
       pip install --quiet semgrep
       cd apps/agent && bin/ci
+
+  # ─── e2e ────────────────────────────────────────────────────────────
+
+  - key: e2e-ci
+    use: [code, nodejs]
+    # Broad filter: e2e exercises the integrated test compose stack —
+    # backend (web + worker images), web (SPA baked into the image), the
+    # three fake-* services, the compose file itself, and workspace
+    # lockfiles. Agent-only changes don't trigger this; agent isn't part
+    # of the e2e stack.
+    filter:
+      - apps/backend/**
+      - apps/web/**
+      - apps/e2e/**
+      - apps/fake-github/**
+      - apps/fake-linear/**
+      - apps/fake-notion/**
+      - docker/docker-compose.test.yml
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - pyproject.toml
+      - uv.lock
+      - .rwx/push.yml
+    docker: true
+    # Docker is on so `apps/e2e/bin/ci` can `docker compose up --build`
+    # the test stack. Playwright runs natively on the Ubuntu agent.
+    run: |
+      set -e
+      corepack enable
+      corepack prepare pnpm@9.12.3 --activate
+      pnpm install --frozen-lockfile
+      pnpm --filter @yaaos/e2e exec playwright install --with-deps chromium
+      apps/e2e/bin/ci
