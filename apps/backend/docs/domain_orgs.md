@@ -94,7 +94,7 @@ Both write `membership/role_changed` or `membership/removed` audit entries with 
 
 ### Import-cycle break
 
-`domain.orgs.web` imports `domain.sessions.dependencies` (for `require`, `public_route`, `current_actor`). `domain.sessions.dependencies` imports `domain.orgs` (repository, service.Membership, types.Role). To avoid a partial-init `ImportError`, `domain.orgs.__init__` does NOT trigger `orgs.web`; the side-effect import lives in `app/main.py` after both modules have finished loading.
+`domain.orgs.web` imports `domain.sessions.dependencies` (for `require`, `public_route`, `current_actor`). `domain.sessions.dependencies` imports `domain.orgs` (repository, service.Membership, types.Role). To avoid a partial-init `ImportError`, `domain.orgs.__init__` does NOT trigger `orgs.web`; the side-effect import lives in `app/web.py` after both modules have finished loading.
 
 ## Data owned
 

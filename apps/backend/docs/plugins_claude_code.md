@@ -113,7 +113,7 @@ Singleton; concurrent `review` calls expected. Each spawns its own subprocess an
 
 ### Test-mode wrapping
 
-This file never branches on test env vars. When `YAAOS_CODING_AGENT_STUB` is set, `app/main.py` calls `testing.stub_coding_agent.wrap_all_registered_plugins()` after `bootstrap()` runs. See `testing_stub_coding_agent.md`.
+This file never branches on test env vars. When `YAAOS_CODING_AGENT_STUB` is set, `app/web.py` calls `testing.stub_coding_agent.wrap_all_registered_plugins()` after `bootstrap()` runs. See `testing_stub_coding_agent.md`.
 
 ## Data owned
 

@@ -12,7 +12,7 @@ Exports `RouteSpec`, `register_routes`, `create_app`, `ShutdownHook`, `register_
 
 - `RouteSpec` — Pydantic model with `module_name`, optional `url_prefix`, `router`, optional `on_startup` / `on_shutdown` hooks.
 - `register_routes(spec)` — called at module import; validates one-prefix-per-module.
-- `create_app()` — returns the FastAPI app; called from `app/main.py` after all modules import.
+- `create_app()` — returns the FastAPI app; called from `app/web.py` after all modules import.
 - `ShutdownHook` — `Callable[[], Awaitable[None]]` type alias. Re-exported from `core/shutdown_registry`.
 - `register_web_shutdown_hook(hook)` / `iter_web_shutdown_hooks()` — web shutdown registry. Re-exported from `core/shutdown_registry`.
 - `register_worker_shutdown_hook(hook)` / `iter_worker_shutdown_hooks()` — worker shutdown registry. Re-exported from `core/shutdown_registry`.
@@ -41,7 +41,7 @@ Boot order:
 4. Yield.
 5. Iterate `iter_web_shutdown_hooks()` in reverse registration order, calling each hook. Errors are logged and swallowed so all hooks run. See [patterns.md § Two process lifecycles, two registries](patterns.md).
 
-By the time the lifespan fires, every module has been imported by `app/main.py` so `register_routes(...)` calls have populated `_specs`. Side-effect: each module's `__init__` also calls `register_web_shutdown_hook(shutdown)` so the lifespan loop covers every registered resource.
+By the time the lifespan fires, every module has been imported by `app/web.py` so `register_routes(...)` calls have populated `_specs`. Side-effect: each module's `__init__` also calls `register_web_shutdown_hook(shutdown)` so the lifespan loop covers every registered resource.
 
 ### Middleware stack
 

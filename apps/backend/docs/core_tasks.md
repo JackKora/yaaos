@@ -31,7 +31,7 @@ The outbox model (`OutboxEntryRow`) and the drain primitives (`drain_once`, `wri
 
 ### Worker process
 
-`apps/backend/app/core/tasks/runtime.py` (entry point via `apps/backend/bin/worker`) boots one event loop racing three tasks via `asyncio.wait(..., FIRST_COMPLETED)`:
+`apps/backend/app/core/tasks/runtime.py` (entry point via `apps/backend/app/worker.py`) boots one event loop racing three tasks via `asyncio.wait(..., FIRST_COMPLETED)`:
 
 - `drain_loop(broker)` — Postgres → Redis pump (lives in `drain.py`). Sleeps ~100ms between empty polls; immediately re-polls when a batch had work. Per-batch transaction so a crash mid-batch redispatches at-most a batch's worth of rows on restart.
 - `Receiver.listen(stop)` — taskiq's consumer loop. Pops tasks from Redis, invokes the registered body. Exits when the `stop` event is set.

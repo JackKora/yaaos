@@ -72,7 +72,8 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 - `app/domain/` — business logic + plugin Protocols.
 - `app/plugins/` — vendor-specific implementations.
 - `app/testing/` — test-only scaffolding (excluded from prod wheel).
-- `app/main.py` — bootstrap composition order (load-bearing).
+- `app/web.py` — web composition root; bootstrap import order (load-bearing) + `uvicorn.run(...)` under `__main__`.
+- `app/worker.py` — worker composition root; side-effect plugin imports + `asyncio.run(...)` under `__main__`.
 - `app/alembic/` — hand-edited migrations using idempotent helpers.
 - `bin/` — `ci`, `sync_modules`, `check_table_access`.
 - `conftest.py` — pytest top-level fixtures.
@@ -81,7 +82,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 
 ## Running locally
 
-`cd apps/backend && uv sync && uv run uvicorn app.main:app --reload --port 8080`. Docker runs: see [`docker-compose.dev.yml`](../../../docker/docker-compose.dev.yml) and [`docker-compose.test.yml`](../../../docker/docker-compose.test.yml).
+`cd apps/backend && uv sync && uv run uvicorn app.web:app --reload --port 8080`. Docker runs: see [`docker-compose.dev.yml`](../../../docker/docker-compose.dev.yml) and [`docker-compose.test.yml`](../../../docker/docker-compose.test.yml).
 
 ## Live API reference
 

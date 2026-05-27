@@ -12,7 +12,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-import app.main  # noqa: F401  — registers the reviewer router
+import app.web  # noqa: F401  — registers the reviewer router
 from app.core.auth import AuthMiddleware
 from app.core.workflow import WorkflowState
 from app.core.workflow.models import WorkflowExecutionRow

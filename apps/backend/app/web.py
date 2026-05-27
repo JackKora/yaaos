@@ -104,3 +104,15 @@ if get_settings().is_non_prod:
 
 # 9. Build the FastAPI app.
 app = webserver.create_app()
+
+if __name__ == "__main__":
+    import uvicorn
+
+    settings = get_settings()
+    uvicorn.run(
+        "app.web:app",
+        host="0.0.0.0",
+        port=settings.yaaos_port,
+        ws_ping_interval=30,
+        ws_ping_timeout=10,
+    )

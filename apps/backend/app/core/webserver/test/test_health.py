@@ -43,7 +43,7 @@ def _required_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_health_endpoint_responds_200() -> None:
     # lazy: import after the fixture has set env vars
-    from app.main import app  # noqa: PLC0415
+    from app.web import app  # noqa: PLC0415
 
     with TestClient(app) as client:
         r = client.get("/api/health")
@@ -58,7 +58,7 @@ def test_health_endpoint_responds_200() -> None:
 
 def test_health_endpoint_status_matches_db_and_redis() -> None:
     # lazy: import after the fixture has set env vars
-    from app.main import app  # noqa: PLC0415
+    from app.web import app  # noqa: PLC0415
 
     with TestClient(app) as client:
         r = client.get("/api/health")

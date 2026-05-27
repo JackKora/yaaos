@@ -85,7 +85,7 @@ From the repo root:
 
 ### Workers
 
-A separate worker process (`apps/backend/bin/worker`) runs taskiq workers + the outbox drain in a single Python process against Redis. Local dev uses the in-memory `WorkspaceProvider` so no Go `apps/agent/` container is required; remote-agent provisioning is exercised in the test stack only.
+A separate worker process (`apps/backend/app/worker.py`) runs taskiq workers + the outbox drain in a single Python process against Redis. Local dev uses the in-memory `WorkspaceProvider` so no Go `apps/agent/` container is required; remote-agent provisioning is exercised in the test stack only.
 
 #### Running the WorkspaceAgent locally
 
@@ -187,7 +187,7 @@ The `app` and `worker` services build the same `web` / `worker` Dockerfile stage
 For iterating on the FE / BE without any container:
 
 - **Postgres** — either run `docker compose -f docker/docker-compose.dev.yml --env-file .env up -d postgres` (just the DB), or use a native install. Match `DATABASE_URL` in `.env`.
-- **Backend** — from `apps/backend/`: `uv sync` then `uv run uvicorn app.main:app --reload --port 8080`. The reloader picks up Python changes. Logs go to stdout in the terminal you ran it from.
+- **Backend** — from `apps/backend/`: `uv sync` then `uv run uvicorn app.web:app --reload --port 8080`. The reloader picks up Python changes. Logs go to stdout in the terminal you ran it from.
 - **Frontend** — from `apps/web/`: `pnpm install` then `pnpm dev`. Vite serves the SPA on `:5173` and proxies `/api/*` to `:8080`.
 - **Claude Code CLI** — install on the host (`npm install -g @anthropic-ai/claude-code`) or skip by setting `YAAOS_CODING_AGENT_STUB=1`, which swaps in deterministic stub responses (no real LLM calls).
 

@@ -60,7 +60,7 @@ Protocols are hosted in `core/` or `domain/` depending on whether their primitiv
 | `CodingAgentPlugin` | `domain/coding_agent` | `plugins/claude_code` |
 | `WorkspaceProvider` | `core/workspace` | `plugins/in_memory_workspace` |
 
-Plugins register themselves at import time (in their `__init__.py`). `app/main.py` imports every plugin package that should be active.
+Plugins register themselves at import time (in their `__init__.py`). `app/web.py` imports every plugin package that should be active.
 
 Each Protocol exposes a `meta: PluginMeta` (`id`, `type`, `display_name`, `description`, `docs_url`). The `id` is the registry key, URL prefix, and canonical accessor.
 
@@ -88,6 +88,6 @@ Never hand-edit `tach.toml` — re-run `bin/sync_modules` after changing a modul
 1. Create the directory under the appropriate layer.
 2. Add `__init__.py` (re-exports + `__all__`) and `module.py` (`get_module_name`).
 3. If exposing HTTP routes: add `web.py`, call `register_routes` at bottom, ensure `__init__.py` imports `web` so the side effect runs.
-4. For a new plugin: ensure `app/main.py` imports the plugin package.
+4. For a new plugin: ensure `app/web.py` imports the plugin package.
 5. Run `bin/sync_modules`.
 6. Add `apps/backend/docs/<layer>_<module>.md` following the per-module template.

@@ -14,7 +14,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy import text
 
-import app.main  # noqa: F401
+import app.web  # noqa: F401
 from app.core.auth import AuthMiddleware
 from app.domain.identity import repository as identity_repo
 from app.domain.identity import sessions as session_lifecycle
