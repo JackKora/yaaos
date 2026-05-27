@@ -140,12 +140,7 @@ services:
     # No seed script in CMD — e2e specs drive their own preconditions via
     # `/api/testing/*` (see app/testing/e2e_setup). Migrations + built-in
     # reviewer-agent seeding run from FastAPI's lifespan hook.
-    command:
-      [
-        "sh",
-        "-c",
-        "uvicorn app.main:app --host 0.0.0.0 --port 8080 --app-dir apps/backend",
-      ]
+    command: ["python", "apps/backend/app/web.py"]
 
   yaaos-worker:
     image: yaaos-worker-test
@@ -182,9 +177,4 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command:
-      [
-        "sh",
-        "-c",
-        "cd apps/backend && python bin/worker",
-      ]
+    command: ["python", "apps/backend/app/worker.py"]
