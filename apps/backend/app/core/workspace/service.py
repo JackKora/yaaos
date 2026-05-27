@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import structlog
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import Actor, ActorKind, audit_for_workspace
 from app.core.database import session as get_session
@@ -21,6 +22,8 @@ from app.core.workspace.types import (
     HealthStatus,
     OnStreamLine,
     Workspace,
+    WorkspaceClaimState,
+    WorkspaceCommandState,
     WorkspaceError,
     WorkspaceInfo,
     WorkspaceNotFoundError,
@@ -684,3 +687,91 @@ async def health_check_all() -> dict[str, HealthStatus]:
         except Exception as e:
             out[plugin_id] = HealthStatus(healthy=False, message=str(e), checked_at=_utcnow())
     return out
+
+
+async def get_workspace_claim_state(
+    command_id: UUID,
+    session: AsyncSession,
+) -> WorkspaceClaimState | None:
+    """Return the claim projection for the workspace holding `command_id`, or
+    None if no workspace is currently claimed by that command.
+
+    Used by `core/agent_gateway` to apply the stale-claim guard and locate the
+    workflow-execution holder without crossing the module boundary via a raw Row.
+    """
+    row = (
+        await session.execute(
+            select(WorkspaceRow.id, WorkspaceRow.current_holder_workflow_id, WorkspaceRow.status).where(
+                WorkspaceRow.current_command_id == command_id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return WorkspaceClaimState(
+        workspace_id=row[0],
+        current_holder_workflow_id=row[1],
+        status=row[2],
+    )
+
+
+async def get_workspace_command_state(
+    workspace_id: UUID,
+    session: AsyncSession,
+) -> WorkspaceCommandState | None:
+    """Return the command-ownership projection for `workspace_id`, or None if
+    the row doesn't exist.
+
+    Used by `core/agent_gateway` to validate event ownership before applying a
+    status update — no raw Row crosses the module boundary.
+    """
+    row = (
+        await session.execute(
+            select(WorkspaceRow.id, WorkspaceRow.current_command_id, WorkspaceRow.status).where(
+                WorkspaceRow.id == workspace_id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return WorkspaceCommandState(
+        workspace_id=row[0],
+        current_command_id=row[1],
+        status=row[2],
+    )
+
+
+async def update_workspace_status(
+    workspace_id: UUID,
+    new_status: str,
+    session: AsyncSession,
+) -> None:
+    """Update the `status` column for `workspace_id`.
+
+    Used by `core/agent_gateway` when applying agent-reported state changes
+    (ready → active, destroyed → destroyed, failed → destroy_failed) without
+    requiring a raw WorkspaceRow import.
+    """
+    await session.execute(
+        update(WorkspaceRow).where(WorkspaceRow.id == workspace_id).values(status=new_status)
+    )
+
+
+async def get_workspace_statuses(
+    workspace_ids: set[UUID],
+    session: AsyncSession,
+) -> dict[UUID, str]:
+    """Return a `{id: status}` map for the given workspace ids.
+
+    Used by `core/agent_gateway` heartbeat reconciliation to identify workspaces
+    the control plane has dropped or marked `destroyed` — callers compare the
+    result against what the agent reports.
+    """
+    if not workspace_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(WorkspaceRow.id, WorkspaceRow.status).where(WorkspaceRow.id.in_(workspace_ids))
+        )
+    ).all()
+    return {row[0]: row[1] for row in rows}

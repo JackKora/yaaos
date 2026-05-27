@@ -8,7 +8,7 @@ Owns the centralized lifecycle for every workspace yaaos creates. Defines the `W
 
 ## Public interface
 
-Exports value objects (`WorkspaceSpec`, `WorkspaceInfo`, `WorkspaceStatus`, `ResourceCaps`, `NetworkPolicy`, `RepoRefForSpec`, `CodingAgentCliResult`, `HealthStatus`), Protocols (`Workspace`, `WorkspaceProvider`), ORM row (`WorkspaceRow`), functions (`register_workspace_provider`, `get_provider`, `create_workspace`, `with_workspace`, `close_workspace`, `force_close_all`, `get_workspace_info`, `start_reaper`, `startup_recovery`, `health_check_all`), error types, and `_reset_providers_for_tests`. See `apps/backend/app/core/workspace/__init__.py`.
+Exports value objects (`WorkspaceSpec`, `WorkspaceInfo`, `WorkspaceStatus`, `WorkspaceClaimState`, `WorkspaceCommandState`, `ResourceCaps`, `NetworkPolicy`, `RepoRefForSpec`, `CodingAgentCliResult`, `HealthStatus`), Protocols (`Workspace`, `WorkspaceProvider`), functions (`register_workspace_provider`, `get_provider`, `create_workspace`, `with_workspace`, `close_workspace`, `force_close_all`, `get_workspace_info`, `get_workspace_claim_state`, `get_workspace_command_state`, `get_workspace_statuses`, `update_workspace_status`, `start_reaper`, `startup_recovery`, `health_check_all`), error types, and `_reset_providers_for_tests`. See `apps/backend/app/core/workspace/__init__.py`.
 
 HTTP routes registered by the module under `/api/workspaces/*` (list, get, force-close, force-close-all, retry-destroy). The explicit `url_prefix` overrides the default `/api/workspace` to use the plural form.
 

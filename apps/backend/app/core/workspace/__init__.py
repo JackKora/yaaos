@@ -9,7 +9,6 @@ from app.core.workspace.dispatch import (
     release_claim,
     try_claim,
 )
-from app.core.workspace.models import WorkspaceRow
 from app.core.workspace.service import (
     _reset_providers_for_tests,
     close_workspace,
@@ -17,11 +16,15 @@ from app.core.workspace.service import (
     force_close_all,
     get_provider,
     get_workspace,
+    get_workspace_claim_state,
+    get_workspace_command_state,
     get_workspace_info,
+    get_workspace_statuses,
     health_check_all,
     register_workspace_provider,
     start_reaper,
     startup_recovery,
+    update_workspace_status,
     with_workspace,
 )
 from app.core.workspace.types import (
@@ -32,6 +35,8 @@ from app.core.workspace.types import (
     RepoRefForSpec,
     ResourceCaps,
     Workspace,
+    WorkspaceClaimState,
+    WorkspaceCommandState,
     WorkspaceDestroyError,
     WorkspaceError,
     WorkspaceExecError,
@@ -61,6 +66,8 @@ __all__ = [
     "ResourceCaps",
     "WorkflowContextProvider",
     "Workspace",
+    "WorkspaceClaimState",
+    "WorkspaceCommandState",
     "WorkspaceDestroyError",
     "WorkspaceError",
     "WorkspaceExecError",
@@ -69,7 +76,6 @@ __all__ = [
     "WorkspaceNotFoundError",
     "WorkspaceProvider",
     "WorkspaceProvisionError",
-    "WorkspaceRow",
     "WorkspaceSpec",
     "WorkspaceStatus",
     "WorkspaceTicketContext",
@@ -83,7 +89,10 @@ __all__ = [
     "get_recovery_policy",
     "get_workflow_context_provider",
     "get_workspace",
+    "get_workspace_claim_state",
+    "get_workspace_command_state",
     "get_workspace_info",
+    "get_workspace_statuses",
     "health_check_all",
     "register_recovery_policy",
     "register_workflow_context_provider",
@@ -93,5 +102,6 @@ __all__ = [
     "start_reaper",
     "startup_recovery",
     "try_claim",
+    "update_workspace_status",
     "with_workspace",
 ]
