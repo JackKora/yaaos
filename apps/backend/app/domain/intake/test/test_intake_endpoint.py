@@ -16,9 +16,7 @@ from app.core.events import (
     EventFilter,
     subscribe,
 )
-from app.core.events import (
-    _reset_for_tests as _reset_events,
-)
+from app.core.events.service import _reset_for_tests as _reset_events
 from app.core.tasks.drain import drain_once
 from app.core.workflow import (
     CommandCategory,
@@ -29,16 +27,16 @@ from app.core.workflow import (
     Workflow,
     WorkflowEngine,
     WorkflowState,
-    _reset_for_tests,
 )
 from app.core.workflow.models import WorkflowExecutionRow
+from app.core.workflow.service import _reset_for_tests
 from app.domain.intake import (
     IntakePrepared,
     IntakeRejectedError,
-    _reset_registry_for_tests,
     register_intake_type,
 )
 from app.domain.intake import web as _intake_web  # noqa: F401 — registers routes
+from app.domain.intake.registry import _reset_registry_for_tests
 from app.domain.tickets.models import TicketRow
 
 

@@ -18,6 +18,8 @@ Owns `Workflow`, `Step`, `WorkflowCommand`, `Outcome`, and the three [`core/task
 
 **Admin ops:** `request_cancel(execution_id, *, session)`, `resume_hitl(execution_id, *, response, session)`.
 
+Tests import `_reset_for_tests` directly from `app.core.workflow.service` to clear the engine singleton between runs.
+
 **Read projections** (replace raw Row access for cross-module callers):
 - `WorkflowExecutionSummary` — frozen dataclass: `id`, `ticket_id`, `workflow_name`, `state`, `current_step_id`, `created_at`, `updated_at`.
 - `HitlHistoryEntry` — frozen dataclass: `id`, `workflow_execution_id`, `question_payload`, `resolution_payload`, `resolved_at`, `created_at`.

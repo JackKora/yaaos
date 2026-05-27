@@ -11,7 +11,7 @@ from app.core.agent_gateway import (
     AuthBlock,
     HeartbeatRequest,
     RepoRef,
-    _reset_queues_for_tests,
+    clear_queues,
     pick_agent_for_org,
     queue_depth,
     record_heartbeat,
@@ -29,9 +29,9 @@ from app.core.workspace.remote_provider import (
 
 @pytest.fixture(autouse=True)
 def _isolate_queues() -> None:
-    _reset_queues_for_tests()
+    clear_queues()
     yield
-    _reset_queues_for_tests()
+    clear_queues()
 
 
 async def _seed_reachable_agent(

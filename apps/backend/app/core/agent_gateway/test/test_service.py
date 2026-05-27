@@ -21,8 +21,8 @@ from app.core.agent_gateway import (
     StaleClaimError,
     WorkspaceEvent,
     WorkspaceEventKind,
-    _reset_queues_for_tests,
     claim_next,
+    clear_queues,
     enqueue_command,
     has_any_reachable_agent,
     pick_agent_for_org,
@@ -37,9 +37,9 @@ from app.core.workspace.models import WorkspaceRow
 
 @pytest.fixture(autouse=True)
 def _isolate_queues() -> None:
-    _reset_queues_for_tests()
+    clear_queues()
     yield
-    _reset_queues_for_tests()
+    clear_queues()
 
 
 def _make_create_command() -> CreateWorkspaceCommand:
@@ -183,10 +183,10 @@ async def test_terminal_event_advances_workflow_to_done(db_session) -> None:
         TerminalAction,
         Workflow,
         WorkflowState,
-        _reset_for_tests,
         get_engine,
     )
     from app.core.workflow.models import WorkflowExecutionRow  # noqa: PLC0415
+    from app.core.workflow.service import _reset_for_tests  # noqa: PLC0415
 
     _reset_for_tests()
 
@@ -301,10 +301,10 @@ async def test_progress_event_does_not_advance_workflow(db_session) -> None:
         TerminalAction,
         Workflow,
         WorkflowState,
-        _reset_for_tests,
         get_engine,
     )
     from app.core.workflow.models import WorkflowExecutionRow  # noqa: PLC0415
+    from app.core.workflow.service import _reset_for_tests  # noqa: PLC0415
 
     _reset_for_tests()
 
@@ -407,9 +407,10 @@ async def test_progress_event_publishes_to_sse_pubsub(db_session, redis_or_skip)
     """Slice 77: progress AgentEvents posted via HTTP get republished to
     the `activity:{workflow_execution_id}` SSE channel so the SPA's
     live-tail picks them up alongside batched WebSocket events."""
-    from app.core.sse_pubsub import _reset_for_tests, channel_for, subscribe  # noqa: PLC0415
+    from app.core.sse_pubsub import channel_for, subscribe  # noqa: PLC0415
+    from app.core.sse_pubsub.service import _reset_for_tests as _reset_pubsub  # noqa: PLC0415
 
-    _reset_for_tests()
+    _reset_pubsub()
 
     ws = await _seed_workspace(db_session)
     cmd_id = ws.__dict__["_test_seeded_command_id"]

@@ -2,7 +2,7 @@
 
 from app.core.workspace.commands import ALL_LIFECYCLE_COMMANDS
 from app.core.workspace.dispatch import (
-    _reset_recovery_policies_for_tests,
+    clear_recovery_policies,
     get_recovery_policy,
     register_recovery_policy,
     registered_recovery_labels,
@@ -10,7 +10,7 @@ from app.core.workspace.dispatch import (
     try_claim,
 )
 from app.core.workspace.service import (
-    _reset_providers_for_tests,
+    clear_workspace_providers,
     close_workspace,
     create_workspace,
     force_close_all,
@@ -51,7 +51,7 @@ from app.core.workspace.types import (
 from app.core.workspace.workflow_context import (
     WorkflowContextProvider,
     WorkspaceTicketContext,
-    _reset_workflow_context_provider_for_tests,
+    clear_workflow_context_provider,
     get_workflow_context_provider,
     register_workflow_context_provider,
 )
@@ -79,9 +79,9 @@ __all__ = [
     "WorkspaceSpec",
     "WorkspaceStatus",
     "WorkspaceTicketContext",
-    "_reset_providers_for_tests",
-    "_reset_recovery_policies_for_tests",
-    "_reset_workflow_context_provider_for_tests",
+    "clear_recovery_policies",
+    "clear_workflow_context_provider",
+    "clear_workspace_providers",
     "close_workspace",
     "create_workspace",
     "force_close_all",

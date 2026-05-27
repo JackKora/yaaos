@@ -65,8 +65,8 @@ def queue_depth(agent_id: UUID) -> int:
     return len(_queues.get(agent_id, ()))
 
 
-def _reset_queues_for_tests() -> None:
-    """Drop every in-memory queue and condition. Tests call this between runs."""
+def clear_queues() -> None:
+    """Drop every in-memory queue and condition."""
     _queues.clear()
     _conditions.clear()
 

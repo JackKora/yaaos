@@ -212,9 +212,8 @@ expose = [
   "WorkspaceEventKind",
   "WriteFilesCommand",
   "WriteFilesEntry",
-  "_reset_queues_for_tests",
-  "_reset_subscriber_registry_for_tests",
   "claim_next",
+  "clear_queues",
   "connection_status_for_org",
   "enqueue_command",
   "get_subscriber_registry",
@@ -328,7 +327,6 @@ from = ["app.core.database"]
 expose = [
   "Event",
   "EventFilter",
-  "_reset_for_tests",
   "publish",
   "publish_after_commit",
   "serialize_for_sse",
@@ -384,7 +382,6 @@ from = ["app.core.plugin_kit"]
 
 [[interfaces]]
 expose = [
-  "_reset_for_tests",
   "aclose",
   "get_client",
   "get_url",
@@ -411,7 +408,6 @@ from = ["app.core.secrets"]
 [[interfaces]]
 expose = [
   "RedisPubsub",
-  "_reset_for_tests",
   "channel_for",
   "get_pubsub",
   "publish",
@@ -456,7 +452,6 @@ expose = [
   "WorkflowExecutionSummary",
   "WorkflowNotFoundError",
   "WorkflowState",
-  "_reset_for_tests",
   "get_awaiting_human_execution",
   "get_engine",
   "get_execution_summary",
@@ -496,9 +491,9 @@ expose = [
   "WorkspaceSpec",
   "WorkspaceStatus",
   "WorkspaceTicketContext",
-  "_reset_providers_for_tests",
-  "_reset_recovery_policies_for_tests",
-  "_reset_workflow_context_provider_for_tests",
+  "clear_recovery_policies",
+  "clear_workflow_context_provider",
+  "clear_workspace_providers",
   "close_workspace",
   "create_workspace",
   "force_close_all",
@@ -615,7 +610,6 @@ expose = [
   "IntakeRejectedError",
   "IntakeSideEffect",
   "IntakeType",
-  "_reset_registry_for_tests",
   "get_intake_type",
   "is_mid_band_confirm",
   "is_skippable_path",

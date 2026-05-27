@@ -35,10 +35,10 @@ from app.core.workflow import (
     TerminalAction,
     Workflow,
     WorkflowState,
-    _reset_for_tests,
     get_engine,
 )
 from app.core.workflow.models import WorkflowExecutionRow
+from app.core.workflow.service import _reset_for_tests
 
 
 @pytest.fixture

@@ -94,7 +94,8 @@ def get_provider(provider_id: str) -> WorkspaceProvider:
         raise WorkspaceError(f"workspace provider not found: {provider_id}") from e
 
 
-def _reset_providers_for_tests() -> None:
+def clear_workspace_providers() -> None:
+    """Clear the workspace provider registry."""
     _PROVIDERS.clear()
 
 

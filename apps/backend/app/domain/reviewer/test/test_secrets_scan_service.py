@@ -19,7 +19,7 @@ import pytest
 from app.core.workflow import CommandContext
 from app.core.workspace import (
     WorkspaceTicketContext,
-    _reset_workflow_context_provider_for_tests,
+    clear_workflow_context_provider,
     register_workflow_context_provider,
 )
 from app.domain.reviewer.commands import SecretsScan
@@ -48,7 +48,7 @@ def _cmd_ctx() -> CommandContext:
 @pytest.fixture(autouse=True)
 def _reset_context():
     yield
-    _reset_workflow_context_provider_for_tests()
+    clear_workflow_context_provider()
 
 
 async def test_secrets_scan_skips_when_diff_contains_aws_key() -> None:
