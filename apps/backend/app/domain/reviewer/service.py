@@ -665,6 +665,73 @@ class _DomainEventEnvelope(_BusEvent):
         return cls(kind=kind, payload=asdict(event))  # type: ignore[arg-type]
 
 
+async def find_pr_id_by_external_comment_id(external_comment_id: str) -> uuid.UUID | None:
+    """Return the pr_id for the finding whose thread contains a message with the given external comment id.
+
+    Returns None when no matching comment exists.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.core.database import session as db_session  # noqa: PLC0415
+    from app.domain.reviewer.models import (  # noqa: PLC0415
+        CommentMessageRow,
+        CommentThreadRow,
+        FindingRow,
+    )
+
+    async with db_session() as s:
+        row = (
+            await s.execute(
+                select(FindingRow.pr_id)
+                .join(CommentThreadRow, CommentThreadRow.finding_id == FindingRow.id)
+                .join(CommentMessageRow, CommentMessageRow.thread_id == CommentThreadRow.id)
+                .where(CommentMessageRow.external_comment_id == external_comment_id)
+            )
+        ).first()
+    return row[0] if row is not None else None
+
+
+async def aggregate_findings_by_prs(
+    pr_ids: list[uuid.UUID], *, org_id: uuid.UUID
+) -> dict[uuid.UUID, tuple[int, str | None]]:
+    """Return finding count and max severity for each pr_id in one batch query.
+
+    Keys are present only for pr_ids that have at least one finding.
+    Value is `(count, max_severity)` where max_severity ∈ `"high" | "medium" | "low" | None`.
+    """
+    from sqlalchemy import case, func, select  # noqa: PLC0415
+
+    from app.core.database import session as db_session  # noqa: PLC0415
+    from app.domain.reviewer.models import FindingRow  # noqa: PLC0415
+
+    if not pr_ids:
+        return {}
+
+    severity_rank = case(
+        (FindingRow.severity == "high", 3),
+        (FindingRow.severity == "medium", 2),
+        (FindingRow.severity == "low", 1),
+        else_=0,
+    )
+    agg_stmt = (
+        select(
+            FindingRow.pr_id,
+            func.count(FindingRow.id),
+            func.max(severity_rank),
+        )
+        .where(FindingRow.pr_id.in_(pr_ids), FindingRow.org_id == org_id)
+        .group_by(FindingRow.pr_id)
+    )
+    async with db_session() as s:
+        results = (await s.execute(agg_stmt)).all()
+
+    out: dict[uuid.UUID, tuple[int, str | None]] = {}
+    for pr_id, count, max_rank in results:
+        severity = {3: "high", 2: "medium", 1: "low"}.get(int(max_rank or 0))
+        out[pr_id] = (int(count), severity)
+    return out
+
+
 def review_summary(aggregate: PRReviewAggregate, review: Review) -> dict[str, int]:
     """Counters for the per-review section header (plan §9.2): N new, M re-observed, K resolved."""
     new = 0

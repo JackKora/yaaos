@@ -528,11 +528,7 @@ class GithubIntakeType:
         session: AsyncSession,
     ) -> IntakeOutcome:
         from app.domain import tickets  # noqa: PLC0415
-        from app.domain.reviewer.models import (  # noqa: PLC0415
-            CommentMessageRow,
-            CommentThreadRow,
-            FindingRow,
-        )
+        from app.domain.reviewer import find_pr_id_by_external_comment_id  # noqa: PLC0415
 
         reaction = payload.get("reaction") or {}
         content = reaction.get("content")
@@ -543,17 +539,9 @@ class GithubIntakeType:
         if target_id is None:
             return IntakeSideEffect(detail="ignored_no_target")
 
-        row = (
-            await session.execute(
-                select(FindingRow.pr_id)
-                .join(CommentThreadRow, CommentThreadRow.finding_id == FindingRow.id)
-                .join(CommentMessageRow, CommentMessageRow.thread_id == CommentThreadRow.id)
-                .where(CommentMessageRow.external_comment_id == str(target_id))
-            )
-        ).first()
-        if row is None:
+        pr_id = await find_pr_id_by_external_comment_id(str(target_id))
+        if pr_id is None:
             return IntakeSideEffect(detail="ignored_reaction_no_finding")
-        pr_id = row[0]
         ticket = await tickets.get_by_pr(pr_id, org_id=org_id)
         if ticket is None:
             return IntakeSideEffect(detail="ignored_reaction_no_ticket")

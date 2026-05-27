@@ -346,11 +346,9 @@ async def list_tickets(
     `findings` rather than denormalized on the ticket row — POC simpler than
     maintaining a trigger-fed column, and the result set is small.
     """
-    from sqlalchemy import case, func  # noqa: PLC0415
-
     from app.domain.pull_requests import PullRequest  # noqa: PLC0415
     from app.domain.pull_requests import list_by_ids as list_prs_by_ids  # noqa: PLC0415
-    from app.domain.reviewer.models import FindingRow  # noqa: PLC0415
+    from app.domain.reviewer import aggregate_findings_by_prs  # noqa: PLC0415
 
     async with db_session() as s:
         stmt = select(TicketRow).where(TicketRow.org_id == org_id)
@@ -377,29 +375,11 @@ async def list_tickets(
 
         rows = (await s.execute(stmt)).scalars().all()
 
-        # Batch-aggregate findings per pr_id. Cheap GROUP BY scoped to the
-        # listed tickets' PRs; one query regardless of result-set size.
-        pr_ids = [r.pr_id for r in rows if r.pr_id is not None]
-        findings_by_pr: dict[UUID, tuple[int, str | None]] = {}
-        if pr_ids:
-            severity_rank = case(
-                (FindingRow.severity == "high", 3),
-                (FindingRow.severity == "medium", 2),
-                (FindingRow.severity == "low", 1),
-                else_=0,
-            )
-            agg_stmt = (
-                select(
-                    FindingRow.pr_id,
-                    func.count(FindingRow.id),
-                    func.max(severity_rank),
-                )
-                .where(FindingRow.pr_id.in_(pr_ids), FindingRow.org_id == org_id)
-                .group_by(FindingRow.pr_id)
-            )
-            for pr_id, count, max_rank in (await s.execute(agg_stmt)).all():
-                severity = {3: "high", 2: "medium", 1: "low"}.get(int(max_rank or 0))
-                findings_by_pr[pr_id] = (int(count), severity)
+    # Batch-aggregate findings per pr_id via the reviewer public op.
+    pr_ids = [r.pr_id for r in rows if r.pr_id is not None]
+    findings_by_pr: dict[UUID, tuple[int, str | None]] = {}
+    if pr_ids:
+        findings_by_pr = await aggregate_findings_by_prs(pr_ids, org_id=org_id)
 
     # Batch-enrich PR data via the public pull_requests op (one query, not N+1).
     prs_by_id: dict[UUID, PullRequest] = {}
