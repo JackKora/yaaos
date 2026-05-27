@@ -18,8 +18,8 @@ import app.web  # noqa: F401  — registers the reviewer router
 from app.core.auth import AuthMiddleware
 from app.domain.identity import repository as identity_repo
 from app.domain.identity import sessions as session_lifecycle
+from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
-from app.domain.orgs.types import Role
 from app.domain.reviewer.aggregate import RawFinding
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.types import CodeAnchor, FindingFingerprint, FindingState

@@ -8,11 +8,12 @@ from uuid import uuid4
 import pytest
 
 from app.core.workspace import (
+    _PROVIDERS,
     RepoRefForSpec,
     WorkspaceSpec,
+    clear_workspace_providers,
     register_workspace_provider,
 )
-from app.core.workspace.service import _PROVIDERS, clear_workspace_providers
 from app.plugins.in_memory_workspace import get_provider as get_in_process_provider
 from app.testing.stub_workspace import (
     StubWorkspaceProvider,

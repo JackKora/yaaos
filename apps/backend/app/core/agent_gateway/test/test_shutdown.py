@@ -4,26 +4,25 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.agent_gateway.subscribers import _reset_for_tests, get_registry, shutdown
+import app.core.agent_gateway.subscribers as _subs
+from app.core.agent_gateway.subscribers import get_registry, shutdown
 
 
 @pytest.fixture(autouse=True)
 def _isolate():
-    _reset_for_tests()
+    _subs._singleton = None
     yield
-    _reset_for_tests()
+    _subs._singleton = None
 
 
 @pytest.mark.asyncio
 async def test_shutdown_drops_singleton() -> None:
     """After shutdown() the singleton is None."""
-    import app.core.agent_gateway.subscribers as subs  # noqa: PLC0415
-
     get_registry()  # materialize singleton
-    assert subs._singleton is not None
+    assert _subs._singleton is not None
 
     await shutdown()
-    assert subs._singleton is None
+    assert _subs._singleton is None
 
 
 @pytest.mark.asyncio

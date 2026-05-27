@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from app.core.auth import AuthMiddleware
 from app.domain.identity import repository as identity_repo
 from app.domain.identity import sessions as session_lifecycle
+from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
-from app.domain.orgs.types import Role
 from app.domain.sessions import web as _auth_web  # noqa: F401
 
 
@@ -67,8 +67,8 @@ async def test_me_returns_user_and_memberships(db_session) -> None:
     from sqlalchemy import delete  # noqa: PLC0415
 
     from app.core.database import get_sessionmaker  # noqa: PLC0415
-    from app.domain.identity.models import UserEmailRow, UserRow  # noqa: PLC0415
-    from app.domain.orgs.models import MembershipRow, OrgRow  # noqa: PLC0415
+    from app.domain.identity import UserEmailRow, UserRow  # noqa: PLC0415
+    from app.domain.orgs import MembershipRow, OrgRow  # noqa: PLC0415
 
     async with get_sessionmaker()() as cleanup:
         await cleanup.execute(delete(MembershipRow).where(MembershipRow.user_id == user.id))
@@ -98,7 +98,7 @@ async def test_logout_all_revokes_every_session(db_session) -> None:
         assert await session_lifecycle.lookup(cleanup, s3.raw_token) is None
         from sqlalchemy import delete  # noqa: PLC0415
 
-        from app.domain.identity.models import UserRow  # noqa: PLC0415
+        from app.domain.identity import UserRow  # noqa: PLC0415
 
         await cleanup.execute(delete(UserRow).where(UserRow.id == user.id))
         await cleanup.commit()

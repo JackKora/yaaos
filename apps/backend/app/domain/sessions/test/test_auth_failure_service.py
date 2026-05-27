@@ -22,13 +22,11 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import select
 
 from app.core.audit_log import list_for_entity
-from app.core.auth import AuthMiddleware
-from app.core.auth.auth_failure import register_handler
-from app.core.auth.types import Action
+from app.core.auth import Action, AuthMiddleware, register_handler
+from app.domain.identity import SessionRow
 from app.domain.identity import repository as identity_repo
-from app.domain.identity.models import SessionRow
+from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
-from app.domain.orgs.types import Role
 from app.domain.sessions import require
 from app.domain.sessions import web as _auth_web  # noqa: F401  -- registers /api/auth/me
 

@@ -297,12 +297,13 @@ Assert on the **durable state production reads** — audit rows by kind, posted-
 
 ### Module boundaries in tests
 
-Tests obey the same import rules as production code. Specifically:
+Tests obey the **same import rules as production code** — enforced by `tach check --interfaces` in CI, which covers `app/testing/` as well as production code. Violations fail CI.
 
 - Import only `__all__` exports — `from app.<module> import X`, never `from app.<module>.<submodule> import X`.
-- No `*Row` cross-module imports. If a test needs to inspect persisted state owned by another module, go through that module's public service query (e.g. `get_review_job(id, session=s)`), not by pulling the `Row` class directly.
-- No test-only seams that bypass module interfaces. If a seam is needed, it belongs in `app/testing/` (which is excluded from tach analysis and never imported by production code).
+- `*Row` types needed cross-module are exposed in the owning module's `__all__` and imported from the public path. If a test needs to inspect persisted state owned by another module, use the public `*Row` or the module's service query.
+- No test-only seams that bypass module interfaces. If a seam is needed, it belongs in `app/testing/` — but `app/testing/` is itself tach-governed; it may only import from `__all__`-gated module paths.
 - Service tests of multi-hop pipelines are sliced per-hop: each service test exercises one entry point end-to-end; chain tests by asserting on the durable state that the next hop reads, not by calling internal functions of the next module.
+- Singleton reset for test isolation: modules with a `_singleton` global (e.g. `core/sse_pubsub.service`) expose a `shutdown()` callable in `__all__` for clean teardown, or expose the `service` submodule so tests can set `_singleton = None`. The `_reset_for_tests` pattern is abolished — use `shutdown()` or `_singleton = None` directly via the public `service` attribute.
 
 ### DI over `@patch`
 
@@ -347,7 +348,9 @@ Don't wrap every domain function — noise hurts more than detail helps.
 
 Modules with import-time registries expose `register_*`, `unregister_*`, and `scoped_*` in `__all__`. Tests use `with scoped_*(...)` for temporary registrations — cleanup is automatic on block exit, even on exception.
 
-Modules with this pattern today: `core.workflow` (`scoped_workflow`), `domain.vcs` (`scoped_vcs_plugin`), `domain.coding_agent` (`scoped_coding_agent`), `core.tasks` (`scoped_task_registration`).
+Modules with this pattern today: `core.workflow` (`scoped_engine`, `scoped_workflow`), `domain.vcs` (`scoped_vcs_plugin`), `domain.coding_agent` (`scoped_coding_agent`), `core.tasks` (`scoped_task_registration`).
+
+`core.workflow.scoped_engine()` is the standard test-isolation helper for tests that register workflows or commands. It saves the current engine, creates a fresh one, yields it, then restores the prior one on exit — replacing the former `svc._engine = None; eng = get_engine(); svc._engine = eng; ... svc._engine = None` pattern.
 
 Rules:
 - No wholesale-wipe between tests (`_reset_for_tests` / `clear_plugins`). Test exactly what you need, clean it up with the scoped helper.

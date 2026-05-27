@@ -66,12 +66,8 @@ async def cleanup(db_session) -> AsyncIterator[None]:
     # Best-effort teardown.
     from sqlalchemy import delete  # noqa: PLC0415
 
-    from app.domain.identity.models import (  # noqa: PLC0415
-        OAuthIdentityRow,
-        UserEmailRow,
-        UserRow,
-    )
-    from app.domain.orgs.models import MembershipRow, OrgRow  # noqa: PLC0415
+    from app.domain.identity import OAuthIdentityRow, UserEmailRow, UserRow  # noqa: PLC0415
+    from app.domain.orgs import MembershipRow, OrgRow  # noqa: PLC0415
 
     for email in created_emails:
         user = await identity_repo.find_user_by_email(db_session, email)
@@ -216,8 +212,8 @@ async def test_bootstrap_rejects_invalid_email_then_accepts(github_user_lookup) 
 async def _cleanup_user_and_org(s, *, user_id, org_id) -> None:
     from sqlalchemy import delete  # noqa: PLC0415
 
-    from app.domain.identity.models import OAuthIdentityRow, UserEmailRow, UserRow  # noqa: PLC0415
-    from app.domain.orgs.models import MembershipRow, OrgRow  # noqa: PLC0415
+    from app.domain.identity import OAuthIdentityRow, UserEmailRow, UserRow  # noqa: PLC0415
+    from app.domain.orgs import MembershipRow, OrgRow  # noqa: PLC0415
 
     await s.execute(delete(MembershipRow).where(MembershipRow.user_id == user_id))
     await s.execute(delete(OAuthIdentityRow).where(OAuthIdentityRow.user_id == user_id))

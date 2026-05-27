@@ -202,9 +202,3 @@ async def shutdown() -> None:
     """Drop the subscriber registry singleton. Called by the web-process shutdown registry."""
     global _singleton
     _singleton = None
-
-
-def _reset_for_tests() -> None:
-    """Alias for `shutdown()`. Tests call this name."""
-    global _singleton
-    _singleton = None

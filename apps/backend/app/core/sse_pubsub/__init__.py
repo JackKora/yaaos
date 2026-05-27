@@ -20,6 +20,7 @@ __all__ = [
     "channel_for",
     "get_pubsub",
     "publish",
+    "service",
     "shutdown",
     "subscribe",
     "subscriber_count",

@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.redis.service import _clients, _reset_for_tests, get_client, shutdown
+import app.core.redis.service as _svc
+from app.core.redis.service import _clients, get_client, shutdown
 
 
 @pytest.fixture(autouse=True)
 async def _isolate():
-    _reset_for_tests()
+    _svc._clients.clear()
     yield
-    from app.core.redis.service import aclose  # noqa: PLC0415
-
-    await aclose()
+    await _svc.aclose()
 
 
 @pytest.mark.asyncio

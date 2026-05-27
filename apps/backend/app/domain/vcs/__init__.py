@@ -1,6 +1,7 @@
 """domain/vcs — abstract types + plugin Protocol for VCS providers."""
 
 from app.domain.vcs.registry import (
+    _PLUGINS,
     get_installation_token,
     get_plugin,
     is_registered,
@@ -42,6 +43,7 @@ from app.domain.vcs.types import (
 )
 
 __all__ = [
+    "_PLUGINS",
     "Comment",
     "CommentCreated",
     "Diff",

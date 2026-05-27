@@ -26,19 +26,17 @@ from app.core.sse_pubsub import (
     channel_for,
     subscribe,
 )
-from app.core.sse_pubsub.service import _reset_for_tests as _reset_pubsub
-from app.core.tasks import drain_once
-from app.core.tasks.models import OutboxEntryRow
-from app.core.workflow import WorkflowState, get_engine
-from app.core.workflow.models import WorkflowExecutionRow
+from app.core.tasks import OutboxEntryRow, drain_once
+from app.core.workflow import WorkflowExecutionRow, WorkflowState, scoped_engine
 from app.core.workspace import (
+    ALL_LIFECYCLE_COMMANDS,
     WorkspaceTicketContext,
     clear_workflow_context_provider,
     clear_workspace_providers,
     register_workflow_context_provider,
     register_workspace_provider,
 )
-from app.domain.coding_agent.types import ActivityEvent
+from app.domain.coding_agent import ActivityEvent
 from app.domain.reviewer.commands import ALL_LOCAL_COMMANDS, ALL_WORKSPACE_COMMANDS
 from app.domain.reviewer.workflows import pr_review_v1
 from app.domain.tickets import create as create_ticket
@@ -82,28 +80,24 @@ class _StaticCtxProvider:
 
 @pytest.fixture
 def _engine_with_in_memory():  # type: ignore[no-untyped-def]
-    import app.core.workflow.service as svc  # noqa: PLC0415
+    import app.core.sse_pubsub.service as _pubsub_svc  # noqa: PLC0415
 
-    svc._engine = None
     clear_workspace_providers()
     clear_workflow_context_provider()
-    _reset_pubsub()
+    _pubsub_svc._singleton = None
     register_workspace_provider(_StubWorkspaceProvider())
-    eng = get_engine()
-    from app.core.workspace.commands import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
-
-    for cmd in (*ALL_LIFECYCLE_COMMANDS, *ALL_WORKSPACE_COMMANDS, *ALL_LOCAL_COMMANDS):
-        eng.register_command(cmd)
-    eng.register_workflow(pr_review_v1)
-    yield eng
-    svc._engine = None
+    with scoped_engine() as eng:
+        for cmd in (*ALL_LIFECYCLE_COMMANDS, *ALL_WORKSPACE_COMMANDS, *ALL_LOCAL_COMMANDS):
+            eng.register_command(cmd)
+        eng.register_workflow(pr_review_v1)
+        yield eng
     clear_workspace_providers()
     clear_workflow_context_provider()
-    _reset_pubsub()
+    _pubsub_svc._singleton = None
 
 
 async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]
-    from app.core.tasks.broker import get_broker  # noqa: PLC0415
+    from app.core.tasks import get_broker  # noqa: PLC0415
 
     for _ in range(50):
         rows = (

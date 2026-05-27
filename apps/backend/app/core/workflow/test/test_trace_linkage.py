@@ -26,18 +26,17 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import select
 
-from app.core.tasks import drain_once
-from app.core.tasks.models import OutboxEntryRow
+from app.core.tasks import OutboxEntryRow, drain_once
 from app.core.workflow import (
     CommandCategory,
     Outcome,
     Step,
     TerminalAction,
     Workflow,
+    WorkflowExecutionRow,
     WorkflowState,
     get_engine,
 )
-from app.core.workflow.models import WorkflowExecutionRow
 
 
 @pytest.fixture(autouse=True)
@@ -80,7 +79,7 @@ class _NoopLocal:
 
 async def _drain(db_session):  # type: ignore[no-untyped-def]
     """Run the outbox dispatcher until empty so chained task enqueues fire."""
-    from app.core.tasks.broker import get_broker  # noqa: PLC0415
+    from app.core.tasks import get_broker  # noqa: PLC0415
 
     for _ in range(50):
         rows = (

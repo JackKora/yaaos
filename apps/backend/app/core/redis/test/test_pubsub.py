@@ -13,7 +13,7 @@ from app.core.redis import service as redis_service
 
 @pytest.fixture(autouse=True)
 async def _isolate():
-    redis_service._reset_for_tests()
+    redis_service._clients.clear()
     yield
     await redis_service.aclose()
 

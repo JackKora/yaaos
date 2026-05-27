@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import warnings
 from collections.abc import AsyncIterator
@@ -32,6 +33,19 @@ os.environ.setdefault("YAAOS_HEARTBEAT_INTERVAL_SECONDS", "1")
 def _quiet_pydantic_warnings() -> None:
     """Suppress noisy pydantic deprecation warnings during tests."""
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic.*")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _shutdown_runtime_at_session_end():
+    """Run registered shutdown hooks once at session teardown.
+
+    Suppresses "pending task" warnings and exercises the prod shutdown
+    path as a smoke test. Runs regardless of test marker.
+    """
+    yield
+    from app.testing.lifecycle import shutdown_runtime  # noqa: PLC0415
+
+    asyncio.run(shutdown_runtime())
 
 
 @pytest_asyncio.fixture(scope="session")

@@ -7,18 +7,18 @@ from uuid import uuid4
 
 import pytest
 
+import app.core.agent_gateway.subscribers as _subs
 from app.core.agent_gateway import (
     SubscriberRegistry,
     get_subscriber_registry,
 )
-from app.core.agent_gateway.subscribers import _reset_for_tests as _reset_subscriber_registry
 
 
 @pytest.fixture(autouse=True)
 def _isolate_singleton() -> None:
-    _reset_subscriber_registry()
+    _subs._singleton = None
     yield
-    _reset_subscriber_registry()
+    _subs._singleton = None
 
 
 @pytest.mark.asyncio

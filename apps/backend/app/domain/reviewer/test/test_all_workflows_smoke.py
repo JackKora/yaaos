@@ -21,10 +21,8 @@ import pytest
 from sqlalchemy import select
 
 from app.core.plugin_kit import PluginMeta
-from app.core.tasks import drain_once
-from app.core.tasks.models import OutboxEntryRow
-from app.core.workflow import Outcome, WorkflowState, get_engine
-from app.core.workflow.models import WorkflowExecutionRow
+from app.core.tasks import OutboxEntryRow, drain_once
+from app.core.workflow import Outcome, WorkflowExecutionRow, WorkflowState, scoped_engine
 from app.core.workspace import (
     WorkspaceTicketContext,
     clear_workflow_context_provider,
@@ -81,7 +79,7 @@ class _StaticContextProvider:
 
 
 async def _drain_workflow_outbox(db_session, *, max_iterations: int = 50) -> int:
-    from app.core.tasks.broker import get_broker  # noqa: PLC0415
+    from app.core.tasks import get_broker  # noqa: PLC0415
 
     total = 0
     for _ in range(max_iterations):
@@ -152,9 +150,8 @@ class _SpyAnswerQuestion(AnswerQuestion):
 
 @pytest.fixture
 def _engine_with_stubs():  # type: ignore[no-untyped-def]
-    import app.core.workflow.service as svc  # noqa: PLC0415
+    from app.core.workspace import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
 
-    svc._engine = None
     clear_workspace_providers()
     clear_workflow_context_provider()
     register_workspace_provider(_StubWorkspaceProvider())
@@ -169,20 +166,17 @@ def _engine_with_stubs():  # type: ignore[no-untyped-def]
             )
         )
     )
-    eng = get_engine()
-    from app.core.workspace.commands import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
-
-    for cmd in ALL_LIFECYCLE_COMMANDS:
-        eng.register_command(cmd)
-    eng.register_command(_SpyCodeReview())
-    eng.register_command(_SpyIncrementalReview())
-    eng.register_command(_SpyVerifyFix())
-    eng.register_command(_SpyStaleCheck())
-    eng.register_command(_SpyAnswerQuestion())
-    for cmd in ALL_LOCAL_COMMANDS:
-        eng.register_command(cmd)
-    yield eng
-    svc._engine = None
+    with scoped_engine() as eng:
+        for cmd in ALL_LIFECYCLE_COMMANDS:
+            eng.register_command(cmd)
+        eng.register_command(_SpyCodeReview())
+        eng.register_command(_SpyIncrementalReview())
+        eng.register_command(_SpyVerifyFix())
+        eng.register_command(_SpyStaleCheck())
+        eng.register_command(_SpyAnswerQuestion())
+        for cmd in ALL_LOCAL_COMMANDS:
+            eng.register_command(cmd)
+        yield eng
     clear_workspace_providers()
     clear_workflow_context_provider()
 

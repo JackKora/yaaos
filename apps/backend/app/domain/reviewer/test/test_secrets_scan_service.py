@@ -23,7 +23,7 @@ from app.core.workspace import (
     register_workflow_context_provider,
 )
 from app.domain.reviewer.commands import SecretsScan
-from app.domain.vcs.types import Diff
+from app.domain.vcs import Diff
 from app.testing.stub_vcs import register_stub_vcs
 
 

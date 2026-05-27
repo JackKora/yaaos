@@ -127,7 +127,7 @@ def wrap_all_registered_workspace_providers() -> int:
     Idempotent. Called from `app/main.py` when `YAAOS_WORKSPACE_STUB` is set
     (mirrors how stub_coding_agent's wrap is wired).
     """
-    from app.core.workspace.service import _PROVIDERS  # noqa: PLC0415 — registry access
+    from app.core.workspace import _PROVIDERS  # noqa: PLC0415
 
     count = 0
     for plugin_id, real in list(_PROVIDERS.items()):

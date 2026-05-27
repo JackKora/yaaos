@@ -17,6 +17,7 @@ Exported from `app/core/sse_pubsub/__init__.py`:
 - `RedisPubsub` — class form for callers that want to construct their own bus (mostly tests).
 - `get_pubsub()` — process-singleton accessor.
 - `shutdown()` — closes the singleton if it exists and sets it to `None`; self-registered with the web shutdown registry at import time (web only — the worker process doesn't serve SSE).
+- `service` — the submodule itself; exposed in `__all__` so tests outside this module can do `import app.core.sse_pubsub.service as _svc; _svc._singleton = None` for singleton isolation between test runs.
 
 ## Module architecture
 

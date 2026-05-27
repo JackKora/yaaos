@@ -32,7 +32,7 @@ def _required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("YAAOS_ENV", "dev")
     # Clear the cached singleton so the monkeypatched env wins.
     # lazy: imported after monkeypatch.setenv so the cache_clear sees fresh state
-    from app.core.config.service import get_settings  # noqa: PLC0415
+    from app.core.config import get_settings  # noqa: PLC0415
 
     get_settings.cache_clear()
     yield

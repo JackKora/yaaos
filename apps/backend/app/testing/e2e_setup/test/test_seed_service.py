@@ -10,10 +10,10 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.core.audit_log.models import AuditEntryRow
-from app.domain.orgs.models import MembershipRow, OrgRow
-from app.plugins.claude_code.models import ClaudeCodeSettingsRow
-from app.plugins.github.models import GitHubAppInstallationRow
+from app.core.audit_log import AuditEntryRow
+from app.domain.orgs import MembershipRow, OrgRow
+from app.plugins.claude_code import ClaudeCodeSettingsRow
+from app.plugins.github import GitHubAppInstallationRow
 from app.testing.e2e_setup.service import (
     seed_bootstrap_owner,
     seed_github_install,

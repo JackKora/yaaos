@@ -9,7 +9,9 @@ from app.core.workspace.dispatch import (
     release_claim,
     try_claim,
 )
+from app.core.workspace.models import WorkspaceRow
 from app.core.workspace.service import (
+    _PROVIDERS,
     clear_workspace_providers,
     close_workspace,
     create_workspace,
@@ -58,6 +60,7 @@ from app.core.workspace.workflow_context import (
 
 __all__ = [
     "ALL_LIFECYCLE_COMMANDS",
+    "_PROVIDERS",
     "CodingAgentCliResult",
     "HealthStatus",
     "NetworkPolicy",
@@ -76,6 +79,7 @@ __all__ = [
     "WorkspaceNotFoundError",
     "WorkspaceProvider",
     "WorkspaceProvisionError",
+    "WorkspaceRow",
     "WorkspaceSpec",
     "WorkspaceStatus",
     "WorkspaceTicketContext",

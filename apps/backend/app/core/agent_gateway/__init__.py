@@ -16,11 +16,13 @@ Phase 5 ships:
 
 from app.core.agent_gateway import bearers, web  # noqa: F401 — registers /v1/* routes
 from app.core.agent_gateway.bearers import revoke_all_for_org
+from app.core.agent_gateway.models import WorkspaceAgentRow
 from app.core.agent_gateway.service import (
     claim_next,
     clear_queues,
     connection_status_for_org,
     enqueue_command,
+    ensure_agent_row,
     has_any_reachable_agent,
     pick_agent_for_org,
     queue_depth,
@@ -86,6 +88,7 @@ __all__ = [
     "StaleClaimError",
     "SubscriberRegistry",
     "UnauthorizedError",
+    "WorkspaceAgentRow",
     "WorkspaceEvent",
     "WorkspaceEventKind",
     "WriteFilesCommand",
@@ -94,6 +97,7 @@ __all__ = [
     "clear_queues",
     "connection_status_for_org",
     "enqueue_command",
+    "ensure_agent_row",
     "get_subscriber_registry",
     "has_any_reachable_agent",
     "pick_agent_for_org",

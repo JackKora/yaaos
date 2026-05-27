@@ -5,11 +5,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.core.audit_log import Actor
-from app.core.audit_log.models import AuditEntryRow
+from app.core.audit_log import Actor, AuditEntryRow
 from app.domain.identity import service as identity_svc
-from app.domain.orgs import create_membership, create_org
-from app.domain.orgs.models import MembershipRow, OrgRow
+from app.domain.orgs import MembershipRow, OrgRow, create_membership, create_org
 from app.domain.orgs.types import Role
 
 # ---------------------------------------------------------------------------

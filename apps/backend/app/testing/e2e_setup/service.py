@@ -17,19 +17,19 @@ from uuid import UUID
 
 from cryptography.fernet import Fernet
 
-# Importing every models module guarantees `Base.metadata` is fully populated.
-# Per the testing-layer rule, this module is allowed to know about every table.
-from app.core.audit_log import models as _audit_models  # noqa: F401
+# Importing every Row class ensures `Base.metadata` is fully populated so
+# `truncate_all_tables` sees the complete schema regardless of mount order.
+from app.core.audit_log import AuditEntryRow as _AuditEntryRow  # noqa: F401
 from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.database import truncate_all_tables
-from app.core.workspace import models as _workspace_models  # noqa: F401
-from app.domain.lessons import models as _lesson_models  # noqa: F401
-from app.domain.pull_requests import models as _pr_models  # noqa: F401
-from app.domain.reviewer import models as _reviewer_models  # noqa: F401
-from app.domain.tickets import models as _ticket_models  # noqa: F401
-from app.plugins.claude_code import models as _claude_code_models  # noqa: F401
-from app.plugins.github import models as _github_models  # noqa: F401
+from app.core.workspace import WorkspaceRow as _WorkspaceRow  # noqa: F401
+from app.domain.lessons import LessonRow as _LessonRow  # noqa: F401
+from app.domain.pull_requests import PullRequestRow as _PullRequestRow  # noqa: F401
+from app.domain.reviewer import ReviewRow as _ReviewRow  # noqa: F401
+from app.domain.tickets import TicketRow as _TicketRow  # noqa: F401
+from app.plugins.claude_code import ClaudeCodeSettingsRow as _ClaudeCodeSettingsRow  # noqa: F401
+from app.plugins.github import GitHubAppInstallationRow as _GitHubAppInstallationRow  # noqa: F401
 
 # The whole codebase pins org_id to this constant in . Same value the
 # domain modules use as the system-actor org.
@@ -73,8 +73,7 @@ async def seed_github_install(
     """
     from sqlalchemy import select  # noqa: PLC0415
 
-    from app.domain.orgs import install_coding_agent  # noqa: PLC0415
-    from app.domain.orgs.models import OrgRow  # noqa: PLC0415
+    from app.domain.orgs import OrgRow, install_coding_agent  # noqa: PLC0415
     from app.plugins.claude_code import set_api_key  # noqa: PLC0415
     from app.plugins.github import record_app_install  # noqa: PLC0415
 
@@ -147,7 +146,7 @@ async def seed_broken_integration(*, org_slug: str, provider: str = "linear") ->
 
     from app.core.secrets import encrypt  # noqa: PLC0415
     from app.domain.integrations import create_credential  # noqa: PLC0415
-    from app.domain.orgs.models import OrgRow  # noqa: PLC0415
+    from app.domain.orgs import OrgRow  # noqa: PLC0415
 
     async with db_session() as s:
         org = (await s.execute(select(OrgRow).where(OrgRow.slug == org_slug))).scalar_one_or_none()
@@ -202,8 +201,11 @@ async def seed_bootstrap_owner(
     """
     from app.core.audit_log import Actor  # noqa: PLC0415
     from app.domain.identity import service as identity_svc  # noqa: PLC0415
-    from app.domain.orgs import create_membership, create_org  # noqa: PLC0415
-    from app.domain.orgs.types import Role  # noqa: PLC0415
+    from app.domain.orgs import (  # noqa: PLC0415
+        Role,
+        create_membership,
+        create_org,
+    )
 
     async with db_session() as s:
         user = await identity_svc.create_user(s, display_name=display_name)
@@ -275,7 +277,7 @@ def stage_oauth_test_profile(
     *, external_subject: str, primary_email: str, email_verified: bool, display_name: str
 ) -> None:
     """Stash the next profile the ``oauth_test`` provider will return."""
-    from app.domain.identity.providers import ProviderProfile  # noqa: PLC0415
+    from app.domain.identity import ProviderProfile  # noqa: PLC0415
 
     # `plugins.oauth_test` loads only under YAAOS_ENV=test; this helper is
     # imported by code that runs in dev too, so import lazily.
@@ -294,7 +296,7 @@ def stage_oauth_test_profile(
 def read_and_clear_email_inbox() -> list[dict[str, str]]:
     """Return + clear the in-memory inbox ``domain.orgs.email.send_plain`` writes
     to in test env."""
-    from app.domain.orgs.email import get_test_inbox  # noqa: PLC0415
+    from app.domain.orgs import get_test_inbox  # noqa: PLC0415
 
     inbox = get_test_inbox()
     out = [{"to": m.to, "subject": m.subject, "body": m.body} for m in inbox]

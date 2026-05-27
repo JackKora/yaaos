@@ -3,6 +3,7 @@
 See `apps/backend/docs/core_workflow.md`.
 """
 
+from app.core.workflow.models import PendingHumanDecisionRow, WorkflowExecutionRow
 from app.core.workflow.service import (
     HANDLE_AGENT_EVENT,
     ROUTE_WORKFLOW,
@@ -22,6 +23,7 @@ from app.core.workflow.service import (
     request_cancel,
     resume_hitl,
     route_workflow,
+    scoped_engine,
     scoped_workflow,
     start_step,
     unregister_workflow,
@@ -55,6 +57,7 @@ __all__ = [
     "HitlHistoryEntry",
     "Outcome",
     "OutcomeKind",
+    "PendingHumanDecisionRow",
     "RetryPolicy",
     "Step",
     "TerminalAction",
@@ -63,6 +66,7 @@ __all__ = [
     "WorkflowEngine",
     "WorkflowError",
     "WorkflowExecutionNotFoundError",
+    "WorkflowExecutionRow",
     "WorkflowExecutionSummary",
     "WorkflowNotFoundError",
     "WorkflowState",
@@ -78,6 +82,7 @@ __all__ = [
     "request_cancel",
     "resume_hitl",
     "route_workflow",
+    "scoped_engine",
     "scoped_workflow",
     "start_step",
     "unregister_workflow",

@@ -95,12 +95,6 @@ async def shutdown() -> None:
     _singleton = None
 
 
-def _reset_for_tests() -> None:
-    """Alias for the sync side of `shutdown()`. Tests call this name."""
-    global _singleton
-    _singleton = None
-
-
 async def publish(channel: str, event: dict[str, Any]) -> int:
     """Module-level convenience: publish to the process singleton."""
     return await get_pubsub().publish(channel, event)

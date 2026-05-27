@@ -16,15 +16,14 @@ from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.core.oauth import ProviderConfig
-from app.domain.integrations import create_credential
-from app.domain.integrations.types import _REGISTRY
-from app.domain.mcp_proxy.models import McpReviewTokenRow
-from app.domain.mcp_proxy.service import _hash as _hash_token
+from app.domain.integrations import _REGISTRY, create_credential
+from app.domain.mcp_proxy import McpReviewTokenRow
+from app.domain.mcp_proxy import _hash as _hash_token
 from app.domain.orgs import repository as orgs_repo
-from app.domain.pull_requests.models import PullRequestRow
+from app.domain.pull_requests import PullRequestRow
 from app.domain.reviewer.mcp_wiring import build_mcp_payload as _build_mcp_payload
 from app.domain.reviewer.models import ReviewRow
-from app.domain.tickets.models import TicketRow
+from app.domain.tickets import TicketRow
 
 
 def _stub_config() -> ProviderConfig:

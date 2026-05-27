@@ -10,6 +10,7 @@ Owns who the human (or workspace principal) is, what identities they've linked, 
 
 Exported from `app/domain/identity/__init__.py`:
 
+- Row types — `UserRow`, `UserEmailRow`, `OAuthIdentityRow`, `SessionRow`.
 - Types — `User`, `UserEmail`, `OAuthIdentity`, `Session`, `LoginResult`.
 - Exceptions — `UserNotFoundError`, `EmailAlreadyLinkedError`, `SessionNotFoundError`, `TotpError`.
 - Seed ops — `create_user(db, display_name)`, `create_email(db, user_id, email, is_primary, verified)`, `create_oauth_identity(db, user_id, provider, external_subject, verified)`, `create_session(db, token_hash, user_id, workspace_id, csrf_token, ip, user_agent, expires_at)`. Return the ORM row; caller owns the transaction.

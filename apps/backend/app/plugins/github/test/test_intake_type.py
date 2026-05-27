@@ -21,7 +21,7 @@ from app.core.workflow import (
     Step,
     TerminalAction,
     Workflow,
-    WorkflowEngine,
+    scoped_engine,
 )
 from app.plugins.github.intake_type import GithubIntakeType
 
@@ -41,28 +41,23 @@ def _stub_pr_review_engine():  # type: ignore[no-untyped-def]
     """Register a one-step `pr_review_v1` workflow so `_prepare_pr_review`'s
     `engine.start(workflow_name="pr_review_v1", ...)` resolves without
     pulling in the full reviewer command set."""
-    import app.core.workflow.service as svc  # noqa: PLC0415
-
-    svc._engine = None
-    eng = WorkflowEngine()
-    eng.register_command(_NoopLocal())
-    eng.register_workflow(
-        Workflow(
-            name="pr_review_v1",
-            version=1,
-            steps=(
-                Step(
-                    id="only",
-                    command_kind="Noop",
-                    transitions={"success": TerminalAction.COMPLETE_WORKFLOW},
+    with scoped_engine() as eng:
+        eng.register_command(_NoopLocal())
+        eng.register_workflow(
+            Workflow(
+                name="pr_review_v1",
+                version=1,
+                steps=(
+                    Step(
+                        id="only",
+                        command_kind="Noop",
+                        transitions={"success": TerminalAction.COMPLETE_WORKFLOW},
+                    ),
                 ),
-            ),
-            entry_step_id="only",
+                entry_step_id="only",
+            )
         )
-    )
-    svc._engine = eng
-    yield eng
-    svc._engine = None
+        yield eng
 
 
 def _pr_opened_payload() -> dict:
