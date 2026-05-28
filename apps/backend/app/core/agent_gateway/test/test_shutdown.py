@@ -5,14 +5,18 @@ from __future__ import annotations
 import pytest
 
 import app.core.agent_gateway.subscribers as _subs
-from app.core.agent_gateway.subscribers import get_registry, shutdown
+from app.core.agent_gateway.subscribers import (
+    _reset_subscriber_singleton_for_tests,
+    get_registry,
+    shutdown,
+)
 
 
 @pytest.fixture(autouse=True)
 def _isolate():
-    _subs._singleton = None
+    _reset_subscriber_singleton_for_tests()
     yield
-    _subs._singleton = None
+    _reset_subscriber_singleton_for_tests()
 
 
 @pytest.mark.asyncio

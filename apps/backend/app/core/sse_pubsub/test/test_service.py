@@ -13,12 +13,12 @@ import uuid
 
 import pytest
 
-import app.core.sse_pubsub.service as _svc
 from app.core.sse_pubsub import (
     RedisPubsub,
     channel_for,
     get_pubsub,
     publish,
+    reset_pubsub,
     subscribe,
     subscriber_count,
 )
@@ -26,9 +26,9 @@ from app.core.sse_pubsub import (
 
 @pytest.fixture(autouse=True)
 async def _isolate_singleton():
-    _svc._singleton = None
+    reset_pubsub()
     yield
-    _svc._singleton = None
+    reset_pubsub()
 
 
 def _unique_channel() -> str:

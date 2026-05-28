@@ -83,3 +83,10 @@ async def shutdown() -> None:
     """Async alias for `aclose()`. Called by the process shutdown registries
     during web/worker teardown. Idempotent."""
     await aclose()
+
+
+def _reset_clients_for_tests() -> None:
+    """Drop the per-loop client cache without closing. Intra-module test
+    helper — reach for it via direct submodule import from this module's
+    own `test/` directory. Not part of the public interface."""
+    _clients.clear()
