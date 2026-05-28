@@ -68,7 +68,7 @@ Two-step (`service.py`):
 
 1. Read raw body (signature verification needs unaltered bytes).
 2. HMAC-verify `X-Hub-Signature-256` against `yaaos_github_app_webhook_secret`. Missing or invalid → `401`.
-3. Parse JSON. Resolve `org_id` via `github_app_installations` lookup on `payload.installation.id`. `installation.created` events fall back to `DEFAULT_ORG_ID` (single-tenant POC); every other event rejects as `bad_request` when no install row matches.
+3. Parse JSON. Resolve `org_id` via `github_app_installations` lookup on `payload.installation.id`. `installation.created` events fall back to `DEFAULT_ORG_ID` (single-tenant); every other event rejects as `bad_request` when no install row matches.
 4. **Idempotency** — `record_webhook_event` keyed on `X-GitHub-Delivery`. Duplicate → `IntakeSideEffect(detail="duplicate")`, endpoint commits a no-op and returns 200.
 5. **Branch on event + action** inside `GithubIntakeType.handle()`:
    - `pull_request.opened|reopened|ready_for_review` → filter forks / bots / drafts (writing `webhook_event.filtered`); race-safe ticket+PR upsert; `engine.start("pr_review_v1", …)` — all on the endpoint's session, single transaction.

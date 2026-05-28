@@ -526,7 +526,7 @@ async def _apply_create_all_mcp(conn) -> None:  # type: ignore[no-untyped-def]
 async def _apply_create_outbox_entries(conn) -> None:  # type: ignore[no-untyped-def]
     """DB-atomic outbound message queue table.
 
-     Backs `core/outbox.write()` + the drain loop in `apps/backend/bin/worker`.
+     Backs `core/outbox.write()` + the drain loop in `apps/backend/app/worker.py`.
      Future phases add their own migrations as more tables come online
     . Idempotent.
     """
@@ -1000,6 +1000,8 @@ async def truncate_all_tables(session) -> None:
     ``app/testing/e2e_setup`` module handles that for the test reset path
     by importing every model module at the top of its file.
     """
+    if not get_settings().is_non_prod:
+        raise RuntimeError("truncate_all_tables is non-prod only")
     tables = list(reversed(Base.metadata.sorted_tables))
     if not tables:
         return

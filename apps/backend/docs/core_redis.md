@@ -24,7 +24,7 @@ No HTTP routes.
 
 ### Per-loop client cache
 
-redis-py's async client binds its connection pool to the event loop where the first command ran. Reusing one client across loops (web request loop vs worker loop vs `TestClient` portal loop) fails with "Future attached to a different loop". `_clients: dict[int, Redis]` keyed by `id(asyncio.get_running_loop())` gives each loop its own client transparently. The cost is one extra Redis connection per loop — negligible at POC.
+redis-py's async client binds its connection pool to the event loop where the first command ran. Reusing one client across loops (web request loop vs worker loop vs `TestClient` portal loop) fails with "Future attached to a different loop". `_clients: dict[int, Redis]` keyed by `id(asyncio.get_running_loop())` gives each loop its own client transparently. The cost is one extra Redis connection per loop — negligible.
 
 ### Bytes everywhere
 

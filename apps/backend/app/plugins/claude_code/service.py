@@ -7,7 +7,7 @@ tool, then synthesizes their findings by re-reading cited code.
 
 Test-mode (stub/replay) wrapping is handled by the `testing/` layer's
 `StubCodingAgentPlugin` — see `app.testing.stub_coding_agent`. The bootstrap
-in `app/main.py` swaps real plugins for stubs when `YAAOS_CODING_AGENT_STUB`
+in `app/web.py` swaps real plugins for stubs when `YAAOS_CODING_AGENT_STUB`
 is set; this file never branches on it.
 """
 

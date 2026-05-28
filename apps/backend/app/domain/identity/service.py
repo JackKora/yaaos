@@ -174,9 +174,9 @@ async def set_session_last_seen(
     """Write `last_seen_at` for a session row identified by `token_hash`.
     Used by tests to simulate idle sessions without importing `SessionRow`."""
     row = await repo.get_session_by_hash(db, token_hash)
-    if row is not None:
-        row.last_seen_at = last_seen_at
-        await db.flush()
+    assert row is not None, f"session not found for hash: {token_hash[:8]}..."
+    row.last_seen_at = last_seen_at
+    await db.flush()
 
 
 async def delete_user_artifacts(db: AsyncSession, *, user_id: UUID) -> None:

@@ -18,7 +18,7 @@ Exported from `app/domain/orgs/__init__.py`:
 - Coding agents — `list_coding_agents`, `install_coding_agent`, `update_coding_agent_settings`, `uninstall_coding_agent`. Many per org via `org_coding_agents`.
 - Exceptions — `OrgNotFoundError`, `MembershipNotFoundError`, `InsufficientRoleError`, `InvitationError`, `InvitationExpiredError`, `InvitationUsedError`, `InvitationInvalidError`, `CodingAgentAlreadyInstalledError`, `CodingAgentNotInstalledError`.
 
-HTTP routes (registered side-effect via `web.py`, mounted from `main.py` to break the `domain.orgs ↔ domain.sessions` import cycle):
+HTTP routes (registered side-effect via `web.py`, mounted from `app/web.py` to break the `domain.orgs ↔ domain.sessions` import cycle):
 
 | Method | Path | Action |
 |---|---|---|

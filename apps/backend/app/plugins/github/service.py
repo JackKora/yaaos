@@ -455,8 +455,8 @@ async def record_app_install(
     composes with sibling writes inside one ``async with db_session()`` block.
     See ``apps/backend/docs/patterns.md`` § Service-fn session-handling convention.
 
-    Raises nothing on duplicate ``install_external_id`` — callers that need
-    idempotency should call ``upsert_installation`` instead.
+    For idempotent writes (duplicate ``install_external_id`` is a unique-
+    constraint violation here), call ``upsert_installation`` instead.
     """
     session.add(
         GitHubAppInstallationRow(

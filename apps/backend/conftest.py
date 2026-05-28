@@ -45,6 +45,7 @@ def _shutdown_runtime_at_session_end():
     yield
     from app.testing.lifecycle import shutdown_runtime  # noqa: PLC0415
 
+    # pytest-asyncio event loop is already torn down here; asyncio.run() creates a fresh loop for cleanup.
     asyncio.run(shutdown_runtime())
 
 

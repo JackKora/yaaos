@@ -1,6 +1,6 @@
 # plugins/in_memory_workspace
 
-> Tempdir-backed `WorkspaceProvider`. Clones repos onto the host filesystem and runs coding-agent CLIs in-process. POC only — no isolation.
+> Tempdir-backed `WorkspaceProvider`. Clones repos onto the host filesystem and runs coding-agent CLIs in-process. No isolation — for single-tenant deployments where the host trusts the coding-agent CLI.
 
 ## Purpose
 

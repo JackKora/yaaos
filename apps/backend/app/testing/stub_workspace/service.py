@@ -124,7 +124,7 @@ class StubWorkspaceProvider:
 def wrap_all_registered_workspace_providers() -> int:
     """Replace every entry in `core.workspace._PROVIDERS` with a stub wrapping it.
 
-    Idempotent. Called from `app/main.py` when `YAAOS_WORKSPACE_STUB` is set
+    Idempotent. Called from `app/web.py` when `YAAOS_WORKSPACE_STUB` is set
     (mirrors how stub_coding_agent's wrap is wired).
     """
     from app.core.workspace import _PROVIDERS  # noqa: PLC0415

@@ -43,7 +43,7 @@ The broker URL comes from [`core/redis.get_url()`](core_redis.md) — taskiq-red
 
 `drain_loop` and the taskiq receiver each catch their own errors, so the worker scaffolding normally sees only the stop-signal task finish first. If a defect lets one escape, the worker logs `tasks.worker.child_crashed` with the traceback before tearing down — the process still exits and the supervisor restarts it. Without this the exception would be silently discarded when the `Task` is garbage-collected.
 
-Single-process POC. If the workload demands it, the drain and consume tasks split into separate compose services (same image, different `CMD` args) so taskiq concurrency and drain throughput scale independently.
+Single-process today. If the workload demands it, the drain and consume tasks split into separate compose services (same image, different `CMD` args) so taskiq concurrency and drain throughput scale independently.
 
 ### Outbox table (private)
 

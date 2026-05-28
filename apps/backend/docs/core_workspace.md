@@ -88,7 +88,7 @@ Module-level `_PROVIDERS: dict[str, WorkspaceProvider]`. `register_workspace_pro
 | `POST /api/workspaces/force_close_all` | Force-close every active workspace for the org. |
 | `POST /api/workspaces/{id}/retry_destroy` | Reset `destroy_failed` → `expired` so the reaper retries. |
 
-Operational endpoints, unauthenticated. POC limitation — not safe for production.
+Operational endpoints, unauthenticated. Gate behind an authenticated proxy or restrict the listener before exposing to untrusted networks.
 
 ### Single-flight claim + recovery
 
@@ -116,7 +116,7 @@ The reaper's second sweep marks any workspace that is `status='active'`, holds n
 
 ### Failsafe 6 — agent-loss recovery
 
-Third reaper sweep (`_failsafe_agent_loss`): every org in `workspace_provider='remote_agent'` mode whose `workspace_agents` rows all have stale `last_heartbeat_at` (>90s) — or none at all — gets every in-flight workspace transitioned to `expired` with reason `agent_loss`. The sweep also calls `bearers.revoke_all_for_org(org_id, 'agent_loss')` so the agent must re-exchange identity on reconnect. POC scope: per-org match (not per-pod) since `workspaces` has no `agent_id` column. policy: no retry-on-different-agent — workflows referencing expired workspaces fail loud.
+Third reaper sweep (`_failsafe_agent_loss`): every org in `workspace_provider='remote_agent'` mode whose `workspace_agents` rows all have stale `last_heartbeat_at` (>90s) — or none at all — gets every in-flight workspace transitioned to `expired` with reason `agent_loss`. The sweep also calls `bearers.revoke_all_for_org(org_id, 'agent_loss')` so the agent must re-exchange identity on reconnect. Per-org match (not per-pod) since `workspaces` has no `agent_id` column. policy: no retry-on-different-agent — workflows referencing expired workspaces fail loud.
 
 ### Failsafe 7 — audit row per transition
 
@@ -126,11 +126,11 @@ Every state mutation in `service.py` routes through `_audit_transition`, which w
 
 Owned by `apps/agent/internal/supervisor` — not this module. Every 5 min the supervisor walks `YAAOS_WORKSPACE_ROOT`, reads `.workspace-id` manifests, and `os.RemoveAll`s any directory whose id isn't in its in-memory pool (or any dir with no manifest). Defence against orphans the backend's `forgotten_workspaces` response never names (agent crashed mid-create before reporting).
 
-### POC limits
+### Current limits
 
 - `in_memory_workspace` ignores `ResourceCaps` and `NetworkPolicy` — the CLI runs with the same permissions as the yaaos process.
 - Admin endpoints unauthenticated.
-- Each review job gets its own workspace (three reviewers on one PR = three workspaces). Wasteful but coordination-free; acceptable at POC scale.
+- Each review job gets its own workspace (three reviewers on one PR = three workspaces). Wasteful but coordination-free.
 
 ## Data owned
 

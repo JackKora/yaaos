@@ -390,6 +390,8 @@ Both registries are re-exported from `core.webserver` and `core.tasks` for conve
 
 FastAPI lifespan teardown (in `core/webserver/app_factory.py`) iterates `iter_web_shutdown_hooks()` in reverse order. Worker runtime teardown (in `core/tasks/runtime.py`) iterates `iter_worker_shutdown_hooks()` in reverse order. Reverse order means the most-recently-registered (most-dependent) modules shut down first.
 
+`app/web.py` and `app/worker.py` pin the foundational shutdown order by explicitly importing `app.core.database` and `app.core.redis` near the top of step 2, before any module that depends on them. That guarantees those two register their hooks first and therefore shut down last — anything imported transitively later (tasks, sse_pubsub, agent_gateway) shuts down before them. Don't rely on transitive imports for hook ordering; pin the ones that matter.
+
 Both loops wrap each hook call in `try/except` (web) or `contextlib.suppress` (worker) so one failing hook does not abort the sequence.
 
 ## Composition roots — `app/web.py` and `app/worker.py`

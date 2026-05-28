@@ -4,9 +4,22 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.shutdown_registry import _web_shutdown_hooks, _worker_shutdown_hooks
 from app.core.tasks import register_worker_shutdown_hook
 from app.core.webserver import register_web_shutdown_hook
 from app.testing.lifecycle import shutdown_runtime
+
+
+@pytest.fixture(autouse=True)
+def _isolate_registry():
+    """Snapshot both registries before each test and restore after."""
+    web_original = list(_web_shutdown_hooks)
+    worker_original = list(_worker_shutdown_hooks)
+    yield
+    _web_shutdown_hooks.clear()
+    _web_shutdown_hooks.extend(web_original)
+    _worker_shutdown_hooks.clear()
+    _worker_shutdown_hooks.extend(worker_original)
 
 
 @pytest.mark.asyncio

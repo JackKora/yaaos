@@ -203,6 +203,6 @@ The e2e suite has its own self-contained stack — Postgres + `apps/fake-github`
 
 When the backend is running, `http://localhost:8080/docs` is interactive Swagger UI and `http://localhost:8080/redoc` is the reference-style rendering. Both are generated from the live OpenAPI schema; they're the authoritative endpoint catalogue.
 
-## Production considerations (deferred)
+## Security baseline
 
-yaaos is currently a POC. The standard production-hardening items (auth + RBAC, rate limiting, security headers, real workspace isolation via containers or VMs, CLI agent retention pinning, audit-log pruning) are tracked in [`plan/`](../plan/). Read [`docs/system-architecture.md`](system-architecture.md) for what the security baseline actually is today.
+Read [`docs/system-architecture.md`](system-architecture.md) for the security baseline today (auth + RBAC, rate limiting, security headers, workspace isolation, CLI agent retention, audit-log pruning).
