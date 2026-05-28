@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import Actor, audit_for_ticket
 from app.core.database import session as db_session
-from app.core.events import Event, publish_after_commit
 from app.core.sse import GeneralEventKind, publish_general_after_commit
 from app.core.tasks import enqueue
 from app.domain.tickets.models import TicketRow
@@ -83,16 +82,6 @@ class TicketFilter(BaseModel):
     q: str | None = None
     sort: TicketSort = "updated_desc"
     cursor: str | None = None
-
-
-class TicketStatusChanged(Event):
-    kind: Literal["ticket_status_changed"] = "ticket_status_changed"
-    source_module: Literal["tickets"] = "tickets"
-    repo_external_id: str
-    pr_id: UUID | None
-    previous_status: str | None
-    new_status: str
-    reason: str | None = None
 
 
 class TicketNotFoundError(LookupError):
@@ -178,16 +167,6 @@ async def create(
         actor=Actor.system(),
         org_id=org_id,
         session=session,
-    )
-    publish_after_commit(
-        session,
-        TicketStatusChanged(
-            ticket_id=row.id,
-            repo_external_id=repo_external_id,
-            pr_id=None,
-            previous_status=None,
-            new_status="pending",
-        ),
     )
     from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
     from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
@@ -278,16 +257,6 @@ async def create_for_pr(
             actor=Actor.system(),
             org_id=org_id,
             session=s,
-        )
-        publish_after_commit(
-            s,
-            TicketStatusChanged(
-                ticket_id=row_id,
-                repo_external_id=repo_external_id,
-                pr_id=pr_id,
-                previous_status=None,
-                new_status="running",
-            ),
         )
         from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
         from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
@@ -601,8 +570,6 @@ async def _transition(
             raise InvalidTicketTransition(f"ticket {ticket_id} is terminal ({row.status}); cannot transition")
         prev = row.status
         await s.execute(update(TicketRow).where(TicketRow.id == ticket_id).values(status=new_status))
-        repo_external_id = row.repo_external_id
-        pr_id = row.pr_id
         await audit_for_ticket(
             ticket_id,
             "ticket.status_changed",
@@ -610,17 +577,6 @@ async def _transition(
             actor=Actor.system(),
             org_id=org_id,
             session=s,
-        )
-        publish_after_commit(
-            s,
-            TicketStatusChanged(
-                ticket_id=ticket_id,
-                repo_external_id=repo_external_id,
-                pr_id=pr_id,
-                previous_status=prev,
-                new_status=new_status,
-                reason=reason,
-            ),
         )
         from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
         from app.domain.orgs import list_active_member_ids  # noqa: PLC0415

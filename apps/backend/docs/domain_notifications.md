@@ -46,7 +46,7 @@ All four endpoints classify as `RouteSecurity.USER_SCOPED` (cross-org). The pref
 
 ### Task handler — the only write path
 
-Ticket-status notifications flow exclusively through `enqueue(handle_ticket_status_change, ...)`. The `subscribers.py` file still exists but is no longer wired — `on_startup` was removed from the `RouteSpec`; no `core/events` subscriber runs. The task handler is the sole path for writing notification rows.
+Ticket-status notifications flow exclusively through `enqueue(handle_ticket_status_change, ...)`. The task handler is the sole path for writing notification rows.
 
 ## Data owned
 
@@ -55,5 +55,4 @@ Ticket-status notifications flow exclusively through `enqueue(handle_ticket_stat
 ## How it's tested
 
 - `apps/backend/app/domain/notifications/test/test_endpoints.py` — service tests against a real DB session covering unauth 401, per-user scoping (Alice's list doesn't surface Bob's rows and vice versa), popover unread_count, `mark_read` idempotency, `mark_all_read` scoping, and `service.record()` idempotency by `(user_id, type, ticket_id)`.
-- `apps/backend/app/domain/notifications/test/test_subscriber_service.py` — service tests for the legacy event-bus subscriber: status → notif_type mapping, per-member write, `running` filtered out, idempotent re-emission.
 - `apps/backend/app/domain/notifications/test/test_task_handler_service.py` — service tests for the task handler: per-member write, idempotency on redelivery, and end-to-end durability via the outbox drain (enqueue → drain → task body → notification rows).

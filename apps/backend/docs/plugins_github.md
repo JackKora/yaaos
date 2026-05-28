@@ -71,7 +71,7 @@ Two-step (`service.py`):
 3. Parse JSON. Resolve `org_id` via `github_app_installations` lookup on `payload.installation.id`. `installation.created` events fall back to `DEFAULT_ORG_ID` (single-tenant); every other event rejects as `bad_request` when no install row matches.
 4. **Idempotency** — `record_webhook_event` keyed on `X-GitHub-Delivery`. Duplicate → `IntakeSideEffect(detail="duplicate")`, endpoint commits a no-op and returns 200.
 5. **Branch on event + action** inside `GithubIntakeType.handle()`:
-   - `pull_request.opened|reopened|ready_for_review` → filter forks / bots / drafts (writing `webhook_event.filtered`); race-safe ticket+PR upsert; fires the status-change triad (`core/sse.publish_general_after_commit` + `core/tasks.enqueue` for `domain/notifications.handle_ticket_status_change` + legacy `core/events.publish_after_commit`); `engine.start("pr_review_v1", …)` — all on the endpoint's session, single transaction.
+   - `pull_request.opened|reopened|ready_for_review` → filter forks / bots / drafts (writing `webhook_event.filtered`); race-safe ticket+PR upsert; fires the status-change pair (`core/sse.publish_general_after_commit` + `core/tasks.enqueue` for `domain/notifications.handle_ticket_status_change`); `engine.start("pr_review_v1", …)` — all on the endpoint's session, single transaction.
    - `pull_request.synchronize` → refresh PR metadata, call `reviewer.start_incremental_review`.
    - `pull_request.closed` → update PR state, complete ticket, cancel workflows.
    - `pull_request.reopened` → PR state → open.

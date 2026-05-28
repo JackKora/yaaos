@@ -39,7 +39,7 @@ Each API resource has a type alias in `client.ts`, mirroring the backend Pydanti
 - `Ticket` — includes `pr_number` / `author_login` / `is_draft` enriched from the linked PR at read-time.
 - `Finding` — `severity` is `"must-fix" | "nit" | "suggestion" | "info"`; carries optional `rationale`, `snippet: FindingSnippetLine[]`, `applied_lesson_ids`, and `source_agent` (which yaaos subagent surfaced this finding).
 - `ReviewJob` — one row per (PR × review run). Full state including `current_step`, `last_heartbeat_at`, `tokens_in`/`out`, `findings`, `model`, `effort`, and `activity_log` (persisted chronological events from the coding-agent stream).
-- `ReviewJobActivityEvent` — `{ts, kind, message, detail?}`. `message` is rendered server-side. Used both in `ReviewJob.activity_log` (persisted) and as the payload of `review_job_activity` SSE events (live tail).
+- `ReviewJobActivityEvent` — `{ts, kind, message, detail?}`. `message` is rendered server-side. Used in `ReviewJob.activity_log` (persisted) and as the payload of workspace-activity SSE events (`/api/sse/workspace_activity/{id}`).
 - `PluginMeta` — driven by `/api/settings/plugins` so the Settings UI auto-lists plugins.
 
 ### Query hooks

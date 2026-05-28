@@ -39,10 +39,9 @@ SPA mounts one `EventSource` on `GET /api/sse/general` (with `withCredentials: t
 | Event `kind` | Invalidates |
 |---|---|
 | `ticket_status_changed` | `["tickets"]`, `["tickets", id]`, `["tickets", id, "audit"]`, `["reviewer", "metrics"]` |
-| `review_job_status_changed` | `["reviewer", "jobs", id]`, `["tickets", id, "audit"]`, `["reviewer", "metrics"]`, `["tickets"]` |
-| `review_job_step_progress` | `["reviewer", "jobs", id]` only — in-place row update |
+| anything else | silently ignored |
 
-Events carry `pr_id` + `review_job_id` (no `agent_id` — one job per review run).
+Events carry `ticket_id`; `previous_status` + `new_status` in the payload.
 
 Polling (5s / 3s) remains as a safety net.
 

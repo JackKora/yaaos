@@ -4,7 +4,7 @@
 
 ## Purpose
 
-yaaos's local copy of VCS-side PR state. Persists PR metadata (shas, branches, draft/fork flags, title/body, html_url, sync timestamps); exposes upsert + state-transition + read APIs; silent — does not publish events. User-visible state changes flow through `tickets.TicketStatusChanged`. ReviewJob aggregate and per-PR queue discipline live in `reviewer`.
+yaaos's local copy of VCS-side PR state. Persists PR metadata (shas, branches, draft/fork flags, title/body, html_url, sync timestamps); exposes upsert + state-transition + read APIs; silent — does not publish events. User-visible state changes flow through `domain/tickets`' `_transition`/`create_for_pr` paths. ReviewJob aggregate and per-PR queue discipline live in `reviewer`.
 
 ## Public interface
 
@@ -47,7 +47,7 @@ No filter/sort API — the UI surfaces tickets, and direct PR queries are by id 
 
 ### Silent module
 
-Publishes no events. User-visible state changes flow through `tickets.TicketStatusChanged`. Audit-log writes (`actor=Actor.system()`) carry the trace.
+Publishes no events. User-visible state changes flow through `domain/tickets`. Audit-log writes (`actor=Actor.system()`) carry the trace.
 
 ### What it doesn't own
 

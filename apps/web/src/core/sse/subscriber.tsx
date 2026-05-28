@@ -1,8 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect } from "react";
-import type { ReviewJobActivityEvent } from "../api/client";
-import { pushLiveActivity } from "./activity";
 import type { ServerEvent } from "./types";
 
 /** Mounted once at the app root. Translates server events into TanStack-Query
@@ -22,13 +20,6 @@ import type { ServerEvent } from "./types";
  * Translation table (`kind` → which query prefixes to invalidate):
  * - `ticket_status_changed` → ["tickets"], ["tickets", ticket_id],
  *   ["tickets", ticket_id, "audit"], ["reviewer", "metrics"]
- * - `review_job_status_changed` → ["reviewer", "jobs", ticket_id],
- *   ["tickets", ticket_id, "audit"], ["reviewer", "metrics"], ["tickets"]
- * - `review_job_step_progress` → ["reviewer", "jobs", ticket_id] (in-place;
- *   no metrics / list churn)
- * - `review_job_activity` → in-memory ring buffer via `pushLiveActivity`
- *   (no query invalidation — too high-frequency; `useLiveActivity` reads
- *   the tail)
  */
 
 let _source: EventSource | null = null;
@@ -69,23 +60,6 @@ function _handleEvent(evt: ServerEvent): void {
       }
       _scheduleInvalidate(["reviewer", "metrics"]);
       break;
-    case "review_job_status_changed":
-      if (tid) {
-        _scheduleInvalidate(["reviewer", "jobs", tid]);
-        _scheduleInvalidate(["tickets", tid, "audit"]);
-      }
-      _scheduleInvalidate(["reviewer", "metrics"]);
-      _scheduleInvalidate(["tickets"]);
-      break;
-    case "review_job_step_progress":
-      if (tid) _scheduleInvalidate(["reviewer", "jobs", tid]);
-      break;
-    case "review_job_activity": {
-      const reviewJobId = typeof evt.review_job_id === "string" ? evt.review_job_id : null;
-      const activityEvent = (evt.event ?? null) as ReviewJobActivityEvent | null;
-      if (reviewJobId && activityEvent) pushLiveActivity(reviewJobId, activityEvent);
-      break;
-    }
     default:
       break;
   }

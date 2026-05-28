@@ -13,7 +13,6 @@ Exported from `app/domain/tickets/__init__.py`:
 - `Ticket` — Pydantic row view; carries denormalized PR fields (`pr_number`, `author_login`, `is_draft`) populated at read time.
 - `TicketFilter` — list filter (`repo_external_ids`, `author_logins`, `created_after`, `created_before`, `statuses`).
 - `TicketStatus` — `Literal["running", "hitl", "done", "failed", "cancelled"]` (collapse).
-- `TicketStatusChanged` — published on every transition (subclass of `core.events.Event`).
 - Service — `create` (intake-driven; idempotent on `idempotency_key`), `create_for_pr`, `upsert_ticket_for_pr`, `attach_pr_to_ticket`, `set_workflow_execution`, `get`, `get_by_id` (unscoped fetch — use when org is unknown), `get_by_pr`, `list_tickets`, `list_running_older_than(cutoff) -> list[tuple[ticket_id, org_id, pr_id | None]]` (system sweep helper), `complete`, `abandon`, `fail`, `attach_workflow_execution`.
 - Exceptions — `TicketNotFoundError`, `InvalidTicketTransition`.
 
@@ -30,7 +29,7 @@ HTTP routes (`/api/tickets`):
 ### Files
 
 - `models.py` — `TicketRow`.
-- `service.py` — `Ticket`, `TicketFilter`, `TicketStatusChanged`, service functions, `_transition` (shared body of `complete`/`abandon`).
+- `service.py` — `Ticket`, `TicketFilter`, service functions, `_transition` (shared body of `complete`/`abandon`).
 - `web.py` — FastAPI routes and `register_routes`.
 - `module.py` — `get_module_name() -> "tickets"`.
 
@@ -45,21 +44,20 @@ HTTP routes (`/api/tickets`):
 | `running` → `cancelled` | `abandon(reason=...)` |
 | `running` → `failed` | `fail(reason=...)` — used by the orphan sweep and future workflow-failure paths |
 
-`complete`, `abandon`, and `fail` share `_transition`: loads the row, refuses if terminal (raising `InvalidTicketTransition`), updates `status`, writes the audit entry, and commits. On commit, three things happen atomically:
+`complete`, `abandon`, and `fail` share `_transition`: loads the row, refuses if terminal (raising `InvalidTicketTransition`), updates `status`, writes the audit entry, and commits. On commit, two things happen atomically:
 
 1. **SPA notification** — `core/sse.publish_general_after_commit` fires a `ticket_status_changed` event on the org's general channel after commit. Rolled-back transactions never emit.
 2. **Durable notification task** — `core/tasks.enqueue` writes an outbox row for `domain/notifications.handle_ticket_status_change`, carrying `member_user_ids` pre-fetched inside the same transaction. Guaranteed durable if the transaction commits.
-3. **In-process event bus** (legacy, removal pending) — `core/events.publish_after_commit` with `TicketStatusChanged` still fires for legacy subscribers.
 
 Terminal states have no outbound transitions. Enforced in code, not DB CHECK; column is plain `String`.
 
 ### Idempotent creation
 
-Three insert paths, all writing a `ticket.created` audit entry and triggering the status-change triad (SPA event + durable task + legacy in-process event):
+Three insert paths, all writing a `ticket.created` audit entry and triggering the status-change pair (SPA event + durable task):
 
 - `create` (generic intake — webhooks routed via `domain/intake`). Idempotent on `(org_id, idempotency_key)`. Emits `(previous=None, new='pending')`; the workflow engine emits the `pending → running` transition later.
 - `create_for_pr`. Returns the existing row on duplicate `pr_id` after refreshing title/description. Emits `(previous=None, new='running')`. Exists for direct callers and tests.
-- `upsert_ticket_for_pr` (the real production GitHub PR-opened path). Race-safe INSERT via `INSERT … ON CONFLICT DO NOTHING` on `(org_id, source, source_external_id)`; returns `(ticket_id, created)`. On conflict (race loser) returns `(None, False)`. Used by the github intake type's `_prepare_pr_review` so it can upsert the PR and back-fill `tickets.pr_id` in one shared transaction. Emits `(previous=None, new='running')` — same shape as `create_for_pr`. The `_prepare_pr_review` intake handler fires the same triad directly on the shared session.
+- `upsert_ticket_for_pr` (the real production GitHub PR-opened path). Race-safe INSERT via `INSERT … ON CONFLICT DO NOTHING` on `(org_id, source, source_external_id)`; returns `(ticket_id, created)`. On conflict (race loser) returns `(None, False)`. Used by the github intake type's `_prepare_pr_review` so it can upsert the PR and back-fill `tickets.pr_id` in one shared transaction. Emits `(previous=None, new='running')` — same shape as `create_for_pr`. The `_prepare_pr_review` intake handler fires the same pair directly on the shared session.
 
 The `(org_id, source, source_external_id)` UNIQUE constraint collapses concurrent webhook deliveries for the same PR to a single ticket row. `upsert_ticket_for_pr` uses `INSERT … ON CONFLICT DO NOTHING` on this key; callers detect the loser via `created=False` and exit without doing further work.
 
@@ -69,11 +67,10 @@ The `(org_id, source, source_external_id)` UNIQUE constraint collapses concurren
 
 ### Event publishing
 
-Every transition (including creation) fires three signals atomically with the commit:
+Every transition (including creation) fires two signals atomically with the commit:
 
-- **`core/sse.publish_general_after_commit`** — org-scoped Redis event with `kind="ticket_status_changed"` for the SPA's general SSE channel. Must-not-be-seen-on-rollback guarantee baked in.
+- **`core/sse.publish_general_after_commit`** — org-scoped Redis event with `kind="ticket_status_changed"` and `{ticket_id, new_status, previous_status}` payload for the SPA's general SSE channel. Must-not-be-seen-on-rollback guarantee baked in.
 - **`core/tasks.enqueue`** — durable outbox row for `domain/notifications.handle_ticket_status_change`. Carries `member_user_ids` fetched inside the same transaction so the handler needs no membership query. Governed by the rule: must-happen reactions go through `core/tasks`; SPA notifications go through `core/sse`.
-- **`core/events.publish_after_commit` with `TicketStatusChanged`** — legacy in-process bus still fires for existing subscribers pending removal in a later phase.
 
 See [domain_notifications.md](domain_notifications.md) for the task handler; [core_sse.md](core_sse.md) for the publish-after-commit mechanism; [core_tasks.md](core_tasks.md) for the outbox pattern.
 
