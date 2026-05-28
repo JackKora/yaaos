@@ -1,10 +1,11 @@
 """core/sse — Redis-backed pub/sub for ActivityEvent fanout + general events.
 
 Backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process
-reaches an SSE subscriber attached to a different web process. Two channel
+reaches an SSE subscriber attached to a different web process. Three channel
 shapes:
 - `activity:{workflow_execution_id}` — per-workflow activity stream.
 - `{org_id}:general` — org-scoped general events with typed `GeneralEventKind`.
+- `{org_id}:workspace_activity:{workflow_execution_id}` — per-org per-workflow activity events.
 """
 
 from app.core.sse.service import (
@@ -15,10 +16,13 @@ from app.core.sse.service import (
     publish,
     publish_general,
     publish_general_after_commit,
+    publish_workspace_activity,
     reset_pubsub,
+    serialize_for_sse,
     shutdown,
     subscribe,
     subscribe_general,
+    subscribe_workspace_activity,
     subscriber_count,
 )
 
@@ -30,10 +34,13 @@ __all__ = [
     "publish",
     "publish_general",
     "publish_general_after_commit",
+    "publish_workspace_activity",
     "reset_pubsub",
+    "serialize_for_sse",
     "shutdown",
     "subscribe",
     "subscribe_general",
+    "subscribe_workspace_activity",
     "subscriber_count",
 ]
 

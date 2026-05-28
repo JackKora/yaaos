@@ -16,6 +16,15 @@ discriminators. `publish_general_after_commit` stashes events on
 silently discard stashed events so rolled-back transactions never emit
 SPA events.
 
+Workspace-activity pipeline: `publish_workspace_activity` /
+`subscribe_workspace_activity` use a per-org-per-workflow channel
+(`{org_id}:workspace_activity:{workflow_execution_id}`). Raw agent event
+dict passed through unchanged — no envelope, no `ts` stamping.
+
+`serialize_for_sse(payload)` formats any dict as an HTTP `text/event-stream`
+frame (`data: <json>\n\n`). Both general and activity subscribers use this
+before writing to the HTTP response.
+
 The Pydantic-encoded payload crosses the seam as a `dict[str, Any]`
 serialized to JSON; this module owns the encode/decode. `core/redis`
 handles connection management — there's no Redis client construction
@@ -247,3 +256,51 @@ def subscribe_general(org_id: UUID) -> AsyncIterator[dict[str, Any]]:
     `async for event in subscribe_general(org_id)`.
     """
     return subscribe(_channel_for_general(org_id))
+
+
+# ---------------------------------------------------------------------------
+# Workspace-activity pipeline
+# ---------------------------------------------------------------------------
+
+
+def _channel_for_workspace_activity(org_id: UUID, workflow_execution_id: UUID) -> str:
+    """Internal: per-org per-workflow channel name for workspace-activity events. NOT in __all__."""
+    return f"{org_id}:workspace_activity:{workflow_execution_id}"
+
+
+async def publish_workspace_activity(
+    *,
+    org_id: UUID,
+    workflow_execution_id: UUID,
+    payload: dict[str, Any],
+) -> None:
+    """Publish a workspace-activity event for a specific org + workflow execution.
+
+    Passes `payload` through unchanged — no envelope, no `ts` stamping.
+    Redis fire-and-forget semantics apply.
+    """
+    await publish(_channel_for_workspace_activity(org_id, workflow_execution_id), payload)
+
+
+def subscribe_workspace_activity(org_id: UUID, workflow_execution_id: UUID) -> AsyncIterator[dict[str, Any]]:
+    """Async iterator over workspace-activity events for `org_id` + `workflow_execution_id`.
+
+    Wraps `subscribe(_channel_for_workspace_activity(...))`.
+    Returns an async iterator — consumers do
+    `async for event in subscribe_workspace_activity(org_id, wfx_id)`.
+    """
+    return subscribe(_channel_for_workspace_activity(org_id, workflow_execution_id))
+
+
+# ---------------------------------------------------------------------------
+# SSE wire formatter
+# ---------------------------------------------------------------------------
+
+
+def serialize_for_sse(payload: dict[str, Any]) -> str:
+    """Format `payload` as an HTTP `text/event-stream` data frame.
+
+    Returns `data: <json>\\n\\n`. Both general and workspace-activity
+    subscribers use this before writing to the HTTP response.
+    """
+    return f"data: {json.dumps(payload)}\n\n"

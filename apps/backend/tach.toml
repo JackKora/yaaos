@@ -468,10 +468,13 @@ expose = [
   "publish",
   "publish_general",
   "publish_general_after_commit",
+  "publish_workspace_activity",
   "reset_pubsub",
+  "serialize_for_sse",
   "shutdown",
   "subscribe",
   "subscribe_general",
+  "subscribe_workspace_activity",
   "subscriber_count",
 ]
 from = ["app.core.sse"]

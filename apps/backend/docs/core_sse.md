@@ -1,15 +1,16 @@
 # core/sse
 
-> Redis-backed pub/sub for ActivityEvent fanout and org-scoped general events.
+> Redis-backed pub/sub for ActivityEvent fanout, org-scoped general events, and workspace-activity streams.
 
 ## Purpose
 
-Two pipelines in one module:
+Three pipelines in one module:
 
 - **Activity pipeline** — bridges activity-event producers (`core/agent_gateway` WebSocket ingress, reviewer's direct publisher) and the per-workflow SSE handler. Channel shape: `activity:{workflow_execution_id}`.
 - **General-event pipeline** — org-scoped typed events consumed by the SPA's live-update stream. Channel shape: `{org_id}:general`. Uses `GeneralEventKind` as the discriminator. `publish_general_after_commit` ties publish lifetime to a transaction — rollbacks silently discard stashed events so rolled-back transactions never emit SPA events.
+- **Workspace-activity pipeline** — per-org per-workflow activity stream with channel isolation by both org and workflow execution. Channel shape: `{org_id}:workspace_activity:{workflow_execution_id}`. Raw agent event dict passed through unchanged — no envelope, no `ts` stamping.
 
-Both pipelines are backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process reaches an SSE subscriber attached to a different web process. Fire-and-forget per Redis semantics — slow consumers do not backpressure publishers, and no event persistence.
+All pipelines are backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process reaches an SSE subscriber attached to a different web process. Fire-and-forget per Redis semantics — slow consumers do not backpressure publishers, and no event persistence.
 
 The `/api/sse` prefix is declared as `ORG_SCOPED` in `core/auth/types.py` so future routes mounted at `core/sse/web.py` are enforced without additional classification work.
 
@@ -31,8 +32,14 @@ Exported from `app/core/sse/__init__.py`:
 - `publish_general_after_commit(session, *, org_id, kind, payload)` — stashes the event on `session.info`; an SQLAlchemy `after_commit` listener drains and publishes on commit. Rollback discards the stash silently — rolled-back transactions never emit SPA events.
 - `subscribe_general(org_id)` — async iterator over general events for that org. Wraps `subscribe` on the org's channel.
 
+**Workspace-activity pipeline:**
+
+- `publish_workspace_activity(*, org_id, workflow_execution_id, payload)` — publishes `payload` unchanged (no envelope, no `ts` stamping) to the org+workflow channel.
+- `subscribe_workspace_activity(org_id, workflow_execution_id)` — async iterator over workspace-activity events for that org + workflow execution. Isolated by both dimensions — cross-org and cross-wfx events do not leak.
+
 **Shared:**
 
+- `serialize_for_sse(payload)` — formats a `dict[str, Any]` as an HTTP `text/event-stream` data frame (`data: <json>\n\n`). Both general and workspace-activity subscribers use this before writing to the HTTP response.
 - `RedisPubsub` — class form for callers that want to construct their own bus (mostly tests).
 - `get_pubsub()` — process-singleton accessor.
 - `shutdown()` — closes the singleton and sets it to `None`; self-registered with both the web and worker shutdown registries at import time. Both processes host Redis subscriptions (the worker publishes; the web process subscribes), so both need cleanup.
@@ -46,10 +53,11 @@ Exported from `app/core/sse/__init__.py`:
 
 ### Channel naming
 
-Two shapes:
+Three shapes:
 
 - `activity:{workflow_execution_id}` — per-workflow activity events. Formed by `channel_for()`.
 - `{org_id}:general` — org-scoped general events. Formed by the internal `_channel_for_general()` helper (not in `__all__`).
+- `{org_id}:workspace_activity:{workflow_execution_id}` — per-org per-workflow workspace-activity events. Formed by the internal `_channel_for_workspace_activity()` helper (not in `__all__`). Dual-dimension isolation ensures cross-org and cross-wfx events never mix.
 
 ### After-commit stash mechanism
 
@@ -73,3 +81,5 @@ None. The module is transport — Redis is the substrate.
 - `test/test_shutdown.py` — singleton lifecycle: `shutdown()` drops singleton; idempotent.
 - `test/test_shutdown_service.py` — hook registration: `shutdown()` appears in both web and worker shutdown registries; draining either registry drops the singleton.
 - `test/test_general_publish_service.py` — general-event pipeline: rollback discards stashed events; commit delivers them with correct `{kind, ts, ...payload}` shape; publishing on `org_B` does not reach `org_A`'s subscriber. Uses `db_session` + `redis_or_skip`.
+- `test/test_workspace_activity_publish_service.py` — workspace-activity pipeline: cross-org isolation (org_B publish does not reach org_A subscriber on same wfx); cross-wfx isolation (wfx_2 publish does not reach wfx_1 subscriber in same org). Uses `redis_or_skip`.
+- `test/test_serialize_for_sse_service.py` — `serialize_for_sse` formats `dict` payload as `data: <json>\n\n`.
