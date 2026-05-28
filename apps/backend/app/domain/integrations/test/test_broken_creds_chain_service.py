@@ -1,7 +1,7 @@
-"""Service test (Phase 2 gap C): integration health-check → audit + email → next review's proxy → review-output prefix.
+"""Service test: integration health-check → audit + email → next review's proxy → review-output prefix.
 
 The six broken-creds surfaces described in the architecture are tested in
-isolation today. This service test stitches the BACKEND half of the chain —
+isolation. This service test stitches the BACKEND half of the chain —
 health-check flips the credential status, audits, emails Owners; then the next
 review's proxy dispatch hits the broken row, records the provider, and the
 reviewer's review-output prefix composes the warning.
@@ -23,9 +23,9 @@ from pydantic import SecretStr
 
 from app.core.audit_log import list_for_org
 from app.core.auth import AuthMiddleware
+from app.core.identity import repository as identity_repo
 from app.core.oauth import ProviderConfig
 from app.core.secrets import encrypt
-from app.domain.identity import repository as identity_repo
 from app.domain.integrations.models import McpCredentialRow
 from app.domain.integrations.scheduler import run_health_check_once
 from app.domain.integrations.types import _REGISTRY

@@ -1,5 +1,5 @@
 """Raw Redis pub/sub primitives. No channel-naming opinions; no payload
-encoding. Consumers (`core/sse_pubsub`) layer their semantics on top.
+encoding. Consumers (`core/sse`) layer their semantics on top.
 
 Both `publish` and `subscribe` route through `core/redis.service.get_client`
 so the underlying client is the loop-bound singleton — no per-call client

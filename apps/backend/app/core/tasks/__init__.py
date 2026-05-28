@@ -36,10 +36,12 @@ from app.core.tasks.service import (
     shutdown,
     task,
 )
+from app.core.tasks.types import TaskMetadata
 
 __all__ = [
     "OutboxEntryRow",
     "ShutdownHook",
+    "TaskMetadata",
     "TaskRef",
     "drain_once",
     "enqueue",

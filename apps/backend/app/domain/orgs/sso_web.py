@@ -100,8 +100,8 @@ async def sso_acs(
     """Assertion Consumer Service. Verifies the SAML response (real or stub),
     matches the user by verified email, optionally JIT-creates a membership,
     marks the session SSO-satisfied for this org."""
-    from app.domain.identity import repository as identity_repo  # noqa: PLC0415
-    from app.domain.identity import sessions as session_lifecycle  # noqa: PLC0415
+    from app.core.identity import repository as identity_repo  # noqa: PLC0415
+    from app.core.identity import sessions as session_lifecycle  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
     from app.domain.orgs.sso import get_config  # noqa: PLC0415
     from app.domain.orgs.types import Role  # noqa: PLC0415
@@ -170,7 +170,7 @@ async def sso_acs(
         # bypass branch will have written nothing — but a direct SSO
         # signin still counts as satisfaction. Capture the break-glass
         # case via a separate audit row when middleware lets exempt
-        # bypass. Marker emitted in `domain/sessions/dependencies` is the
+        # bypass. Marker emitted in `core/sessions/dependencies` is the
         # source of truth for "Owner skipped SSO".
         await s.commit()
 
@@ -198,7 +198,7 @@ def _verify_assertion(saml_response: str, idp_metadata_xml: str) -> dict | None:
 
 
 def _require_sso_configure():
-    from app.domain.sessions import require  # noqa: PLC0415
+    from app.core.sessions import require  # noqa: PLC0415
 
     return require(Action.SSO_CONFIGURE)
 
@@ -232,15 +232,14 @@ async def get_org_sso_config() -> dict:
 async def upsert_org_sso_config(request: Request, body: _SsoConfigBody) -> dict:
     """Upsert per-org SSO config. The exempt-Owner picker requires the
     candidate to have a verified TOTP secret — otherwise reject with
-    `exempt_owner_no_totp`. Phase 11 helper enforces. Writes a
-    `sso_config_changed` audit row + an `exempt_owner_set` row when
-    the exempt-Owner pointer changed."""
+    `exempt_owner_no_totp`. Writes a `sso_config_changed` audit row + an
+    `exempt_owner_set` row when the exempt-Owner pointer changed."""
     from app.core.audit_log import Actor  # noqa: PLC0415
     from app.core.auth import user_id_var  # noqa: PLC0415
-    from app.domain.identity import can_be_sso_exempt_owner  # noqa: PLC0415
+    from app.core.identity import can_be_sso_exempt_owner  # noqa: PLC0415
+    from app.core.sessions import current_actor  # noqa: PLC0415
     from app.domain.orgs import SsoConfigError, get_config, upsert_config  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
-    from app.domain.sessions import current_actor  # noqa: PLC0415
 
     org_id = org_id_var.get()
     assert org_id is not None

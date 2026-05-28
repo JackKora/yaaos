@@ -2,9 +2,9 @@
 
 Drives `pr_review_v1` through the workflow engine with a Fake
 coding-agent that emits a canned `ActivityEvent` sequence. Asserts the
-SPA's SSE consumer (subscribing via `core/sse_pubsub.subscribe`) sees
+SPA's SSE consumer (subscribing via `core/sse.subscribe`) sees
 each event verbatim — proving the in-memory taskiq worker path
-publishes activity straight to `sse_pubsub` without needing the
+publishes activity straight to `sse` without needing the
 remote-agent WebSocket transport.
 
 Closes the activity-stream-against-both-providers audit row for
@@ -21,11 +21,12 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select
 
+from app.core.audit_log import ActorKind
+from app.core.auth import org_context
 from app.core.plugin_kit import PluginMeta
-from app.core.sse_pubsub import (
-    channel_for,
+from app.core.sse import (
     reset_pubsub,
-    subscribe,
+    subscribe_workspace_activity,
 )
 from app.core.tasks import OutboxEntryRow, drain_once
 from app.core.workflow import WorkflowExecutionRow, WorkflowState, scoped_engine
@@ -117,13 +118,19 @@ async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]
             assert kind == "taskiq_enqueue"
             decorated = get_broker().find_task(payload["task_name"])
             assert decorated is not None
-            await decorated.original_func(**payload["args"])
+            metadata = payload.get("metadata") or {}
+            org_id_str = metadata.get("org_id") if isinstance(metadata, dict) else None
+            if org_id_str:
+                async with org_context(UUID(org_id_str), ActorKind.SYSTEM):
+                    await decorated.original_func(**payload["args"])
+            else:
+                await decorated.original_func(**payload["args"])
 
         await drain_once(db_session, dispatcher=_dispatcher)
         await db_session.commit()
 
 
-async def test_in_memory_review_publishes_activity_to_sse_pubsub(  # type: ignore[no-untyped-def]
+async def test_in_memory_review_publishes_activity_to_sse(  # type: ignore[no-untyped-def]
     db_session, _engine_with_in_memory
 ):
     """Subscribe to the workflow's activity channel; run `pr_review_v1`
@@ -185,18 +192,23 @@ async def test_in_memory_review_publishes_activity_to_sse_pubsub(  # type: ignor
     with register_fake_coding_agent() as fake:
         fake.activity_events = canned_events
 
-        wfx_id = await _engine_with_in_memory.start(
-            workflow_name="pr_review_v1",
-            ticket_id=str(ticket_id),
-            workspace_provider="in_memory",
-            session=db_session,
-        )
+        # Enter org_context so enqueue() propagates org_id through the outbox
+        # metadata → the drain's middleware reads it back and enters org_context
+        # for each task body, satisfying require_org_context() in the activity
+        # publisher.
+        async with org_context(org_id, ActorKind.SYSTEM):
+            wfx_id = await _engine_with_in_memory.start(
+                workflow_name="pr_review_v1",
+                ticket_id=str(ticket_id),
+                workspace_provider="in_memory",
+                session=db_session,
+            )
         await db_session.commit()
 
         received: list[dict] = []
 
         async def _reader() -> None:
-            async for event in subscribe(channel_for(wfx_id)):
+            async for event in subscribe_workspace_activity(org_id, UUID(wfx_id)):
                 received.append(event)
                 if len(received) >= 3:
                     return

@@ -66,6 +66,55 @@ Exceptions: `core/database` (Postgres connections), `core/observability` (log fi
 - Module-level only (heavy-ML exception requires `# noqa: PLC0415`).
 - Other modules import only `__all__` exports. Internal cross-module imports are Tach-rejected.
 
+## Module structure
+
+### Conventional files
+
+Each subdirectory of a layer is a module. Standard files:
+
+- `__init__.py` — public interface: re-exports + `__all__` + registration side effects.
+- `module.py` — exports `get_module_name()` for registrations and audit kinds.
+- `service.py` — business-logic functions (split as the module grows).
+- `models.py` — SQLAlchemy + Pydantic types owned by the module.
+- `web.py` — FastAPI router + handlers (only if the module exposes HTTP routes).
+- `test/` — tests live inside the module.
+
+### `__init__.py` rules
+
+- `__all__` is always present. `bin/sync_modules` derives the tach interface from it.
+- All implementation lives in named submodules. No business logic in `__init__.py`.
+- Order: re-exports, then `__all__`, then registration calls.
+- No lazy/conditional imports (rare heavy-ML case: `# noqa: PLC0415`).
+- No self-imports — internal files use direct submodule paths, not `from app.domain.foo import bar` within the same module.
+
+### `web.py` routing convention
+
+- Router carries no prefix. `RouteSpec.url_prefix` (defaulting to `/api/{module_name}`) is applied by `core/webserver`.
+- Call `register_routes(RouteSpec(...))` at the bottom; one prefix per module, enforced at boot.
+- See [core_webserver.md](core_webserver.md) for the full `RouteSpec` registry contract.
+
+### `bin/sync_modules` workflow
+
+Runs the full module-sync sequence:
+
+1. Discover modules under each layer.
+2. Write `tach.toml` — `[[modules]]` entries + `[[interfaces]]` blocks (expose lists from `__all__`).
+3. Check internal imports (no relative imports across boundaries, no `__init__` self-imports).
+4. Check layering.
+5. Run `tach check --interfaces`.
+6. Run `bin/check_table_access`.
+
+Never hand-edit `tach.toml`. Re-run `bin/sync_modules` after adding or changing a module interface.
+
+### Adding a new module
+
+1. Create the directory under the appropriate layer.
+2. Add `__init__.py` (re-exports + `__all__`) and `module.py` (`get_module_name`).
+3. If exposing HTTP routes: add `web.py`, call `register_routes` at bottom, ensure `__init__.py` imports `web` so the side effect runs.
+4. For a new plugin: ensure `app/web.py` imports the plugin package.
+5. Run `bin/sync_modules`.
+6. Add `apps/backend/docs/<layer>_<module>.md` following the per-module template.
+
 ## Background work
 
 ### `core/observability.spawn()`
@@ -226,7 +275,7 @@ Row shape:
 Every domain function takes `org_id` kwarg or reads it from the `org_id_var` contextvar; every query filters by it. Two-track rule:
 
 - **HTTP request handlers** — `Depends(require(Action.X))` resolves `X-Org-Slug` and sets the contextvar. Handlers can read it via `current_org_id()`.
-- **Background work** — every non-HTTP entry point opens `with org_context(org_id, actor_kind, actor_id=None)` from [`core/auth`](core_auth.md). This sets the same contextvars + OTel span attrs (`yaaos.org_id`, `yaaos.actor_kind`, `yaaos.actor_id`) + structlog bound vars so background log lines + audit rows attribute correctly. Wrapped today: GitHub catch-up poller, reviewer worker (`actor_kind=workspace`). Scheduler cleanup jobs that don't emit audit rows + don't read from org-scoped tables (session/invitation/totp/audit purges) do NOT need a wrap — they're global by design.
+- **Background work** — every non-HTTP entry point opens `with org_context(org_id, actor_kind, actor_id=None)` from [`core/auth`](core_auth.md). This sets the same contextvars + OTel span attrs (`yaaos.org_id`, `yaaos.actor_kind`, `yaaos.actor_id`) + structlog bound vars so background log lines + audit rows attribute correctly. Wrapped today: GitHub catch-up poller, reviewer worker (`actor_kind=workspace`), taskiq task bodies (`actor_kind=SYSTEM` — via `OrgContextMiddleware` in `core/tasks`, not manual wrapping in each body). Scheduler cleanup jobs that don't emit audit rows + don't read from org-scoped tables (session/invitation/totp/audit purges) do NOT need a wrap — they're global by design.
 - **Discipline rule** — any function reading from an org-scoped table must either (a) take `org_id` as an explicit kwarg, or (b) call `require_org_context()` to assert the contextvar is set. The assertion surfaces forgotten-wrap bugs loudly instead of silently leaking cross-org data.
 
 ## Idempotency at external boundaries
@@ -253,11 +302,11 @@ Every yaaos-issued bearer follows the same shape — adopted in for sessions, in
 - **Store** `sha256(raw_token)` as the primary key. Raw tokens never persist.
 - **Lookup** by hashing the inbound bearer + selecting by hash + checking `expires_at > now()`. Constant-time-safe because the hash is the PK.
 - **Own one table per consumer.** `sessions`, `mcp_review_tokens`, and (via sha256-on-write) `invitations.token_hash` are separate; one bearer can't be substituted for another.
-- **Expire by absolute time.** Each consumer owns its TTL — sessions 14d, MCP review tokens 2h, invitations 7d. The periodic cleanup task in `domain/identity/scheduler` (or a domain-local equivalent) deletes expired rows; production code also checks `expires_at` on every read.
+- **Expire by absolute time.** Each consumer owns its TTL — sessions 14d, MCP review tokens 2h, invitations 7d. The periodic cleanup task in `core/identity/scheduler` (or a module-local equivalent) deletes expired rows; production code also checks `expires_at` on every read.
 
 ## Route security declarations
 
-Every `/api/*` path classifies as one of three `RouteSecurity` categories: `PUBLIC` (no auth), `USER_SCOPED` (session, no org), or `ORG_SCOPED` (session + `X-Org-Slug` + role check). The classifier `classify_route(path, method)` and the prefix/exact lists live in `app/core/auth/types.py`; the middleware enforces `X-Org-Slug` and CSRF based on the category. Route dependencies: `Depends(require(Action.X))` for `ORG_SCOPED`, `Depends(require_session)` (or `Depends(public_route)`) for `USER_SCOPED` handlers that read the session cookie, `Depends(public_route)` for `PUBLIC`. The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset. Action → minimum-role map lives in `app/domain/sessions/dependencies.py:_REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new URL prefix requires placing it in exactly one of the three category sets in `app/core/auth/types.py`.
+Every `/api/*` path classifies as one of three `RouteSecurity` categories: `PUBLIC` (no auth), `USER_SCOPED` (session, no org), or `ORG_SCOPED` (session + `X-Org-Slug` + role check). The classifier `classify_route(path, method)` and the prefix/exact lists live in `app/core/auth/types.py`; the middleware enforces `X-Org-Slug` and CSRF based on the category. Route dependencies: `Depends(require(Action.X))` for `ORG_SCOPED`, `Depends(require_session)` (or `Depends(public_route)`) for `USER_SCOPED` handlers that read the session cookie, `Depends(public_route)` for `PUBLIC`. The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset. Action → minimum-role map lives in `app/core/sessions/dependencies.py:_REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new URL prefix requires placing it in exactly one of the three category sets in `app/core/auth/types.py`.
 
 ## Testing
 
@@ -304,7 +353,7 @@ Tests obey the **same import rules as production code** — enforced by `tach ch
 - No test-only seams that bypass module interfaces. If a seam is needed, it belongs in `app/testing/` — but `app/testing/` is itself tach-governed; it may only import from `__all__`-gated module paths.
 - Service tests of multi-hop pipelines are sliced per-hop: each service test exercises one entry point end-to-end; chain tests by asserting on the durable state that the next hop reads, not by calling internal functions of the next module.
 - Singleton reset for test isolation: never poke private state via a submodule attribute (`mod._svc._singleton = None`). Use a named helper instead. Two flavors by reach:
-  - **Cross-module reach** (module A's tests reset module B's state) → public symbol in B's `__all__` and tach interface. Example: `sse_pubsub.reset_pubsub()` — called from reviewer / orgs / agent_gateway tests.
+  - **Cross-module reach** (module A's tests reset module B's state) → public symbol in B's `__all__` and tach interface. Example: `sse.reset_pubsub()` — called from reviewer / orgs / agent_gateway tests.
   - **Intra-module reach only** (module's own `test/` directory) → private `_*_for_tests` helper in B's `service.py` (or sibling submodule), NOT in `__all__`, NOT in tach `expose`. Tests reach it via direct submodule import — intra-module, tach-permitted. Examples: `redis._reset_clients_for_tests`, `agent_gateway.subscribers._reset_subscriber_singleton_for_tests`, `orgs.onboarding._reset_contributors_for_tests`.
 
 ### DI over `@patch`
@@ -362,7 +411,7 @@ Rules:
 
 ## Subscription self-cleanup (async generator pattern)
 
-`core.events.subscribe()` is the canonical example of an async generator whose `finally` clause does its own cleanup. The generator registers a subscriber queue on entry; `finally` pops it on any consumer exit — normal return, `break`, exception, or `aclose()`. Callers never call an explicit `unsubscribe()`.
+An async generator whose `finally` clause does its own cleanup is the canonical subscriber pattern. The generator registers a queue on entry; `finally` pops it on any consumer exit — normal return, `break`, exception, or `aclose()`. Callers never call an explicit `unsubscribe()`. `core/sse` uses this pattern for SSE stream subscribers.
 
 Preferred test shapes for consuming one event then exiting:
 - `async for ev in subscribe(filter): ...; return` — `return` exits the coroutine; the event loop's async-gen finalizer schedules `aclose()`. Yield one event-loop tick (`await asyncio.sleep(0)`) after the consumer finishes if the test asserts `subscriber_count() == 0`.
@@ -377,7 +426,7 @@ Every runtime-state module exposes a public `async def shutdown()` in `__all__`.
 Categorization rule:
 - Web-presence only (SSE, WebSocket) → register with web registry.
 - Worker-presence only → register with worker registry.
-- Shared infra (redis, database, events, tasks) → register with both.
+- Shared infra (redis, database, tasks) → register with both.
 
 The registries live in `app.core.shutdown_registry` (a zero-dependency standalone module) to avoid circular imports between modules that import each other.
 
@@ -392,7 +441,7 @@ Both registries are re-exported from `core.webserver` and `core.tasks` for conve
 
 FastAPI lifespan teardown (in `core/webserver/app_factory.py`) iterates `iter_web_shutdown_hooks()` in reverse order. Worker runtime teardown (in `core/tasks/runtime.py`) iterates `iter_worker_shutdown_hooks()` in reverse order. Reverse order means the most-recently-registered (most-dependent) modules shut down first.
 
-`app/web.py` and `app/worker.py` pin the foundational shutdown order by explicitly importing `app.core.database` and `app.core.redis` near the top of step 2, before any module that depends on them. That guarantees those two register their hooks first and therefore shut down last — anything imported transitively later (tasks, sse_pubsub, agent_gateway) shuts down before them. Don't rely on transitive imports for hook ordering; pin the ones that matter.
+`app/web.py` and `app/worker.py` pin the foundational shutdown order by explicitly importing `app.core.database` and `app.core.redis` near the top of step 2, before any module that depends on them. That guarantees those two register their hooks first and therefore shut down last — anything imported transitively later (tasks, sse, agent_gateway) shuts down before them. Don't rely on transitive imports for hook ordering; pin the ones that matter.
 
 Both loops wrap each hook call in `try/except` (web) or `contextlib.suppress` (worker) so one failing hook does not abort the sequence.
 
@@ -400,7 +449,7 @@ Both loops wrap each hook call in `try/except` (web) or `contextlib.suppress` (w
 
 Both composition roots live inside `app/` so they're importable as regular Python modules and testable without exec tricks.
 
-- `app/web.py` — web process entry. Same bootstrap import order as before (see § Bootstrap composition order). Ends with `app = webserver.create_app()`. When run directly (`python apps/backend/app/web.py`) the `if __name__ == "__main__"` block calls `uvicorn.run(...)` with all server flags in Python — no flags scattered across Dockerfile CMDs.
+- `app/web.py` — web process entry. See § Bootstrap composition order. Ends with `app = webserver.create_app()`. When run directly (`python apps/backend/app/web.py`) the `if __name__ == "__main__"` block calls `uvicorn.run(...)` with all server flags in Python — no flags scattered across Dockerfile CMDs.
 - `app/worker.py` — worker process entry. Side-effect imports (workflow commands, plugins, workspace providers) + `asyncio.run(core.tasks.runtime.run())`. When run directly the `if __name__ == "__main__"` block is the sole entry point.
 
 Dockerfile CMDs are exec-form `["python", "apps/backend/app/web.py"]` / `["python", "apps/backend/app/worker.py"]`. tini is PID 1 (image-level `ENTRYPOINT ["/usr/bin/tini", "--"]`) and forwards SIGTERM to the Python child, triggering graceful shutdown via the Phase-1 shutdown registries.
@@ -409,16 +458,15 @@ Dockerfile CMDs are exec-form `["python", "apps/backend/app/web.py"]` / `["pytho
 
 ## Bootstrap composition order
 
-`app/web.py` is load-bearing. If steps 3–4 swap with 6 you'll mount a router before its module has registered or subscribe to an event before the bus exists. Don't reorder.
+`app/web.py` is load-bearing. Don't reorder.
 
 1. Load environment — `app.core.config`.
 2. Configure core infra — `app.core.database`, `app.core.observability`.
-3. Initialize events bus — `app.core.events` *before any domain subscribes*.
-4. Import webserver registry — `app.core.webserver` *before any module registers routes*.
-5. Core modules with plugin Protocols — `app.core.audit_log`, `app.core.workspace`.
-6. Domain modules in dependency order — types first (vcs, lessons), then coding_agent, then leaf domain modules, then dependents.
-7. Plugins — `in_memory_workspace`, `claude_code`, `github`.
-8. Test-mode wrapping (conditional) — when `YAAOS_CODING_AGENT_STUB=1`, import `app.testing.stub_*` and call `wrap_all_registered_*()`. When `yaaos_env == "dev"`, import `app.testing.e2e_setup` so `/api/testing/*` mounts.
-9. Build the FastAPI app — `webserver.create_app()`.
+3. Import webserver registry — `app.core.webserver` *before any module registers routes*.
+4. Core modules with plugin Protocols — `app.core.audit_log`, `app.core.workspace`.
+5. Domain modules in dependency order — types first (vcs, lessons), then coding_agent, then leaf domain modules, then dependents.
+6. Plugins — `in_memory_workspace`, `claude_code`, `github`.
+7. Test-mode wrapping (conditional) — when `YAAOS_CODING_AGENT_STUB=1`, import `app.testing.stub_*` and call `wrap_all_registered_*()`. When `yaaos_env == "dev"`, import `app.testing.e2e_setup` so `/api/testing/*` mounts.
+8. Build the FastAPI app — `webserver.create_app()`.
 
-Each module imported in steps 2–7 appends its `shutdown()` hook to the relevant process registry as a side effect of import. By step 9, all hooks are registered before `create_app()` wires them into the lifespan.
+Each module imported in steps 2–6 appends its `shutdown()` hook to the relevant process registry as a side effect of import. By step 8, all hooks are registered before `create_app()` wires them into the lifespan.

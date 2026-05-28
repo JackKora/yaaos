@@ -1,26 +1,24 @@
 """In-memory provider activity-stream wiring: `_activity_publisher_for`
 shipping `ActivityEvent`s from a coding-agent invocation to
-`core/sse_pubsub` on `channel_for(workflow_execution_id)`.
+`core/sse` via `publish_workspace_activity` on the org-scoped channel.
 
-Closes the Phase 8b ledger item: "In-memory provider: taskiq worker
-publishes directly to `core/sse_pubsub` (no WebSocket wire)." Workspace
-command bodies now pass a publisher to `coding_agent.review`/etc., and
-the in-memory pubsub fans events out to live subscribers without
-needing the remote agent's WebSocket transport.
+The publisher requires an active `org_context`; events land on
+`subscribe_workspace_activity(org_id, wfx_id)`.
 """
 
 from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
-from app.core.sse_pubsub import (
-    channel_for,
+from app.core.audit_log import ActorKind
+from app.core.auth import org_context
+from app.core.sse import (
     reset_pubsub,
-    subscribe,
+    subscribe_workspace_activity,
 )
 from app.core.workflow import CommandContext
 from app.domain.coding_agent import ActivityEvent
@@ -30,12 +28,13 @@ pytestmark = pytest.mark.usefixtures("redis_or_skip")
 
 
 async def test_activity_publisher_fans_out_to_subscribed_channel() -> None:
-    """Subscribe to the workflow's activity channel; trigger the publisher;
-    expect the event to land verbatim."""
+    """Subscribe to the workflow's org-scoped activity channel; trigger the
+    publisher inside `org_context`; expect the event to land verbatim."""
     reset_pubsub()
-    wfx_id = str(uuid4())
+    org_id: UUID = uuid4()
+    wfx_id: UUID = uuid4()
     ctx = CommandContext(
-        workflow_execution_id=wfx_id,
+        workflow_execution_id=str(wfx_id),
         ticket_id=str(uuid4()),
         step_id="review",
         attempt=0,
@@ -45,24 +44,22 @@ async def test_activity_publisher_fans_out_to_subscribed_channel() -> None:
     received: list[dict] = []
 
     async def _reader() -> None:
-        async for event in subscribe(channel_for(wfx_id)):
+        async for event in subscribe_workspace_activity(org_id, wfx_id):
             received.append(event)
             if len(received) >= 1:
                 return
 
     reader_task = asyncio.create_task(_reader())
-    # Small sleep so the subscriber registers before we publish; the
-    # InMemoryPubsub uses an asyncio.Queue per subscriber + drops on
-    # no-subscribers.
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
 
-    event = ActivityEvent(
-        ts=datetime.now(UTC),
-        kind="tool_call_started",
-        message="Read: src/x.py",
-        detail={"tool": "Read", "tool_use_id": "tool_1"},
-    )
-    await publisher(event)
+    async with org_context(org_id, ActorKind.SYSTEM):
+        event = ActivityEvent(
+            ts=datetime.now(UTC),
+            kind="tool_call_started",
+            message="Read: src/x.py",
+            detail={"tool": "Read", "tool_use_id": "tool_1"},
+        )
+        await publisher(event)
 
     await asyncio.wait_for(reader_task, timeout=1.0)
 
@@ -76,19 +73,22 @@ async def test_activity_publisher_no_subscribers_is_silent() -> None:
     """Publishing to a channel with no subscribers is a no-op — the
     coding-agent invocation must not block waiting for an SSE reader."""
     reset_pubsub()
+    org_id: UUID = uuid4()
+    wfx_id: UUID = uuid4()
     ctx = CommandContext(
-        workflow_execution_id=str(uuid4()),
+        workflow_execution_id=str(wfx_id),
         ticket_id=str(uuid4()),
         step_id="review",
         attempt=0,
     )
     publisher = _activity_publisher_for(ctx)
 
-    event = ActivityEvent(
-        ts=datetime.now(UTC),
-        kind="session_start",
-        message="Session started",
-        detail={},
-    )
-    # Returns cleanly even with no subscribers.
-    await publisher(event)
+    async with org_context(org_id, ActorKind.SYSTEM):
+        event = ActivityEvent(
+            ts=datetime.now(UTC),
+            kind="session_start",
+            message="Session started",
+            detail={},
+        )
+        # Returns cleanly even with no subscribers.
+        await publisher(event)

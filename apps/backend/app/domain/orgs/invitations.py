@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import Actor, audit
 from app.core.config import get_settings
-from app.domain.identity import sessions as session_lifecycle
+from app.core.identity import sessions as session_lifecycle
 from app.domain.orgs import email as org_email
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.service import Invitation, Membership
@@ -216,10 +216,8 @@ async def change_role(
     """Update the membership row, rotate the affected user's sessions, audit.
 
     Rotation = revoke + create fresh; the affected user is signed out
-    everywhere they were and must re-authenticate. Phase 12 will swap the
-    blunt rotation for a session-row update that flips `sso_satisfied_*` and
-    the role-derived claims without forcing re-auth — for the POC, "you got
-    promoted, sign in again" is fine.
+    everywhere they were and must re-authenticate. "You got promoted,
+    sign in again" is acceptable for the POC.
     """
     existing = await orgs_repo.get_membership(db, user_id=user_id, org_id=org_id)
     if existing is None:

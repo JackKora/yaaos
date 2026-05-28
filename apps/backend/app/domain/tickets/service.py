@@ -13,12 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_log import Actor, audit_for_ticket
 from app.core.database import session as db_session
-from app.core.events import Event, publish_after_commit
+from app.core.sse import GeneralEventKind, publish_general_after_commit
+from app.core.tasks import enqueue
 from app.domain.tickets.models import TicketRow
 
-# collapse: single 5-state vocabulary. The legacy 4-state lifecycle
-# (open / in_review / complete / abandoned) was mapped one-shot in migration
-# 023; this is the canonical name now. `hitl` and `failed` are populated by
+# Single 5-state ticket vocabulary. `hitl` and `failed` are populated by
 # the workflow-state projection (reviewer/workflow_review_view.py); the
 # transition helpers below only emit `running`, `done`, `cancelled`.
 TicketStatus = Literal["running", "hitl", "done", "failed", "cancelled"]
@@ -81,16 +80,6 @@ class TicketFilter(BaseModel):
     q: str | None = None
     sort: TicketSort = "updated_desc"
     cursor: str | None = None
-
-
-class TicketStatusChanged(Event):
-    kind: Literal["ticket_status_changed"] = "ticket_status_changed"
-    source_module: Literal["tickets"] = "tickets"
-    repo_external_id: str
-    pr_id: UUID | None
-    previous_status: str | None
-    new_status: str
-    reason: str | None = None
 
 
 class TicketNotFoundError(LookupError):
@@ -177,15 +166,29 @@ async def create(
         org_id=org_id,
         session=session,
     )
-    publish_after_commit(
+    from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
+    from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
+
+    members = await list_active_member_ids(org_id, session=session)
+    publish_general_after_commit(
         session,
-        TicketStatusChanged(
-            ticket_id=row.id,
-            repo_external_id=repo_external_id,
-            pr_id=None,
-            previous_status=None,
-            new_status="pending",
-        ),
+        org_id=org_id,
+        kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+        payload={
+            "ticket_id": str(row.id),
+            "new_status": "pending",
+            "previous_status": None,
+        },
+    )
+    await enqueue(
+        handle_ticket_status_change,
+        args={
+            "ticket_id": str(row.id),
+            "member_user_ids": [str(u) for u in members],
+            "org_id": str(org_id),
+            "new_status": "pending",
+        },
+        session=session,
     )
     return row.id, True
 
@@ -253,15 +256,29 @@ async def create_for_pr(
             org_id=org_id,
             session=s,
         )
-        publish_after_commit(
+        from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
+        from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
+
+        members = await list_active_member_ids(org_id, session=s)
+        publish_general_after_commit(
             s,
-            TicketStatusChanged(
-                ticket_id=row_id,
-                repo_external_id=repo_external_id,
-                pr_id=pr_id,
-                previous_status=None,
-                new_status="running",
-            ),
+            org_id=org_id,
+            kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+            payload={
+                "ticket_id": str(row_id),
+                "new_status": "running",
+                "previous_status": None,
+            },
+        )
+        await enqueue(
+            handle_ticket_status_change,
+            args={
+                "ticket_id": str(row_id),
+                "member_user_ids": [str(u) for u in members],
+                "org_id": str(org_id),
+                "new_status": "running",
+            },
+            session=s,
         )
         await s.commit()
     return await get(row_id, org_id=org_id)
@@ -551,8 +568,6 @@ async def _transition(
             raise InvalidTicketTransition(f"ticket {ticket_id} is terminal ({row.status}); cannot transition")
         prev = row.status
         await s.execute(update(TicketRow).where(TicketRow.id == ticket_id).values(status=new_status))
-        repo_external_id = row.repo_external_id
-        pr_id = row.pr_id
         await audit_for_ticket(
             ticket_id,
             "ticket.status_changed",
@@ -561,15 +576,28 @@ async def _transition(
             org_id=org_id,
             session=s,
         )
-        publish_after_commit(
+        from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
+        from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
+
+        members = await list_active_member_ids(org_id, session=s)
+        publish_general_after_commit(
             s,
-            TicketStatusChanged(
-                ticket_id=ticket_id,
-                repo_external_id=repo_external_id,
-                pr_id=pr_id,
-                previous_status=prev,
-                new_status=new_status,
-                reason=reason,
-            ),
+            org_id=org_id,
+            kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+            payload={
+                "ticket_id": str(ticket_id),
+                "new_status": new_status,
+                "previous_status": prev,
+            },
+        )
+        await enqueue(
+            handle_ticket_status_change,
+            args={
+                "ticket_id": str(ticket_id),
+                "member_user_ids": [str(u) for u in members],
+                "org_id": str(org_id),
+                "new_status": new_status,
+            },
+            session=s,
         )
         await s.commit()

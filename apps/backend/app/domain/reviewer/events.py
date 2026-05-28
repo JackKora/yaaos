@@ -1,8 +1,8 @@
-"""Domain events emitted by the `PRReviewAggregate` (plan §2.4).
+"""Domain events emitted by the `PRReviewAggregate`.
 
 Plain dataclasses; the aggregate appends them to its internal event list as
 side effects accumulate. `service.py` drains them after persisting the
-aggregate and dispatches to `core/events` subscribers + the SSE bus.
+aggregate and dispatches to the SSE bus via `core/sse`.
 """
 
 from __future__ import annotations

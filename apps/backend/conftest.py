@@ -52,7 +52,7 @@ def _shutdown_runtime_at_session_end():
 @pytest_asyncio.fixture(scope="session")
 async def _redis_reachable() -> bool:
     """Probe `settings.redis_url` once per session. Tests that publish or
-    subscribe via `core/sse_pubsub` use `redis_or_skip` (below) to skip
+    subscribe via `core/sse` use `redis_or_skip` (below) to skip
     cleanly when Redis is unavailable — local dev workflows without a
     Redis container aren't blocked."""
     from redis.asyncio import from_url  # noqa: PLC0415

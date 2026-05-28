@@ -4,28 +4,25 @@
 
 ## Purpose
 
-yaaos's UI is driven by a server-side event stream — the reviewer pipeline emits `ticket_status_changed`, `review_job_status_changed`, and `review_job_step_progress` at every state transition. This module owns the single browser-wide `EventSource` and maps event kinds to cache invalidations. Domain modules consume queries; `core/sse` makes those queries refresh.
+Owns the single browser-wide `EventSource` connecting to `/api/sse/general` and maps the `ticket_status_changed` event kind to query cache invalidations. Domain modules consume queries; `core/sse` makes those queries refresh. The workspace-activity stream is a separate hook (`useWorkflowActivityStream`) that connects to `/api/sse/workspace_activity/{id}`.
 
 ## Public interface
 
 - `<SSESubscriber>` — React component mounted once in `main.tsx` between `QueryClientProvider` and `RouterProvider`. Renders `children` through; the work is a side effect inside a `useEffect`.
-- `useLiveActivity(reviewJobId)` — React hook reading the in-memory ring buffer of `review_job_activity` events for a given review job. Returns the live tail (newest 200); domain pages merge it with the persisted `ReviewJob.activity_log`.
+- `useWorkflowActivityStream(workflowExecutionId)` — React hook that opens a second `EventSource` to the per-workflow activity channel and yields `ReviewJobActivityEvent` objects.
 - `ServerEvent` — envelope type: `{ kind, source_module, ts, ticket_id, [extra]: unknown }`.
 
 ## Module architecture
 
 ### Mounting
 
-`<SSESubscriber>` wraps the router in `main.tsx`. The `EventSource("/api/events")` is held at module scope — **not** inside the `useEffect`. The React effect only attaches the active `QueryClient`; the connection itself outlives the component, so React StrictMode's dev-mode mount → unmount → remount cycle does NOT open new connections. Exactly one connection per browser tab.
+`<SSESubscriber>` wraps the router in `main.tsx`. The `EventSource` is module-scoped, not inside `useEffect` — the effect only attaches the `QueryClient`. StrictMode double-mount doesn't open extra connections. Exactly one connection per tab.
 
 ### Event → invalidation map
 
 | Event `kind` | Invalidates |
 |---|---|
 | `ticket_status_changed` | `["tickets"]`, `["tickets", id]`, `["tickets", id, "audit"]`, `["reviewer", "metrics"]` |
-| `review_job_status_changed` | `["reviewer", "jobs", id]`, `["tickets", id, "audit"]`, `["reviewer", "metrics"]`, `["tickets"]` |
-| `review_job_step_progress` | `["reviewer", "jobs", id]` only — in-place AgentCard step swap, no metrics/list churn |
-| `review_job_activity` | none — appended to in-memory ring buffer (read via `useLiveActivity`). High-frequency; invalidating per event would thrash. |
 | anything else | silently ignored |
 
 `ticket_id` on the envelope scopes invalidations. Events without it fall back to the global keys (`["tickets"]`, `["reviewer", "metrics"]`).
@@ -36,15 +33,7 @@ Invalidations are deduped on a 200 ms trailing debounce keyed by `JSON.stringify
 
 ### Reconnection
 
-Native `EventSource` auto-reconnects on socket drop with exponential backoff. `onerror` is a logger; the browser handles retry. After a long disconnect, tanstack-query's mount + window-focus refetch behaviour resyncs queries on the next interaction; detail-page queries that still carry a `refetchInterval` cover state drift continuously.
-
-### Why a subscriber, not per-component listeners
-
-Each `EventSource` is a long-lived stream holding a server-side connection. Mounting one per component would multiply connections by N pages × M tabs. One-at-the-root keeps it at exactly 1 per tab and centralises the invalidation map.
-
-### SSR safety
-
-The effect early-returns if `window` or `EventSource` is undefined. Browser-only today; the guard means a future SSR pass won't crash.
+Native `EventSource` auto-reconnects with exponential backoff. `onerror` is a logger. TanStack Query's mount + window-focus refetch resyncs after a long disconnect; `refetchInterval` queries cover continuous drift.
 
 ## Data owned
 

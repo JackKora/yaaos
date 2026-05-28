@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app.core.auth import Action, org_id_var
 from app.core.database import session
+from app.core.sessions import require
 from app.core.webserver import RouteSpec, register_routes
 from app.domain import tickets
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
@@ -22,7 +23,6 @@ from app.domain.reviewer.service import (
     all_conversations_view,
     list_findings_view,
 )
-from app.domain.sessions import require
 
 router = APIRouter()
 
@@ -46,10 +46,9 @@ def _org() -> UUID:
 async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
     """Re-review a ticket — drives `pr_review_v1` via the workflow engine.
 
-    Replaces the legacy `schedule_review` / `review_jobs` flow. The SPA's
-    only contract with this endpoint is the `scheduled_count` field; the
-    response now carries `workflow_execution_id` instead of `review_job_id`
-    so the caller can poll workflow state if desired.
+    The SPA's only contract with this endpoint is the `scheduled_count`
+    field; the response carries `workflow_execution_id` so the caller can
+    poll workflow state if desired.
     """
     org_id = _org()
     try:

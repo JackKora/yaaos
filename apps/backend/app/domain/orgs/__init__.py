@@ -23,6 +23,7 @@ from app.domain.orgs.invitations import (
     invite,
     remove_member,
 )
+from app.domain.orgs.memberships import list_active_member_ids
 from app.domain.orgs.models import InvitationRow, MembershipRow, OrgRow
 from app.domain.orgs.onboarding import (
     OnboardingStatus,
@@ -59,10 +60,11 @@ from app.domain.orgs.vcs import (
     get_vcs,
     set_vcs,
 )
+from app.domain.orgs.workflow_ownership import assert_workflow_in_org
 
 # NOTE: `orgs.web`, `orgs.audit_web`, and `orgs.sso_web` are registered from
-# `main.py` (after `domain.sessions` loads), not imported here — they cycle
-# through `domain.sessions.dependencies`, which imports from `domain.orgs`.
+# `main.py` (after `core.sessions` loads), not imported here — they cycle
+# through `core.sessions.dependencies`, which imports from `domain.orgs`.
 # They appear in `__all__` so tach allows cross-module side-effect imports.
 
 __all__ = [
@@ -89,6 +91,7 @@ __all__ = [
     "SsoConfigError",
     "VcsState",
     "accept_invitation",
+    "assert_workflow_in_org",
     "audit_web",
     "change_role",
     "clear_vcs",
@@ -103,6 +106,7 @@ __all__ = [
     "get_vcs",
     "install_coding_agent",
     "invite",
+    "list_active_member_ids",
     "list_coding_agents",
     "register_assertion_verifier",
     "register_onboarding_contributor",

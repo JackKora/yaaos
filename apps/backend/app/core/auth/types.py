@@ -103,6 +103,12 @@ PUBLIC_PREFIXES: tuple[str, ...] = (
     # the path encodes `review_id` and the proxy resolves `org_id` from the
     # review row.
     "/api/mcp/",
+    # WorkspaceAgent wire protocol — bearer-authed, not session-authed.
+    # `/identity/exchange` is explicitly public (no bearer yet); the other
+    # five endpoints use `_bearer_dep` for their own auth check. The
+    # session middleware must not gate on `X-Org-Slug` or the CSRF token
+    # for these routes, and the post-response guard must not fire.
+    "/api/v1/",
 )
 
 PUBLIC_EXACT: frozenset[str] = frozenset(
@@ -187,6 +193,8 @@ ORG_SCOPED_PREFIXES: tuple[str, ...] = (
     "/api/tickets",
     "/api/lessons",
     "/api/reviewer",
+    # SSE routes mounted at core/sse/web.py — org-scoped per-workflow streams.
+    "/api/sse",
 )
 
 

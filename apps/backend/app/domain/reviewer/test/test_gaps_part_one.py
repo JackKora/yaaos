@@ -1,12 +1,9 @@
-"""Failing tests for plan gaps the audit surfaced.
-
-Each test pins one specific behavior the plan requires. They start failing,
-get fixed in the same commit, and stay green going forward.
+"""Tests pinning aggregate-gate and ack-rationale behavior.
 
 Covered:
-- Off-diff finding suppression (plan §10.9): findings on files NOT in the
-  current diff get dropped by the aggregate.
-- Cross-file dedup (plan §10.8): when N findings share a rule_id via
+- Off-diff finding suppression: findings on files NOT in the current diff
+  get dropped by the aggregate.
+- Cross-file dedup: when N findings share a rule_id via
   `duplicate_of_rule_ids`, the survivor's body carries a file list.
 - Mid-band ack stores the *original* rationale (the developer's
   wontfix/intentional message), not the bare "confirm" reply.
@@ -20,6 +17,8 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import text
 
+from app.core.audit_log import ActorKind
+from app.core.auth import org_context
 from app.domain.reviewer.aggregate import PRReviewAggregate, RawFinding
 from app.domain.reviewer.types import (
     CodeAnchor,
@@ -61,15 +60,15 @@ def _raw(
     )
 
 
-# ─── Off-diff suppression (plan §10.9) ──────────────────────────────────────
+# ─── Off-diff suppression ───────────────────────────────────────────────────
 
 
 def test_off_diff_findings_dropped_when_diff_files_supplied() -> None:
     """Findings whose anchor file isn't in `diff_files` are dropped silently
     unless the raw finding carries an explicit causation justification.
 
-    Plan §10.9: "Suppressed unless the model explicitly justifies the
-    off-diff anchor. Without a justification, drop."
+    Suppressed unless the model explicitly justifies the off-diff anchor;
+    without a justification, drop.
     """
     pr_id, org_id = uuid.uuid4(), uuid.uuid4()
     agg = PRReviewAggregate(pr_id=pr_id, org_id=org_id, now=datetime(2026, 5, 17, tzinfo=UTC))
@@ -106,11 +105,11 @@ def test_off_diff_findings_not_dropped_when_no_diff_files_supplied() -> None:
     assert len(new) == 1
 
 
-# ─── Cross-file dedup with file list (plan §10.8) ──────────────────────────
+# ─── Cross-file dedup with file list ───────────────────────────────────────
 
 
 def test_cross_file_dedup_carries_file_list() -> None:
-    """Plan §10.8: same root issue across N files → one finding with a
+    """Same root issue across N files → one finding with a
     `file_list` annotation on the survivor's body listing the duplicates.
     """
     pr_id, org_id = uuid.uuid4(), uuid.uuid4()
@@ -142,7 +141,7 @@ def test_cross_file_dedup_carries_file_list() -> None:
     assert "src/c.py" in survivor.body
 
 
-# ─── Mid-band ack rationale (plan §6.4 step 4) ─────────────────────────────
+# ─── Mid-band ack rationale ────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -243,14 +242,16 @@ async def test_mid_band_ack_uses_original_rationale(db_session) -> None:  # type
 
     # Developer types "confirm" — handle_developer_reply must look back at
     # the original message for the rationale.
-    await handle_developer_reply(
-        external_thread_id="gh-thread-1",
-        external_comment_id="gh-c-3",
-        in_reply_to_external_id="gh-c-2",
-        body="confirm",
-        author_external_id="dev1",
-        org_id=org_id,
-    )
+    # org_context is required because dispatch_events reads require_org_context().
+    async with org_context(org_id, ActorKind.SYSTEM):
+        await handle_developer_reply(
+            external_thread_id="gh-thread-1",
+            external_comment_id="gh-c-3",
+            in_reply_to_external_id="gh-c-2",
+            body="confirm",
+            author_external_id="dev1",
+            org_id=org_id,
+        )
     await db_session.commit()
 
     ack = (

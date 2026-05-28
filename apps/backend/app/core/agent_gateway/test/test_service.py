@@ -338,9 +338,10 @@ async def test_progress_event_does_not_advance_workflow(db_session) -> None:
         cmd_id = wfx.pending_agent_command_id
         assert cmd_id is not None
 
+        ws_org_id = uuid4()
         ws = WorkspaceRow(
             id=uuid4(),
-            org_id=uuid4(),
+            org_id=ws_org_id,
             provider_id="in_memory",
             provider="remote_agent",
             spec={"sha": "deadbeef"},
@@ -356,13 +357,18 @@ async def test_progress_event_does_not_advance_workflow(db_session) -> None:
         await db_session.flush()
 
         # Post a PROGRESS event — workflow must stay in AWAITING_AGENT.
+        # Progress events call require_org_context(), so wrap in org_context.
+        from app.core.audit_log import ActorKind  # noqa: PLC0415
+        from app.core.auth import org_context  # noqa: PLC0415
+
         event = AgentEvent(
             command_id=cmd_id,
             kind=AgentEventKind.PROGRESS,
             reported_at=datetime.now(UTC),
             traceparent="00-aabbccdd-1122-01",
         )
-        await record_agent_event(event, session=db_session)
+        async with org_context(ws_org_id, ActorKind.WORKSPACE):
+            await record_agent_event(event, session=db_session)
         await db_session.commit()
 
         # Drain anything that was enqueued (should be nothing for a progress event).
@@ -377,23 +383,23 @@ async def test_progress_event_does_not_advance_workflow(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_progress_event_publishes_to_sse_pubsub(db_session, redis_or_skip) -> None:
-    """Slice 77: progress AgentEvents posted via HTTP get republished to
-    the `activity:{workflow_execution_id}` SSE channel so the SPA's
-    live-tail picks them up alongside batched WebSocket events."""
-    from app.core.sse_pubsub import channel_for, subscribe  # noqa: PLC0415
-    from app.core.sse_pubsub import shutdown as sse_shutdown  # noqa: PLC0415
+async def test_progress_event_publishes_to_sse(db_session, redis_or_skip) -> None:
+    """Progress AgentEvents posted via HTTP get republished to the org-scoped
+    workspace-activity channel so the SPA's live-tail picks them up."""
+    from app.core.audit_log import ActorKind  # noqa: PLC0415
+    from app.core.auth import org_context  # noqa: PLC0415
+    from app.core.sse import shutdown as sse_shutdown  # noqa: PLC0415
+    from app.core.sse import subscribe_workspace_activity  # noqa: PLC0415
 
     await sse_shutdown()
 
     ws = await _seed_workspace(db_session)
     cmd_id = ws.__dict__["_test_seeded_command_id"]
     wfx_id = ws.__dict__["_test_seeded_workflow_id"]
+    org_id = ws.org_id
 
-    # Open an SSE subscriber BEFORE posting the event so the in-memory
-    # pubsub buffers the publish on the channel.
-    channel = channel_for(str(wfx_id))
-    sub = subscribe(channel)
+    # Open an SSE subscriber on the org-scoped channel BEFORE posting the event.
+    sub = subscribe_workspace_activity(org_id, wfx_id)
     received: list[dict] = []
 
     async def _drain() -> None:
@@ -413,7 +419,8 @@ async def test_progress_event_publishes_to_sse_pubsub(db_session, redis_or_skip)
         reported_at=datetime.now(UTC),
         traceparent="00-aabbccdd-1122-01",
     )
-    await record_agent_event(event, session=db_session)
+    async with org_context(org_id, ActorKind.WORKSPACE):
+        await record_agent_event(event, session=db_session)
     await db_session.commit()
     try:
         await asyncio.wait_for(drainer, timeout=2.0)

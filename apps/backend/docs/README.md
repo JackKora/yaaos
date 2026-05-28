@@ -4,12 +4,13 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 
 ## Read first
 
-- [modularity.md](modularity.md) — Tach-enforced layer model (`core < domain < plugins < testing`), `RouteSpec` registry, module shape.
+- [architecture.md](architecture.md) — layer model, extension points (plugin Protocols), structural patterns, key cross-module flows.
+- [patterns.md](patterns.md) — backend conventions: module shape, `RouteSpec` registry, DI-over-patch, table-ownership, audit-log payloads, time-control env vars, async-everywhere, `spawn` contract.
 - [patterns.md](patterns.md) — backend conventions: DI-over-patch, table-ownership, audit-log payloads, time-control env vars, async-everywhere, `spawn` contract.
 
 ## Module map
 
-33 modules: **15 core · 10 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections.
+32 modules: **16 core · 8 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections.
 
 ### Core — infrastructure, no business logic
 
@@ -18,7 +19,6 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [core_config](core_config.md) | Boot-time env via pydantic-settings. |
 | [core_database](core_database.md) | Async SQLAlchemy `Base`, session factory, migration runner. |
 | [core_webserver](core_webserver.md) | FastAPI app factory, lifespan, `RouteSpec` registry, SPA mount. |
-| [core_events](core_events.md) | In-process pub/sub; SSE bridge. |
 | [core_audit_log](core_audit_log.md) | Append-only timeline. |
 | [core_workspace](core_workspace.md) | `Workspace` + `WorkspaceProvider` Protocols; lifecycle + reaper. |
 | [core_observability](core_observability.md) | structlog + conditional OTel SDK + `spawn()`. |
@@ -29,7 +29,9 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [core_tasks](core_tasks.md) | `@task` decorator + atomic-in-session `enqueue()` over taskiq + Redis; owns the outbox table and worker process. |
 | [core_workflow](core_workflow.md) | Workflow engine — typed workflows + WorkflowCommand categories (skeleton). |
 | [core_agent_gateway](core_agent_gateway.md) | Wire protocol to customer-deployed WorkspaceAgents (skeleton). |
-| [core_sse_pubsub](core_sse_pubsub.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers (skeleton). |
+| [core_sse](core_sse.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers; declares `/api/sse` as org-scoped. |
+| [core_identity](core_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP. |
+| [core_sessions](core_sessions.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints. |
 
 ### Domain — business logic, vendor-neutral
 
@@ -42,9 +44,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [domain_tickets](domain_tickets.md) | Lifecycle `open → in_review → complete`. |
 | [domain_reviewer](domain_reviewer.md) | `ReviewJob` aggregate, per-PR queue, workflow. |
 | [domain_intake](domain_intake.md) | Inbound VCS event router; filters drafts/forks/bots. |
-| [domain_identity](domain_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP. |
 | [domain_orgs](domain_orgs.md) | Orgs, memberships, roles, invitations, SSO config, onboarding-status aggregator (). |
-| [domain_sessions](domain_sessions.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints. |
 
 ### Plugins — vendor-specific implementations
 

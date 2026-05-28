@@ -1,8 +1,8 @@
 """core/auth — security middleware, contextvars, action enum, route taxonomy.
 
 Pure infrastructure. The role-resolving dependency factories
-(`require(action)`, `public_route`) live in `domain/sessions` because they
-depend on `domain/identity` + `domain/orgs`. The middleware here enforces
+(`require(action)`, `public_route`) live in `core/sessions` because they
+depend on `core/identity` + `domain/orgs`. The middleware here enforces
 the X-Org-Slug requirement for ORG_SCOPED routes and the default-deny
 post-response guard.
 """

@@ -1,13 +1,10 @@
 /** Per-workflow activity-stream SSE hook (demand-pull).
  *
- * Opens an `EventSource` to `/api/workspaces/workflows/{id}/activity` when
+ * Opens an `EventSource` to `/api/sse/workspace_activity/{id}` when
  * mounted; closes on unmount. The connection lifecycle drives the
  * backend's `SubscriberRegistry.track/untrack`, which sends
  * `subscribe`/`unsubscribe` over the agent WebSocket — closing the tab
  * cuts off the WorkspaceAgent's activity batches all the way through.
- *
- * Replaces the legacy global `/api/events` ring-buffer model for
- * activity events (the global stream still carries other event kinds).
  */
 
 import { useEffect, useState } from "react";
@@ -27,7 +24,7 @@ export function useWorkflowActivityStream(
 
   useEffect(() => {
     if (!workflowExecutionId) return;
-    const url = `/api/workspaces/workflows/${workflowExecutionId}/activity`;
+    const url = `/api/sse/workspace_activity/${workflowExecutionId}`;
     const es = new EventSource(url, { withCredentials: true });
     es.onmessage = (ev) => {
       try {

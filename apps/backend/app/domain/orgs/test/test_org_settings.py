@@ -12,15 +12,15 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from app.core.auth import AuthMiddleware
-from app.domain.identity import _set_session_last_seen_for_tests
-from app.domain.identity import repository as identity_repo
-from app.domain.identity import sessions as session_lifecycle
+from app.core.identity import _set_session_last_seen_for_tests
+from app.core.identity import repository as identity_repo
+from app.core.identity import sessions as session_lifecycle
+from app.core.sessions import web as _auth_web  # noqa: F401
 from app.domain.orgs import OrgRow
 from app.domain.orgs import org_settings_web as _org_settings_web  # noqa: F401
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs import web as _orgs_web  # noqa: F401
 from app.domain.orgs.types import Role
-from app.domain.sessions import web as _auth_web  # noqa: F401
 
 
 def _patch_app() -> FastAPI:
@@ -206,7 +206,7 @@ async def test_patch_org_rejects_non_positive(seeded) -> None:
 
 @pytest.mark.asyncio
 async def test_patch_org_admin_can_set_workspace_provider_and_arn(seeded, db_session) -> None:
-    """Slice 86 SPA card PATCHes both fields together: provider + ARN. The
+    """The SPA card PATCHes both fields together: provider + ARN. The
     happy path returns 200 with the new values and a subsequent GET sees
     them — this is the SPA's save → re-hydrate round-trip."""
     sess = seeded["admin_sess"]

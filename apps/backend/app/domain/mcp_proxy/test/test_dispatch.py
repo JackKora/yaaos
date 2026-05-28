@@ -26,9 +26,9 @@ from sqlalchemy import select
 
 from app.core.audit_log import list_for_org
 from app.core.auth import AuthMiddleware
+from app.core.identity import repository as identity_repo
 from app.core.oauth import ProviderConfig
 from app.core.secrets import encrypt
-from app.domain.identity import repository as identity_repo
 from app.domain.integrations import _REGISTRY, create_credential
 from app.domain.mcp_proxy import (
     consume_broken_creds,
@@ -242,7 +242,7 @@ async def test_dispatch_success_audits_and_calls_upstream(db_session, stub_provi
 
 @pytest.mark.asyncio
 async def test_ten_dispatches_write_ten_audit_rows(db_session, stub_provider, stub_upstream) -> None:
-    """Phase 8 audit invariant: one row per JSON-RPC method, no batching."""
+    """Audit invariant: one row per JSON-RPC method, no batching."""
     del stub_provider, stub_upstream
     review, token = await _seed_review(db_session)
     await _seed_credential(db_session, org_id=review.org_id)
@@ -359,7 +359,7 @@ async def test_dispatch_wrong_review_id_rejected(db_session, stub_provider) -> N
 
 @pytest.mark.asyncio
 async def test_token_lifecycle_round_trip_revokes(db_session, stub_provider) -> None:
-    """Mint → dispatch → revoke → dispatch fails. Phase 5 spec item:
+    """Mint → dispatch → revoke → dispatch fails. The
     `mcp_review_tokens` row is gone after the review ends."""
     del stub_provider
     review, token = await _seed_review(db_session)

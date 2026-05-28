@@ -1,19 +1,23 @@
-"""GitHub intake type — event publishing contract.
+"""GitHub intake type — status-change producer contract.
 
 The HTTP boundary, signature verification, and install-binding lookups are
 covered by sibling test files. Here we drive `_prepare_pr_review` directly
-so the assertion stays focused on the SSE-bus side effect.
+so the assertion stays focused on the status-change side effects.
+
+The durable outbox + Redis-based SSE path is covered by
+`test_intake_producer_service.py` (requires Redis). This file asserts on the
+outbox row only (no Redis dependency).
 """
 
 from __future__ import annotations
 
-import asyncio
 from typing import Literal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
-from app.core.events import Event, EventFilter, subscribe
+from app.core.tasks import OutboxEntryRow
 from app.core.workflow import (
     CommandCategory,
     CommandContext,
@@ -89,21 +93,11 @@ def _pr_opened_payload() -> dict:
     return {"action": "opened", "pull_request": pr, "repository": {"full_name": "acme/web"}}
 
 
+@pytest.mark.service
 @pytest.mark.asyncio
-async def test_prepare_pr_review_publishes_ticket_status_changed(db_session, _stub_pr_review_engine) -> None:
-    """A GitHub PR-opened webhook must broadcast `TicketStatusChanged` so
-    the SSE subscriber invalidates the tickets list query. Without this,
-    the new PR row stays invisible in the SPA until a hard refresh."""
-    seen: list[Event] = []
-
-    async def consume() -> None:
-        async for ev in subscribe(EventFilter(kinds=["ticket_status_changed"])):
-            seen.append(ev)
-            return
-
-    consumer = asyncio.create_task(consume())
-    await asyncio.sleep(0.01)
-
+async def test_prepare_pr_review_enqueues_ticket_status_change(db_session, _stub_pr_review_engine) -> None:
+    """A GitHub PR-opened webhook must enqueue a durable notification task
+    so the status change reaches org members via `domain/notifications`."""
     org_id = uuid4()
     outcome = await GithubIntakeType()._prepare_pr_review(
         payload=_pr_opened_payload(),
@@ -115,10 +109,18 @@ async def test_prepare_pr_review_publishes_ticket_status_changed(db_session, _st
 
     assert outcome.detail == "pr_review_started"
 
-    await asyncio.wait_for(consumer, timeout=1.0)
-    assert len(seen) == 1
-    evt = seen[0]
-    assert evt.kind == "ticket_status_changed"
-    assert evt.previous_status is None  # type: ignore[attr-defined]
-    assert evt.new_status == "running"  # type: ignore[attr-defined]
-    assert evt.repo_external_id == "acme/web"  # type: ignore[attr-defined]
+    rows = (
+        (
+            await db_session.execute(
+                select(OutboxEntryRow).where(
+                    OutboxEntryRow.payload["task_name"].astext == "notifications.handle_ticket_status_change"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    args = rows[0].payload["args"]
+    assert args["new_status"] == "running"
+    assert args["org_id"] == str(org_id)

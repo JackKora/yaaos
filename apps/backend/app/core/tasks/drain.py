@@ -11,8 +11,8 @@ bodies must tolerate duplicates.
 kinds are logged + left for a future dispatcher to handle.
 
 The SELECT uses `FOR UPDATE SKIP LOCKED` so multiple worker processes
-don't double-dispatch the same row — Phase 1 runs one worker, but the
-safety is cheap to keep.
+don't double-dispatch the same row — the safety holds even with a single
+worker and is cheap to keep.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from taskiq import AsyncBroker
 
 from app.core.database import session
 from app.core.tasks.models import OutboxEntryRow
+from app.core.tasks.types import TaskMetadata
 
 log = structlog.get_logger("core.tasks.drain")
 
@@ -116,6 +117,7 @@ async def _taskiq_dispatcher_for(broker: AsyncBroker) -> Dispatcher:
             raise ValueError(f"no dispatcher registered for kind={kind!r}")
         task_name = payload.get("task_name")
         args = payload.get("args") or {}
+        metadata = payload.get("metadata")
         if not isinstance(task_name, str) or not task_name:
             raise ValueError("taskiq_enqueue payload missing task_name")
         if not isinstance(args, dict):
@@ -123,7 +125,14 @@ async def _taskiq_dispatcher_for(broker: AsyncBroker) -> Dispatcher:
         task = broker.find_task(task_name)
         if task is None:
             raise ValueError(f"taskiq task not registered: {task_name}")
-        await task.kicker().kiq(**args)
+        kicker = task.kicker()
+        if metadata is not None:
+            # Encode as a JSON string so taskiq's label serializer
+            # (which `str()`s non-primitive values) doesn't mangle it.
+            # The middleware parses with `TaskMetadata.model_validate_json`.
+            meta_json = TaskMetadata.model_validate(metadata).model_dump_json()
+            kicker = kicker.with_labels(metadata=meta_json)
+        await kicker.kiq(**args)
 
     return dispatch
 

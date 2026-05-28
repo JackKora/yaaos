@@ -11,9 +11,8 @@ and the bus dispatch:
    `FindingAcknowledged`.
 4. `dispatch_events` drains the bus.
 
-Plan §6.4 calls this out as the most fragile orchestration in the reply
-path — it's where the legacy code dropped the rationale-walking and the
-event/audit wiring.
+This is the most fragile orchestration in the reply path — the
+rationale-walking and the event/audit wiring are easy to drop.
 """
 
 from __future__ import annotations
@@ -23,7 +22,8 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.core.audit_log import Actor
+from app.core.audit_log import Actor, ActorKind
+from app.core.auth import org_context
 from app.domain.reviewer.llm import ClassifyReplyOutput
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.service import (
@@ -33,7 +33,7 @@ from app.domain.reviewer.service import (
 )
 
 # Cross-module persist + audit + event chain (reviewer aggregate ↔ repository ↔
-# audit_log ↔ core/events bus). Service tier.
+# audit_log ↔ core/sse bus). Service tier.
 pytestmark = pytest.mark.service
 
 
@@ -156,7 +156,8 @@ async def test_high_confidence_wontfix_reply_acks_finding_with_audit(db_session)
     # Persist + dispatch.
     await repo.save(aggregate)
     await dispatch_audits(aggregate, session=db_session, actor=Actor.system(), org_id=org_id)
-    events = await dispatch_events(aggregate)
+    async with org_context(org_id, ActorKind.SYSTEM):
+        events = dispatch_events(db_session, aggregate=aggregate)
 
     # Aggregate state is `acknowledged`.
     state = (
@@ -195,7 +196,7 @@ async def test_high_confidence_wontfix_reply_acks_finding_with_audit(db_session)
 
 @pytest.mark.asyncio
 async def test_acknowledgment_unclear_confirm_request_no_state_change_no_ack_audit(db_session) -> None:  # type: ignore[no-untyped-def]
-    """Plan §6.4 step 4: an `acknowledgment_unclear` reply gets a confirm-request,
+    """An `acknowledgment_unclear` reply gets a confirm-request,
     NOT a state change. No `finding_acknowledged` audit until the developer
     replies `confirm`.
     """
@@ -241,7 +242,8 @@ async def test_acknowledgment_unclear_confirm_request_no_state_change_no_ack_aud
 
     await repo.save(aggregate)
     await dispatch_audits(aggregate, session=db_session, actor=Actor.system(), org_id=org_id)
-    await dispatch_events(aggregate)
+    async with org_context(org_id, ActorKind.SYSTEM):
+        dispatch_events(db_session, aggregate=aggregate)
 
     # State must still be `open` — no transition until the developer confirms.
     state = (
