@@ -1,0 +1,185 @@
+"""Service test: GitHub PR-opened intake path writes to both outbox and SSE.
+
+Covers `_prepare_pr_review` producing:
+- one `notifications.handle_ticket_status_change` outbox row with org members, and
+- one general SSE event with kind "ticket_status_changed".
+
+The existing `test_intake_type.py` covers the old in-process SSE bus; this file
+covers the new durable outbox + Redis-based SSE path.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Literal
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import select
+
+from app.core.tasks import OutboxEntryRow
+from app.core.workflow import (
+    CommandCategory,
+    CommandContext,
+    Outcome,
+    Step,
+    TerminalAction,
+    Workflow,
+    scoped_engine,
+)
+from app.plugins.github.intake_type import GithubIntakeType
+
+
+class _NoopLocal:
+    kind: Literal["NoopIntake"] = "NoopIntake"
+    category = CommandCategory.LOCAL
+    restart_safe = True
+
+    async def execute(self, inputs, ctx: CommandContext) -> Outcome:
+        del inputs, ctx
+        return Outcome.success()
+
+
+@pytest.fixture
+def _stub_pr_review_engine():  # type: ignore[no-untyped-def]
+    """Stub workflow engine so _prepare_pr_review can call engine.start."""
+    with scoped_engine() as eng:
+        eng.register_command(_NoopLocal())
+        eng.register_workflow(
+            Workflow(
+                name="pr_review_v1",
+                version=1,
+                steps=(
+                    Step(
+                        id="only",
+                        command_kind="NoopIntake",
+                        transitions={"success": TerminalAction.COMPLETE_WORKFLOW},
+                    ),
+                ),
+                entry_step_id="only",
+            )
+        )
+        yield eng
+
+
+def _pr_payload() -> dict:
+    """Minimal pull_request.opened body."""
+    pr = {
+        "number": 42,
+        "title": "Add feature",
+        "body": "Body text",
+        "draft": False,
+        "merged": False,
+        "state": "open",
+        "html_url": "https://github.com/org/repo/pull/42",
+        "user": {"login": "alice", "type": "User"},
+        "head": {
+            "ref": "feature",
+            "sha": "abc123",
+            "repo": {"fork": False, "full_name": "org/repo"},
+        },
+        "base": {
+            "ref": "main",
+            "sha": "def456",
+            "repo": {"full_name": "org/repo"},
+        },
+        "created_at": "2026-05-01T10:00:00Z",
+        "updated_at": "2026-05-01T10:00:00Z",
+        "labels": [],
+    }
+    return {"action": "opened", "pull_request": pr, "repository": {"full_name": "org/repo"}}
+
+
+async def _seed_org_with_members(db_session, num_members: int = 2):  # type: ignore[no-untyped-def]
+    """Create org + users + memberships via public domain APIs.
+
+    Returns (org_id, [user_ids]).
+    """
+    from app.core.identity import create_user  # noqa: PLC0415
+    from app.domain.orgs import Role, create_membership, create_org  # noqa: PLC0415
+
+    slug = f"intake-org-{uuid4().hex[:8]}"
+    org = await create_org(db_session, slug=slug, display_name="Intake Test Org")
+    await db_session.flush()
+
+    user_ids = []
+    for i in range(num_members):
+        user = await create_user(db_session, display_name=f"Intake User {i}")
+        await db_session.flush()
+        await create_membership(
+            db_session,
+            user_id=user.id,
+            org_id=org.id,
+            role=Role.BUILDER,
+            handle=f"iuser{i}-{uuid4().hex[:4]}",
+        )
+        user_ids.append(user.id)
+
+    await db_session.commit()
+    return org.id, user_ids
+
+
+@pytest.mark.service
+@pytest.mark.asyncio
+async def test_intake_pr_opened_enqueues_notification_and_publishes_general(
+    db_session, redis_or_skip, _stub_pr_review_engine
+) -> None:
+    """A PR-opened webhook must:
+    - enqueue one outbox row for handle_ticket_status_change with member ids, and
+    - publish a general SSE event after commit with kind 'ticket_status_changed'.
+    """
+    from app.core.sse import reset_pubsub, subscribe_general  # noqa: PLC0415
+
+    reset_pubsub()
+    try:
+        org_id, user_ids = await _seed_org_with_members(db_session, num_members=2)
+        received: list[dict] = []
+
+        async def _consume() -> None:
+            async for event in subscribe_general(org_id):
+                received.append(event)
+                return
+
+        consumer = asyncio.create_task(_consume())
+        await asyncio.sleep(0.1)  # let Redis subscription register
+
+        outcome = await GithubIntakeType()._prepare_pr_review(
+            payload=_pr_payload(),
+            delivery=f"evt-{uuid4().hex}",
+            org_id=org_id,
+            session=db_session,
+        )
+        await db_session.commit()
+
+        assert outcome.detail == "pr_review_started"
+
+        # SSE event
+        await asyncio.wait_for(consumer, timeout=3.0)
+        assert len(received) == 1
+        evt = received[0]
+        assert evt["kind"] == "ticket_status_changed"
+        assert evt["new_status"] == "running"
+        assert "ts" in evt
+
+        # Outbox row
+        rows = (
+            (
+                await db_session.execute(
+                    select(OutboxEntryRow).where(
+                        OutboxEntryRow.payload["task_name"].astext
+                        == "notifications.handle_ticket_status_change"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert len(rows) == 1, f"expected 1 outbox row, got {len(rows)}"
+        args = rows[0].payload["args"]
+        assert args["new_status"] == "running"
+        enqueued_ids = set(args["member_user_ids"])
+        expected_ids = {str(u) for u in user_ids}
+        assert enqueued_ids == expected_ids
+    finally:
+        reset_pubsub()

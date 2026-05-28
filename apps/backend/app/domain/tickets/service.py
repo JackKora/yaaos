@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit_log import Actor, audit_for_ticket
 from app.core.database import session as db_session
 from app.core.events import Event, publish_after_commit
+from app.core.sse import GeneralEventKind, publish_general_after_commit
+from app.core.tasks import enqueue
 from app.domain.tickets.models import TicketRow
 
 # collapse: single 5-state vocabulary. The legacy 4-state lifecycle
@@ -187,6 +189,30 @@ async def create(
             new_status="pending",
         ),
     )
+    from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
+    from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
+
+    members = await list_active_member_ids(org_id, session=session)
+    publish_general_after_commit(
+        session,
+        org_id=org_id,
+        kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+        payload={
+            "ticket_id": str(row.id),
+            "new_status": "pending",
+            "previous_status": None,
+        },
+    )
+    await enqueue(
+        handle_ticket_status_change,
+        args={
+            "ticket_id": str(row.id),
+            "member_user_ids": [str(u) for u in members],
+            "org_id": str(org_id),
+            "new_status": "pending",
+        },
+        session=session,
+    )
     return row.id, True
 
 
@@ -262,6 +288,30 @@ async def create_for_pr(
                 previous_status=None,
                 new_status="running",
             ),
+        )
+        from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
+        from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
+
+        members = await list_active_member_ids(org_id, session=s)
+        publish_general_after_commit(
+            s,
+            org_id=org_id,
+            kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+            payload={
+                "ticket_id": str(row_id),
+                "new_status": "running",
+                "previous_status": None,
+            },
+        )
+        await enqueue(
+            handle_ticket_status_change,
+            args={
+                "ticket_id": str(row_id),
+                "member_user_ids": [str(u) for u in members],
+                "org_id": str(org_id),
+                "new_status": "running",
+            },
+            session=s,
         )
         await s.commit()
     return await get(row_id, org_id=org_id)
@@ -571,5 +621,29 @@ async def _transition(
                 new_status=new_status,
                 reason=reason,
             ),
+        )
+        from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
+        from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
+
+        members = await list_active_member_ids(org_id, session=s)
+        publish_general_after_commit(
+            s,
+            org_id=org_id,
+            kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+            payload={
+                "ticket_id": str(ticket_id),
+                "new_status": new_status,
+                "previous_status": prev,
+            },
+        )
+        await enqueue(
+            handle_ticket_status_change,
+            args={
+                "ticket_id": str(ticket_id),
+                "member_user_ids": [str(u) for u in members],
+                "org_id": str(org_id),
+                "new_status": new_status,
+            },
+            session=s,
         )
         await s.commit()

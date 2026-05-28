@@ -333,20 +333,33 @@ class GithubIntakeType:
             session=session,
         )
 
-        # Broadcast the ticket-creation status change so the SSE subscriber
-        # invalidates the tickets list query.
-        from app.core.events import publish_after_commit  # noqa: PLC0415
-        from app.domain.tickets import TicketStatusChanged  # noqa: PLC0415
+        # Broadcast the ticket-creation status change via the durable outbox +
+        # after-commit Redis publish so the SPA's general SSE channel is notified.
+        from app.core.sse import GeneralEventKind, publish_general_after_commit  # noqa: PLC0415
+        from app.core.tasks import enqueue  # noqa: PLC0415
+        from app.domain.notifications import handle_ticket_status_change  # noqa: PLC0415
+        from app.domain.orgs import list_active_member_ids  # noqa: PLC0415
 
-        publish_after_commit(
+        members = await list_active_member_ids(org_id, session=session)
+        publish_general_after_commit(
             session,
-            TicketStatusChanged(
-                ticket_id=ticket_id,
-                repo_external_id=repo_full,
-                pr_id=upserted_pr.id,
-                previous_status=None,
-                new_status="running",
-            ),
+            org_id=org_id,
+            kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+            payload={
+                "ticket_id": str(ticket_id),
+                "new_status": "running",
+                "previous_status": None,
+            },
+        )
+        await enqueue(
+            handle_ticket_status_change,
+            args={
+                "ticket_id": str(ticket_id),
+                "member_user_ids": [str(u) for u in members],
+                "org_id": str(org_id),
+                "new_status": "running",
+            },
+            session=session,
         )
 
         # Start the workflow on the endpoint's session — outbox row enqueued
