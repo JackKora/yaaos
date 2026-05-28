@@ -23,6 +23,7 @@ from app.domain.orgs.invitations import (
     invite,
     remove_member,
 )
+from app.domain.orgs.memberships import list_active_member_ids
 from app.domain.orgs.models import InvitationRow, MembershipRow, OrgRow
 from app.domain.orgs.onboarding import (
     OnboardingStatus,
@@ -103,6 +104,7 @@ __all__ = [
     "get_vcs",
     "install_coding_agent",
     "invite",
+    "list_active_member_ids",
     "list_coding_agents",
     "register_assertion_verifier",
     "register_onboarding_contributor",

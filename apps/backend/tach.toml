@@ -790,6 +790,7 @@ expose = [
   "get_vcs",
   "install_coding_agent",
   "invite",
+  "list_active_member_ids",
   "list_coding_agents",
   "register_assertion_verifier",
   "register_onboarding_contributor",
