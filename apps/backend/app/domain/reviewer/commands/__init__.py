@@ -140,7 +140,7 @@ async def _load_finding_by_id(pr_id: UUID, org_id: UUID, finding_id: UUID):  # t
 
 def _activity_publisher_for(ctx: CommandContext):  # type: ignore[no-untyped-def]
     """Build an `on_activity` callback that fan-outs each `ActivityEvent`
-    to `core/sse` on `channel_for(ctx.workflow_execution_id)`.
+    to `core/sse` via `publish_workspace_activity(org_id, wfx_id, payload)`.
 
     Hands the in-memory workspace path the same SSE feed the remote-agent
     path gets — the SPA's `/api/workflows/{id}/activity` consumer sees
@@ -153,13 +153,14 @@ def _activity_publisher_for(ctx: CommandContext):  # type: ignore[no-untyped-def
     """
 
     async def _publisher(event):  # type: ignore[no-untyped-def]
-        from app.core.sse import channel_for  # noqa: PLC0415
-        from app.core.sse import publish as sse_publish  # noqa: PLC0415
+        from app.core.auth import require_org_context  # noqa: PLC0415
+        from app.core.sse import publish_workspace_activity  # noqa: PLC0415
 
         try:
-            await sse_publish(
-                channel_for(ctx.workflow_execution_id),
-                event.model_dump(mode="json"),
+            await publish_workspace_activity(
+                org_id=require_org_context(),
+                workflow_execution_id=UUID(ctx.workflow_execution_id),
+                payload=event.model_dump(mode="json"),
             )
         except Exception:
             log.exception(

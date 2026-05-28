@@ -21,11 +21,12 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select
 
+from app.core.audit_log import ActorKind
+from app.core.auth import org_context
 from app.core.plugin_kit import PluginMeta
 from app.core.sse import (
-    channel_for,
     reset_pubsub,
-    subscribe,
+    subscribe_workspace_activity,
 )
 from app.core.tasks import OutboxEntryRow, drain_once
 from app.core.workflow import WorkflowExecutionRow, WorkflowState, scoped_engine
@@ -117,7 +118,13 @@ async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]
             assert kind == "taskiq_enqueue"
             decorated = get_broker().find_task(payload["task_name"])
             assert decorated is not None
-            await decorated.original_func(**payload["args"])
+            metadata = payload.get("metadata") or {}
+            org_id_str = metadata.get("org_id") if isinstance(metadata, dict) else None
+            if org_id_str:
+                async with org_context(UUID(org_id_str), ActorKind.SYSTEM):
+                    await decorated.original_func(**payload["args"])
+            else:
+                await decorated.original_func(**payload["args"])
 
         await drain_once(db_session, dispatcher=_dispatcher)
         await db_session.commit()
@@ -185,18 +192,23 @@ async def test_in_memory_review_publishes_activity_to_sse(  # type: ignore[no-un
     with register_fake_coding_agent() as fake:
         fake.activity_events = canned_events
 
-        wfx_id = await _engine_with_in_memory.start(
-            workflow_name="pr_review_v1",
-            ticket_id=str(ticket_id),
-            workspace_provider="in_memory",
-            session=db_session,
-        )
+        # Enter org_context so enqueue() propagates org_id through the outbox
+        # metadata → the drain's middleware reads it back and enters org_context
+        # for each task body, satisfying require_org_context() in the activity
+        # publisher.
+        async with org_context(org_id, ActorKind.SYSTEM):
+            wfx_id = await _engine_with_in_memory.start(
+                workflow_name="pr_review_v1",
+                ticket_id=str(ticket_id),
+                workspace_provider="in_memory",
+                session=db_session,
+            )
         await db_session.commit()
 
         received: list[dict] = []
 
         async def _reader() -> None:
-            async for event in subscribe(channel_for(wfx_id)):
+            async for event in subscribe_workspace_activity(org_id, UUID(wfx_id)):
                 received.append(event)
                 if len(received) >= 3:
                     return

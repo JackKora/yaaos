@@ -17,17 +17,21 @@ from app.core.agent_gateway import (
     get_subscriber_registry,
 )
 from app.core.agent_gateway.subscribers import _reset_subscriber_singleton_for_tests
-from app.core.sse import channel_for, reset_pubsub, subscribe
+from app.core.sse import reset_pubsub, subscribe_workspace_activity
 
 pytestmark = pytest.mark.usefixtures("redis_or_skip")
 
 
-def _install_bearer_stub(agent_id: UUID) -> str:
+def _install_bearer_stub(agent_id: UUID) -> tuple[str, UUID]:
     """Install a `bearers.verify` stub that accepts a fixed plaintext +
     returns a context bound to `agent_id`. Direct DB-backed bearer
     coverage lives in `test_bearers.py`; here we test the WS protocol
     without crossing event-loop boundaries between the test session and
-    TestClient's portal."""
+    TestClient's portal.
+
+    Returns `(token, org_id)` so callers can subscribe to the org-scoped
+    workspace-activity channel.
+    """
     expected = f"bearer-{uuid4().hex}"
     org_id = uuid4()
 
@@ -37,7 +41,7 @@ def _install_bearer_stub(agent_id: UUID) -> str:
         return bearers.BearerContext(bearer_id=uuid4(), agent_id=agent_id, org_id=org_id)
 
     bearers.set_verify_override(_stub)
-    return expected
+    return expected, org_id
 
 
 def _app() -> FastAPI:
@@ -74,7 +78,7 @@ def test_ws_close_4401_when_missing_bearer() -> None:
 def test_ws_accepts_bearer_and_registers_sender() -> None:
     app = _app()
     agent_id = uuid4()
-    bearer = _install_bearer_stub(agent_id)
+    bearer, _ = _install_bearer_stub(agent_id)
     with TestClient(app) as client:
         with client.websocket_connect(
             f"/api/v1/agents/{agent_id}/activity",
@@ -93,7 +97,7 @@ def test_ws_rejects_when_bearer_agent_id_does_not_match_path() -> None:
     app = _app()
     agent_id_in_bearer = uuid4()
     different_path_agent = uuid4()
-    bearer = _install_bearer_stub(agent_id_in_bearer)
+    bearer, _ = _install_bearer_stub(agent_id_in_bearer)
     with TestClient(app) as client:
         with pytest.raises(WebSocketDisconnect) as exc_info:
             with client.websocket_connect(
@@ -108,18 +112,17 @@ def test_ws_rejects_when_bearer_agent_id_does_not_match_path() -> None:
 async def test_activity_batch_fans_out_to_sse() -> None:
     """An incoming `activity_batch` carries `workflow_execution_id` (the
     agent learned it from the `subscribe` message it received) and the
-    handler publishes each event to `activity:{workflow_execution_id}`
-    on the in-memory pubsub."""
+    handler publishes each event to the org-scoped workspace-activity
+    channel via `publish_workspace_activity`."""
     app = _app()
     agent_id = uuid4()
     workflow_id = uuid4()
-    bearer = _install_bearer_stub(agent_id)
-    channel = channel_for(str(workflow_id))
+    bearer, org_id = _install_bearer_stub(agent_id)
 
     received: list[dict] = []
 
     async def _consume() -> None:
-        async for evt in subscribe(channel):
+        async for evt in subscribe_workspace_activity(org_id, workflow_id):
             received.append(evt)
             if len(received) == 2:
                 return
@@ -179,7 +182,7 @@ async def test_publish_with_no_subscriber_drops_nothing_breaks_nothing() -> None
     app = _app()
     agent_id = uuid4()
     workflow_id = uuid4()
-    bearer = _install_bearer_stub(agent_id)
+    bearer, _ = _install_bearer_stub(agent_id)
 
     def _send_batch() -> None:
         with TestClient(app) as client:

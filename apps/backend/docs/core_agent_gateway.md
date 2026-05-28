@@ -14,7 +14,7 @@ Wire types (mirror [`apps/backend/openapi/agent-api.yaml`](../openapi/agent-api.
 - `enqueue_command(agent_id, command)` — push an AgentCommand onto the agent's FIFO; wakes any blocked long-poll.
 - `claim_next(agent_id, *, wait_seconds)` — long-poll consume; returns `None` on timeout.
 - `record_heartbeat(agent_id, request, *, session)` — bumps liveness + computes `forgotten_workspaces`.
-- `record_agent_event(event, *, session)` — applies the stale-claim guard; on terminal events, enqueues `workflow.handle_agent_event` in the outbox. On progress events, republishes to `activity:{workflow_execution_id}` via [`core/sse`](core_sse.md) so the SPA's SSE live-tail picks them up.
+- `record_agent_event(event, *, session)` — applies the stale-claim guard; on terminal events, enqueues `workflow.handle_agent_event` in the outbox. On progress events, republishes to the org-scoped workspace-activity channel via `publish_workspace_activity` in [`core/sse`](core_sse.md) so the SPA's SSE live-tail picks them up.
 - `record_workspace_event(event, *, session)` — updates the workspace mirror; same stale-claim guard.
 - `pick_agent_for_org(org_id, *, session)` — returns an `AgentRef` (least-loaded reachable pod for the org) or `None` when no pod is reachable. Load is in-process queue depth; ties break on most-recent heartbeat.
 - `has_any_reachable_agent(*, session)` — returns `True` when any pod heartbeated within the last 90 s; used for global health checks without exposing the Row.
@@ -75,14 +75,14 @@ Wrapped endpoints:
    - Returns `{bearer, expires_at, agent_id}`.
 2. **Long-poll command claim.** Free agent slots each post `claim` with `wait_seconds=30`. Backend's per-agent FIFO returns the head, or 204 on timeout. Internally an `asyncio.Condition` per agent wakes the poll the moment `enqueue_command(agent_id, cmd)` runs.
 3. **Heartbeat reconciliation.** Every ~30s the agent posts its workspace inventory. Backend bumps liveness and reads back `forgotten_workspaces` — anything the agent reports that's destroyed or unknown control-plane-side.
-4. **Event ingestion.** Workspace-state and AgentCommand events flow through their respective endpoints. The single-flight claim columns set by [`core/workspace.try_claim`](core_workspace.md) gate every event: `command_id` not in any workspace's `current_command_id` → 410. Terminal AgentEvents enqueue `workflow.handle_agent_event` via the outbox in the same transaction; progress events republish to `activity:{workflow_execution_id}` via [`core/sse`](core_sse.md) — the same channel the WebSocket activity-batch path writes to, so HTTP-posted progress and WS-batched activity converge on one subscriber surface.
+4. **Event ingestion.** Workspace-state and AgentCommand events flow through their respective endpoints. The single-flight claim columns set by [`core/workspace.try_claim`](core_workspace.md) gate every event: `command_id` not in any workspace's `current_command_id` → 410. Terminal AgentEvents enqueue `workflow.handle_agent_event` via the outbox in the same transaction; progress events call `publish_workspace_activity(org_id, wfx_id, payload)` in [`core/sse`](core_sse.md) — the same org-scoped channel the WebSocket activity-batch path writes to, so HTTP-posted progress and WS-batched activity converge on one subscriber surface.
 
 ### Activity WebSocket
 
 The bidirectional `WSS /api/v1/agents/{id}/activity` carries demand-pull activity:
 
 - Auth on upgrade — `Bearer <token>` validated against `bearer_tokens` via `bearers.verify`. Missing / empty → close with `4401`.
-- **Agent → backend** `activity_batch` messages publish each event to `activity:{workflow_execution_id}` via [`core/sse`](core_sse.md).
+- **Agent → backend** `activity_batch` messages publish each event to the org-scoped workspace-activity channel via `publish_workspace_activity` in [`core/sse`](core_sse.md).
 - **Backend → agent** `subscribe` / `unsubscribe` messages, dispatched by `SubscriberRegistry` on `0 → 1` / `1 → 0` UI-subscriber-count transitions. No activity flows when nobody's watching.
 - **WS reconnect**: `SubscriberRegistry.register_sender` replays a `subscribe` for every active route whose `agent_id` matches the reconnecting agent so the agent's rebuilt SubscriptionSet picks up where the old connection left off.
 - `SubscriberRegistry` is process-local.
@@ -96,6 +96,8 @@ Reads `workspaces` ([`core/workspace`](core_workspace.md)) to resolve the lookup
 
 ## How it's tested
 
-`test/test_service.py` covers: per-agent FIFO independence; immediate return when empty; long-poll wakes on enqueue; long-poll times out cleanly; heartbeat reconciliation reports unknown workspaces; terminal AgentEvent enqueues `workflow.handle_agent_event` with the resolved workflow id; progress events do NOT enqueue but DO publish to `activity:{workflow_execution_id}` for SSE live-tail; stale `command_id` raises `StaleClaimError`; workspace-state `ready` event transitions row to `active`; stale workspace event raises; `pick_agent_for_org` returns `AgentRef` for a fresh pod, `None` for no agents / stale heartbeat / non-reachable state, and prefers the least-loaded pod; `has_any_reachable_agent` returns `True`/`False` based on 90-s cutoff. Tests call `clear_queues()` between runs to reset the in-memory dispatch state.
+`test/test_service.py` covers: per-agent FIFO independence; immediate return when empty; long-poll wakes on enqueue; long-poll times out cleanly; heartbeat reconciliation reports unknown workspaces; terminal AgentEvent enqueues `workflow.handle_agent_event` with the resolved workflow id; progress events do NOT enqueue but DO publish to the org-scoped workspace-activity channel via `publish_workspace_activity` for SSE live-tail; stale `command_id` raises `StaleClaimError`; workspace-state `ready` event transitions row to `active`; stale workspace event raises; `pick_agent_for_org` returns `AgentRef` for a fresh pod, `None` for no agents / stale heartbeat / non-reachable state, and prefers the least-loaded pod; `has_any_reachable_agent` returns `True`/`False` based on 90-s cutoff. Tests call `clear_queues()` between runs to reset the in-memory dispatch state.
+
+`test/test_activity_publish_service.py` covers: WS `activity_batch` path delivers events to `subscribe_workspace_activity(org_id, wfx_id)` on the org-scoped channel.
 
 Endpoint coverage rides on the service tests + the bearer-dep guards.

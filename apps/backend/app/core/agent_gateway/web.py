@@ -44,10 +44,9 @@ from app.core.agent_gateway.types import (
     WorkspaceEvent,
 )
 from app.core.audit_log import ActorKind
-from app.core.auth import org_context, public_route
+from app.core.auth import org_context, public_route, require_org_context
 from app.core.database import session as db_session
-from app.core.sse import channel_for
-from app.core.sse import publish as sse_publish
+from app.core.sse import publish_workspace_activity
 from app.core.webserver import RouteSpec, register_routes
 
 log = structlog.get_logger("agent_gateway.web")
@@ -290,8 +289,8 @@ async def activity_ws(websocket: WebSocket, agent_id: UUID = Path(...)) -> None:
 
     Protocol:
       - **WorkspaceAgent → backend:** `{"type": "activity_batch", "workflow_execution_id": "...", "events": [...]}`.
-        Backend publishes each event to `activity:{workflow_execution_id}`
-        via `core/sse`.
+        Backend publishes each event to the org-scoped channel via
+        `publish_workspace_activity(org_id, workflow_execution_id, payload)`.
       - **Backend → WorkspaceAgent:** `{"type": "subscribe", "workspace_id": "...", "workflow_execution_id": "..."}` /
         `{"type": "unsubscribe", "workspace_id": "...", "workflow_execution_id": "..."}`.
         Driven by the subscriber registry's 0→1 / 1→0 transitions.
@@ -354,10 +353,13 @@ async def activity_ws(websocket: WebSocket, agent_id: UUID = Path(...)) -> None:
                             keys=list(msg.keys()),
                         )
                         continue
-                    channel = channel_for(str(workflow_execution_id))
                     for event in events:
                         if isinstance(event, dict):
-                            await sse_publish(channel, event)
+                            await publish_workspace_activity(
+                                org_id=require_org_context(),
+                                workflow_execution_id=UUID(workflow_execution_id),
+                                payload=event,
+                            )
                 else:
                     log.info(
                         "agent_gateway.ws.unknown_kind",

@@ -6,7 +6,7 @@
 
 Three pipelines in one module:
 
-- **Activity pipeline** — bridges activity-event producers (`core/agent_gateway` WebSocket ingress, reviewer's direct publisher) and the per-workflow SSE handler. Channel shape: `activity:{workflow_execution_id}`.
+- **Activity pipeline** — legacy per-workflow activity channel. Still used by `domain/orgs/workspace_status_web.py` (the old SPA live-tail route). Channel shape: `activity:{workflow_execution_id}`.
 - **General-event pipeline** — org-scoped typed events consumed by the SPA's live-update stream. Channel shape: `{org_id}:general`. Uses `GeneralEventKind` as the discriminator. `publish_general_after_commit` ties publish lifetime to a transaction — rollbacks silently discard stashed events so rolled-back transactions never emit SPA events.
 - **Workspace-activity pipeline** — per-org per-workflow activity stream with channel isolation by both org and workflow execution. Channel shape: `{org_id}:workspace_activity:{workflow_execution_id}`. Raw agent event dict passed through unchanged — no envelope, no `ts` stamping.
 

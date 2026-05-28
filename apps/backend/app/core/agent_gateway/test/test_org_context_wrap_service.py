@@ -149,18 +149,14 @@ async def test_activity_ws_endpoint_enters_org_context(db_session) -> None:
     captured: list[UUID | None] = []
 
     import app.core.agent_gateway.web as gw_web  # noqa: PLC0415
-    import app.core.sse as core_sse  # noqa: PLC0415
 
-    real_sse_publish = core_sse.publish
+    real_publish_workspace_activity = gw_web.publish_workspace_activity
 
-    async def _capturing_publish(channel, payload):
+    async def _capturing_publish_workspace_activity(*, org_id, workflow_execution_id, payload):
         captured.append(current_org_id())
         # Don't actually hit Redis in this test — just capture.
 
-    core_sse.publish = _capturing_publish
-    # Also patch the import in gw_web (it does `from app.core.sse import publish as sse_publish`)
-    real_gw_sse_publish = gw_web.sse_publish
-    gw_web.sse_publish = _capturing_publish
+    gw_web.publish_workspace_activity = _capturing_publish_workspace_activity
 
     try:
         from starlette.testclient import TestClient  # noqa: PLC0415
@@ -184,10 +180,11 @@ async def test_activity_ws_endpoint_enters_org_context(db_session) -> None:
 
                 time.sleep(0.1)
     finally:
-        gw_web.sse_publish = real_gw_sse_publish
-        core_sse.publish = real_sse_publish
+        gw_web.publish_workspace_activity = real_publish_workspace_activity
 
-    assert len(captured) >= 1, "sse_publish should have been called at least once from within the WS handler"
+    assert len(captured) >= 1, (
+        "publish_workspace_activity should have been called at least once from within the WS handler"
+    )
     assert captured[0] == org_id, (
         f"current_org_id() inside the WS handler was {captured[0]!r}; expected {org_id!r}"
     )
