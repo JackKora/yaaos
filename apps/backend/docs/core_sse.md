@@ -1,4 +1,4 @@
-# core/sse_pubsub
+# core/sse
 
 > Redis-backed pub/sub for ActivityEvent fanout from `core/agent_gateway` (and the reviewer's direct activity publisher) to SSE handlers.
 
@@ -6,9 +6,11 @@
 
 Bridges the activity-event producers (the WebSocket ingress in `core/agent_gateway` and the in-memory reviewer's direct publisher) and the per-workflow SSE handler. Publishers call `publish(channel, event)` with `channel = activity:{workflow_execution_id}`; subscribers iterate `async for event in subscribe(channel)`. Backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process reaches an SSE subscriber attached to a different web process. Fire-and-forget per Redis semantics — slow consumers do not backpressure publishers, and no event persistence.
 
+The `/api/sse` prefix is declared as `ORG_SCOPED` in `core/auth/types.py` so future routes mounted at `core/sse/web.py` are enforced without additional classification work.
+
 ## Public interface
 
-Exported from `app/core/sse_pubsub/__init__.py`:
+Exported from `app/core/sse/__init__.py`:
 
 - `publish(channel, event)` — fan out to every subscriber on `channel`; returns the Redis-reported delivery count (number of subscribers across the cluster).
 - `subscribe(channel)` — async iterator that yields each subsequent event published on `channel`. Subscriber registers a Redis subscription on first iteration and unregisters when the iterator exits.
@@ -16,7 +18,7 @@ Exported from `app/core/sse_pubsub/__init__.py`:
 - `subscriber_count(channel)` — diagnostic; **local-process** subscriber count (Redis's `PUBSUB NUMSUB` is cluster-wide and not what callers want).
 - `RedisPubsub` — class form for callers that want to construct their own bus (mostly tests).
 - `get_pubsub()` — process-singleton accessor.
-- `shutdown()` — closes the singleton and sets it to `None`; self-registered with the web shutdown registry at import time (web only — the worker process doesn't serve SSE).
+- `shutdown()` — closes the singleton and sets it to `None`; self-registered with both the web and worker shutdown registries at import time. Both processes host Redis subscriptions (the worker publishes; the web process subscribes), so both need cleanup.
 - `reset_pubsub()` — drops the singleton synchronously; used by tests to isolate singleton state between runs without going through the async `shutdown()` path.
 
 ## Module architecture
@@ -39,4 +41,6 @@ None. The module is transport — Redis is the substrate.
 
 ## How it's tested
 
-`test/test_service.py` covers: publish with no subscribers returns 0; fan-out delivers to every subscriber; subscriber bookkeeping balances on iterator exit; singleton identity. Tests use the `redis_or_skip` fixture from the root conftest so local dev workflows without Redis aren't blocked — when Redis is reachable, they hit real Redis with per-test unique channel names.
+- `test/test_service.py` — round-trip: publish with no subscribers returns 0; fan-out delivers to every subscriber; subscriber bookkeeping balances on iterator exit; singleton identity. Uses the `redis_or_skip` fixture so local dev without Redis isn't blocked.
+- `test/test_shutdown.py` — singleton lifecycle: `shutdown()` drops singleton; idempotent.
+- `test/test_shutdown_service.py` — hook registration: `shutdown()` appears in both web and worker shutdown registries; draining either registry drops the singleton.

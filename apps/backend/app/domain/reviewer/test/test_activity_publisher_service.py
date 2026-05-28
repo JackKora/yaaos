@@ -1,9 +1,9 @@
 """In-memory provider activity-stream wiring: `_activity_publisher_for`
 shipping `ActivityEvent`s from a coding-agent invocation to
-`core/sse_pubsub` on `channel_for(workflow_execution_id)`.
+`core/sse` on `channel_for(workflow_execution_id)`.
 
 Closes the Phase 8b ledger item: "In-memory provider: taskiq worker
-publishes directly to `core/sse_pubsub` (no WebSocket wire)." Workspace
+publishes directly to `core/sse` (no WebSocket wire)." Workspace
 command bodies now pass a publisher to `coding_agent.review`/etc., and
 the in-memory pubsub fans events out to live subscribers without
 needing the remote agent's WebSocket transport.
@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.sse_pubsub import (
+from app.core.sse import (
     channel_for,
     reset_pubsub,
     subscribe,

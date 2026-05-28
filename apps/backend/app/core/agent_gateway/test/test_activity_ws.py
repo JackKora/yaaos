@@ -1,5 +1,5 @@
 """Phase 8b — Activity WebSocket: auth gate, sender registration,
-activity_batch publishes to sse_pubsub, demand-pull semantics."""
+activity_batch publishes to core/sse, demand-pull semantics."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.core.agent_gateway import (
     get_subscriber_registry,
 )
 from app.core.agent_gateway.subscribers import _reset_subscriber_singleton_for_tests
-from app.core.sse_pubsub import channel_for, reset_pubsub, subscribe
+from app.core.sse import channel_for, reset_pubsub, subscribe
 
 pytestmark = pytest.mark.usefixtures("redis_or_skip")
 
@@ -105,7 +105,7 @@ def test_ws_rejects_when_bearer_agent_id_does_not_match_path() -> None:
 
 
 @pytest.mark.asyncio
-async def test_activity_batch_fans_out_to_sse_pubsub() -> None:
+async def test_activity_batch_fans_out_to_sse() -> None:
     """An incoming `activity_batch` carries `workflow_execution_id` (the
     agent learned it from the `subscribe` message it received) and the
     handler publishes each event to `activity:{workflow_execution_id}`
@@ -133,7 +133,7 @@ async def test_activity_batch_fans_out_to_sse_pubsub() -> None:
 
     # Run the WS client in a thread because TestClient.websocket_connect
     # is synchronous and we need to keep the event loop running for the
-    # sse_pubsub consumer. Without the small sleep before the with-exit,
+    # core/sse consumer. Without the small sleep before the with-exit,
     # the close races the server's receive_text() and the activity_batch
     # frame is dropped before the handler processes it (starlette's
     # TestClient WS portal: send_json is fire-and-forget; closing the WS

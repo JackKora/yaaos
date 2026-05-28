@@ -17,7 +17,7 @@ imports and lets tests inject a list-collecting fake.
 
 In-process for now. Multi-instance backends will route the
 subscribe / unsubscribe via Redis pub/sub (out of scope for foundations
-— same Phase 8b follow-on as the Redis backend for `core/sse_pubsub`).
+— same Phase 8b follow-on as the Redis backend for `core/sse`).
 """
 
 from __future__ import annotations

@@ -2,9 +2,9 @@
 
 Drives `pr_review_v1` through the workflow engine with a Fake
 coding-agent that emits a canned `ActivityEvent` sequence. Asserts the
-SPA's SSE consumer (subscribing via `core/sse_pubsub.subscribe`) sees
+SPA's SSE consumer (subscribing via `core/sse.subscribe`) sees
 each event verbatim — proving the in-memory taskiq worker path
-publishes activity straight to `sse_pubsub` without needing the
+publishes activity straight to `sse` without needing the
 remote-agent WebSocket transport.
 
 Closes the activity-stream-against-both-providers audit row for
@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.plugin_kit import PluginMeta
-from app.core.sse_pubsub import (
+from app.core.sse import (
     channel_for,
     reset_pubsub,
     subscribe,
@@ -123,7 +123,7 @@ async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]
         await db_session.commit()
 
 
-async def test_in_memory_review_publishes_activity_to_sse_pubsub(  # type: ignore[no-untyped-def]
+async def test_in_memory_review_publishes_activity_to_sse(  # type: ignore[no-untyped-def]
     db_session, _engine_with_in_memory
 ):
     """Subscribe to the workflow's activity channel; run `pr_review_v1`

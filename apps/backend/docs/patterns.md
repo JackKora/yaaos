@@ -304,7 +304,7 @@ Tests obey the **same import rules as production code** — enforced by `tach ch
 - No test-only seams that bypass module interfaces. If a seam is needed, it belongs in `app/testing/` — but `app/testing/` is itself tach-governed; it may only import from `__all__`-gated module paths.
 - Service tests of multi-hop pipelines are sliced per-hop: each service test exercises one entry point end-to-end; chain tests by asserting on the durable state that the next hop reads, not by calling internal functions of the next module.
 - Singleton reset for test isolation: never poke private state via a submodule attribute (`mod._svc._singleton = None`). Use a named helper instead. Two flavors by reach:
-  - **Cross-module reach** (module A's tests reset module B's state) → public symbol in B's `__all__` and tach interface. Example: `sse_pubsub.reset_pubsub()` — called from reviewer / orgs / agent_gateway tests.
+  - **Cross-module reach** (module A's tests reset module B's state) → public symbol in B's `__all__` and tach interface. Example: `sse.reset_pubsub()` — called from reviewer / orgs / agent_gateway tests.
   - **Intra-module reach only** (module's own `test/` directory) → private `_*_for_tests` helper in B's `service.py` (or sibling submodule), NOT in `__all__`, NOT in tach `expose`. Tests reach it via direct submodule import — intra-module, tach-permitted. Examples: `redis._reset_clients_for_tests`, `agent_gateway.subscribers._reset_subscriber_singleton_for_tests`, `orgs.onboarding._reset_contributors_for_tests`.
 
 ### DI over `@patch`
@@ -392,7 +392,7 @@ Both registries are re-exported from `core.webserver` and `core.tasks` for conve
 
 FastAPI lifespan teardown (in `core/webserver/app_factory.py`) iterates `iter_web_shutdown_hooks()` in reverse order. Worker runtime teardown (in `core/tasks/runtime.py`) iterates `iter_worker_shutdown_hooks()` in reverse order. Reverse order means the most-recently-registered (most-dependent) modules shut down first.
 
-`app/web.py` and `app/worker.py` pin the foundational shutdown order by explicitly importing `app.core.database` and `app.core.redis` near the top of step 2, before any module that depends on them. That guarantees those two register their hooks first and therefore shut down last — anything imported transitively later (tasks, sse_pubsub, agent_gateway) shuts down before them. Don't rely on transitive imports for hook ordering; pin the ones that matter.
+`app/web.py` and `app/worker.py` pin the foundational shutdown order by explicitly importing `app.core.database` and `app.core.redis` near the top of step 2, before any module that depends on them. That guarantees those two register their hooks first and therefore shut down last — anything imported transitively later (tasks, sse, agent_gateway) shuts down before them. Don't rely on transitive imports for hook ordering; pin the ones that matter.
 
 Both loops wrap each hook call in `try/except` (web) or `contextlib.suppress` (worker) so one failing hook does not abort the sequence.
 

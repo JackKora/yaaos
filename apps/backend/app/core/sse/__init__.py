@@ -1,11 +1,11 @@
-"""core/sse_pubsub — Redis-backed pub/sub for ActivityEvent fanout.
+"""core/sse — Redis-backed pub/sub for ActivityEvent fanout.
 
 Backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process
 reaches an SSE subscriber attached to a different web process. Channel
 name shape: `activity:{workflow_execution_id}`.
 """
 
-from app.core.sse_pubsub.service import (
+from app.core.sse.service import (
     RedisPubsub,
     channel_for,
     get_pubsub,
@@ -27,6 +27,10 @@ __all__ = [
     "subscriber_count",
 ]
 
-from app.core.shutdown_registry import register_web_shutdown_hook
+from app.core.shutdown_registry import (
+    register_web_shutdown_hook,
+    register_worker_shutdown_hook,
+)
 
 register_web_shutdown_hook(shutdown)
+register_worker_shutdown_hook(shutdown)

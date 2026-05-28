@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from app.core.sse_pubsub import (
+from app.core.sse import (
     RedisPubsub,
     channel_for,
     get_pubsub,

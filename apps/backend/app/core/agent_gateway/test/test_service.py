@@ -377,12 +377,12 @@ async def test_progress_event_does_not_advance_workflow(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_progress_event_publishes_to_sse_pubsub(db_session, redis_or_skip) -> None:
+async def test_progress_event_publishes_to_sse(db_session, redis_or_skip) -> None:
     """Slice 77: progress AgentEvents posted via HTTP get republished to
     the `activity:{workflow_execution_id}` SSE channel so the SPA's
     live-tail picks them up alongside batched WebSocket events."""
-    from app.core.sse_pubsub import channel_for, subscribe  # noqa: PLC0415
-    from app.core.sse_pubsub import shutdown as sse_shutdown  # noqa: PLC0415
+    from app.core.sse import channel_for, subscribe  # noqa: PLC0415
+    from app.core.sse import shutdown as sse_shutdown  # noqa: PLC0415
 
     await sse_shutdown()
 

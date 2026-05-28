@@ -140,7 +140,7 @@ async def _load_finding_by_id(pr_id: UUID, org_id: UUID, finding_id: UUID):  # t
 
 def _activity_publisher_for(ctx: CommandContext):  # type: ignore[no-untyped-def]
     """Build an `on_activity` callback that fan-outs each `ActivityEvent`
-    to `core/sse_pubsub` on `channel_for(ctx.workflow_execution_id)`.
+    to `core/sse` on `channel_for(ctx.workflow_execution_id)`.
 
     Hands the in-memory workspace path the same SSE feed the remote-agent
     path gets — the SPA's `/api/workflows/{id}/activity` consumer sees
@@ -153,8 +153,8 @@ def _activity_publisher_for(ctx: CommandContext):  # type: ignore[no-untyped-def
     """
 
     async def _publisher(event):  # type: ignore[no-untyped-def]
-        from app.core.sse_pubsub import channel_for  # noqa: PLC0415
-        from app.core.sse_pubsub import publish as sse_publish  # noqa: PLC0415
+        from app.core.sse import channel_for  # noqa: PLC0415
+        from app.core.sse import publish as sse_publish  # noqa: PLC0415
 
         try:
             await sse_publish(

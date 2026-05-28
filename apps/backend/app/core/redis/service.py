@@ -7,7 +7,7 @@ a different loop" error. We cache one client per running loop, keyed by
 `id(asyncio.get_running_loop())`, so cross-loop callers each get their own
 client transparently.
 
-Consumers (`core/sse_pubsub`, `core/tasks/broker`, future modules that
+Consumers (`core/sse`, `core/tasks/broker`, future modules that
 need a key/value primitive) go through `get_client()` or the higher-level
 helpers in [`pubsub.py`](pubsub.py) — they never construct a Redis client
 of their own.

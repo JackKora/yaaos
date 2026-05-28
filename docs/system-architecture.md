@@ -191,7 +191,7 @@ reshapes how reviews actually execute. Three new concepts cross every app:
 
 ### Persistence
 
-New tables: `workflow_executions`, `pending_human_decisions`, `outbox_entries`, `workspace_agents`, `bearer_tokens`. Existing tables extended: `tickets` (type, idempotency_key, payload, current_workflow_execution_id), `workspaces` (provider, current_command_id, current_holder_workflow_id, max_idle_seconds), `orgs` (workspace_provider, registered_iam_arn, aws_region). Activity events are **never persisted** — they exist only in flight from WebSocket → `core/sse_pubsub` → SSE → UI. State of record stays in audit + workflow rows.
+New tables: `workflow_executions`, `pending_human_decisions`, `outbox_entries`, `workspace_agents`, `bearer_tokens`. Existing tables extended: `tickets` (type, idempotency_key, payload, current_workflow_execution_id), `workspaces` (provider, current_command_id, current_holder_workflow_id, max_idle_seconds), `orgs` (workspace_provider, registered_iam_arn, aws_region). Activity events are **never persisted** — they exist only in flight from WebSocket → `core/sse` → SSE → UI. State of record stays in audit + workflow rows.
 
 ## Stack at a glance
 

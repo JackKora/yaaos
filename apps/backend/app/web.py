@@ -11,7 +11,7 @@ from app.core import config  # noqa: F401
 # Shutdown hooks register at import time; the runtime iterates them in
 # reverse registration order. Pin the foundational modules here so
 # database shuts down LAST (most depended-on) and redis shuts down before
-# database — anything imported later (tasks, sse_pubsub, agent_gateway)
+# database — anything imported later (tasks, sse, agent_gateway)
 # registers afterwards and therefore shuts down first.
 from app.core import database  # noqa: F401
 from app.core import redis  # noqa: F401

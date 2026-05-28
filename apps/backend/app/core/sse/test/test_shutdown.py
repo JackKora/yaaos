@@ -1,11 +1,11 @@
-"""core.sse_pubsub.shutdown — drops singleton (public API smoke test)."""
+"""core.sse.shutdown — drops singleton (public API smoke test)."""
 
 from __future__ import annotations
 
 import pytest
 
-import app.core.sse_pubsub.service as _svc
-from app.core.sse_pubsub.service import get_pubsub, shutdown
+import app.core.sse.service as _svc
+from app.core.sse.service import get_pubsub, shutdown
 
 
 @pytest.fixture(autouse=True)

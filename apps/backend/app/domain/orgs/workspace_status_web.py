@@ -9,12 +9,12 @@ activity stream (+ Phase 8b follow-on).
 The connection-status banner polls every ~3s. The activity-stream endpoint
 is the SSE consumer side of the Phase 8b WebSocket plumbing —
 [`core/agent_gateway`](../core_agent_gateway.md) publishes inbound
-`activity_batch` events to [`core/sse_pubsub`](../core_sse_pubsub.md)
+`activity_batch` events to [`core/sse`](../core_sse.md)
 under `activity:{workflow_execution_id}`; this handler subscribes to
 that channel and writes each event back out as an SSE frame.
 
 The architecture's demand-pull property — "no events flow when nobody's
-watching" — is enforced naturally by `core/sse_pubsub`: with no
+watching" — is enforced naturally by `core/sse`: with no
 subscribers, `publish()` returns 0 deliveries (and the WebSocket
 supervisor batches are gated by the `subscribe`/`unsubscribe` control
 messages the registry emits, follow-on alongside agent-pod binding).
@@ -33,8 +33,8 @@ from app.core.agent_gateway import connection_status_for_org
 from app.core.auth import Action, org_id_var
 from app.core.database import session as db_session
 from app.core.sessions import require
-from app.core.sse_pubsub import channel_for
-from app.core.sse_pubsub import subscribe as sse_subscribe
+from app.core.sse import channel_for
+from app.core.sse import subscribe as sse_subscribe
 from app.core.webserver import RouteSpec, register_routes
 from app.core.workflow import get_execution_summary
 
@@ -73,9 +73,9 @@ async def stream_workflow_activity(
     """Subscribe an SSE client to the ActivityEvent channel for a workflow
     execution the current org owns. Returns the stream as
     `text/event-stream`; closes when the client disconnects (the
-    `core/sse_pubsub` async iterator cleans up its queue on iterator exit).
+    `core/sse` async iterator cleans up its queue on iterator exit).
 
-    Demand-pull semantics live on the publisher side: `core/sse_pubsub`'s
+    Demand-pull semantics live on the publisher side: `core/sse`'s
     `publish()` no-ops when no subscriber is attached, so a webhook-
     triggered review with no UI tab open generates zero activity-stream
     traffic. The WS subscribe/unsubscribe control messages to the

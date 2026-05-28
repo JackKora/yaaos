@@ -19,7 +19,7 @@ No HTTP routes. No tables.
 Required (construction fails if unset):
 - `database_url` — async Postgres URL (`postgresql+asyncpg://...`).
 - `yaaos_encryption_key` — Fernet key (32-byte URL-safe base64) for credential encryption.
-- `redis_url` — Redis URL (`redis://host:port/db`). Backs [core/sse_pubsub](core_sse_pubsub.md) fanout and the [core/tasks](core_tasks.md) taskiq broker.
+- `redis_url` — Redis URL (`redis://host:port/db`). Backs [core/sse](core_sse.md) fanout and the [core/tasks](core_tasks.md) taskiq broker.
 
 Optional, with defaults:
 - `yaaos_env: Literal["dev", "test", "prod"]` (default `prod`).

@@ -212,8 +212,8 @@ async def record_agent_event(
             workspace_id=str(claim.workspace_id),
             command_id=str(event.command_id),
         )
-        from app.core.sse_pubsub import channel_for  # noqa: PLC0415
-        from app.core.sse_pubsub import publish as sse_publish  # noqa: PLC0415
+        from app.core.sse import channel_for  # noqa: PLC0415
+        from app.core.sse import publish as sse_publish  # noqa: PLC0415
 
         channel = channel_for(str(claim.current_holder_workflow_id))
         await sse_publish(channel, event.model_dump(mode="json"))

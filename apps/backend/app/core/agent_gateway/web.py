@@ -45,8 +45,8 @@ from app.core.agent_gateway.types import (
 )
 from app.core.auth import public_route
 from app.core.database import session as db_session
-from app.core.sse_pubsub import channel_for
-from app.core.sse_pubsub import publish as sse_publish
+from app.core.sse import channel_for
+from app.core.sse import publish as sse_publish
 from app.core.webserver import RouteSpec, register_routes
 
 log = structlog.get_logger("agent_gateway.web")
@@ -283,7 +283,7 @@ async def activity_ws(websocket: WebSocket, agent_id: UUID = Path(...)) -> None:
     Protocol:
       - **WorkspaceAgent → backend:** `{"type": "activity_batch", "workflow_execution_id": "...", "events": [...]}`.
         Backend publishes each event to `activity:{workflow_execution_id}`
-        via `core/sse_pubsub`. The SSE handler in `web.py` (Phase 8b
+        via `core/sse`. The SSE handler in `web.py` (Phase 8b
         follow-on) consumes them per workflow execution.
       - **Backend → WorkspaceAgent:** `{"type": "subscribe", "workspace_id": "...", "workflow_execution_id": "..."}` /
         `{"type": "unsubscribe", "workspace_id": "...", "workflow_execution_id": "..."}`.

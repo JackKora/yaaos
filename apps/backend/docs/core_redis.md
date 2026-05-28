@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Centralizes everything any other module needs from Redis: a loop-bound client (per running event loop), a URL accessor that consumers like [`core/tasks/broker`](core_tasks.md) hand to taskiq, raw publish/subscribe primitives that [`core/sse_pubsub`](core_sse_pubsub.md) builds on, and the health-check ping for `/api/health`. No higher-level semantics; consumers add their own (channel naming, JSON encoding, etc.).
+Centralizes everything any other module needs from Redis: a loop-bound client (per running event loop), a URL accessor that consumers like [`core/tasks/broker`](core_tasks.md) hand to taskiq, raw publish/subscribe primitives that [`core/sse`](core_sse.md) builds on, and the health-check ping for `/api/health`. No higher-level semantics; consumers add their own (channel naming, JSON encoding, etc.).
 
 ## Public interface
 

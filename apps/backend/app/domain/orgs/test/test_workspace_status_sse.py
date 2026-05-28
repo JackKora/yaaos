@@ -8,10 +8,10 @@ SSE-frame translation is the actual unit, and the route handler is small
 enough that the wrapper's auth gate and ownership lookup are covered by
 inspection.
 
-Demand-pull semantics are tested separately: `core/sse_pubsub.publish()`
+Demand-pull semantics are tested separately: `core/sse.publish()`
 returns 0 deliveries when no subscriber is attached, so a webhook-
 triggered review with no UI tab open generates zero activity-stream
-traffic — verified in `core/sse_pubsub/test/test_service.py`.
+traffic — verified in `core/sse/test/test_service.py`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.sse_pubsub import channel_for, publish, reset_pubsub
+from app.core.sse import channel_for, publish, reset_pubsub
 from app.domain.orgs.workspace_status_web import _activity_event_stream
 
 
@@ -45,7 +45,7 @@ async def test_activity_event_stream_emits_sse_frame_for_published_event() -> No
     gen = _activity_event_stream(wfx_id)
     collector = asyncio.create_task(gen.__anext__())
     # Yield control so the generator registers its subscriber inside
-    # core/sse_pubsub before we publish — otherwise the event would land
+    # core/sse before we publish — otherwise the event would land
     # before the queue exists and would be dropped.
     await asyncio.sleep(0.05)
 

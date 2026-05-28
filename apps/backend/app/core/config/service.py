@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(
         ...,
-        description="Redis URL (e.g., redis://host:port/db). Backs core/sse_pubsub fanout and the core/tasks taskiq broker.",
+        description="Redis URL (e.g., redis://host:port/db). Backs core/sse fanout and the core/tasks taskiq broker.",
     )
 
     # Optional

@@ -29,7 +29,7 @@ import structlog
 
 from app.core import redis as redis_client
 
-log = structlog.get_logger("core.sse_pubsub")
+log = structlog.get_logger("core.sse")
 
 
 class RedisPubsub:
@@ -61,7 +61,7 @@ class RedisPubsub:
                 try:
                     yield json.loads(payload.decode())
                 except json.JSONDecodeError:
-                    log.warning("sse_pubsub.malformed_payload", channel=channel)
+                    log.warning("sse.malformed_payload", channel=channel)
                     continue
         finally:
             async with self._lock:
@@ -88,7 +88,7 @@ def get_pubsub() -> RedisPubsub:
 
 
 async def shutdown() -> None:
-    """Drop the singleton. Called by the web-process shutdown registry."""
+    """Drop the singleton. Called by web- and worker-process shutdown registries."""
     global _singleton
     if _singleton is not None:
         await _singleton.aclose()

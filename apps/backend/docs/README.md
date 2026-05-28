@@ -29,7 +29,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [core_tasks](core_tasks.md) | `@task` decorator + atomic-in-session `enqueue()` over taskiq + Redis; owns the outbox table and worker process. |
 | [core_workflow](core_workflow.md) | Workflow engine — typed workflows + WorkflowCommand categories (skeleton). |
 | [core_agent_gateway](core_agent_gateway.md) | Wire protocol to customer-deployed WorkspaceAgents (skeleton). |
-| [core_sse_pubsub](core_sse_pubsub.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers (skeleton). |
+| [core_sse](core_sse.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers; declares `/api/sse` as org-scoped. |
 | [core_identity](core_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP. |
 | [core_sessions](core_sessions.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints. |
 
