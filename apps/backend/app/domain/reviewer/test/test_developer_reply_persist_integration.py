@@ -34,7 +34,7 @@ from app.domain.reviewer.service import (
 )
 
 # Cross-module persist + audit + event chain (reviewer aggregate ↔ repository ↔
-# audit_log ↔ core/events bus). Service tier.
+# audit_log ↔ core/sse bus). Service tier.
 pytestmark = pytest.mark.service
 
 

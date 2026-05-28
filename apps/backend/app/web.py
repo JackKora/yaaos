@@ -19,21 +19,18 @@ from app.core import observability
 
 observability.configure(role="app")
 
-# 3. Events bus must exist before any domain module subscribes.
-from app.core import events  # noqa: F401, E402
-
-# 4. Webserver registry must exist before any domain module registers routes.
+# 3. Webserver registry must exist before any domain module registers routes.
 from app.core import webserver  # noqa: E402
 
-# 5. Core modules whose plugins are domain-facing.
+# 4. Core modules whose plugins are domain-facing.
 from app.core import audit_log, workspace  # noqa: F401, E402
 
-# 5a. workflow engine + agent gateway. Workflow engine registers the
+# 4a. workflow engine + agent gateway. Workflow engine registers the
 # three taskiq task names at import; agent_gateway registers `/v1/*` routes.
 from app.core import workflow as _core_workflow  # noqa: F401, E402
 from app.core import agent_gateway as _core_agent_gateway  # noqa: F401, E402
 
-# 5b. Identity + tenancy + auth middleware. Must be imported before
+# 4b. Identity + tenancy + auth middleware. Must be imported before
 # any domain module that declares `Depends(require(...))` or
 # `Depends(public_route)` so the contextvars + middleware classes exist.
 from app.core import identity  # noqa: F401, E402
@@ -50,7 +47,7 @@ from app.domain.orgs import audit_web as _orgs_audit_web  # noqa: F401, E402
 from app.domain.orgs import sso_web as _orgs_sso_web  # noqa: F401, E402
 from app.domain.orgs import web as _orgs_web  # noqa: F401, E402
 
-# 6. Domain modules — order: types first (vcs, lessons), then coding_agent
+# 5. Domain modules — order: types first (vcs, lessons), then coding_agent
 #    (which references vcs + lessons types), then leaf domain modules,
 #    then domain modules that depend on others.
 from app.domain import vcs  # noqa: F401, E402
@@ -80,11 +77,11 @@ from app.domain.orgs.workflow_ownership import assert_workflow_in_org as _assert
 
 _core_sse.register_workspace_activity_ownership_check(_assert_workflow_in_org)
 
-# 6b. domain/integrations — must load before its provider plugins so the
+# 5b. domain/integrations — must load before its provider plugins so the
 # registry exists at the time plugins/linear etc. call register_provider.
 from app.domain import integrations as _domain_integrations  # noqa: F401, E402
 
-# 7. Plugins.
+# 6. Plugins.
 from app.plugins import in_memory_workspace, claude_code, github, linear, notion  # noqa: F401, E402
 
 # GitHub OAuth identity provider lives inside `plugins/github` now —
@@ -92,12 +89,12 @@ from app.plugins import in_memory_workspace, claude_code, github, linear, notion
 # both bootstrap() (VCS) and bootstrap_oauth() (identity).
 from app.core.config import get_settings  # noqa: E402
 
-# 7b. Test-only providers — env-gated; modules assert on yaaos_env=="test".
+# 6b. Test-only providers — env-gated; modules assert on yaaos_env=="test".
 if get_settings().yaaos_env == "test":
     from app.plugins import oauth_test  # noqa: F401
     from app.plugins import saml_test  # noqa: F401
 
-# 8. Test-only: when YAAOS_CODING_AGENT_STUB is set, wrap every registered
+# 7. Test-only: when YAAOS_CODING_AGENT_STUB is set, wrap every registered
 #    coding-agent plugin via the `testing/` layer. The testing layer sits above
 #    plugins (`core < domain < plugins < testing`) — nothing in production code
 #    depends on it. If the testing layer has been stripped from the deployment
@@ -112,14 +109,14 @@ if os.environ.get("YAAOS_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}
     wrap_all_registered_plugins()
     wrap_all_registered_workspace_providers()
 
-# 8b. Test-only HTTP surface (`/api/testing/*`) — reset + seed endpoints used by
+# 7b. Test-only HTTP surface (`/api/testing/*`) — reset + seed endpoints used by
 # the e2e Playwright suite (and ad-hoc local seeding). Mounted only in dev/test
 # builds; prod wheels exclude the testing/ tree, so this import would fail loud
 # if it ever ran with the layer stripped.
 if get_settings().is_non_prod:
     from app.testing import e2e_setup  # noqa: F401
 
-# 9. Build the FastAPI app.
+# 8. Build the FastAPI app.
 app = webserver.create_app()
 
 if __name__ == "__main__":

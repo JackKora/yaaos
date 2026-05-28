@@ -9,7 +9,7 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 
 ## Module map
 
-33 modules: **17 core · 8 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections.
+32 modules: **16 core · 8 domain · 5 plugins · 3 testing**. Each has a doc with five fixed sections.
 
 ### Core — infrastructure, no business logic
 
@@ -18,7 +18,6 @@ FastAPI service in Python 3.13. Single Docker image runs the API, serves the bun
 | [core_config](core_config.md) | Boot-time env via pydantic-settings. |
 | [core_database](core_database.md) | Async SQLAlchemy `Base`, session factory, migration runner. |
 | [core_webserver](core_webserver.md) | FastAPI app factory, lifespan, `RouteSpec` registry, SPA mount. |
-| [core_events](core_events.md) | In-process pub/sub; SSE bridge. |
 | [core_audit_log](core_audit_log.md) | Append-only timeline. |
 | [core_workspace](core_workspace.md) | `Workspace` + `WorkspaceProvider` Protocols; lifecycle + reaper. |
 | [core_observability](core_observability.md) | structlog + conditional OTel SDK + `spawn()`. |

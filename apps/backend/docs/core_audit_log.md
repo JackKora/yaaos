@@ -50,7 +50,7 @@ Optional `session` joins the caller's transaction (helper adds + flushes; caller
 
 - Does not enforce a fixed `kind` taxonomy — callers pick any string (a grep-able convention emerges).
 - Does not validate payload shape beyond "must be Pydantic".
-- Does not publish events — `core/events` is separate; callers wanting both call both.
+- Does not publish SSE events — `core/sse` is separate; callers wanting both call both.
 - Does not enforce FK on `entity_id` — loose ref; entities can be deleted and the row survives.
 - Does prune `purge_older_than(cutoff)` plus the daily scheduler call in `core/identity.scheduler` keeps `audit_entries` within `AUDIT_LOG_RETENTION` (15 days, lowered from 30d in to absorb MCP dispatch volume).
 

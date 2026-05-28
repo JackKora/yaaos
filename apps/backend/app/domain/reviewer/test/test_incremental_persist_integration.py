@@ -13,7 +13,7 @@ slice that the §13 cutover refactor reshapes:
 5. `dispatch_audits` writes an `audit_entries` row per state-changing
    event.
 6. `dispatch_events` (run last — drains the events list) publishes
-   to the `core/events` bus.
+   to the SSE bus via `core/sse`.
 
 Sits squarely on the path between Plan §6.1 (initial review) and §6.2
 (push incremental). Both call sites use the same helpers; this test

@@ -362,7 +362,7 @@ Rules:
 
 ## Subscription self-cleanup (async generator pattern)
 
-`core.events.subscribe()` is the canonical example of an async generator whose `finally` clause does its own cleanup. The generator registers a subscriber queue on entry; `finally` pops it on any consumer exit — normal return, `break`, exception, or `aclose()`. Callers never call an explicit `unsubscribe()`.
+An async generator whose `finally` clause does its own cleanup is the canonical subscriber pattern. The generator registers a queue on entry; `finally` pops it on any consumer exit — normal return, `break`, exception, or `aclose()`. Callers never call an explicit `unsubscribe()`. `core/sse` uses this pattern for SSE stream subscribers.
 
 Preferred test shapes for consuming one event then exiting:
 - `async for ev in subscribe(filter): ...; return` — `return` exits the coroutine; the event loop's async-gen finalizer schedules `aclose()`. Yield one event-loop tick (`await asyncio.sleep(0)`) after the consumer finishes if the test asserts `subscriber_count() == 0`.
@@ -377,7 +377,7 @@ Every runtime-state module exposes a public `async def shutdown()` in `__all__`.
 Categorization rule:
 - Web-presence only (SSE, WebSocket) → register with web registry.
 - Worker-presence only → register with worker registry.
-- Shared infra (redis, database, events, tasks) → register with both.
+- Shared infra (redis, database, tasks) → register with both.
 
 The registries live in `app.core.shutdown_registry` (a zero-dependency standalone module) to avoid circular imports between modules that import each other.
 
@@ -400,7 +400,7 @@ Both loops wrap each hook call in `try/except` (web) or `contextlib.suppress` (w
 
 Both composition roots live inside `app/` so they're importable as regular Python modules and testable without exec tricks.
 
-- `app/web.py` — web process entry. Same bootstrap import order as before (see § Bootstrap composition order). Ends with `app = webserver.create_app()`. When run directly (`python apps/backend/app/web.py`) the `if __name__ == "__main__"` block calls `uvicorn.run(...)` with all server flags in Python — no flags scattered across Dockerfile CMDs.
+- `app/web.py` — web process entry. See § Bootstrap composition order. Ends with `app = webserver.create_app()`. When run directly (`python apps/backend/app/web.py`) the `if __name__ == "__main__"` block calls `uvicorn.run(...)` with all server flags in Python — no flags scattered across Dockerfile CMDs.
 - `app/worker.py` — worker process entry. Side-effect imports (workflow commands, plugins, workspace providers) + `asyncio.run(core.tasks.runtime.run())`. When run directly the `if __name__ == "__main__"` block is the sole entry point.
 
 Dockerfile CMDs are exec-form `["python", "apps/backend/app/web.py"]` / `["python", "apps/backend/app/worker.py"]`. tini is PID 1 (image-level `ENTRYPOINT ["/usr/bin/tini", "--"]`) and forwards SIGTERM to the Python child, triggering graceful shutdown via the Phase-1 shutdown registries.
@@ -409,16 +409,15 @@ Dockerfile CMDs are exec-form `["python", "apps/backend/app/web.py"]` / `["pytho
 
 ## Bootstrap composition order
 
-`app/web.py` is load-bearing. If steps 3–4 swap with 6 you'll mount a router before its module has registered or subscribe to an event before the bus exists. Don't reorder.
+`app/web.py` is load-bearing. Don't reorder.
 
 1. Load environment — `app.core.config`.
 2. Configure core infra — `app.core.database`, `app.core.observability`.
-3. Initialize events bus — `app.core.events` *before any domain subscribes*.
-4. Import webserver registry — `app.core.webserver` *before any module registers routes*.
-5. Core modules with plugin Protocols — `app.core.audit_log`, `app.core.workspace`.
-6. Domain modules in dependency order — types first (vcs, lessons), then coding_agent, then leaf domain modules, then dependents.
-7. Plugins — `in_memory_workspace`, `claude_code`, `github`.
-8. Test-mode wrapping (conditional) — when `YAAOS_CODING_AGENT_STUB=1`, import `app.testing.stub_*` and call `wrap_all_registered_*()`. When `yaaos_env == "dev"`, import `app.testing.e2e_setup` so `/api/testing/*` mounts.
-9. Build the FastAPI app — `webserver.create_app()`.
+3. Import webserver registry — `app.core.webserver` *before any module registers routes*.
+4. Core modules with plugin Protocols — `app.core.audit_log`, `app.core.workspace`.
+5. Domain modules in dependency order — types first (vcs, lessons), then coding_agent, then leaf domain modules, then dependents.
+6. Plugins — `in_memory_workspace`, `claude_code`, `github`.
+7. Test-mode wrapping (conditional) — when `YAAOS_CODING_AGENT_STUB=1`, import `app.testing.stub_*` and call `wrap_all_registered_*()`. When `yaaos_env == "dev"`, import `app.testing.e2e_setup` so `/api/testing/*` mounts.
+8. Build the FastAPI app — `webserver.create_app()`.
 
-Each module imported in steps 2–7 appends its `shutdown()` hook to the relevant process registry as a side effect of import. By step 9, all hooks are registered before `create_app()` wires them into the lifespan.
+Each module imported in steps 2–6 appends its `shutdown()` hook to the relevant process registry as a side effect of import. By step 8, all hooks are registered before `create_app()` wires them into the lifespan.
