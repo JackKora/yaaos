@@ -12,11 +12,19 @@ Three pipelines in one module:
 
 All pipelines are backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process reaches an SSE subscriber attached to a different web process. Fire-and-forget per Redis semantics — slow consumers do not backpressure publishers, and no event persistence.
 
-The `/api/sse` prefix is declared as `ORG_SCOPED` in `core/auth/types.py` so future routes mounted at `core/sse/web.py` are enforced without additional classification work.
+The `/api/sse` prefix is declared as `ORG_SCOPED` in `core/auth/types.py` so all routes mounted at `core/sse/web.py` are enforced without additional classification work.
 
 ## Public interface
 
-Exported from `app/core/sse/__init__.py`:
+**HTTP routes (via `app/core/sse/web.py`):**
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/sse/general` | `ORG_READ` — org-scoped general event stream for the caller's resolved org. |
+
+Each frame is `data: <json>\n\n` carrying a `GeneralEventKind`-typed payload. Cross-org isolation is enforced by the per-org Redis channel shape — subscribers only receive events published to their org's channel. Closes when the client disconnects.
+
+**Python symbols exported from `app/core/sse/__init__.py`:**
 
 **Activity pipeline:**
 
@@ -83,3 +91,4 @@ None. The module is transport — Redis is the substrate.
 - `test/test_general_publish_service.py` — general-event pipeline: rollback discards stashed events; commit delivers them with correct `{kind, ts, ...payload}` shape; publishing on `org_B` does not reach `org_A`'s subscriber. Uses `db_session` + `redis_or_skip`.
 - `test/test_workspace_activity_publish_service.py` — workspace-activity pipeline: cross-org isolation (org_B publish does not reach org_A subscriber on same wfx); cross-wfx isolation (wfx_2 publish does not reach wfx_1 subscriber in same org). Uses `redis_or_skip`.
 - `test/test_serialize_for_sse_service.py` — `serialize_for_sse` formats `dict` payload as `data: <json>\n\n`.
+- `test/test_general_endpoint_service.py` — HTTP auth gate on `GET /api/sse/general` (401/400/403); cross-org isolation on `_general_stream` directly (httpx-ASGITransport hangs on close for infinite streams — the HTTP wrapper has no logic beyond auth, so the generator is the right test target). Uses `db_session` + `redis_or_skip` for the streaming test; the auth tests use only `db_session`.

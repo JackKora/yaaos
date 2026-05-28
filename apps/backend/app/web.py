@@ -70,6 +70,7 @@ from app.domain.orgs import org_settings_web as _orgs_org_settings_web  # noqa: 
 from app.domain.orgs import workspace_status_web as _orgs_workspace_status_web  # noqa: F401, E402
 from app.domain.orgs import vcs_web as _orgs_vcs_web  # noqa: F401, E402
 from app.domain.notifications import web as _notifications_web  # noqa: F401, E402
+from app.core.sse import web as _core_sse_web  # noqa: F401, E402
 
 # 6b. domain/integrations — must load before its provider plugins so the
 # registry exists at the time plugins/linear etc. call register_provider.
