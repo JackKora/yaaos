@@ -3,11 +3,13 @@ on:
     push:
       init:
         commit-sha: ${{ event.git.sha }}
+        branch: ${{ event.git.branch }}
       status-checks:
         name: CI
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
+      branch: ${{ event.git.branch }}
 
 base:
   image: ubuntu:24.04
@@ -173,7 +175,7 @@ tasks:
   # ─── e2e ────────────────────────────────────────────────────────────
 
   - key: e2e-ci
-    if: ${{ event.git.branch == 'main' }}
+    if: ${{ init.branch == 'main' }}
     use: [code, nodejs]
     tool-cache: ci-e2e-pnpm
     # Broad filter: e2e exercises the integrated test compose stack —
