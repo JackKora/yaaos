@@ -10,8 +10,8 @@ on:
       commit-sha: ${{ event.git.sha }}
 
 base:
-  image: ubuntu 24.04
-  config: 1.2
+  image: ubuntu:24.04
+  config: rwx/base 1.0.2
   arch: arm64
 
 # Tool-cache vault. Each install-running task (web-ci, e2e-ci) declares

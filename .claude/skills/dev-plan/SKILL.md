@@ -81,7 +81,7 @@ Rules the template encodes:
 - Header line "Phases are CI-clean but not feature-shippable until final phase." stays at the top.
 - Each phase carries **Goal · Vertical slice · Files touched · Tests added · Doc updates · Rollback** (Rollback omittable when nothing reversible).
 - Final phase is non-code: re-run all CI scripts, re-read `requirements.md`, walk each use case "After" against the running system, confirm doc updates landed.
-- Bottom **Open questions** are phase-level — distinct from architectural ones.
+- Bottom **Open questions** = ONLY genuine unresolved decisions that need a human answer before/during execution (distinct from architecture.md's architectural ones). NOT a catch-all. What does NOT belong, and where it goes instead: assumptions you made → state them inline in the phase; risks / things to watch → that phase's **Rollback**; deferred scope → it's out-of-scope, omit it; anything already decided → it's not a question. The precondition guarantees upstream questions are resolved, so **`- None.` is the expected default** — writing an entry is the exception, not the norm. When in doubt, it's not an open question.
 
 ### Phases must survive fresh context
 

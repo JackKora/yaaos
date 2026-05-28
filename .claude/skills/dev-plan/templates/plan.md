@@ -36,4 +36,10 @@ Each phase block is the contract with a fresh subagent. Restate load-bearing fac
 
 ## Open questions
 
-- <phase-level unknowns — distinct from architecture.md's architectural ones>
+<!-- ONLY a genuine unresolved decision that needs a human answer before/during execution.
+     The dev-plan precondition guarantees requirements.md + architecture.md questions are
+     already resolved, so "None." is the expected default. NOT a notes/assumptions/risks
+     dump: assumptions → state them in the phase; risks → Rollback; deferred scope →
+     out-of-scope; already-decided things → not questions. -->
+
+- None.
