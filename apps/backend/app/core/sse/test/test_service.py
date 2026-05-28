@@ -15,11 +15,8 @@ import pytest
 
 from app.core.sse import (
     RedisPubsub,
-    channel_for,
     get_pubsub,
-    publish,
     reset_pubsub,
-    subscribe,
     subscriber_count,
 )
 
@@ -33,13 +30,13 @@ async def _isolate_singleton():
 
 def _unique_channel() -> str:
     """Per-test channel so concurrent tests don't cross-publish."""
-    return channel_for(f"test-{uuid.uuid4()}")
+    return f"test:{uuid.uuid4()}"
 
 
 @pytest.mark.asyncio
 async def test_publish_with_no_subscribers_returns_zero(redis_or_skip) -> None:
     ch = _unique_channel()
-    n = await publish(ch, {"event": "x"})
+    n = await get_pubsub().publish(ch, {"event": "x"})
     assert n == 0
 
 
@@ -50,7 +47,7 @@ async def test_publish_fans_out_to_every_subscriber(redis_or_skip) -> None:
     received_b: list[dict] = []
 
     async def _consume(target: list[dict]) -> None:
-        async for evt in subscribe(ch):
+        async for evt in get_pubsub().subscribe(ch):
             target.append(evt)
             if len(target) == 2:
                 return
@@ -63,8 +60,8 @@ async def test_publish_fans_out_to_every_subscriber(redis_or_skip) -> None:
     # would be lost.
     await asyncio.sleep(0.1)
 
-    delivered_first = await publish(ch, {"i": 1})
-    delivered_second = await publish(ch, {"i": 2})
+    delivered_first = await get_pubsub().publish(ch, {"i": 1})
+    delivered_second = await get_pubsub().publish(ch, {"i": 2})
 
     await asyncio.wait_for(asyncio.gather(a, b), timeout=2.0)
 
@@ -79,14 +76,14 @@ async def test_subscriber_count_balances_on_iterator_exit(redis_or_skip) -> None
     ch = _unique_channel()
 
     async def _consume_then_exit() -> None:
-        async for _ in subscribe(ch):
+        async for _ in get_pubsub().subscribe(ch):
             return  # exit after one event
 
     consumer = asyncio.create_task(_consume_then_exit())
     await asyncio.sleep(0.1)
     assert subscriber_count(ch) == 1
 
-    await publish(ch, {"go": True})
+    await get_pubsub().publish(ch, {"go": True})
     await asyncio.wait_for(consumer, timeout=2.0)
     # finally block runs after iterator exit.
     await asyncio.sleep(0.05)

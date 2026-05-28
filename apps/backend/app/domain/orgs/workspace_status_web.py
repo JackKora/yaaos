@@ -1,42 +1,23 @@
-"""HTTP wiring for the workspace-agent connection status + per-workflow
-activity stream (+ Phase 8b follow-on).
+"""HTTP wiring for the workspace-agent connection status.
 
-| Method | Path                                            | Action               |
-|--------|-------------------------------------------------|----------------------|
-| GET    | `/api/workspaces/connection_status`             | `ORG_SETTINGS_READ` — aggregated heartbeat state for the current org. |
-| GET    | `/api/workspaces/workflows/{id}/activity`       | `ORG_READ` — SSE stream of ActivityEvents for a workflow execution the current org owns. |
+| Method | Path                                | Action                                                                    |
+|--------|-------------------------------------|---------------------------------------------------------------------------|
+| GET    | `/api/workspaces/connection_status` | `ORG_SETTINGS_READ` — aggregated heartbeat state for the current org. |
 
-The connection-status banner polls every ~3s. The activity-stream endpoint
-is the SSE consumer side of the Phase 8b WebSocket plumbing —
-[`core/agent_gateway`](../core_agent_gateway.md) publishes inbound
-`activity_batch` events to [`core/sse`](../core_sse.md)
-under `activity:{workflow_execution_id}`; this handler subscribes to
-that channel and writes each event back out as an SSE frame.
-
-The architecture's demand-pull property — "no events flow when nobody's
-watching" — is enforced naturally by `core/sse`: with no
-subscribers, `publish()` returns 0 deliveries (and the WebSocket
-supervisor batches are gated by the `subscribe`/`unsubscribe` control
-messages the registry emits, follow-on alongside agent-pod binding).
+The connection-status banner polls every ~3s. Activity SSE is served by
+`core/sse` at `/api/sse/workspace_activity/{id}` — see
+[`core/sse`](../core_sse.md).
 """
 
 from __future__ import annotations
 
-import json
-from collections.abc import AsyncIterator
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, Path
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.agent_gateway import connection_status_for_org
 from app.core.auth import Action, org_id_var
 from app.core.database import session as db_session
 from app.core.sessions import require
-from app.core.sse import channel_for
-from app.core.sse import subscribe as sse_subscribe
 from app.core.webserver import RouteSpec, register_routes
-from app.core.workflow import get_execution_summary
 
 router = APIRouter()
 
@@ -52,56 +33,6 @@ async def get_connection_status() -> dict[str, object]:
         raise _err(400, "no_org_context")
     async with db_session() as s:
         return await connection_status_for_org(org_id, session=s)
-
-
-async def _activity_event_stream(workflow_execution_id: UUID) -> AsyncIterator[bytes]:
-    """Translate inbound pub/sub events into SSE frames. Each event becomes
-    one `data: <json>\\n\\n` frame."""
-    channel = channel_for(str(workflow_execution_id))
-    async for event in sse_subscribe(channel):
-        payload = json.dumps(event)
-        yield f"data: {payload}\n\n".encode()
-
-
-@router.get(
-    "/workflows/{workflow_execution_id}/activity",
-    dependencies=[Depends(require(Action.ORG_READ))],
-)
-async def stream_workflow_activity(
-    workflow_execution_id: UUID = Path(...),
-) -> StreamingResponse:
-    """Subscribe an SSE client to the ActivityEvent channel for a workflow
-    execution the current org owns. Returns the stream as
-    `text/event-stream`; closes when the client disconnects (the
-    `core/sse` async iterator cleans up its queue on iterator exit).
-
-    Demand-pull semantics live on the publisher side: `core/sse`'s
-    `publish()` no-ops when no subscriber is attached, so a webhook-
-    triggered review with no UI tab open generates zero activity-stream
-    traffic. The WS subscribe/unsubscribe control messages to the
-    WorkspaceAgent land alongside the agent-pod-binding persistence in a
-    future iteration; in-memory provider events flow through this
-    endpoint today.
-    """
-    org_id = org_id_var.get()
-    if org_id is None:
-        raise _err(400, "no_org_context")
-    async with db_session() as s:
-        wfx = await get_execution_summary(workflow_execution_id, session=s)
-        if wfx is None:
-            raise _err(404, "workflow_execution_not_found")
-        # Resolve the owning org via the ticket so cross-org reads are
-        # rejected even when the SPA hands the same slug + a borrowed
-        # workflow id.
-        from app.domain.tickets import get_by_id as get_ticket_by_id  # noqa: PLC0415
-
-        ticket = await get_ticket_by_id(wfx.ticket_id)
-        if ticket is None or ticket.org_id != org_id:
-            raise _err(404, "workflow_execution_not_found")
-    return StreamingResponse(
-        _activity_event_stream(workflow_execution_id),
-        media_type="text/event-stream",
-    )
 
 
 register_routes(RouteSpec(module_name="workspaces", router=router, url_prefix="/api/workspaces"))

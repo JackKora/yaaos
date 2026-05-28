@@ -1,16 +1,15 @@
 # core/sse
 
-> Redis-backed pub/sub for ActivityEvent fanout, org-scoped general events, and workspace-activity streams.
+> Redis-backed pub/sub for org-scoped general events and workspace-activity streams.
 
 ## Purpose
 
-Three pipelines in one module:
+Two pipelines in one module:
 
-- **Activity pipeline** — legacy per-workflow activity channel. Still used by `domain/orgs/workspace_status_web.py` (the old SPA live-tail route). Channel shape: `activity:{workflow_execution_id}`.
 - **General-event pipeline** — org-scoped typed events consumed by the SPA's live-update stream. Channel shape: `{org_id}:general`. Uses `GeneralEventKind` as the discriminator. `publish_general_after_commit` ties publish lifetime to a transaction — rollbacks silently discard stashed events so rolled-back transactions never emit SPA events.
 - **Workspace-activity pipeline** — per-org per-workflow activity stream with channel isolation by both org and workflow execution. Channel shape: `{org_id}:workspace_activity:{workflow_execution_id}`. Raw agent event dict passed through unchanged — no envelope, no `ts` stamping.
 
-All pipelines are backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process reaches an SSE subscriber attached to a different web process. Fire-and-forget per Redis semantics — slow consumers do not backpressure publishers, and no event persistence.
+Both pipelines are backed by Redis `PUBLISH`/`SUBSCRIBE` so a publish from the worker process reaches an SSE subscriber attached to a different web process. Fire-and-forget per Redis semantics — slow consumers do not backpressure publishers, and no event persistence.
 
 The `/api/sse` prefix is declared as `ORG_SCOPED` in `core/auth/types.py` so all routes mounted at `core/sse/web.py` are enforced without additional classification work.
 
@@ -29,19 +28,12 @@ The workspace_activity route adds an ownership check via the `register_workspace
 
 **Python symbols exported from `app/core/sse/__init__.py`:**
 
-**Activity pipeline:**
-
-- `publish(channel, event)` — fan out to every subscriber on `channel`; returns the Redis-reported delivery count (number of subscribers across the cluster).
-- `subscribe(channel)` — async iterator that yields each subsequent event published on `channel`. Subscriber registers a Redis subscription on first iteration and unregisters when the iterator exits.
-- `channel_for(workflow_execution_id)` — centralized name shape (`activity:{id}`) so publishers + subscribers agree.
-- `subscriber_count(channel)` — diagnostic; **local-process** subscriber count (Redis's `PUBSUB NUMSUB` is cluster-wide and not what callers want).
-
 **General-event pipeline:**
 
 - `GeneralEventKind` — closed `StrEnum` with 15 members: `TICKET_STATUS_CHANGED`; reviewer aggregate kinds `REVIEW_REQUESTED`, `REVIEW_STARTED`, `REVIEW_COMPLETED`, `REVIEW_FAILED`, `REVIEW_SUPERSEDED`; finding kinds `FINDING_RAISED`, `FINDING_RE_OBSERVED`, `FINDING_ANCHOR_UPDATED`, `FINDING_STATE_CHANGED`, `FINDING_ACKNOWLEDGED`, `FINDING_RESOLUTION_DETECTED`, `FINDING_STALE_DETECTED`; comment kinds `COMMENT_REPLY_RECEIVED`, `AGENT_REPLY_POSTED`.
 - `publish_general(*, org_id, kind, payload)` — stamps `ts` (ISO UTC) server-side, builds `{kind, ts, **payload}`, publishes to the org's general channel.
 - `publish_general_after_commit(session, *, org_id, kind, payload)` — stashes the event on `session.info`; an SQLAlchemy `after_commit` listener drains and publishes on commit. Rollback discards the stash silently — rolled-back transactions never emit SPA events.
-- `subscribe_general(org_id)` — async iterator over general events for that org. Wraps `subscribe` on the org's channel.
+- `subscribe_general(org_id)` — async iterator over general events for that org.
 
 **Workspace-activity pipeline:**
 
@@ -52,6 +44,7 @@ The workspace_activity route adds an ownership check via the `register_workspace
 
 - `register_workspace_activity_ownership_check(check)` — boot-time registrar for the workflow-in-org ownership dep used by the workspace_activity route. Idempotent for the same callable; raises on conflicting double-registration.
 - `serialize_for_sse(payload)` — formats a `dict[str, Any]` as an HTTP `text/event-stream` data frame (`data: <json>\n\n`). Both general and workspace-activity subscribers use this before writing to the HTTP response.
+- `subscriber_count(channel)` — diagnostic; **local-process** subscriber count (Redis's `PUBSUB NUMSUB` is cluster-wide and not what callers want).
 - `RedisPubsub` — class form for callers that want to construct their own bus (mostly tests).
 - `get_pubsub()` — process-singleton accessor.
 - `shutdown()` — closes the singleton and sets it to `None`; self-registered with both the web and worker shutdown registries at import time. Both processes host Redis subscriptions (the worker publishes; the web process subscribes), so both need cleanup.
@@ -65,9 +58,8 @@ The workspace_activity route adds an ownership check via the `register_workspace
 
 ### Channel naming
 
-Three shapes:
+Two shapes:
 
-- `activity:{workflow_execution_id}` — per-workflow activity events. Formed by `channel_for()`.
 - `{org_id}:general` — org-scoped general events. Formed by the internal `_channel_for_general()` helper (not in `__all__`).
 - `{org_id}:workspace_activity:{workflow_execution_id}` — per-org per-workflow workspace-activity events. Formed by the internal `_channel_for_workspace_activity()` helper (not in `__all__`). Dual-dimension isolation ensures cross-org and cross-wfx events never mix.
 
@@ -89,7 +81,7 @@ None. The module is transport — Redis is the substrate.
 
 ## How it's tested
 
-- `test/test_service.py` — round-trip: publish with no subscribers returns 0; fan-out delivers to every subscriber; subscriber bookkeeping balances on iterator exit; singleton identity. Uses the `redis_or_skip` fixture so local dev without Redis isn't blocked.
+- `test/test_service.py` — `RedisPubsub` round-trip via `get_pubsub()`: publish with no subscribers returns 0; fan-out delivers to every subscriber; subscriber bookkeeping balances on iterator exit; singleton identity. Uses the `redis_or_skip` fixture so local dev without Redis isn't blocked.
 - `test/test_shutdown.py` — singleton lifecycle: `shutdown()` drops singleton; idempotent.
 - `test/test_shutdown_service.py` — hook registration: `shutdown()` appears in both web and worker shutdown registries; draining either registry drops the singleton.
 - `test/test_general_publish_service.py` — general-event pipeline: rollback discards stashed events; commit delivers them with correct `{kind, ts, ...payload}` shape; publishing on `org_B` does not reach `org_A`'s subscriber. Uses `db_session` + `redis_or_skip`.

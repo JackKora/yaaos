@@ -1,13 +1,5 @@
-"""ActivityEvent fanout + general-event pipeline — channel naming + JSON
+"""General-event and workspace-activity pipelines — channel naming + JSON
 encode/decode over `core/redis`.
-
-Activity pipeline: publishers call `publish(channel, event)` with
-`channel = activity:{workflow_execution_id}`; subscribers iterate
-`async for event in subscribe(channel)`. Backed by Redis `PUBLISH` /
-`SUBSCRIBE` via [`core/redis`](../redis/__init__.py) so a publish from
-the worker process reaches an SSE subscriber on the web process.
-Fire-and-forget per Redis semantics — slow consumers do not backpressure
-publishers.
 
 General-event pipeline: `publish_general` / `subscribe_general` use a
 per-org channel (`{org_id}:general`) with typed `GeneralEventKind`
@@ -94,7 +86,7 @@ def _channel_for_general(org_id: UUID) -> str:
 
 
 class RedisPubsub:
-    """ActivityEvent pub/sub. Channel naming + JSON encode/decode on top
+    """Redis pub/sub bus. Channel naming + JSON encode/decode on top
     of `core/redis`. `subscriber_count` is local-process — Redis's
     `PUBSUB NUMSUB` is cluster-wide and not what callers want.
     """
@@ -163,28 +155,6 @@ def reset_pubsub() -> None:
     _singleton = None
 
 
-async def publish(channel: str, event: dict[str, Any]) -> int:
-    """Module-level convenience: publish to the process singleton."""
-    return await get_pubsub().publish(channel, event)
-
-
-def subscribe(channel: str) -> AsyncIterator[dict[str, Any]]:
-    """Module-level convenience: subscribe via the process singleton.
-
-    Returns an async iterator, not a coroutine — consumers do
-    `async for event in subscribe(...)`.
-    """
-    return get_pubsub().subscribe(channel)
-
-
-def channel_for(workflow_execution_id: str) -> str:
-    """Channel key used by publishers and SSE subscribers. Centralized so
-    the naming convention stays consistent across both sides of the
-    fanout.
-    """
-    return f"activity:{workflow_execution_id}"
-
-
 def subscriber_count(channel: str) -> int:
     return get_pubsub().subscriber_count(channel)
 
@@ -202,12 +172,11 @@ async def publish_general(
 ) -> None:
     """Publish a general org-scoped event to all subscribers on that org's channel.
 
-    Stamps `ts` server-side (ISO UTC). Calls `publish()` internally so
-    Redis semantics apply: fire-and-forget, no persistence.
+    Stamps `ts` server-side (ISO UTC). Redis semantics: fire-and-forget, no persistence.
     """
     ts = datetime.datetime.now(datetime.UTC).isoformat()
     event: dict[str, Any] = {"kind": kind.value, "ts": ts, **payload}
-    await publish(_channel_for_general(org_id), event)
+    await get_pubsub().publish(_channel_for_general(org_id), event)
 
 
 def publish_general_after_commit(
@@ -252,11 +221,10 @@ def _flush_general_pending(sync_session: Session) -> None:
 def subscribe_general(org_id: UUID) -> AsyncIterator[dict[str, Any]]:
     """Async iterator over general org-scoped events for `org_id`.
 
-    Wraps `subscribe(_channel_for_general(org_id))`.
     Returns an async iterator — consumers do
     `async for event in subscribe_general(org_id)`.
     """
-    return subscribe(_channel_for_general(org_id))
+    return get_pubsub().subscribe(_channel_for_general(org_id))
 
 
 # ---------------------------------------------------------------------------
@@ -280,17 +248,16 @@ async def publish_workspace_activity(
     Passes `payload` through unchanged — no envelope, no `ts` stamping.
     Redis fire-and-forget semantics apply.
     """
-    await publish(_channel_for_workspace_activity(org_id, workflow_execution_id), payload)
+    await get_pubsub().publish(_channel_for_workspace_activity(org_id, workflow_execution_id), payload)
 
 
 def subscribe_workspace_activity(org_id: UUID, workflow_execution_id: UUID) -> AsyncIterator[dict[str, Any]]:
     """Async iterator over workspace-activity events for `org_id` + `workflow_execution_id`.
 
-    Wraps `subscribe(_channel_for_workspace_activity(...))`.
     Returns an async iterator — consumers do
     `async for event in subscribe_workspace_activity(org_id, wfx_id)`.
     """
-    return subscribe(_channel_for_workspace_activity(org_id, workflow_execution_id))
+    return get_pubsub().subscribe(_channel_for_workspace_activity(org_id, workflow_execution_id))
 
 
 # ---------------------------------------------------------------------------

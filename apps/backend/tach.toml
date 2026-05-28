@@ -114,7 +114,7 @@ depends_on = ["app.core.auth", "app.core.database", "app.core.events", "app.core
 
 [[modules]]
 path = "app.domain.orgs"
-depends_on = ["app.core.agent_gateway", "app.core.audit_log", "app.core.auth", "app.core.byok", "app.core.config", "app.core.database", "app.core.identity", "app.core.saml", "app.core.sessions", "app.core.sse", "app.core.webserver", "app.core.workflow", "app.domain.coding_agent", "app.domain.tickets", "app.domain.vcs"]
+depends_on = ["app.core.agent_gateway", "app.core.audit_log", "app.core.auth", "app.core.byok", "app.core.config", "app.core.database", "app.core.identity", "app.core.saml", "app.core.sessions", "app.core.webserver", "app.core.workflow", "app.domain.coding_agent", "app.domain.tickets", "app.domain.vcs"]
 
 [[modules]]
 path = "app.domain.plugins"
@@ -463,9 +463,7 @@ from = ["app.core.sessions"]
 expose = [
   "GeneralEventKind",
   "RedisPubsub",
-  "channel_for",
   "get_pubsub",
-  "publish",
   "publish_general",
   "publish_general_after_commit",
   "publish_workspace_activity",
@@ -473,7 +471,6 @@ expose = [
   "reset_pubsub",
   "serialize_for_sse",
   "shutdown",
-  "subscribe",
   "subscribe_general",
   "subscribe_workspace_activity",
   "subscriber_count",
