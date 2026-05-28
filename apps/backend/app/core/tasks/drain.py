@@ -30,6 +30,7 @@ from taskiq import AsyncBroker
 
 from app.core.database import session
 from app.core.tasks.models import OutboxEntryRow
+from app.core.tasks.types import TaskMetadata
 
 log = structlog.get_logger("core.tasks.drain")
 
@@ -126,7 +127,11 @@ async def _taskiq_dispatcher_for(broker: AsyncBroker) -> Dispatcher:
             raise ValueError(f"taskiq task not registered: {task_name}")
         kicker = task.kicker()
         if metadata is not None:
-            kicker = kicker.with_labels(metadata=metadata)
+            # Encode as a JSON string so taskiq's label serializer
+            # (which `str()`s non-primitive values) doesn't mangle it.
+            # The middleware parses with `TaskMetadata.model_validate_json`.
+            meta_json = TaskMetadata.model_validate(metadata).model_dump_json()
+            kicker = kicker.with_labels(metadata=meta_json)
         await kicker.kiq(**args)
 
     return dispatch

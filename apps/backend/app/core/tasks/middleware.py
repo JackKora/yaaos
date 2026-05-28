@@ -1,55 +1,51 @@
 """Broker middleware: enter org_context before each task body runs.
 
-`OrgContextMiddleware` reads `metadata["org_id"]` from the taskiq message
-labels (placed there by the drain dispatcher via `.with_labels(metadata=...)`).
+`OrgContextMiddleware` reads `TaskMetadata` from the taskiq message labels
+(placed there by the drain dispatcher via `.with_labels(metadata=...)`).
 When present, it enters `org_context(org_id, ActorKind.SYSTEM)` before the
 task body runs and exits it cleanly after — whether the body succeeds or
 raises.
 
-Tasks enqueued outside any org context (metadata absent or org_id missing)
-run without an org context. Handler code never enters context manually —
-the middleware handles it.
+Tasks enqueued outside any org context (metadata absent) run without an
+org context. Handler code never enters context manually — the middleware
+handles it.
 
-Label encoding note: taskiq's label serialization coerces non-primitive values
-to `str(value)` (Python repr). `metadata` in labels arrives as a Python repr
-string such as `"{'org_id': '...'}"`. `_parse_metadata` recovers the dict
-safely via `ast.literal_eval` — the values are always UUID strings so there
-is no security risk.
+Wire encoding: the drain dumps `TaskMetadata` as a JSON string before
+`with_labels`, so the label arrives as a JSON string and is parsed via
+`TaskMetadata.model_validate_json`. Tests that call `pre_execute`
+directly with a raw dict are also supported — `model_validate` accepts
+both.
 """
 
 from __future__ import annotations
 
-import ast
 from typing import Any
-from uuid import UUID
 
+from pydantic import ValidationError
 from taskiq import TaskiqMessage, TaskiqMiddleware
 from taskiq.result import TaskiqResult
 
 from app.core.audit_log import ActorKind
 from app.core.auth import org_context
+from app.core.tasks.types import TaskMetadata
 
 
-def _parse_metadata(raw: Any) -> dict[str, Any] | None:
-    """Return the metadata dict from a label value.
+def _parse_metadata(raw: Any) -> TaskMetadata | None:
+    """Return the `TaskMetadata` from a label value, or `None` if absent.
 
-    When the value is already a dict (e.g. in tests that call pre_execute
-    directly), return as-is. When it is a string (the normal wire path —
-    taskiq coerces non-primitive label values via `str()`), parse it with
-    `ast.literal_eval` so the dict is recovered. Returns `None` when the
-    value is absent, an empty dict, or not parseable.
+    Accepts the normal wire path (JSON string from the drain) and the
+    test escape hatch (raw dict, when `pre_execute` is called directly).
+    Returns `None` for missing or unparseable values.
     """
     if raw is None:
         return None
-    if isinstance(raw, dict):
-        return raw or None
-    if isinstance(raw, str) and raw:
-        try:
-            parsed = ast.literal_eval(raw)
-            if isinstance(parsed, dict):
-                return parsed or None
-        except (ValueError, SyntaxError):
-            pass
+    try:
+        if isinstance(raw, str):
+            return TaskMetadata.model_validate_json(raw) if raw else None
+        if isinstance(raw, dict):
+            return TaskMetadata.model_validate(raw) if raw else None
+    except ValidationError:
+        return None
     return None
 
 
@@ -65,10 +61,8 @@ class OrgContextMiddleware(TaskiqMiddleware):
 
     async def pre_execute(self, message: TaskiqMessage) -> TaskiqMessage:
         metadata = _parse_metadata(message.labels.get("metadata"))
-        org_id_str: str | None = metadata.get("org_id") if metadata else None
-
-        if org_id_str:
-            ctx = org_context(UUID(org_id_str), ActorKind.SYSTEM)
+        if metadata is not None:
+            ctx = org_context(metadata.org_id, ActorKind.SYSTEM)
             await ctx.__aenter__()
             self._active[message.task_id] = ctx
 
@@ -91,7 +85,11 @@ class OrgContextMiddleware(TaskiqMiddleware):
     ) -> None:
         ctx = self._active.pop(message.task_id, None)
         if ctx is not None:
-            await ctx.__aexit__(type(exception), exception, exception.__traceback__)
+            # Don't forward exception info — `org_context` is an
+            # `@asynccontextmanager`, so passing it would call `gen.athrow(exc)`
+            # on the generator and re-raise out of `__aexit__`. The `finally:`
+            # block runs either way; we just want the contextvar reset.
+            await ctx.__aexit__(None, None, None)
 
 
 # Module-level singleton wired into the broker at worker boot (see runtime.py).

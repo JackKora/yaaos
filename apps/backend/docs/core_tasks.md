@@ -10,11 +10,12 @@ The taskiq broker is the single task registry; `@task` registers directly with `
 
 ## Public interface
 
-Exports `task`, `enqueue`, `TaskRef`, `drain_once`, `scoped_task_registration`, `ShutdownHook`, `shutdown`, `register_worker_shutdown_hook`, `iter_worker_shutdown_hooks`. See `apps/backend/app/core/tasks/__init__.py`.
+Exports `task`, `enqueue`, `TaskRef`, `TaskMetadata`, `drain_once`, `scoped_task_registration`, `ShutdownHook`, `shutdown`, `register_worker_shutdown_hook`, `iter_worker_shutdown_hooks`. See `apps/backend/app/core/tasks/__init__.py`.
 
 - `@task(name, *, queue="default", max_retries=1)` — registers a task body with the broker; returns a `TaskRef` callers `enqueue` against. `queue` / `max_retries` ride as taskiq labels (no consumer today; future brokers / middleware pick them up without API churn).
-- `enqueue(task_ref, args, *, metadata=None, session)` — writes a `taskiq_enqueue` outbox row in the caller's session. Returns the row id. Required `session` — there is no fire-and-forget path. `metadata` is an optional dict forwarded to the taskiq dispatch envelope via taskiq labels. When omitted and the `org_id` contextvar is set, auto-fills `{"org_id": str(org_id)}` — producers in HTTP request handlers don't need to pass it explicitly.
+- `enqueue(task_ref, args, *, metadata=None, session)` — writes a `taskiq_enqueue` outbox row in the caller's session. Returns the row id. Required `session` — there is no fire-and-forget path. `metadata` is an optional `TaskMetadata` (or raw dict for back-compat) forwarded to the taskiq dispatch envelope via taskiq labels. When omitted and the `org_id` contextvar is set, auto-fills `TaskMetadata(org_id=...)` — producers in HTTP request handlers don't need to pass it explicitly.
 - `TaskRef` — frozen handle to a registered task name + queue + retry policy.
+- `TaskMetadata` — frozen pydantic model carrying `org_id: UUID`. The typed envelope on the taskiq label from producer (`enqueue`) through outbox + drain to consumer (`OrgContextMiddleware`). Producer dumps via `model_dump_json()` for the wire; consumer parses via `model_validate_json()`. Avoids the prior `str(dict)` / `ast.literal_eval` round-trip.
 - `drain_once(db_session, *, dispatcher, batch_size=100)` — pulls undispatched outbox rows and hands each to `dispatcher`. Service tests import from the package top-level (`from app.core.tasks import drain_once`).
 - `scoped_task_registration(task_ref)` — context manager for test isolation. Wrap the test body after calling `@task(name)(fn)` to get a `TaskRef`; on exit, the name is popped from the broker registry. See [patterns.md § `scoped_*` context managers](patterns.md).
 - `shutdown()` — calls the broker object's own async `shutdown()` (closes connections). Does NOT drop the broker singleton — task registrations set at import time remain intact. Re-exported from `core/shutdown_registry` registration side-effect.
@@ -28,8 +29,8 @@ The outbox model (`OutboxEntryRow`) and the internal drain primitive (`write`) a
 
 1. Task author writes `@task("route_workflow") async def route_workflow(*, exec_id, ...)`. The decorator registers the body with the taskiq broker.
 2. Domain caller inside a transaction: `await enqueue(route_workflow, args={...}, session=s); await s.commit()`. The `outbox_entries` row commits atomically with the rest of the caller's writes. If the caller is inside an HTTP request (or any `org_context()` block), `enqueue` auto-fills `metadata={"org_id": str(org_id)}` from the contextvar — no explicit arg needed.
-3. The worker's drain loop polls `outbox_entries WHERE dispatched_at IS NULL` with `FOR UPDATE SKIP LOCKED`, dispatches `kind='taskiq_enqueue'` rows to the taskiq broker (LPUSH to a Redis list), then stamps `dispatched_at`. When the outbox payload carries `metadata`, the drain forwards it to the taskiq kicker via `.with_labels(metadata=...)` so middleware can read it without touching the task body's args.
-4. Before the task body runs, `OrgContextMiddleware.pre_execute` reads `metadata["org_id"]` from the message labels and enters `org_context(org_id, ActorKind.SYSTEM)`. `current_org_id()` is reliably available inside any task body — handler code never enters context manually. Tasks without `org_id` in metadata run without an org context. The middleware exits the context (success or error) via `post_execute` / `on_error`.
+3. The worker's drain loop polls `outbox_entries WHERE dispatched_at IS NULL` with `FOR UPDATE SKIP LOCKED`, dispatches `kind='taskiq_enqueue'` rows to the taskiq broker (LPUSH to a Redis list), then stamps `dispatched_at`. When the outbox payload carries `metadata`, the drain validates it as `TaskMetadata` and forwards a `model_dump_json()` string to the taskiq kicker via `.with_labels(metadata=...)`. The JSON-string encoding bypasses taskiq's `str()` label coercion so the consumer can parse it directly.
+4. Before the task body runs, `OrgContextMiddleware.pre_execute` parses the `metadata` label with `TaskMetadata.model_validate_json` and enters `org_context(metadata.org_id, ActorKind.SYSTEM)`. `current_org_id()` is reliably available inside any task body — handler code never enters context manually. Tasks without `metadata` in labels run without an org context. The middleware exits the context (success or error) via `post_execute` / `on_error` — `on_error` passes `None, None, None` to `__aexit__` so the `@asynccontextmanager` generator just cleans up rather than re-throwing the task exception.
 5. The same worker process runs `broker.listen()` — it BRPOPs tasks from Redis and invokes the registered body with the kwargs the caller passed to `enqueue`. Bodies own their own session (they open one via `core/database.session()`). Retry middleware to honor `max_retries` isn't wired yet; for now the drain re-loops on failure.
 
 ### Worker process
@@ -50,7 +51,7 @@ Single-process today. If the workload demands it, the drain and consume tasks sp
 
 `outbox_entries` is the private substrate: `id`, `kind`, `payload` (jsonb), `created_at`, `dispatched_at`, `attempt`, `last_error`. Domain modules never import the model — they go through `enqueue()`. Migration `014_create_outbox_entries`.
 
-`kind` is opaque so future consumers (e.g. cross-process webhook emission) plug in via their own dispatcher without schema changes. Today the only kind is `taskiq_enqueue` with payload `{task_name, queue, args, metadata}`. `metadata` is `null` when enqueued outside any org context.
+`kind` is opaque so future consumers (e.g. cross-process webhook emission) plug in via their own dispatcher without schema changes. Today the only kind is `taskiq_enqueue` with payload `{task_name, queue, args, metadata}`. `metadata` is the JSON dump of `TaskMetadata` (`{"org_id": "<uuid>"}`), or `null` when enqueued outside any org context.
 
 ### Idempotency
 

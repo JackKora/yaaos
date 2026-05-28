@@ -28,6 +28,7 @@ from app.core.shutdown_registry import (  # noqa: F401
 )
 from app.core.tasks.broker import get_broker
 from app.core.tasks.drain import write as outbox_write
+from app.core.tasks.types import TaskMetadata
 
 
 @dataclass(slots=True, frozen=True)
@@ -68,27 +69,32 @@ async def enqueue(
     task_ref: TaskRef,
     args: dict[str, Any],
     *,
-    metadata: dict[str, Any] | None = None,
+    metadata: TaskMetadata | dict[str, Any] | None = None,
     session: AsyncSession,
 ) -> UUID:
     """Atomic-in-session enqueue. Writes a `taskiq_enqueue` outbox row that
     the drain delivers after commit. Returns the outbox row id.
 
-    `metadata` is an optional dict forwarded through the outbox payload to the
-    taskiq dispatch envelope. When omitted, auto-fills `{"org_id": str(org_id)}`
-    if the `org_id` contextvar is set (producers in HTTP request handlers don't
-    need to pass it explicitly — the contextvar set by the entry-point wrap is
-    enough). Stays absent when no contextvar is set and no explicit value is
-    given (system-bootstrap paths that run outside any org context)."""
+    `metadata` is an optional `TaskMetadata` forwarded through the outbox to
+    the taskiq dispatch envelope. A raw dict is accepted for back-compat and
+    coerced via `TaskMetadata.model_validate`. When omitted, auto-fills
+    `TaskMetadata(org_id=...)` from the `org_id` contextvar if set (HTTP
+    handlers don't need to pass it explicitly). Stays absent when no
+    contextvar is set and no explicit value is given (system-bootstrap paths
+    that run outside any org context)."""
+    meta_obj: TaskMetadata | None
     if metadata is None:
         org_id = current_org_id()
-        if org_id is not None:
-            metadata = {"org_id": str(org_id)}
+        meta_obj = TaskMetadata(org_id=org_id) if org_id is not None else None
+    elif isinstance(metadata, TaskMetadata):
+        meta_obj = metadata
+    else:
+        meta_obj = TaskMetadata.model_validate(metadata)
     payload: dict[str, Any] = {
         "task_name": task_ref.name,
         "queue": task_ref.queue,
         "args": args,
-        "metadata": metadata,
+        "metadata": meta_obj.model_dump(mode="json") if meta_obj is not None else None,
     }
     return await outbox_write(session, kind="taskiq_enqueue", payload=payload)
 

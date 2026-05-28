@@ -464,6 +464,7 @@ from = ["app.core.sse"]
 expose = [
   "OutboxEntryRow",
   "ShutdownHook",
+  "TaskMetadata",
   "TaskRef",
   "drain_once",
   "enqueue",
