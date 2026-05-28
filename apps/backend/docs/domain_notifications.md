@@ -12,6 +12,7 @@ Exported from `app/domain/notifications/__init__.py`:
 
 - Types — `Notification`.
 - Service — `record(...)`, `list_for_user(...)`, `popover_for_user(...)`, `mark_read(...)`, `mark_all_read(...)`.
+- Task ref — `handle_ticket_status_change` (`TaskRef`). Producers `enqueue` it; it writes one notification row per supplied `member_user_ids` entry.
 
 HTTP routes (`/api/notifications`):
 
@@ -41,10 +42,11 @@ All four endpoints classify as `RouteSecurity.USER_SCOPED` (cross-org). The pref
 - **Record.** `record(...) -> Notification | None` — idempotent by `(user_id, type, ticket_id)`. Re-emitting the same workflow transition is a no-op (returns `None`).
 - **Read.** `list_for_user(...) -> list[Notification]` filters by `read_state` (`all` / `unread` / `read`), optional `org_id`, optional `types`. `popover_for_user(...) -> tuple[list[Notification], int]` returns the latest N unread items + the unread count for the sidebar bell.
 - **Mark read.** `mark_read(...) -> Notification | None` flips `read_at` to now if null (idempotent). `mark_all_read(org_id?, types?) -> int` does a single bulk UPDATE; returns the row count.
+- **Task handler — `handle_ticket_status_change`.** Accepts `ticket_id`, `member_user_ids`, `org_id`, `new_status`. Looks up the ticket title (for the notification body), maps `new_status` to a `notif_type` via a fixed table, and calls `record(...)` for each supplied `user_id`. Producers compute the recipient list inside their own transaction — atomic with the status change — so the task body does no membership query. The `org_id` contextvar is set by `core/tasks` middleware before the body runs; the handler never calls `org_context` itself. Idempotent: `record` deduplicates on `(user_id, type, ticket_id)`.
 
-### No workflow subscribers wired today
+### Subscriber (legacy path — still wired)
 
-`core/events` subscriptions that would turn workflow transitions into notification rows aren't wired. The schema, endpoints, and SPA wiring exist; no producer emits rows in normal operation.
+`domain/notifications/subscribers.py` listens to `core/events` `ticket_status_changed` events, queries org members itself, and calls `record`. Remains active while producers have not yet migrated to `enqueue(handle_ticket_status_change, ...)`. Both paths write through the same idempotent `record` — coexistence is safe.
 
 ## Data owned
 
@@ -52,4 +54,6 @@ All four endpoints classify as `RouteSecurity.USER_SCOPED` (cross-org). The pref
 
 ## How it's tested
 
-`apps/backend/app/domain/notifications/test/test_endpoints.py` — service tests against a real DB session covering unauth 401, per-user scoping (Alice's list doesn't surface Bob's rows and vice versa), popover unread_count, `mark_read` idempotency, `mark_all_read` scoping, and `service.record()` idempotency by `(user_id, type, ticket_id)`.
+- `apps/backend/app/domain/notifications/test/test_endpoints.py` — service tests against a real DB session covering unauth 401, per-user scoping (Alice's list doesn't surface Bob's rows and vice versa), popover unread_count, `mark_read` idempotency, `mark_all_read` scoping, and `service.record()` idempotency by `(user_id, type, ticket_id)`.
+- `apps/backend/app/domain/notifications/test/test_subscriber_service.py` — service tests for the legacy event-bus subscriber: status → notif_type mapping, per-member write, `running` filtered out, idempotent re-emission.
+- `apps/backend/app/domain/notifications/test/test_task_handler_service.py` — service tests for the task handler: per-member write, idempotency on redelivery, and end-to-end durability via the outbox drain (enqueue → drain → task body → notification rows).

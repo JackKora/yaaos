@@ -110,7 +110,7 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.c
 
 [[modules]]
 path = "app.domain.notifications"
-depends_on = ["app.core.auth", "app.core.database", "app.core.events", "app.core.identity", "app.core.observability", "app.core.webserver", "app.domain.tickets"]
+depends_on = ["app.core.auth", "app.core.database", "app.core.events", "app.core.identity", "app.core.observability", "app.core.tasks", "app.core.webserver", "app.domain.tickets"]
 
 [[modules]]
 path = "app.domain.orgs"
@@ -744,6 +744,7 @@ from = ["app.domain.mcp_proxy"]
 [[interfaces]]
 expose = [
   "Notification",
+  "handle_ticket_status_change",
   "list_for_user",
   "mark_all_read",
   "mark_read",
