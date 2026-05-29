@@ -758,7 +758,7 @@ async def _apply_tickets_dedupe_external_id(conn) -> None:  # type: ignore[no-un
 async def _apply_sso_email_domains(conn) -> None:  # type: ignore[no-untyped-def]
     """add `sso_configs.email_domains` JSONB column.
 
-    Drives the real `/api/auth/sso/discover` lookup: when a user types
+    Drives the `/api/sso/discover` lookup: when a user types
     `*@acme.com` on the Login page, we look up the matching SSO config
     and return its provider. Existing rows backfill to `[]` (no claims).
     Idempotent.

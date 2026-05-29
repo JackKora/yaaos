@@ -13,7 +13,7 @@ Four layers. Each may depend only on lower layers. `tach` (via `bin/sync_modules
 | `plugins` | `app/plugins/` | Vendor-specific Protocol implementations. |
 | `testing` | `app/testing/` | Test-only scaffolding. Excluded from prod wheel. |
 
-`core` may define domain-aware *data types* (e.g., `Actor` references the agent concept) but never *behaviour* encoding business decisions. Two audited `core→domain` edges exist for auth/identity infra reads (`core/sessions` → `domain/orgs`, `domain/integrations`; `core/identity` → `domain/orgs`); `PERMITTED_CROSS_LAYER_EDGES` in `bin/sync_modules` is the exact allowlist.
+`core` may define domain-aware *data types* (e.g., `Actor` references the agent concept) but never *behaviour* encoding business decisions. Audited `core→domain` edges exist for auth/identity infra reads (`core/sessions` → `domain/integrations`; `core/identity` → `domain/orgs`); `PERMITTED_CROSS_LAYER_EDGES` in `bin/sync_modules` is the exact allowlist. `core/sessions` no longer imports `domain/orgs` — org/membership lookups go through [`core/tenancy`](core_tenancy.md).
 
 ## Extension points
 
@@ -46,7 +46,7 @@ Each flow is a labeled hop-list. Module docs have the detail.
 `plugins/github` push event → `domain/intake` → `domain/reviewer` incremental path → `core/workflow` → `domain/coding_agent` `incremental_review` → admission → `domain/vcs` `post_review`
 
 **Session / auth chain** (inbound request):
-[`core/auth`](core_auth.md) middleware classify → [`core/sessions`](core_sessions.md) `require(Action.X)` → `domain/orgs` membership check → handler
+[`core/auth`](core_auth.md) middleware classify → [`core/sessions`](core_sessions.md) `require(Action.X)` → [`core/tenancy`](core_tenancy.md) `resolve_auth_org` → handler
 
 **Workflow-engine step dispatch**:
 [`core/tasks`](core_tasks.md) worker dequeues `route_workflow` → [`core/workflow`](core_workflow.md) resolves next command → Workspace/Local/HITL branch → outcome persisted → enqueues next step

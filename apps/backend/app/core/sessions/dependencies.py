@@ -27,8 +27,7 @@ from app.core.auth import (
 )
 from app.core.database import session as db_session
 from app.core.identity import repository as identity_repo
-from app.domain.orgs import Membership
-from app.domain.orgs import repository as orgs_repo
+from app.core.tenancy import MembershipView, resolve_auth_org
 
 
 def _err(status: int, code: str) -> HTTPException:
@@ -79,7 +78,7 @@ def require(action: Action) -> Callable[..., None]:
         request: Request,
         x_org_slug: Annotated[str | None, Header(alias="X-Org-Slug")] = None,
         user_id=Depends(_current_session_user_id),
-    ) -> Membership:
+    ) -> MembershipView:
         if user_id is None:
             # Raise the AuthFailure subclass so the registered handler
             # clears the stale session + csrf cookies on the way out.
@@ -88,15 +87,15 @@ def require(action: Action) -> Callable[..., None]:
         if not x_org_slug:
             # Middleware should have caught this, but defend in depth.
             raise _err(400, "missing_org_slug")
+
         async with db_session() as s:
-            org_row = await orgs_repo.get_org_by_slug(s, x_org_slug)
-            if org_row is None:
-                raise _err(404, "org_not_found")
-            membership_row = await orgs_repo.get_membership(s, user_id=user_id, org_id=org_row.id)
-        if membership_row is None:
-            # Mask existence — same shape as "org not found".
+            auth_org = await resolve_auth_org(s, user_id=user_id, slug=x_org_slug)
+
+        if auth_org is None:
+            # Mask existence — same shape whether org is absent or user has no membership.
             raise _err(404, "org_not_found")
-        role = Role(membership_row.role)
+
+        role = auth_org.role
         if not role.covers(required):
             raise _err(403, "insufficient_role")
 
@@ -115,7 +114,7 @@ def require(action: Action) -> Callable[..., None]:
             async with db_session() as s:
                 sess_row = await identity_repo.get_session_by_hash(s, token_hash)
             if sess_row is not None and sess_row.last_seen_at is not None:
-                minutes = org_row.session_timeout_override
+                minutes = auth_org.session_timeout_override
                 idle = _timedelta(minutes=minutes) if minutes else SESSION_IDLE_TIMEOUT
                 if sess_row.last_seen_at + idle < _datetime.now(_UTC):
                     # Audit row mirrors the hard-expiry pattern in
@@ -137,31 +136,29 @@ def require(action: Action) -> Callable[..., None]:
                             "logout",
                             _IdlePayload(),
                             _Actor.user(user_id=user_id),
-                            org_id=org_row.id,
+                            org_id=auth_org.org_id,
                             session=s,
                         )
                         await s.commit()
                     raise AuthFailure("session_idle_expired")
+
         # SSO satisfaction: if the org has SSO enabled, the session must
         # have `sso_satisfied_for_org_id == org_id` within the 8h TTL.
         # Break-glass: the exempt Owner bypasses this AND must have a
         # verified TOTP secret.
         from app.core.identity import has_verified_totp  # noqa: PLC0415
         from app.core.identity import sessions as session_lifecycle  # noqa: PLC0415
-        from app.domain.orgs import get_config  # noqa: PLC0415
 
-        async with db_session() as s:
-            cfg = await get_config(s, org_id=org_row.id)
-        if cfg is not None and cfg.enabled:
+        if auth_org.sso_enabled:
             session_token = request.cookies.get("yaaos_session")
             sso_ok = False
             if session_token:
                 async with db_session() as s:
                     sess = await session_lifecycle.lookup(s, session_token)
-                if sess is not None and session_lifecycle.is_sso_satisfied(sess, org_id=org_row.id):
+                if sess is not None and session_lifecycle.is_sso_satisfied(sess, org_id=auth_org.org_id):
                     sso_ok = True
             if not sso_ok:
-                is_exempt = cfg.exempt_owner_user_id == user_id and role == Role.OWNER
+                is_exempt = auth_org.sso_exempt_owner_user_id == user_id and role == Role.OWNER
                 if is_exempt:
                     async with db_session() as s:
                         if not await has_verified_totp(s, user_id):
@@ -182,14 +179,14 @@ def require(action: Action) -> Callable[..., None]:
                             "break_glass_exempt_owner",
                             _BreakGlassPayload(path=request.url.path),
                             Actor.user(user_id=user_id),
-                            org_id=org_row.id,
+                            org_id=auth_org.org_id,
                             session=s,
                         )
                         await s.commit()
                 else:
                     raise _err(403, "sso_required")
 
-        org_id_var.set(org_row.id)
+        org_id_var.set(auth_org.org_id)
         actor_kind_var.set(ActorKind.USER)
         actor_id_var.set(user_id)
         route_security_resolved.set("org_scoped")
@@ -207,7 +204,13 @@ def require(action: Action) -> Callable[..., None]:
             async with db_session() as s:
                 await session_lifecycle.touch(s, session_cookie)
                 await s.commit()
-        return Membership.from_row(membership_row)
+        return MembershipView(
+            org_id=auth_org.org_id,
+            slug=auth_org.slug,
+            org_name="",
+            role=auth_org.role,
+            handle="",
+        )
 
     return _dep
 

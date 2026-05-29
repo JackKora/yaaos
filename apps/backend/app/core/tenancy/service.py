@@ -51,6 +51,8 @@ class AuthOrg(BaseModel):
     role: Role
     sso_enabled: bool
     sso_exempt_owner_user_id: UUID | None
+    # Per-org idle session timeout (minutes). None = use the global default.
+    session_timeout_override: int | None = None
 
 
 class MembershipView(BaseModel):
@@ -99,6 +101,7 @@ async def resolve_auth_org(
         role=Role(membership.role),
         sso_enabled=org_row.sso_enabled,
         sso_exempt_owner_user_id=org_row.sso_exempt_owner_user_id,
+        session_timeout_override=org_row.session_timeout_override,
     )
 
 

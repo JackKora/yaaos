@@ -66,7 +66,7 @@ export interface SsoDiscoverResult {
 export function useSsoDiscover() {
   return useMutation({
     mutationFn: (email: string) =>
-      apiFetch<SsoDiscoverResult>(`/api/auth/sso/discover?email=${encodeURIComponent(email)}`),
+      apiFetch<SsoDiscoverResult>(`/api/sso/discover?email=${encodeURIComponent(email)}`),
   });
 }
 

@@ -24,7 +24,7 @@
 ## Vocabulary
 
 - **OrgRef** — caller-agnostic org identity: `org_id`, `slug`, `name`.
-- **AuthOrg** — per-caller authz projection: `org_id`, `slug`, `role`, `sso_enabled`, `sso_exempt_owner_user_id`.
+- **AuthOrg** — per-caller authz projection: `org_id`, `slug`, `role`, `sso_enabled`, `sso_exempt_owner_user_id`, `session_timeout_override`. Consumed by `core/sessions.require()` for the full auth gate in one lookup.
 - **MembershipView** — user's membership list item: `org_id`, `slug`, `org_name`, `role`, `handle`.
 
 ## Entry points

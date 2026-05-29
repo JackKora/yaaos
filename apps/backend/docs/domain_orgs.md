@@ -59,13 +59,17 @@ Notable constraints:
 - Partial unique `uq_invitations_pending_org_email` on `(org_id, lower(email)) WHERE accepted_at IS NULL` — blocks duplicate pending invites.
 - `orgs.registered_iam_arn` partial UNIQUE (`WHERE NOT NULL`), stored lowercased. Paired with `orgs.aws_region` via check constraint `ck_orgs_arn_region_paired` (both-or-neither). ARN must match `arn:aws:iam::<12-digit>:role/<name>` with no path slashes — paths are stripped by AWS's assumed-role form, so different-path roles could collide on the same canonical.
 
+## SSO discover
+
+`GET /api/sso/discover?email=<address>` — public; returns `{provider: "github" | "saml", saml_org_slug?}` by scanning `sso_configs.email_domains` (JSONB array). Owned here because it queries `sso_configs` which is a `domain/orgs` table. Route prefix `/api/sso/` is already classified PUBLIC by the auth middleware. See `sso_web.py`.
+
 ## Import-cycle note
 
-`domain.orgs.web` imports `core.sessions.dependencies`; `core.sessions.dependencies` imports `domain.orgs` (for `Membership` + the orgs repository). The side-effect import of `orgs.web` lives in `app/web.py` after both modules finish loading — `domain.orgs.__init__` does NOT trigger it. `Role` is no longer imported from `domain.orgs`; callers import it from `core.auth` directly.
+`domain.orgs.web` imports `core.sessions.dependencies`. The side-effect import of `orgs.web` lives in `app/web.py` after both modules finish loading — `domain.orgs.__init__` does NOT trigger it. `Role` is no longer imported from `domain.orgs`; callers import it from `core.auth` directly. `core.sessions.dependencies` no longer imports `domain.orgs`.
 
 ## HTTP routes
 
-See `web.py` for the full route list (`/api/memberships`, `/api/vcs`, `/api/coding-agents`, `/api/orgs`, `/api/api-keys`).
+See `web.py` for the full route list (`/api/memberships`, `/api/vcs`, `/api/coding-agents`, `/api/orgs`, `/api/api-keys`). See `sso_web.py` for `/api/sso/*` including `/api/sso/discover`.
 
 ## How it's tested
 

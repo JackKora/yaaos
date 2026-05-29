@@ -35,8 +35,7 @@ PERMITTED_CROSS_LAYER_EDGES: frozenset[tuple[str, str]] = frozenset(
     [
         # core/identity may read domain/orgs for membership creation at signup.
         ("app.core.identity", "app.domain.orgs"),
-        # core/sessions reads domain/orgs (memberships, roles) and domain/integrations (OAuth configs).
-        ("app.core.sessions", "app.domain.orgs"),
+        # core/sessions reads domain/integrations (broken OAuth credential check in /me).
         ("app.core.sessions", "app.domain.integrations"),
     ]
 )

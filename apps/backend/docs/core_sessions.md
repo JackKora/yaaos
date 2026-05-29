@@ -1,14 +1,16 @@
 # core/sessions
 
-> FastAPI dependency factories that wire the [`core/auth`](core_auth.md) middleware into identity + orgs lookups.
+> FastAPI dependency factories that wire [`core/auth`](core_auth.md) middleware into identity + org lookups — no `domain/*` imports.
 
 ## Scope
 
 - Owns: `require(action)`, `public_route` dependency factories; `/api/auth/*` HTTP routes; `_REQUIRED_ROLE` registry.
-- Does NOT own: session rows (those are in [`core/identity`](core_identity.md)), the middleware/`Action` enum (those are in [`core/auth`](core_auth.md)), or `require_session` (session-only dep; owned by [`core/identity`](core_identity.md) so it can avoid a cycle).
-- Why separate from `core/auth`: the dep factories need both `core/identity` and `domain/orgs`; `core/auth` stays free of domain reads.
+- Does NOT own: session rows (those are in [`core/identity`](core_identity.md)), the middleware/`Action` enum (those are in [`core/auth`](core_auth.md)), org/membership tables (those are in [`core/tenancy`](core_tenancy.md)), or the SSO discover route (moved to [`domain/orgs`](domain_orgs.md) at `/api/sso/discover`).
+- Pure core — no `domain/*` import at any layer. All org/membership resolution goes through [`core/tenancy`](core_tenancy.md).
 
 ## Why / invariants
+
+**`require(action)` resolves via `core/tenancy`** — calls `resolve_auth_org(session, user_id, slug)` which returns `AuthOrg` (role, SSO flags, session timeout override) in a single lookup. No `domain/*` import; no `sso_configs` join at request time — SSO gate reads the denormalized `orgs.sso_enabled` column via `AuthOrg`.
 
 **`_REQUIRED_ROLE` registry** — single source of truth mapping `Action → Role`. A CI test asserts every `Action` member has an entry. See `app/core/sessions/dependencies.py`. Current mappings: Builder for read/self-update actions; Admin for invite/remove/role-change; Owner for SSO + GitHub App link.
 

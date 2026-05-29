@@ -2,6 +2,7 @@
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET    | `/api/sso/discover`         | public; returns `{provider, saml_org_slug?}` for an email.  |
 | GET    | `/api/sso/{slug}/metadata`  | public; returns SP metadata XML for the org. |
 | GET    | `/api/sso/{slug}/login`     | public; starts an SP-initiated SAML AuthnRequest. |
 | POST   | `/api/sso/{slug}/acs`       | public; ACS — verifies assertion, marks session SSO-satisfied. |
@@ -12,11 +13,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
@@ -38,7 +39,7 @@ class _SsoConfigBody(BaseModel):
     enabled: bool = False
     exempt_owner_user_id: UUID | None = None
     # Owner-maintained list of email domain claims (e.g. ["acme.com"]).
-    # Drives /api/auth/sso/discover. Empty list = no SSO routing.
+    # Drives /api/sso/discover. Empty list = no SSO routing.
     email_domains: list[str] = []
 
 
@@ -53,6 +54,36 @@ class _SsoSatisfiedAuditPayload(BaseModel):
 
 def _err(status: int, code: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"error": code})
+
+
+@router.get("/discover")
+@limiter.limit(AUTH_LIMIT)
+async def sso_discover(request: Request, email: Annotated[str, Query()]) -> dict[str, Any]:
+    """Find the SSO IdP (if any) matching the email's domain.
+
+    Drives the Login page's provider-button rendering:
+    `{provider: "github" | "saml", saml_org_slug?: str}`.
+
+    Looks up `sso_configs.email_domains` (JSONB array) for a row whose
+    `enabled = true` claims the address's domain. First match wins.
+    No SAML match → `{provider: "github"}` so GitHub-only orgs keep working.
+
+    `email` is required but only the format is validated — we never
+    confirm or deny that a given address belongs to a user.
+    """
+    del request  # rate-limit-only; FastAPI requires the kwarg
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail={"error": "invalid_email"})
+    domain = email.split("@", 1)[1].strip().lower()
+    if not domain:
+        raise HTTPException(status_code=422, detail={"error": "invalid_email"})
+
+    from app.domain.orgs import find_saml_org_slug_for_domain  # noqa: PLC0415
+
+    slug = await find_saml_org_slug_for_domain(domain)
+    if slug is None:
+        return {"provider": "github"}
+    return {"provider": "saml", "saml_org_slug": slug}
 
 
 @router.get("/{slug}/metadata")

@@ -68,8 +68,8 @@ _register_arn_lookup(_arn_lookup_impl)
 
 # NOTE: `orgs.web`, `orgs.audit_web`, and `orgs.sso_web` are registered from
 # `main.py` (after `core.sessions` loads), not imported here — they cycle
-# through `core.sessions.dependencies`, which imports from `domain.orgs`.
-# They appear in `__all__` so tach allows cross-module side-effect imports.
+# through `core.sessions.dependencies`. They appear in `__all__` so tach
+# allows cross-module side-effect imports.
 
 __all__ = [
     "CodingAgentAlreadyInstalledError",
