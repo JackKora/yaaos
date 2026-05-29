@@ -110,7 +110,7 @@ async def test_config_status_fully_configured(seeded, db_session) -> None:
     register_onboarding_contributor("anthropic_key_set", yes)
     from app.core.tenancy import update_org_fields  # noqa: PLC0415
 
-    await update_org_fields(db_session, seeded["org_a"].org_id, {"workspace_provider": "in_memory"})
+    await update_org_fields(db_session, seeded["org_a"].org_id, workspace_provider="in_memory")
     await db_session.commit()
 
     sess = seeded["sess"]

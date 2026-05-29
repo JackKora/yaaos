@@ -39,12 +39,22 @@ _LOOKUP: OrgArnLookupFn | None = None
 
 
 def register_org_arn_lookup(fn: OrgArnLookupFn) -> None:
-    """Register the lookup function. Called by `domain/orgs` at boot."""
+    """Register the lookup function. Called by `domain/orgs` at boot.
+
+    Idempotent for the same callable; raises `RuntimeError` on a conflicting
+    re-registration so a double-wiring bug surfaces at boot instead of
+    silently swapping the singleton. Tests reset via
+    `_reset_org_arn_lookup_for_tests` first.
+    """
     global _LOOKUP
+    if _LOOKUP is not None and _LOOKUP is not fn:
+        raise RuntimeError("org_arn_lookup already registered — reset it before re-registering")
     _LOOKUP = fn
 
 
 def _reset_org_arn_lookup_for_tests() -> None:
+    """Clear the registry slot. Test-only escape hatch; imported directly from
+    this submodule (kept out of the package `__all__`)."""
     global _LOOKUP
     _LOOKUP = None
 

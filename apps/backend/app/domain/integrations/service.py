@@ -47,7 +47,12 @@ log = structlog.get_logger("domain.integrations")
 
 
 class McpCredential(BaseModel):
-    """Value object — a single (org, provider) MCP credential."""
+    """Metadata value object — a single (org, provider) MCP credential.
+
+    Carries no secret material. Call sites that must decrypt the upstream
+    token fetch `McpCredentialSecret` via `get_secret` and decrypt at the
+    point of use.
+    """
 
     org_id: UUID
     provider: str
@@ -55,9 +60,6 @@ class McpCredential(BaseModel):
     last_refresh_status: str | None
     last_refresh_failed_at: datetime | None
     upstream_identity: str | None
-    # Token delivery fields — populated by get/connect_callback/create_credential.
-    # Callers that decrypt the token must call `core/secrets.decrypt` at the call site.
-    encrypted_access_token: str
     allowed_tools: list[str]
     expires_at: datetime
 
@@ -70,10 +72,19 @@ class McpCredential(BaseModel):
             last_refresh_status=row.last_refresh_status,
             last_refresh_failed_at=row.last_refresh_failed_at,
             upstream_identity=row.upstream_identity,
-            encrypted_access_token=row.encrypted_access_token,
             allowed_tools=list(row.allowed_tools or []),
             expires_at=row.expires_at,
         )
+
+
+class McpCredentialSecret(BaseModel):
+    """Secret value object — the encrypted upstream access token only.
+
+    Returned solely to call sites that decrypt at the point of use, keeping
+    secret material out of the `McpCredential` metadata VO.
+    """
+
+    encrypted_access_token: str
 
 
 class _ConnectedPayload(BaseModel):
@@ -110,6 +121,16 @@ async def _get_row(session: AsyncSession, org_id: UUID, provider: str) -> McpCre
 async def get(session: AsyncSession, org_id: UUID, provider: str) -> McpCredential | None:
     row = await _get_row(session, org_id, provider)
     return McpCredential.from_row(row) if row is not None else None
+
+
+async def get_secret(session: AsyncSession, org_id: UUID, provider: str) -> McpCredentialSecret | None:
+    """Return the encrypted access token for (org, provider), or None.
+
+    Separate from `get` so secret material never rides on the metadata VO.
+    Callers decrypt via `core/secrets.decrypt` at the point of use.
+    """
+    row = await _get_row(session, org_id, provider)
+    return McpCredentialSecret(encrypted_access_token=row.encrypted_access_token) if row is not None else None
 
 
 async def connect_callback(

@@ -101,7 +101,7 @@ def _reset_queues_and_sink():
     clear_queues()
     clear_report_sink()
     if prior is not None:
-        register_report_sink(prior)  # type: ignore[arg-type]
+        register_report_sink(prior)
 
 
 # ── Tests: record_heartbeat delegates reconciliation to the sink ────────

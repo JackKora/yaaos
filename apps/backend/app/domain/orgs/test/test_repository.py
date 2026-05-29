@@ -89,7 +89,7 @@ async def test_invitation_persisted_with_token_hash(db_session) -> None:
 async def test_get_org_by_slug_excludes_archived(db_session) -> None:
     org = await repo.insert_org(db_session, slug="will-archive")
     assert await repo.get_org_by_slug(db_session, "will-archive") is not None
-    await update_org_fields(db_session, org.org_id, {"archived_at": datetime.now(UTC)})
+    await update_org_fields(db_session, org.org_id, archived_at=datetime.now(UTC))
     await db_session.flush()
     # get_org_by_slug filters out archived rows.
     assert await repo.get_org_by_slug(db_session, "will-archive") is None

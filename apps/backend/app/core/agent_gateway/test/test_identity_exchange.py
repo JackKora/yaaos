@@ -69,7 +69,8 @@ async def test_identity_exchange_happy_path_persists_agent_row(db_session) -> No
     await update_org_fields(
         db_session,
         org.org_id,
-        {"registered_iam_arn": canonical_arn, "aws_region": "us-east-1"},
+        registered_iam_arn=canonical_arn,
+        aws_region="us-east-1",
     )
     await db_session.commit()
 
@@ -150,7 +151,8 @@ async def test_identity_exchange_region_mismatch_returns_401(db_session) -> None
     await update_org_fields(
         db_session,
         org.org_id,
-        {"registered_iam_arn": canonical_arn, "aws_region": "us-east-1"},
+        registered_iam_arn=canonical_arn,
+        aws_region="us-east-1",
     )
     await db_session.commit()
 

@@ -43,7 +43,7 @@ from app.core.database import session as db_session
 from app.core.observability import spawn
 from app.core.secrets import SecretsDecryptError, decrypt
 from app.core.webserver import RouteSpec, register_routes
-from app.domain.integrations import get, get_provider, mark_last_used
+from app.domain.integrations import get, get_provider, get_secret, mark_last_used
 from app.domain.mcp_proxy.service import lookup_token, record_broken_creds, run_sweep_loop
 
 log = structlog.get_logger("mcp_proxy.web")
@@ -170,9 +170,16 @@ async def dispatch(
                     )
                 )
 
-        # Decrypt the upstream access token only at the call site.
+        # Fetch the secret separately (it never rides on the metadata VO) and
+        # decrypt the upstream access token only at the call site.
+        secret = await get_secret(s, org_id, server)
+        if secret is None:
+            record_broken_creds(review_id, server)
+            return JSONResponse(
+                _rpc_error(rpc_id, *_RPC_ERR_NOT_CONNECTED, f"{server} not connected for org")
+            )
         try:
-            upstream_token = decrypt(credential.encrypted_access_token.encode()).decode()
+            upstream_token = decrypt(secret.encrypted_access_token.encode()).decode()
         except SecretsDecryptError:
             log.error("mcp_proxy.decrypt_failed", provider=server)
             return JSONResponse(

@@ -82,11 +82,17 @@ _SINK: WorkspaceAgentReportSink | None = None
 
 
 def register_report_sink(sink: WorkspaceAgentReportSink) -> None:
-    """Register (or replace) the module-global sink.
+    """Register the module-global sink. Called by `core/workspace.__init__`
+    at import time.
 
-    Called by `core/workspace.__init__` at import time.
+    Idempotent for the same instance; raises `RuntimeError` on a conflicting
+    re-registration so a double-wiring bug surfaces at boot instead of
+    silently swapping the singleton. Tests swap stubs via `clear_report_sink`
+    first.
     """
     global _SINK
+    if _SINK is not None and _SINK is not sink:
+        raise RuntimeError("WorkspaceAgentReportSink already registered — clear it before re-registering")
     _SINK = sink
 
 

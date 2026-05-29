@@ -7,6 +7,8 @@ and never commit (shape (a) per `apps/backend/docs/patterns.md`).
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -33,6 +35,20 @@ from app.core.tenancy.repository import (
 from app.core.tenancy.repository import (
     delete_org as _delete_org_row,
 )
+
+# ── Sentinels ────────────────────────────────────────────────────────────────
+
+
+class _Unset:
+    """Sentinel distinguishing "leave this column unchanged" from "set to None".
+
+    Used by `update_org_fields` so an explicit `None` clears a nullable column
+    while an omitted argument is left untouched.
+    """
+
+
+_UNSET: Any = _Unset()
+
 
 # ── Value objects ────────────────────────────────────────────────────────────
 
@@ -335,18 +351,32 @@ async def get_org_full_by_slug(session: AsyncSession, slug: str) -> OrgFullView 
 async def update_org_fields(
     session: AsyncSession,
     org_id: UUID,
-    updates: dict,
+    *,
+    session_timeout_override: int | None | _Unset = _UNSET,
+    workspace_provider: str | None | _Unset = _UNSET,
+    registered_iam_arn: str | None | _Unset = _UNSET,
+    aws_region: str | None | _Unset = _UNSET,
+    archived_at: datetime | None | _Unset = _UNSET,
 ) -> OrgFullView:
-    """Apply a dict of column name → value updates to the org row.
+    """Update the mutable columns on an org row, by explicit keyword.
 
-    Only keys present in *updates* are touched. Raises `LookupError` if
-    the org is not found. Does not commit — shape (a).
+    Each argument defaults to a sentinel meaning "leave unchanged"; pass an
+    explicit value (including `None`) to set the column. Raises `LookupError`
+    if the org is not found. Does not commit — shape (a).
     """
     row = await get_org_row(session, org_id)
     if row is None:
         raise LookupError(f"org {org_id} not found")
-    for key, value in updates.items():
-        setattr(row, key, value)
+    if not isinstance(session_timeout_override, _Unset):
+        row.session_timeout_override = session_timeout_override
+    if not isinstance(workspace_provider, _Unset):
+        row.workspace_provider = workspace_provider
+    if not isinstance(registered_iam_arn, _Unset):
+        row.registered_iam_arn = registered_iam_arn
+    if not isinstance(aws_region, _Unset):
+        row.aws_region = aws_region
+    if not isinstance(archived_at, _Unset):
+        row.archived_at = archived_at
     await session.flush()
     await session.refresh(row)
     return OrgFullView.from_row(row)
@@ -390,10 +420,13 @@ async def clear_vcs_state(session: AsyncSession, org_id: UUID) -> str | None:
     return prior
 
 
-async def delete_org(session: AsyncSession, org_id: UUID) -> None:
+async def _delete_org_for_tests(session: AsyncSession, org_id: UUID) -> None:
     """Hard-delete an org row. Cascades to memberships, invitations, etc.
 
-    Used in test cleanup; not exposed in normal feature flows.
+    Test-only teardown helper — there is no production org-deletion flow yet.
+    Underscored and deliberately kept out of `core/tenancy`'s public `__all__`
+    so it can't be mistaken for a feature API (a real delete would take an
+    `Actor` and write an audit row). Tests import it from this submodule.
     """
     await _delete_org_row(session, org_id)
 

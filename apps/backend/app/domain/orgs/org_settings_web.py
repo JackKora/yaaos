@@ -186,18 +186,25 @@ async def patch_org_settings(body: dict) -> _OrgSettingsResponse:
         if full is None:
             raise _err(404, "org_not_found")
 
-        updates: dict = {}
+        # Resolve each settable field to its effective post-update value:
+        # present in the body → the (validated) value; absent → the org's
+        # current value, left unchanged.
+        eff_timeout = full.session_timeout_override
         if "session_timeout_override" in body:
             value = body["session_timeout_override"]
             if value is not None:
                 if not isinstance(value, int) or value <= 0:
                     raise _err(422, "invalid_session_timeout_override")
-            updates["session_timeout_override"] = value
+            eff_timeout = value
+
+        eff_provider = full.workspace_provider
         if "workspace_provider" in body:
             value = body["workspace_provider"]
             if value is not None and value not in _ALLOWED_WORKSPACE_PROVIDERS:
                 raise _err(422, "invalid_workspace_provider")
-            updates["workspace_provider"] = value
+            eff_provider = value
+
+        eff_arn = full.registered_iam_arn
         if "registered_iam_arn" in body:
             value = body["registered_iam_arn"]
             if value is not None:
@@ -210,17 +217,14 @@ async def patch_org_settings(body: dict) -> _OrgSettingsResponse:
                 value = value.strip().lower()
                 if not _IAM_ROLE_ARN_RE.fullmatch(value):
                     raise _err(422, "invalid_registered_iam_arn")
-            updates["registered_iam_arn"] = value
+            eff_arn = value
+
+        eff_region = full.aws_region
         if "aws_region" in body:
             value = body["aws_region"]
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise _err(422, "invalid_aws_region")
-            updates["aws_region"] = value
-
-        # Compute the effective post-update values for cross-field checks.
-        eff_arn = updates.get("registered_iam_arn", full.registered_iam_arn)
-        eff_region = updates.get("aws_region", full.aws_region)
-        eff_provider = updates.get("workspace_provider", full.workspace_provider)
+            eff_region = value
 
         # Cross-field: `registered_iam_arn` and `aws_region` are both-or-neither
         # (matches the DB check constraint `ck_orgs_arn_region_paired`). Fail at
@@ -231,7 +235,14 @@ async def patch_org_settings(body: dict) -> _OrgSettingsResponse:
         if eff_provider == "remote_agent" and not eff_arn:
             raise _err(422, "remote_agent_requires_iam_arn")
 
-        updated = await _update_org_fields(s, org_id, updates)
+        updated = await _update_org_fields(
+            s,
+            org_id,
+            session_timeout_override=eff_timeout,
+            workspace_provider=eff_provider,
+            registered_iam_arn=eff_arn,
+            aws_region=eff_region,
+        )
         await s.commit()
     return _OrgSettingsResponse(
         slug=updated.slug,

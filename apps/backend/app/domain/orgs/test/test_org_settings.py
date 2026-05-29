@@ -113,12 +113,10 @@ async def test_get_org_settings_returns_current_values(seeded, db_session) -> No
     await update_org_fields(
         db_session,
         seeded["org"].org_id,
-        {
-            "session_timeout_override": 42,
-            "workspace_provider": "remote_agent",
-            "registered_iam_arn": "arn:aws:iam::123456789012:role/yaaos-agent",
-            "aws_region": "us-east-1",
-        },
+        session_timeout_override=42,
+        workspace_provider="remote_agent",
+        registered_iam_arn="arn:aws:iam::123456789012:role/yaaos-agent",
+        aws_region="us-east-1",
     )
     await db_session.commit()
 
@@ -179,7 +177,7 @@ async def test_patch_org_admin_can_set_override(seeded, db_session) -> None:
 @pytest.mark.asyncio
 async def test_patch_org_admin_can_clear_override(seeded, db_session) -> None:
     # Pre-set, then clear.
-    await update_org_fields(db_session, seeded["org"].org_id, {"session_timeout_override": 30})
+    await update_org_fields(db_session, seeded["org"].org_id, session_timeout_override=30)
     await db_session.commit()
 
     sess = seeded["admin_sess"]
@@ -270,11 +268,9 @@ async def test_patch_org_can_clear_workspace_provider(seeded, db_session) -> Non
     await update_org_fields(
         db_session,
         seeded["org"].org_id,
-        {
-            "workspace_provider": "remote_agent",
-            "registered_iam_arn": "arn:aws:iam::123456789012:role/yaaos-agent",
-            "aws_region": "us-east-1",
-        },
+        workspace_provider="remote_agent",
+        registered_iam_arn="arn:aws:iam::123456789012:role/yaaos-agent",
+        aws_region="us-east-1",
     )
     await db_session.commit()
 
@@ -404,7 +400,7 @@ async def _backdate_session_last_seen(db_session, *, token_hash: str, minutes_ag
 async def test_idle_session_rejected_when_override_set(seeded, db_session) -> None:
     """Admin pins the override to 10 minutes; a session last seen 30 minutes
     ago is rejected by the require() dep with 401 session_idle_expired."""
-    await update_org_fields(db_session, seeded["org"].org_id, {"session_timeout_override": 10})
+    await update_org_fields(db_session, seeded["org"].org_id, session_timeout_override=10)
     sess = seeded["admin_sess"]
     await _backdate_session_last_seen(
         db_session, token_hash=identity_repo.hash_token(sess.raw_token), minutes_ago=30
@@ -423,7 +419,7 @@ async def test_idle_session_rejected_when_override_set(seeded, db_session) -> No
 @pytest.mark.asyncio
 async def test_idle_session_within_override_passes(seeded, db_session) -> None:
     """Within the override window: passes."""
-    await update_org_fields(db_session, seeded["org"].org_id, {"session_timeout_override": 60})
+    await update_org_fields(db_session, seeded["org"].org_id, session_timeout_override=60)
     sess = seeded["admin_sess"]
     await _backdate_session_last_seen(
         db_session, token_hash=identity_repo.hash_token(sess.raw_token), minutes_ago=30

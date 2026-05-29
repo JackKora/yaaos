@@ -12,6 +12,7 @@ Does NOT own: MCP request proxying (`domain/mcp_proxy`), OAuth wire details (`co
 
 - **OAuth callback is the only `public_route`** under `/api/mcp-proxy` — the upstream provider can't send the `X-Org-Slug` header; the signed `state` (10m TTL, `itsdangerous`) carries the org_id.
 - **Reconnect preserves `allowed_tools`.** Overwriting on reconnect would silently strip the admin's allowlist; the column is untouched on re-exchange.
+- **Secret material rides a separate VO.** The `McpCredential` metadata VO carries no token; the encrypted access token is fetched only via `get_secret` (returns `McpCredentialSecret`) at the one call site that decrypts (`domain/mcp_proxy`), so a stray `model_dump()` of the metadata VO can't leak ciphertext.
 - **`expires_at < now()` counts as broken_creds** — refresh is deferred; operator reconnects. The proxy returns `-32002` and the reviewer prefixes a warning callout.
 - **Hourly health-check** — one credential pass per tick; sweep of expired `mcp_review_tokens` is `domain/mcp_proxy`'s own responsibility (see [`domain_mcp_proxy.md`](domain_mcp_proxy.md)).
 - **Email dedup:** failure notification fires at most once per 24h per org (`last_failure_notified_at`).

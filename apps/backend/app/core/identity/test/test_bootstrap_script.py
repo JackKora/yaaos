@@ -178,16 +178,14 @@ async def test_bootstrap_rejects_invalid_email_then_accepts(github_user_lookup) 
 
 
 async def _cleanup_user_and_org(s, *, user_id, org_id) -> None:
-    from sqlalchemy import text  # noqa: PLC0415
-
     from app.core.identity.service import _delete_user_artifacts_for_tests  # noqa: PLC0415
+    from app.core.tenancy import _delete_org_for_tests  # noqa: PLC0415
 
     # Cleanup for rows committed by the bootstrap subprocess outside the
-    # transactional fixture. Uses raw SQL for tables owned by domain/orgs since
-    # no public delete-org API exists; this is test-only teardown.
-    await s.execute(text("DELETE FROM memberships WHERE user_id = :uid"), {"uid": user_id})
+    # transactional fixture. Deleting the org cascades to its memberships;
+    # owning module keeps the table names in one place.
+    await _delete_org_for_tests(s, org_id)
     await _delete_user_artifacts_for_tests(s, user_id=user_id)
-    await s.execute(text("DELETE FROM orgs WHERE id = :oid"), {"oid": org_id})
 
 
 # Avoid the static reference to `httpx` flagging as unused.

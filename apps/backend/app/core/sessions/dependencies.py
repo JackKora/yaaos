@@ -27,7 +27,7 @@ from app.core.auth import (
 )
 from app.core.database import session as db_session
 from app.core.identity import repository as identity_repo
-from app.core.tenancy import MembershipView, resolve_auth_org
+from app.core.tenancy import AuthOrg, resolve_auth_org
 
 
 def _err(status: int, code: str) -> HTTPException:
@@ -78,7 +78,7 @@ def require(action: Action) -> Callable[..., None]:
         request: Request,
         x_org_slug: Annotated[str | None, Header(alias="X-Org-Slug")] = None,
         user_id=Depends(_current_session_user_id),
-    ) -> MembershipView:
+    ) -> AuthOrg:
         if user_id is None:
             # Raise the AuthFailure subclass so the registered handler
             # clears the stale session + csrf cookies on the way out.
@@ -204,13 +204,10 @@ def require(action: Action) -> Callable[..., None]:
             async with db_session() as s:
                 await session_lifecycle.touch(s, session_cookie)
                 await s.commit()
-        return MembershipView(
-            org_id=auth_org.org_id,
-            slug=auth_org.slug,
-            org_name="",
-            role=auth_org.role,
-            handle="",
-        )
+        # Return the resolved authz projection. The dep is consumed for its
+        # side-effects (contextvars, role/SSO checks); callers that capture the
+        # return value get the real `AuthOrg`, never a half-populated view.
+        return auth_org
 
     return _dep
 
