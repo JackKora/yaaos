@@ -39,4 +39,4 @@ Does NOT own: PR mirror state (`pull_requests`), review state (`reviewer`), work
 - `test/test_status_change_producer_service.py` — outbox row, SSE after commit, no SSE on rollback.
 - `test/test_workspace_ticket_context.py` — `get_workspace_ticket_context` read path.
 
-See [domain_notifications.md](domain_notifications.md), [core_sse.md](core_sse.md), [core_tasks.md](core_tasks.md).
+See [core_notifications.md](core_notifications.md), [core_sse.md](core_sse.md), [core_tasks.md](core_tasks.md).

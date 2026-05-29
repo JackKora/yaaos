@@ -66,7 +66,7 @@ from app.domain.orgs import coding_agents_web as _orgs_coding_agents_web  # noqa
 from app.domain.orgs import org_settings_web as _orgs_org_settings_web  # noqa: F401, E402
 from app.core.workspace import web as _core_workspace_web  # noqa: F401, E402
 from app.domain.orgs import vcs_web as _orgs_vcs_web  # noqa: F401, E402
-from app.domain.notifications import web as _notifications_web  # noqa: F401, E402
+from app.core.notifications import web as _notifications_web  # noqa: F401, E402
 from app.core.sse import web as _core_sse_web  # noqa: F401, E402
 
 # Wire the workspace_activity ownership check into core/sse without core/sse

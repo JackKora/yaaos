@@ -164,6 +164,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("028_orgs_aws_region_and_arn_uniqueness", "orgs_aws_region_and_arn_uniqueness"),
     ("029_drop_github_installations", "drop_github_installations"),
     ("030_drop_github_settings", "drop_github_settings"),
+    ("031_notifications_generalize_subject", "notifications_generalize_subject"),
 )
 
 
@@ -561,12 +562,12 @@ async def _apply_create_notifications(conn) -> None:  # type: ignore[no-untyped-
 
     Idempotent: imports the model and runs `Base.metadata.create_all`
     which is `CREATE TABLE IF NOT EXISTS` underneath. The
-    `app.domain.notifications.models` import registers the table on
+    `app.core.notifications.models` import registers the table on
     `Base.metadata`.
     """
     import importlib  # noqa: PLC0415
 
-    importlib.import_module("app.domain.notifications.models")
+    importlib.import_module("app.core.notifications.models")
     await conn.run_sync(Base.metadata.create_all)
 
 
@@ -871,6 +872,39 @@ async def _apply_drop_claude_code_default_timeout_seconds(conn) -> None:  # type
     await conn.execute(text("ALTER TABLE claude_code_settings DROP COLUMN IF EXISTS default_timeout_seconds"))
 
 
+async def _apply_notifications_generalize_subject(conn) -> None:  # type: ignore[no-untyped-def]
+    """Generalize `notifications.ticket_id` to a generic subject reference.
+
+    - Rename `ticket_id → subject_id` (UUID, nullable).
+    - Add `subject_type` (VARCHAR(64), nullable).
+    - Backfill `subject_type = 'ticket'` for rows that had a non-null ticket_id.
+    - Drop the old per-ticket-id index; add the new dedup index on
+      `(user_id, type, subject_type, subject_id)` (partial: subject_type IS NOT NULL).
+    Idempotent.
+    """
+    statements: list[str] = [
+        # Rename column only if it still exists under the old name.
+        "DO $$ BEGIN "
+        "  IF EXISTS (SELECT 1 FROM information_schema.columns "
+        "             WHERE table_name = 'notifications' AND column_name = 'ticket_id') THEN "
+        "    ALTER TABLE notifications RENAME COLUMN ticket_id TO subject_id; "
+        "  END IF; "
+        "END $$",
+        # Add subject_type if absent.
+        "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS subject_type VARCHAR(64)",
+        # Backfill: rows that had a ticket reference keep subject_type='ticket'.
+        "UPDATE notifications SET subject_type = 'ticket' WHERE subject_id IS NOT NULL AND subject_type IS NULL",
+        # Drop old single-column index (may not exist on fresh DBs).
+        "DROP INDEX IF EXISTS notifications_ticket_id_idx",
+        # Add dedup partial index.
+        "CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedup_subject_idx "
+        "ON notifications (user_id, type, subject_type, subject_id) "
+        "WHERE subject_type IS NOT NULL",
+    ]
+    for stmt in statements:
+        await conn.execute(text(stmt))
+
+
 # Postgres advisory lock key for `migrate()`. Arbitrary stable bigint — pick
 # any value that doesn't collide with another advisory lock; this codebase
 # has no other advisory-lock users.
@@ -974,6 +1008,8 @@ async def _apply_pending() -> None:
                 await _apply_drop_github_installations(conn)
             elif kind == "drop_github_settings":
                 await _apply_drop_github_settings(conn)
+            elif kind == "notifications_generalize_subject":
+                await _apply_notifications_generalize_subject(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

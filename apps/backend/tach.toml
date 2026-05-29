@@ -37,6 +37,10 @@ path = "app.core.llm"
 depends_on = ["app.core.config"]
 
 [[modules]]
+path = "app.core.notifications"
+depends_on = ["app.core.auth", "app.core.database", "app.core.identity", "app.core.tasks", "app.core.webserver"]
+
+[[modules]]
 path = "app.core.oauth"
 depends_on = []
 
@@ -103,10 +107,6 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.c
 [[modules]]
 path = "app.domain.mcp_proxy"
 depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.core.secrets", "app.core.webserver", "app.domain.integrations", "app.domain.reviewer"]
-
-[[modules]]
-path = "app.domain.notifications"
-depends_on = ["app.core.auth", "app.core.database", "app.core.identity", "app.core.tasks", "app.core.webserver", "app.domain.tickets"]
 
 [[modules]]
 path = "app.domain.orgs"
@@ -374,6 +374,19 @@ expose = [
   "load_prompt",
 ]
 from = ["app.core.llm"]
+
+[[interfaces]]
+expose = [
+  "Notification",
+  "NotificationSpec",
+  "create",
+  "fanout",
+  "list_for_user",
+  "mark_all_read",
+  "mark_read",
+  "popover_for_user",
+]
+from = ["app.core.notifications"]
 
 [[interfaces]]
 expose = [
@@ -721,18 +734,6 @@ expose = [
   "web",
 ]
 from = ["app.domain.mcp_proxy"]
-
-[[interfaces]]
-expose = [
-  "Notification",
-  "handle_ticket_status_change",
-  "list_for_user",
-  "mark_all_read",
-  "mark_read",
-  "popover_for_user",
-  "record",
-]
-from = ["app.domain.notifications"]
 
 [[interfaces]]
 expose = [
