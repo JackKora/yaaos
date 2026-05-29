@@ -1008,8 +1008,33 @@ async def _apply_orgs_sso_authz_columns(conn) -> None:  # type: ignore[no-untype
 _MIGRATION_LOCK_KEY = 0x7AA05_DB_5C_4E11A
 
 
+_MIN_PG_VERSION_NUM = 180000
+_MIN_PG_MAJOR = 18
+
+
+def _assert_min_pg_version(server_version_num: str) -> None:
+    """Raise RuntimeError if server_version_num (e.g. '170004') is below the minimum.
+
+    Accepts the integer string returned by ``SHOW server_version_num``.
+    Called at the top of ``migrate()`` so a wrong engine fails before any
+    DDL is touched.
+    """
+    actual = int(server_version_num)
+    if actual < _MIN_PG_VERSION_NUM:
+        actual_major = actual // 10000
+        raise RuntimeError(
+            f"yaaos requires Postgres {_MIN_PG_MAJOR} or later; "
+            f"connected engine reports version {actual_major} "
+            f"(server_version_num={server_version_num}). "
+            f"Upgrade the database engine to Postgres {_MIN_PG_MAJOR}."
+        )
+
+
 async def migrate() -> None:
     """Apply any un-applied migrations. Idempotent and concurrency-safe.
+
+    Asserts the engine is Postgres >= 18 before touching any DDL — a wrong
+    engine fails loudly here rather than deep inside a migration.
 
     Serializes via a Postgres session-scoped advisory lock held on a dedicated
     connection that spans the whole call. Two processes starting at once (web
@@ -1023,6 +1048,9 @@ async def migrate() -> None:
     PgBouncer transaction pooling (session affinity is lost between
     statements) so a pooler in this path would need to be bypassed.
     """
+    async with get_engine().connect() as conn:
+        result = await conn.execute(text("SHOW server_version_num"))
+        _assert_min_pg_version(result.scalar_one())
     await ensure_schema_migrations_table()
     async with get_engine().connect() as lock_conn:
         await lock_conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _MIGRATION_LOCK_KEY})

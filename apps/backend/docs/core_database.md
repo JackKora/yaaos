@@ -13,6 +13,8 @@
 
 **Pool sizing rule of thumb** — pool size tracks concurrent in-flight queries, not connections or coroutines. For the worker: `db_pool_size >= WORKER_CONCURRENCY + 2`. Tune via env at deploy time; defaults (`db_pool_size=10`, `db_max_overflow=5`) suit dev.
 
+**Engine version guard** — `migrate()` opens a throwaway connection and calls `SHOW server_version_num` before touching any DDL. Raises `RuntimeError` with a readable message if the engine is older than Postgres 18. The helper `_assert_min_pg_version(raw)` is pure and unit-tested independently.
+
 **Migration advisory lock** — `migrate()` holds a Postgres session-scoped advisory lock (`_MIGRATION_LOCK_KEY`) for the full call, spanning per-migration commits. Prevents web + worker both racing to apply the same migration on startup. **Warning:** session-scoped locks break under PgBouncer transaction-pooling (session affinity is lost between statements). If a connection pooler is ever added, bypass it for `migrate()` or switch lock primitive.
 
 **Custom migration runner** — `_MIGRATIONS` tuple in `service.py` is the sole source of truth. `alembic upgrade head` is forbidden; the runner applies idempotently. `_apply_create_all` explicitly imports every module's `models` — new modules with tables must be added to that import list.
