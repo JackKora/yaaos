@@ -34,6 +34,7 @@ from app.core.database import session as db_session
 from app.core.observability import with_remote_parent_span
 from app.core.tasks import TaskRef, enqueue, task
 from app.core.workflow.models import PendingHumanDecisionRow, WorkflowExecutionRow
+from app.core.workflow.recovery import get_recovery_policy
 from app.core.workflow.types import (
     TERMINAL_STATES,
     CommandCategory,
@@ -448,8 +449,6 @@ async def _route_workflow_impl(
         # step retries. Recovery fires at most once per step instance — the
         # second hit falls through to Tier-2 retry / Tier-3 transition.
         if outcome_label and outcome_label != "success":
-            from app.core.workspace import get_recovery_policy  # noqa: PLC0415
-
             recovery_kind = get_recovery_policy(outcome_label)
             if recovery_kind is not None and not _has_recovered(wfx, completed_step_id):
                 _mark_recovered(wfx, completed_step_id, outcome_label)

@@ -38,12 +38,10 @@ from app.core.workflow import (
     WorkflowEngine,
     WorkflowExecutionRow,
     WorkflowState,
-    request_cancel,
-    resume_hitl,
-)
-from app.core.workspace import (
     clear_recovery_policies,
     register_recovery_policy,
+    request_cancel,
+    resume_hitl,
 )
 
 # ── Test commands ───────────────────────────────────────────────────────

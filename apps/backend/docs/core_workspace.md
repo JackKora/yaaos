@@ -4,7 +4,7 @@
 
 ## Scope
 
-- **Owns:** `Workspace` + `WorkspaceProvider` Protocols, provider registry, `workspaces` table lifecycle, reaper background loop, single-flight claim/recovery registry, three `WorkflowCommand` impls (`ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`).
+- **Owns:** `Workspace` + `WorkspaceProvider` Protocols, provider registry, `workspaces` table lifecycle, reaper background loop, single-flight claim registry, three `WorkflowCommand` impls (`ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`).
 - **Does not own:** lifecycle *policy* (that's callers); workspace filesystem internals (plugin-private); `domain/tickets` data (bridged via [Workflow-context callback](#workflow-context-callback)).
 - **Receives:** `WorkspaceSpec` from callers; terminal AgentEvents from [`core/agent_gateway`](core_agent_gateway.md) trigger reaper. **Emits:** `workspace.transitioned` audit rows via [`core/audit_log`](core_audit_log.md); `WorkflowCommand` events to [`core/workflow`](core_workflow.md).
 
@@ -28,7 +28,7 @@
 - **WorkspaceProvider** — dumb actuator (provision + run + destroy + health-check); no policy.
 - **plugin_state** — opaque dict returned by `provision()`, persisted by this module, never exposed to consumers (e.g. `{"working_dir": "..."}` for in-process).
 - **Reaper** — background loop enforcing TTL expiry, idle-timeout, agent-loss detection, and destroy retries.
-- **Recovery-policy registry** — maps AgentCommand failure labels to `WorkflowCommand` kinds. Boot ships `auth_expired → RefreshWorkspaceAuth`.
+- **Recovery-policy registration** — registers `auth_expired → RefreshWorkspaceAuth` into [`core/workflow`](core_workflow.md)'s recovery-policy registry at import. The registry itself lives in `core/workflow/recovery.py`.
 
 ## Data owned
 
@@ -40,4 +40,4 @@
 
 ## How it's tested
 
-`app/core/workspace/test/test_dispatch.py` covers `try_claim` / `release_claim` contention and the recovery-policy registry. Lifecycle coverage (provision → active → close → expired → destroy → destroyed; retry increment; `destroy_failed` after 3 attempts; `startup_recovery`) lives in reviewer integration tests and the workspace plugin's own tests. `app/core/workspace/test/test_connection_status_endpoint.py` covers the HTTP route: auth enforcement (401, 403) and the `not_configured` happy path.
+`app/core/workspace/test/test_dispatch.py` covers `try_claim` / `release_claim` contention. Lifecycle coverage (provision → active → close → expired → destroy → destroyed; retry increment; `destroy_failed` after 3 attempts; `startup_recovery`) lives in reviewer integration tests and the workspace plugin's own tests. `app/core/workspace/test/test_connection_status_endpoint.py` covers the HTTP route: auth enforcement (401, 403) and the `not_configured` happy path. Recovery-policy tests live in `app/core/workflow/test/test_recovery_registry.py` (registry lives in [`core/workflow`](core_workflow.md)).
