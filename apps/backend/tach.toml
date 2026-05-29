@@ -98,7 +98,7 @@ depends_on = ["app.core.auth", "app.core.database", "app.core.observability", "a
 
 [[modules]]
 path = "app.domain.integrations"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.identity", "app.core.oauth", "app.core.observability", "app.core.secrets", "app.core.sessions", "app.core.webserver", "app.domain.mcp_proxy", "app.domain.orgs"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.identity", "app.core.oauth", "app.core.observability", "app.core.secrets", "app.core.sessions", "app.core.webserver", "app.domain.orgs"]
 
 [[modules]]
 path = "app.domain.lessons"
@@ -106,7 +106,7 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.c
 
 [[modules]]
 path = "app.domain.mcp_proxy"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.core.secrets", "app.core.webserver", "app.domain.integrations"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.observability", "app.core.secrets", "app.core.webserver", "app.domain.integrations"]
 
 [[modules]]
 path = "app.domain.orgs"
@@ -728,7 +728,6 @@ expose = [
   "mint_token",
   "record_broken_creds",
   "revoke_token",
-  "sweep_expired",
   "web",
 ]
 from = ["app.domain.mcp_proxy"]

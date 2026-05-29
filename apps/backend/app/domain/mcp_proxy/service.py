@@ -17,6 +17,7 @@ Session management + atomicity.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -27,6 +28,8 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+from app.core.database import session as db_session
 from app.domain.mcp_proxy.models import McpReviewTokenRow
 
 log = structlog.get_logger("domain.mcp_proxy")
@@ -133,3 +136,21 @@ async def sweep_expired(*, session: AsyncSession) -> int:
         delete(McpReviewTokenRow).where(McpReviewTokenRow.expires_at < datetime.now(UTC))
     )
     return int(result.rowcount or 0)
+
+
+async def run_sweep_loop() -> None:
+    """Forever-loop: sweep expired `mcp_review_tokens` every
+    `yaaos_mcp_token_sweep_interval_seconds` (default 3600 = hourly).
+    `sweep_expired` is a backstop GC — expiry is already enforced at
+    `lookup_token`, so a slow sweep only delays deletion of dead rows."""
+    interval = get_settings().yaaos_mcp_token_sweep_interval_seconds
+    while True:
+        try:
+            async with db_session() as s:
+                n_swept = await sweep_expired(session=s)
+                await s.commit()
+            if n_swept:
+                log.info("mcp_proxy.tokens.swept", removed=n_swept)
+        except Exception:
+            log.exception("mcp_proxy.sweep_loop.failed")
+        await asyncio.sleep(interval)

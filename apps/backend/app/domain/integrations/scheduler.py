@@ -4,9 +4,6 @@ Walks every enabled credential, calls the provider's `validate(access_token)`,
 flips `last_refresh_status` to `"ok"` or `"failed"`, and enqueues an email
 notification to the org's Owners on transition-to-failed (deduplicated to
 once per 24h via `last_failure_notified_at`).
-
-Sweep of expired `mcp_review_tokens` runs in the same loop — there's no
-separate scheduler module for the proxy.
 """
 
 from __future__ import annotations
@@ -26,7 +23,6 @@ from app.core.identity import repository as identity_repo
 from app.core.secrets import SecretsDecryptError, decrypt
 from app.domain.integrations.models import McpCredentialRow
 from app.domain.integrations.types import get_provider
-from app.domain.mcp_proxy import sweep_expired
 from app.domain.orgs import Role, send_plain
 from app.domain.orgs import repository as orgs_repo
 
@@ -169,11 +165,6 @@ async def run_scheduler_loop() -> None:
             counts = await run_health_check_once()
             if any(counts.values()):
                 log.info("integrations.health_check.ran", **counts)
-            async with db_session() as s:
-                n_swept = await sweep_expired(session=s)
-                await s.commit()
-            if n_swept:
-                log.info("integrations.mcp_tokens.swept", removed=n_swept)
         except Exception:
             log.exception("integrations.scheduler.failed")
         await asyncio.sleep(interval)
