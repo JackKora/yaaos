@@ -106,7 +106,7 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.c
 
 [[modules]]
 path = "app.domain.mcp_proxy"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.core.secrets", "app.core.webserver", "app.domain.integrations", "app.domain.reviewer"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.core.secrets", "app.core.webserver", "app.domain.integrations"]
 
 [[modules]]
 path = "app.domain.orgs"
@@ -879,7 +879,6 @@ expose = [
   "decide_trigger",
   "dispatch_events",
   "find_pr_id_by_external_comment_id",
-  "get_org_id_for_review",
   "get_review",
   "get_thread",
   "handle_developer_reply",

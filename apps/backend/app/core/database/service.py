@@ -166,6 +166,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("030_drop_github_settings", "drop_github_settings"),
     ("031_notifications_generalize_subject", "notifications_generalize_subject"),
     ("032_tickets_findings_rollup", "tickets_findings_rollup"),
+    ("033_mcp_review_tokens_org_id", "mcp_review_tokens_org_id"),
 )
 
 
@@ -952,6 +953,30 @@ async def _apply_tickets_findings_rollup(conn) -> None:  # type: ignore[no-untyp
         await conn.execute(text(stmt))
 
 
+async def _apply_mcp_review_tokens_org_id(conn) -> None:  # type: ignore[no-untyped-def]
+    """Add `org_id` to `mcp_review_tokens`.
+
+    The proxy reads tenancy from the token row directly; no back-lookup into
+    the reviewer module is required. Tokens are short-lived (2h TTL) — any
+    tokens that existed before this migration are likely already expired, so
+    the NULL default is acceptable for the column add. The column is made
+    NOT NULL via `SET NOT NULL` after backfilling from the joined reviews row
+    for any still-live tokens.
+    Idempotent.
+    """
+    statements: list[str] = [
+        # Add nullable first so the ALTER succeeds on non-empty tables.
+        "ALTER TABLE mcp_review_tokens ADD COLUMN IF NOT EXISTS org_id UUID",
+        # Backfill from the reviews FK for any rows that predate this migration.
+        "UPDATE mcp_review_tokens t SET org_id = r.org_id "
+        "FROM reviews r WHERE r.id = t.review_id AND t.org_id IS NULL",
+        # Now enforce NOT NULL.
+        "ALTER TABLE mcp_review_tokens ALTER COLUMN org_id SET NOT NULL",
+    ]
+    for stmt in statements:
+        await conn.execute(text(stmt))
+
+
 # Postgres advisory lock key for `migrate()`. Arbitrary stable bigint — pick
 # any value that doesn't collide with another advisory lock; this codebase
 # has no other advisory-lock users.
@@ -1059,6 +1084,8 @@ async def _apply_pending() -> None:
                 await _apply_notifications_generalize_subject(conn)
             elif kind == "tickets_findings_rollup":
                 await _apply_tickets_findings_rollup(conn)
+            elif kind == "mcp_review_tokens_org_id":
+                await _apply_mcp_review_tokens_org_id(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

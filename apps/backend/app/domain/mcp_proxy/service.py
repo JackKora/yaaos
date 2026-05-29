@@ -1,6 +1,6 @@
 """Per-review MCP bearer lifecycle.
 
-`mint_token(review_id) -> raw_token` issues a fresh bearer for a review:
+`mint_token(review_id, *, org_id) -> raw_token` issues a fresh bearer for a review:
 32 URL-safe random bytes returned to the caller once, sha256-hashed and
 persisted with `expires_at = created_at + 2h`. `lookup_token(raw)` reverses
 the dance — returns the row if not expired, None otherwise. `revoke_token`
@@ -39,6 +39,7 @@ class McpToken(BaseModel):
     """Value object returned by `lookup_token`. Represents a valid, non-expired bearer."""
 
     review_id: UUID
+    org_id: UUID
     expires_at: datetime
 
 
@@ -50,14 +51,17 @@ def hash_token(raw: str) -> str:
 async def mint_token(
     review_id: UUID,
     *,
+    org_id: UUID,
     session: AsyncSession,
 ) -> str:
     """Issue a fresh bearer for a review. Returns the raw token exactly once;
-    the DB sees only the sha256 hash."""
+    the DB sees only the sha256 hash. `org_id` is stored on the row so the
+    proxy reads tenancy directly without a back-lookup into reviewer."""
     raw = secrets.token_urlsafe(32)
     row = McpReviewTokenRow(
         token_hash=hash_token(raw),
         review_id=review_id,
+        org_id=org_id,
         expires_at=datetime.now(UTC) + REVIEW_TOKEN_TTL,
     )
     session.add(row)
@@ -80,7 +84,7 @@ async def lookup_token(
         return None
     if row.expires_at < datetime.now(UTC):
         return None
-    return McpToken(review_id=row.review_id, expires_at=row.expires_at)
+    return McpToken(review_id=row.review_id, org_id=row.org_id, expires_at=row.expires_at)
 
 
 async def get_token_by_hash(

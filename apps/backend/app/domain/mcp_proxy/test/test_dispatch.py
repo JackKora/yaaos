@@ -181,7 +181,7 @@ async def _seed_review(db_session) -> tuple[ReviewRow, str]:
     )
     db_session.add(review)
     await db_session.flush()
-    raw_token = await mint_token(review.id, session=db_session)
+    raw_token = await mint_token(review.id, org_id=org.id, session=db_session)
     await db_session.commit()
     return review, raw_token
 
@@ -383,3 +383,36 @@ async def test_token_lifecycle_round_trip_revokes(db_session, stub_provider) -> 
         .all()
     )
     assert remaining == []
+
+
+@pytest.mark.asyncio
+async def test_proxy_reads_org_from_token_row(db_session, stub_provider, stub_upstream) -> None:
+    """Proxy resolves org_id from the token row — no reviewer back-lookup.
+
+    The credential is seeded against the review's org_id. The proxy must
+    find it without calling into the reviewer module, proving the token
+    row's org_id is the sole tenancy signal.
+    """
+    del stub_provider, stub_upstream
+    review, token = await _seed_review(db_session)
+    await _seed_credential(db_session, org_id=review.org_id)
+
+    body = {
+        "jsonrpc": "2.0",
+        "id": 42,
+        "method": "tools/call",
+        "params": {"name": "get_issue", "arguments": {"id": "LIN-99"}},
+    }
+    async with _client() as c:
+        r = await c.post(
+            f"/api/mcp/{review.id}/stub_disp",
+            headers={"Authorization": f"Bearer {token}"},
+            json=body,
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["result"] == {"ok": True}
+
+    # Audit row carries the org_id read from the token row.
+    audits = await list_for_org(org_id=review.org_id, actions=["mcp.stub_disp.dispatched"])
+    assert len(audits) == 1
+    assert audits[0].payload["method"] == "tools/call"

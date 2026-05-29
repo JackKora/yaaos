@@ -149,7 +149,7 @@ async def _seed_review_with_broken_credential(db_session) -> tuple[ReviewRow, st
         last_refresh_status="failed",
         last_refresh_failed_at=datetime.now(UTC),
     )
-    raw = await mint_token(review.id, session=db_session)
+    raw = await mint_token(review.id, org_id=org.id, session=db_session)
     await db_session.commit()
     return review, raw
 

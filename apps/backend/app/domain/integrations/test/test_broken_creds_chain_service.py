@@ -188,7 +188,7 @@ async def test_health_check_flip_then_next_review_dispatches_through_broken_cred
     )
     db_session.add(review)
     await db_session.flush()
-    raw_token = await mint_token(review.id, session=db_session)
+    raw_token = await mint_token(review.id, org_id=org.id, session=db_session)
     await db_session.commit()
 
     # 5. Agent calls a tool through the proxy. Proxy sees broken creds.
