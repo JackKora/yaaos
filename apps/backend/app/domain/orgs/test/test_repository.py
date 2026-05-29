@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.core.auth import Role
 from app.core.identity import repository as identity_repo
 from app.domain.orgs import repository as repo
-from app.domain.orgs.types import Role
 
 
 @pytest.mark.asyncio

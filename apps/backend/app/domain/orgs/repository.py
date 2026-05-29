@@ -9,8 +9,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import Role
 from app.domain.orgs.models import InvitationRow, MembershipRow, OrgRow, SsoConfigRow
-from app.domain.orgs.types import Role
 
 
 def hash_token(raw: str) -> str:

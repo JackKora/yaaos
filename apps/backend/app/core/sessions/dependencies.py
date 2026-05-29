@@ -17,57 +17,18 @@ from app.core.audit_log import Actor, ActorKind
 from app.core.auth import (
     Action,
     AuthFailure,
+    Role,
     actor_id_var,
     actor_kind_var,
     org_id_var,
+    required_role_for,
     route_security_resolved,
     user_id_var,
 )
 from app.core.database import session as db_session
 from app.core.identity import repository as identity_repo
-from app.domain.orgs import Membership, Role
+from app.domain.orgs import Membership
 from app.domain.orgs import repository as orgs_repo
-
-# Per-action required role minimum. Single source of truth; per-endpoint
-# overrides are explicit — write `Depends(require(Action.X))` with the
-# action whose row in this map is what you want enforced.
-_REQUIRED_ROLE: dict[Action, Role] = {
-    Action.IDENTITY_READ_SELF: Role.BUILDER,
-    Action.ORG_READ: Role.BUILDER,
-    Action.MEMBERS_READ: Role.BUILDER,
-    Action.AUDIT_READ: Role.ADMIN,
-    Action.USER_UPDATE_SELF: Role.BUILDER,
-    Action.MEMBERS_INVITE: Role.ADMIN,
-    Action.MEMBERS_REMOVE: Role.ADMIN,
-    Action.MEMBERS_CHANGE_ROLE: Role.ADMIN,
-    Action.SSO_CONFIGURE: Role.OWNER,
-    Action.GITHUB_APP_LINK: Role.OWNER,
-    Action.REVIEW_TRIGGER: Role.BUILDER,
-    Action.VCS_READ: Role.ADMIN,
-    Action.VCS_WRITE: Role.ADMIN,
-    Action.CODING_AGENT_READ: Role.ADMIN,
-    Action.CODING_AGENT_WRITE: Role.ADMIN,
-    Action.BYOK_READ: Role.ADMIN,
-    Action.BYOK_WRITE: Role.ADMIN,
-    Action.ORG_SETTINGS_WRITE: Role.ADMIN,
-    Action.ORG_SETTINGS_READ: Role.ADMIN,
-    Action.INTEGRATIONS_READ: Role.ADMIN,
-    Action.INTEGRATIONS_WRITE: Role.ADMIN,
-    # Builder-grade access for the three routers. Builders are
-    # the people who actually work tickets / write lessons / ack findings.
-    Action.TICKETS_READ: Role.BUILDER,
-    Action.LESSONS_READ: Role.BUILDER,
-    Action.LESSONS_WRITE: Role.BUILDER,
-    Action.REVIEWER_READ: Role.BUILDER,
-    Action.REVIEWER_WRITE: Role.BUILDER,
-}
-
-
-def required_role_for(action: Action) -> Role:
-    """Lookup the minimum Role needed for `action`. Raises KeyError if the
-    action isn't in the registry — the test suite asserts coverage so this
-    surfaces forgotten-mapping bugs at import time."""
-    return _REQUIRED_ROLE[action]
 
 
 def _err(status: int, code: str) -> HTTPException:

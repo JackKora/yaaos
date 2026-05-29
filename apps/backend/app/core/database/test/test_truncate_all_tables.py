@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.auth import Role
 from app.core.database import truncate_all_tables
 from app.core.identity import create_user
-from app.domain.orgs import Role, create_membership, create_org, get_org
+from app.domain.orgs import create_membership, create_org, get_org
 
 
 @pytest.mark.asyncio

@@ -7,13 +7,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.core.audit_log import Actor
+from app.core.auth import Role
 from app.core.identity import repository as identity_repo
 from app.core.identity import sessions as session_lifecycle
 from app.domain.orgs import (
     InvitationExpiredError,
     InvitationInvalidError,
     InvitationUsedError,
-    Role,
     accept_invitation,
     change_role,
     invite,

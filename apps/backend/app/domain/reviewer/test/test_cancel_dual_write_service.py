@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 
 import app.web  # noqa: F401  — registers the reviewer router
-from app.core.auth import AuthMiddleware
+from app.core.auth import AuthMiddleware, Role
 from app.core.identity import repository as identity_repo
 from app.core.identity import sessions as session_lifecycle
 from app.core.workflow import (
@@ -25,7 +25,6 @@ from app.core.workflow import (
     get_execution_summary,
     scoped_engine,
 )
-from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 from app.domain.tickets import create as create_ticket
 

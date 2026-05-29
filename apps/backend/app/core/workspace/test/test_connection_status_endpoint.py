@@ -10,12 +10,11 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 
-from app.core.auth import AuthMiddleware
+from app.core.auth import AuthMiddleware, Role
 from app.core.identity import repository as identity_repo
 from app.core.identity import sessions as session_lifecycle
 from app.core.sessions import web as _auth_web  # noqa: F401 — triggers auth.dep load
 from app.core.workspace import web as _workspace_web  # noqa: F401 — registers /api/workspaces
-from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 
 

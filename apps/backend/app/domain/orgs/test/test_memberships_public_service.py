@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.auth import Role
 from app.core.identity import repository as identity_repo
 from app.domain.orgs import list_active_member_ids
 from app.domain.orgs import repository as orgs_repo
-from app.domain.orgs.types import Role
 
 
 @pytest.mark.asyncio

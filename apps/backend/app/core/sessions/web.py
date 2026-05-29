@@ -293,9 +293,9 @@ async def me(
     URL is selected; on routes that need it, the SPA adds `X-Org-Slug` from
     the URL path. 401 when there's no session.
     """
+    from app.core.auth import Role as _Role  # noqa: PLC0415
     from app.core.identity import repository as identity_repo  # noqa: PLC0415
     from app.domain.integrations import list_broken_credentials_for_org  # noqa: PLC0415
-    from app.domain.orgs import Role as _Role  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
 
     if not yaaos_session:

@@ -10,7 +10,8 @@ from __future__ import annotations
 import pytest
 
 from app.core.audit_log import list_for_org
-from app.domain.orgs import Role, get_org_by_slug
+from app.core.auth import Role
+from app.domain.orgs import get_org_by_slug
 from app.domain.orgs import repository as orgs_repo
 from app.testing.e2e_setup.service import (
     seed_bootstrap_owner,

@@ -21,12 +21,11 @@ import pytest_asyncio
 from fastapi import Depends, FastAPI
 
 from app.core.audit_log import list_for_entity
-from app.core.auth import Action, AuthMiddleware, register_handler
+from app.core.auth import Action, AuthMiddleware, Role, register_handler
 from app.core.identity import _set_session_last_seen_for_tests
 from app.core.identity import repository as identity_repo
 from app.core.sessions import require
 from app.core.sessions import web as _auth_web  # noqa: F401  -- registers /api/auth/me
-from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 
 

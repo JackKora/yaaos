@@ -15,7 +15,7 @@ Owns the tenancy boundary. Every non-user yaaos row is `org_id`-scoped; this mod
 
 ## Role hierarchy
 
-`OWNER ≥ ADMIN ≥ BUILDER`. `role.covers(required)` is the only comparison; per-action minimums declared at the call site.
+`OWNER ≥ ADMIN ≥ BUILDER`. `Role` and `role.covers(required)` live in [`core/auth`](core_auth.md) — import from there. Per-action minimums are declared in `core/auth/role_policy._REQUIRED_ROLE`.
 
 - **Owner** — full control incl. org deletion, billing, SSO config, GitHub App linking. ≥1 Owner required per org.
 - **Admin** — Owner powers minus deleting the org or removing other Owners.
@@ -61,7 +61,7 @@ Notable constraints:
 
 ## Import-cycle note
 
-`domain.orgs.web` imports `core.sessions.dependencies`; `core.sessions.dependencies` imports `domain.orgs`. The side-effect import of `orgs.web` lives in `app/web.py` after both modules finish loading — `domain.orgs.__init__` does NOT trigger it.
+`domain.orgs.web` imports `core.sessions.dependencies`; `core.sessions.dependencies` imports `domain.orgs` (for `Membership` + the orgs repository). The side-effect import of `orgs.web` lives in `app/web.py` after both modules finish loading — `domain.orgs.__init__` does NOT trigger it. `Role` is no longer imported from `domain.orgs`; callers import it from `core.auth` directly.
 
 ## HTTP routes
 

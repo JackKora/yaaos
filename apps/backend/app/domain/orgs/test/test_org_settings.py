@@ -11,7 +11,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy import select
 
-from app.core.auth import AuthMiddleware
+from app.core.auth import AuthMiddleware, Role
 from app.core.identity import _set_session_last_seen_for_tests
 from app.core.identity import repository as identity_repo
 from app.core.identity import sessions as session_lifecycle
@@ -20,7 +20,6 @@ from app.domain.orgs import org_settings_web as _org_settings_web  # noqa: F401
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs import web as _orgs_web  # noqa: F401
 from app.domain.orgs.models import OrgRow
-from app.domain.orgs.types import Role
 
 
 def _patch_app() -> FastAPI:

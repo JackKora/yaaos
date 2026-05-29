@@ -100,11 +100,11 @@ async def sso_acs(
     """Assertion Consumer Service. Verifies the SAML response (real or stub),
     matches the user by verified email, optionally JIT-creates a membership,
     marks the session SSO-satisfied for this org."""
+    from app.core.auth import Role  # noqa: PLC0415
     from app.core.identity import repository as identity_repo  # noqa: PLC0415
     from app.core.identity import sessions as session_lifecycle  # noqa: PLC0415
     from app.domain.orgs import repository as orgs_repo  # noqa: PLC0415
     from app.domain.orgs.sso import get_config  # noqa: PLC0415
-    from app.domain.orgs.types import Role  # noqa: PLC0415
 
     async with db_session() as s:
         org = await orgs_repo.get_org_by_slug(s, slug)

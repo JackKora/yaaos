@@ -316,9 +316,13 @@ Every yaaos-issued bearer follows the same shape — adopted in for sessions, in
 - **Own one table per consumer.** `sessions`, `mcp_review_tokens`, and (via sha256-on-write) `invitations.token_hash` are separate; one bearer can't be substituted for another.
 - **Expire by absolute time.** Each consumer owns its TTL — sessions 14d, MCP review tokens 2h, invitations 7d. The periodic cleanup task in `core/identity/scheduler` (or a module-local equivalent) deletes expired rows; production code also checks `expires_at` on every read.
 
+## Intra-core layer order
+
+`core/auth < core/tenancy < core/identity < core/sessions`. Each level may import from levels below it; reverse imports are forbidden. `core/auth` is the leaf — it holds `Role`, `Action`, `_REQUIRED_ROLE`, middleware, and contextvars with no domain knowledge.
+
 ## Route security declarations
 
-Every `/api/*` path classifies as one of three `RouteSecurity` categories: `PUBLIC` (no auth), `USER_SCOPED` (session, no org), or `ORG_SCOPED` (session + `X-Org-Slug` + role check). The classifier `classify_route(path, method)` and the prefix/exact lists live in `app/core/auth/types.py`; the middleware enforces `X-Org-Slug` and CSRF based on the category. Route dependencies: `Depends(require(Action.X))` for `ORG_SCOPED`, `Depends(require_session)` (or `Depends(public_route)`) for `USER_SCOPED` handlers that read the session cookie, `Depends(public_route)` for `PUBLIC`. The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset. Action → minimum-role map lives in `app/core/sessions/dependencies.py:_REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new URL prefix requires placing it in exactly one of the three category sets in `app/core/auth/types.py`.
+Every `/api/*` path classifies as one of three `RouteSecurity` categories: `PUBLIC` (no auth), `USER_SCOPED` (session, no org), or `ORG_SCOPED` (session + `X-Org-Slug` + role check). The classifier `classify_route(path, method)` and the prefix/exact lists live in `app/core/auth/types.py`; the middleware enforces `X-Org-Slug` and CSRF based on the category. Route dependencies: `Depends(require(Action.X))` for `ORG_SCOPED`, `Depends(require_session)` (or `Depends(public_route)`) for `USER_SCOPED` handlers that read the session cookie, `Depends(public_route)` for `PUBLIC`. The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset. Action → minimum-role map lives in `app/core/auth/role_policy._REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new URL prefix requires placing it in exactly one of the three category sets in `app/core/auth/types.py`.
 
 ## Testing
 

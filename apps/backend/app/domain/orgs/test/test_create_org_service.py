@@ -6,10 +6,10 @@ import pytest
 from sqlalchemy import select
 
 from app.core.audit_log import Actor, list_for_entity
+from app.core.auth import Role
 from app.core.identity import create_user
 from app.domain.orgs import create_membership, create_org
 from app.domain.orgs.models import MembershipRow, OrgRow
-from app.domain.orgs.types import Role
 
 # ---------------------------------------------------------------------------
 # create_org

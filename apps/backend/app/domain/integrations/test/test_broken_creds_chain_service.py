@@ -22,7 +22,7 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 
 from app.core.audit_log import list_for_org
-from app.core.auth import AuthMiddleware
+from app.core.auth import AuthMiddleware, Role
 from app.core.identity import repository as identity_repo
 from app.core.oauth import ProviderConfig
 from app.core.secrets import encrypt
@@ -31,7 +31,7 @@ from app.domain.integrations.scheduler import run_health_check_once
 from app.domain.integrations.types import _REGISTRY
 from app.domain.mcp_proxy import consume_broken_creds, mint_token
 from app.domain.mcp_proxy import web as _mcp_web  # noqa: F401  (route registration)
-from app.domain.orgs import Role, get_test_inbox
+from app.domain.orgs import get_test_inbox
 from app.domain.orgs import repository as orgs_repo
 from app.domain.pull_requests import upsert as upsert_pr
 from app.domain.reviewer import (

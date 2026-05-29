@@ -16,10 +16,9 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 import app.web  # noqa: F401  — registers the reviewer router
-from app.core.auth import AuthMiddleware
+from app.core.auth import AuthMiddleware, Role
 from app.core.identity import repository as identity_repo
 from app.core.identity import sessions as session_lifecycle
-from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 from app.domain.reviewer.service import refresh_ticket_findings_summary
 from app.domain.tickets import get as get_ticket

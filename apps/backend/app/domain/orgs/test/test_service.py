@@ -7,9 +7,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.auth import Role
 from app.domain.orgs import delete_expired_invitations, find_saml_org_slug_for_domain, get_org
 from app.domain.orgs import repository as orgs_repo
-from app.domain.orgs.types import Role
 
 # ---------------------------------------------------------------------------
 # get_org

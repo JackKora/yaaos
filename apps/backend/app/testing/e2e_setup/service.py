@@ -190,13 +190,13 @@ async def seed_bootstrap_owner(
     admin-onboarding path would produce.
     """
     from app.core.audit_log import Actor  # noqa: PLC0415
+    from app.core.auth import Role  # noqa: PLC0415
     from app.core.identity import (  # noqa: PLC0415
         create_email,
         create_oauth_identity,
         create_user,
     )
     from app.domain.orgs import (  # noqa: PLC0415
-        Role,
         create_membership,
         create_org,
     )

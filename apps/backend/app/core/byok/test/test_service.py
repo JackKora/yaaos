@@ -7,9 +7,9 @@ from sqlalchemy import select
 
 from app.core import byok
 from app.core.audit_log import Actor, list_for_org
+from app.core.auth import Role
 from app.core.byok.models import ByokKeyRow
 from app.core.identity import repository as identity_repo
-from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 
 

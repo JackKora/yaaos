@@ -27,8 +27,9 @@ async def _make_org_with_members(db_session, num_members: int = 2):  # type: ign
 
     Returns (org_id, [user_id, ...]).
     """
+    from app.core.auth import Role  # noqa: PLC0415
     from app.core.identity import create_user  # noqa: PLC0415
-    from app.domain.orgs import Role, create_membership, create_org  # noqa: PLC0415
+    from app.domain.orgs import create_membership, create_org  # noqa: PLC0415
 
     slug = f"test-org-{uuid4().hex[:8]}"
     org = await create_org(db_session, slug=slug, display_name="Test Org")

@@ -19,13 +19,13 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
+from app.core.auth import Role
 from app.core.identity import repository as identity_repo
 from app.core.notifications import NotificationSpec, fanout
 from app.core.notifications.models import NotificationRow
 from app.core.notifications.service import create
 from app.core.notifications.tasks import _fanout
 from app.core.tasks import drain_once, enqueue
-from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 
 

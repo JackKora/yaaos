@@ -35,7 +35,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.core.auth import Action, org_id_var, public_route
+from app.core.auth import Action, Role, org_id_var, public_route
 from app.core.database import session as db_session
 from app.core.identity import repository as identity_repo
 from app.core.sessions import require
@@ -43,7 +43,6 @@ from app.core.webserver import RouteSpec, register_routes
 from app.domain.orgs import repository as orgs_repo
 from app.domain.orgs.models import MembershipRow, OrgRow
 from app.domain.orgs.onboarding import get_onboarding_status
-from app.domain.orgs.types import Role
 
 log = structlog.get_logger("orgs.settings.web")
 
