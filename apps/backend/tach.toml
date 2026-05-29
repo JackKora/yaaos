@@ -162,7 +162,7 @@ depends_on = ["app.core.config", "app.domain.orgs"]
 
 [[modules]]
 path = "app.testing.e2e_setup"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.identity", "app.core.secrets", "app.core.webserver", "app.core.workspace", "app.domain.integrations", "app.domain.lessons", "app.domain.orgs", "app.domain.pull_requests", "app.domain.reviewer", "app.domain.tickets", "app.plugins.claude_code", "app.plugins.github", "app.plugins.oauth_test", "app.plugins.saml_test"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.identity", "app.core.secrets", "app.core.webserver", "app.domain.integrations", "app.domain.lessons", "app.domain.orgs", "app.plugins.claude_code", "app.plugins.github", "app.plugins.oauth_test", "app.plugins.saml_test"]
 
 [[modules]]
 path = "app.testing.fake_coding_agent"
@@ -209,19 +209,20 @@ expose = [
   "TERMINAL_EVENT_KINDS",
   "UnauthorizedError",
   "WorkspaceAgentReportSink",
-  "WorkspaceAgentRow",
   "WorkspaceEvent",
   "WorkspaceEventKind",
   "WorkspaceEventOutcome",
   "WorkspaceEventReport",
   "WriteFilesCommand",
   "WriteFilesEntry",
+  "_seed_agent_for_tests",
   "claim_next",
   "clear_queues",
   "clear_report_sink",
   "connection_status_for_org",
   "enqueue_command",
   "ensure_agent_row",
+  "get_agent_info",
   "get_report_sink",
   "get_subscriber_registry",
   "has_any_reachable_agent",
@@ -243,7 +244,6 @@ expose = [
   "ActorKind",
   "AuditEntry",
   "AuditEntryNotFoundError",
-  "AuditEntryRow",
   "audit",
   "audit_for_finding",
   "audit_for_lesson",
@@ -479,13 +479,14 @@ from = ["app.core.sse"]
 
 [[interfaces]]
 expose = [
-  "OutboxEntryRow",
   "ShutdownHook",
   "TaskMetadata",
   "TaskRef",
   "drain_once",
   "enqueue",
   "get_broker",
+  "get_pending_outbox_payloads",
+  "get_pending_task_names",
   "iter_worker_shutdown_hooks",
   "register_worker_shutdown_hook",
   "scoped_task_registration",
@@ -518,7 +519,6 @@ expose = [
   "HitlHistoryEntry",
   "Outcome",
   "OutcomeKind",
-  "PendingHumanDecisionRow",
   "ROUTE_WORKFLOW",
   "RetryPolicy",
   "START_STEP",
@@ -530,7 +530,6 @@ expose = [
   "WorkflowEngine",
   "WorkflowError",
   "WorkflowExecutionNotFoundError",
-  "WorkflowExecutionRow",
   "WorkflowExecutionSummary",
   "WorkflowNotFoundError",
   "WorkflowState",
@@ -579,10 +578,10 @@ expose = [
   "WorkspaceNotFoundError",
   "WorkspaceProvider",
   "WorkspaceProvisionError",
-  "WorkspaceRow",
   "WorkspaceSpec",
   "WorkspaceStatus",
   "WorkspaceTicketContext",
+  "_seed_workspace_for_tests",
   "clear_workflow_context_provider",
   "clear_workspace_providers",
   "close_workspace",
@@ -703,6 +702,7 @@ expose = [
   "get_provider",
   "known_providers",
   "list_broken_credentials_for_org",
+  "mark_last_used",
   "register_provider",
   "update_allowlist",
   "validate",
@@ -713,7 +713,6 @@ from = ["app.domain.integrations"]
 expose = [
   "Lesson",
   "LessonNotFoundError",
-  "LessonRow",
   "LessonValidationError",
   "create",
   "delete",
@@ -749,15 +748,12 @@ expose = [
   "InvitationError",
   "InvitationExpiredError",
   "InvitationInvalidError",
-  "InvitationRow",
   "InvitationUsedError",
   "Membership",
   "MembershipNotFoundError",
-  "MembershipRow",
   "OnboardingStatus",
   "Org",
   "OrgNotFoundError",
-  "OrgRow",
   "Role",
   "SentEmail",
   "SsoConfig",
@@ -774,6 +770,7 @@ expose = [
   "get_config",
   "get_onboarding_status",
   "get_org",
+  "get_org_by_slug",
   "get_test_inbox",
   "get_vcs",
   "install_coding_agent",
@@ -806,7 +803,6 @@ expose = [
   "PRState",
   "PullRequest",
   "PullRequestNotFoundError",
-  "PullRequestRow",
   "get",
   "get_by_external",
   "list_by_ids",
@@ -854,7 +850,6 @@ expose = [
   "ReviewJob",
   "ReviewJobInput",
   "ReviewRequested",
-  "ReviewRow",
   "ReviewScope",
   "ReviewScopeKind",
   "ReviewStarted",
@@ -908,7 +903,6 @@ expose = [
   "Ticket",
   "TicketFilter",
   "TicketNotFoundError",
-  "TicketRow",
   "TicketStatus",
   "abandon",
   "attach_pr_to_ticket",
@@ -975,7 +969,6 @@ from = ["app.domain.vcs"]
 [[interfaces]]
 expose = [
   "ClaudeCodePlugin",
-  "ClaudeCodeSettingsRow",
   "bootstrap",
   "get_plugin",
   "set_api_key",
@@ -984,7 +977,6 @@ from = ["app.plugins.claude_code"]
 
 [[interfaces]]
 expose = [
-  "GitHubAppInstallationRow",
   "GitHubOAuthProvider",
   "GitHubPlugin",
   "GithubIntakeType",

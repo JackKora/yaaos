@@ -29,6 +29,7 @@ class Org(BaseModel):
     archived_at: datetime | None
     created_at: datetime
     workspace_provider: str | None
+    session_timeout_override: int | None = None
 
     @classmethod
     def from_row(cls, row: OrgRow) -> Org:
@@ -39,6 +40,7 @@ class Org(BaseModel):
             archived_at=row.archived_at,
             created_at=row.created_at,
             workspace_provider=row.workspace_provider,
+            session_timeout_override=row.session_timeout_override,
         )
 
 
@@ -89,6 +91,8 @@ class SsoConfig(BaseModel):
     enabled: bool
     jit_enabled: bool
     exempt_owner_user_id: UUID | None
+    idp_metadata_xml: str
+    email_domains: list[str]
     updated_at: datetime
 
     @classmethod
@@ -98,6 +102,8 @@ class SsoConfig(BaseModel):
             enabled=row.enabled,
             jit_enabled=row.jit_enabled,
             exempt_owner_user_id=row.exempt_owner_user_id,
+            idp_metadata_xml=row.idp_metadata_xml,
+            email_domains=list(row.email_domains or []),
             updated_at=row.updated_at,
         )
 
@@ -175,8 +181,19 @@ async def create_membership(
 async def get_org(org_id: UUID) -> Org | None:
     """Return the `Org` value object for *org_id*, or ``None`` if not found."""
     async with db_session() as s:
-        row = await _repo_get_org(s, org_id)
-    return Org.from_row(row) if row is not None else None
+        return await _repo_get_org(s, org_id)
+
+
+async def get_org_by_slug(slug: str) -> Org | None:
+    """Return the `Org` value object for *slug*, or ``None`` if not found.
+
+    Callers outside `domain/orgs` should use this rather than the repository
+    directly — the service layer is the public boundary.
+    """
+    from app.domain.orgs.repository import get_org_by_slug as _repo_get_by_slug  # noqa: PLC0415
+
+    async with db_session() as s:
+        return await _repo_get_by_slug(s, slug)
 
 
 async def delete_expired_invitations() -> int:
@@ -236,4 +253,5 @@ __all__ = [
     "delete_expired_invitations",
     "find_saml_org_slug_for_domain",
     "get_org",
+    "get_org_by_slug",
 ]

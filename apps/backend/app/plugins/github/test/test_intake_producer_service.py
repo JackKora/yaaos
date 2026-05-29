@@ -15,9 +15,8 @@ from typing import Literal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 
-from app.core.tasks import OutboxEntryRow
+from app.core.tasks import get_pending_outbox_payloads
 from app.core.workflow import (
     CommandCategory,
     CommandContext,
@@ -163,19 +162,10 @@ async def test_intake_enqueues_fanout_via_ticket_policy(
         assert "ts" in evt
 
         # `running` status does not warrant user notifications, so no fanout row.
-        rows = (
-            (
-                await db_session.execute(
-                    select(OutboxEntryRow).where(
-                        OutboxEntryRow.payload["task_name"].astext == "notifications.fanout"
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert len(rows) == 0, (
-            f"expected 0 fanout rows for 'running' status (no notification warranted), got {len(rows)}"
+        payloads = await get_pending_outbox_payloads(db_session)
+        fanout_rows = [p for p in payloads if p.get("task_name") == "notifications.fanout"]
+        assert len(fanout_rows) == 0, (
+            f"expected 0 fanout rows for 'running' status (no notification warranted), got {len(fanout_rows)}"
         )
     finally:
         reset_pubsub()

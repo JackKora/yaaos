@@ -11,12 +11,10 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
 import pytest
-import pytest_asyncio
 
 from app.core.config import get_settings
 from app.core.identity import repository as identity_repo
@@ -51,34 +49,6 @@ def fake_github(unused_tcp_port_factory) -> str:
     too coarse. We instead leverage `pytest-httpserver` if installed; if not,
     skip this fixture and rely on a direct env override in the test."""
     raise NotImplementedError
-
-
-@pytest_asyncio.fixture
-async def cleanup(db_session) -> AsyncIterator[None]:
-    """The bootstrap subprocess commits outside our transactional fixture's
-    visibility. Tests that drive it must clean up after themselves; this
-    fixture does so by deleting the rows we expect to have been created."""
-    created_emails: list[str] = []
-    created_org_slugs: list[str] = []
-
-    yield  # tests run here and append to the lists
-
-    # Best-effort teardown.
-    from sqlalchemy import delete  # noqa: PLC0415
-
-    from app.core.identity.service import _delete_user_artifacts_for_tests  # noqa: PLC0415
-    from app.domain.orgs import MembershipRow, OrgRow  # noqa: PLC0415
-
-    for email in created_emails:
-        user = await identity_repo.find_user_by_email(db_session, email)
-        if user is not None:
-            await db_session.execute(delete(MembershipRow).where(MembershipRow.user_id == user.id))
-            await _delete_user_artifacts_for_tests(db_session, user_id=user.id)
-    for slug in created_org_slugs:
-        org = await orgs_repo.get_org_by_slug(db_session, slug)
-        if org is not None:
-            await db_session.execute(delete(OrgRow).where(OrgRow.id == org.id))
-    await db_session.flush()
 
 
 def _start_user_lookup_stub(monkeypatch_env, login: str, github_id: int) -> str:
@@ -208,14 +178,16 @@ async def test_bootstrap_rejects_invalid_email_then_accepts(github_user_lookup) 
 
 
 async def _cleanup_user_and_org(s, *, user_id, org_id) -> None:
-    from sqlalchemy import delete  # noqa: PLC0415
+    from sqlalchemy import text  # noqa: PLC0415
 
     from app.core.identity.service import _delete_user_artifacts_for_tests  # noqa: PLC0415
-    from app.domain.orgs import MembershipRow, OrgRow  # noqa: PLC0415
 
-    await s.execute(delete(MembershipRow).where(MembershipRow.user_id == user_id))
+    # Cleanup for rows committed by the bootstrap subprocess outside the
+    # transactional fixture. Uses raw SQL for tables owned by domain/orgs since
+    # no public delete-org API exists; this is test-only teardown.
+    await s.execute(text("DELETE FROM memberships WHERE user_id = :uid"), {"uid": user_id})
     await _delete_user_artifacts_for_tests(s, user_id=user_id)
-    await s.execute(delete(OrgRow).where(OrgRow.id == org_id))
+    await s.execute(text("DELETE FROM orgs WHERE id = :oid"), {"oid": org_id})
 
 
 # Avoid the static reference to `httpx` flagging as unused.

@@ -228,14 +228,18 @@ async def patch_integration(provider: str, body: PatchIntegrationRequest) -> Int
         raise _err(400, "no_org_context")
     actor = current_actor()
     async with db_session() as s:
-        row = await integ.get(s, org_id, provider)
-        if row is None:
+        cred = await integ.get(s, org_id, provider)
+        if cred is None:
             raise _err(404, "not_connected")
         if body.enabled is not None:
-            row.enabled = body.enabled
+            from app.domain.integrations.service import _get_row as _get_cred_row  # noqa: PLC0415
+
+            raw_row = await _get_cred_row(s, org_id, provider)
+            if raw_row is not None:
+                raw_row.enabled = body.enabled
         if body.allowed_tools is not None:
             try:
-                await integ.update_allowlist(
+                cred = await integ.update_allowlist(
                     s,
                     org_id=org_id,
                     provider=provider,
@@ -245,16 +249,17 @@ async def patch_integration(provider: str, body: PatchIntegrationRequest) -> Int
             except IntegrationNotConnectedError as exc:
                 raise _err(404, "not_connected") from exc
         await s.commit()
-        await s.refresh(row)
-    status = "broken" if row.last_refresh_status == "failed" else "configured"
+        # Re-read to pick up all committed state.
+        cred = await integ.get(s, org_id, provider) or cred
+    status = "broken" if cred.last_refresh_status == "failed" else "configured"
     return IntegrationStatus(
         provider=provider,
         status=status,
-        enabled=row.enabled,
-        upstream_identity=row.upstream_identity,
-        last_validated_at=row.last_validated_at,
-        last_refresh_failed_at=row.last_refresh_failed_at,
-        allowed_tools=list(row.allowed_tools or []),
+        enabled=cred.enabled,
+        upstream_identity=cred.upstream_identity,
+        last_validated_at=None,
+        last_refresh_failed_at=cred.last_refresh_failed_at,
+        allowed_tools=list(cred.allowed_tools or []),
     )
 
 

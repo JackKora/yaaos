@@ -52,7 +52,6 @@ from app.domain.reviewer.llm import (
 )
 from app.domain.reviewer.lock import acquire_pr_lock
 from app.domain.reviewer.mcp_wiring import prefix_broken_creds_warning
-from app.domain.reviewer.models import ReviewRow
 from app.domain.reviewer.replies import handle_developer_reply
 from app.domain.reviewer.repository import SqlAlchemyAggregateRepository
 from app.domain.reviewer.repository_protocol import AggregateRepository
@@ -157,7 +156,6 @@ __all__ = [
     "ReviewJob",
     "ReviewJobInput",
     "ReviewRequested",
-    "ReviewRow",
     "ReviewScope",
     "ReviewScopeKind",
     "ReviewStarted",

@@ -181,22 +181,13 @@ async def _record_ack(finding_id: UUID, *, kind: str, rationale: str) -> dict[st
         await repo.save(aggregate)
 
         # Refresh the ticket's findings rollup after the state change.
-        from sqlalchemy import select as _select2  # noqa: PLC0415
-
         from app.domain.reviewer.service import refresh_ticket_findings_summary  # noqa: PLC0415
-        from app.domain.tickets import TicketRow  # noqa: PLC0415
+        from app.domain.tickets import get_by_pr as _get_ticket_by_pr  # noqa: PLC0415
 
-        ticket_row = (
-            await s.execute(
-                _select2(TicketRow.id).where(
-                    TicketRow.pr_id == finding.pr_id,
-                    TicketRow.org_id == org_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if ticket_row is not None:
+        ticket = await _get_ticket_by_pr(finding.pr_id, org_id=org_id)
+        if ticket is not None:
             await refresh_ticket_findings_summary(
-                ticket_row,
+                ticket.id,
                 finding.pr_id,
                 org_id=org_id,
                 session=s,

@@ -14,60 +14,67 @@ from app.domain.mcp_proxy import lookup_token, mint_token, revoke_token
 from app.domain.mcp_proxy.models import McpReviewTokenRow
 from app.domain.mcp_proxy.service import run_sweep_loop, sweep_expired
 from app.domain.orgs import repository as orgs_repo
+from app.domain.pull_requests import upsert as upsert_pr
+from app.domain.reviewer import (
+    PRReviewAggregate,
+    Review,
+    ReviewScope,
+    ReviewTrigger,
+    SqlAlchemyAggregateRepository,
+)
+from app.domain.tickets import create as create_ticket
+from app.domain.vcs import VCSPullRequest
 
 
-async def _seed_review(db_session) -> tuple:
-    from app.domain.pull_requests import PullRequestRow  # noqa: PLC0415
-    from app.domain.reviewer import ReviewRow  # noqa: PLC0415
-    from app.domain.tickets import TicketRow  # noqa: PLC0415
-
+async def _seed_review(db_session) -> tuple:  # type: ignore[return]
     user = await identity_repo.insert_user(db_session, display_name="U")
-    org = await orgs_repo.insert_org(db_session, slug="mcp-test")
-    ticket = TicketRow(
-        id=uuid4(),
+    org = await orgs_repo.insert_org(db_session, slug=f"mcp-test-{uuid4().hex[:6]}")
+    ext_id = "pr-1"
+    ticket_id, _ = await create_ticket(
+        type="pr_review",
+        payload={},
+        idempotency_key=f"{ext_id}-{uuid4().hex[:6]}",
         org_id=org.id,
+        title="t",
         source="github_pr",
-        source_external_id="pr-1",
-        title="t",
+        source_external_id=ext_id,
         plugin_id="github",
         repo_external_id="owner/repo",
+        session=db_session,
     )
-    db_session.add(ticket)
-    await db_session.flush()
-    pr = PullRequestRow(
-        id=uuid4(),
+    pr = await upsert_pr(
+        VCSPullRequest(
+            plugin_id="github",
+            repo_external_id="owner/repo",
+            external_id=f"{ext_id}-{uuid4().hex[:6]}",
+            number=1,
+            title="t",
+            body=None,
+            author_login="a",
+            author_type="user",
+            base_branch="main",
+            head_branch="b",
+            base_sha="0",
+            head_sha="1",
+            is_draft=False,
+            is_fork=False,
+            state="open",
+            html_url="http://test",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        ),
+        ticket_id=ticket_id,
         org_id=org.id,
-        plugin_id="github",
-        repo_external_id="owner/repo",
-        external_id="pr-1",
-        number=1,
-        title="t",
-        body=None,
-        author_login="a",
-        author_type="user",
-        base_branch="main",
-        head_branch="b",
-        base_sha="0",
-        head_sha="1",
-        is_draft=False,
-        is_fork=False,
-        state="open",
-        html_url="http://test",
-        ticket_id=ticket.id,
+        session=db_session,
     )
-    db_session.add(pr)
-    await db_session.flush()
-    review = ReviewRow(
-        id=uuid4(),
-        org_id=org.id,
-        pr_id=pr.id,
-        sequence_number=1,
-        status="queued",
-        trigger_reason="manual_full",
-        destination="vcs",
+    agg = PRReviewAggregate(pr_id=pr.id, org_id=org.id)
+    review: Review = agg.start_review(
+        trigger=ReviewTrigger.MANUAL_FULL,
+        scope=ReviewScope.full(base_sha="0", head_sha="1"),
+        commit_sha="1",
     )
-    db_session.add(review)
-    await db_session.flush()
+    repo = SqlAlchemyAggregateRepository(db_session)
+    await repo.save(agg)
     return user, org, pr, review
 
 

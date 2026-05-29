@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,10 +19,10 @@ from app.core.tasks import enqueue
 from app.domain.tickets.models import TicketRow
 from app.domain.tickets.notifications import build_status_change_specs
 
-# Single 5-state ticket vocabulary. `hitl` and `failed` are populated by
-# the workflow-state projection (reviewer/workflow_review_view.py); the
-# transition helpers below only emit `running`, `done`, `cancelled`.
-TicketStatus = Literal["running", "hitl", "done", "failed", "cancelled"]
+# Six-state ticket vocabulary. `pending` is the initial state set by `create()`;
+# `running` is set when the first workflow step dispatches; `hitl` and `failed`
+# are populated by the workflow-state projection; `done`/`cancelled` are terminal.
+TicketStatus = Literal["pending", "running", "hitl", "done", "failed", "cancelled"]
 
 
 class Ticket(BaseModel):
@@ -36,6 +36,10 @@ class Ticket(BaseModel):
     plugin_id: str
     repo_external_id: str
     pr_id: UUID | None
+    type: str = "pr_review"
+    idempotency_key: str | None = None
+    payload: dict = Field(default_factory=dict)
+    current_workflow_execution_id: UUID | None = None
     # Enriched fields (denormalized at read-time from the linked PR; nullable
     # because a ticket can briefly exist without its PR row in the create flow).
     pr_number: int | None = None
@@ -64,6 +68,10 @@ class Ticket(BaseModel):
             plugin_id=row.plugin_id,
             repo_external_id=row.repo_external_id,
             pr_id=row.pr_id,
+            type=row.type,
+            idempotency_key=row.idempotency_key,
+            payload=dict(row.payload or {}),
+            current_workflow_execution_id=row.current_workflow_execution_id,
             created_at=row.created_at,
             updated_at=row.updated_at,
             findings_count=row.findings_count,

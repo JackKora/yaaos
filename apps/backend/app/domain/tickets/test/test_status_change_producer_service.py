@@ -14,9 +14,8 @@ import asyncio
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 
-from app.core.tasks import OutboxEntryRow
+from app.core.tasks import get_pending_outbox_payloads
 
 # ---------------------------------------------------------------------------
 # Helpers — create org+users+memberships using public domain APIs
@@ -92,20 +91,11 @@ async def test_status_change_enqueues_fanout_specs(db_session) -> None:  # type:
 
     # The outbox row is committed inside _transition's own session; query the
     # test session (same underlying connection via set_test_session_override).
-    rows = (
-        (
-            await db_session.execute(
-                select(OutboxEntryRow).where(
-                    OutboxEntryRow.payload["task_name"].astext == "notifications.fanout"
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    payloads = await get_pending_outbox_payloads(db_session)
+    fanout_payloads = [p for p in payloads if p.get("task_name") == "notifications.fanout"]
 
-    assert len(rows) == 1, f"expected exactly 1 outbox row, got {len(rows)}"
-    specs = rows[0].payload["args"]["specs"]
+    assert len(fanout_payloads) == 1, f"expected exactly 1 outbox row, got {len(fanout_payloads)}"
+    specs = fanout_payloads[0]["args"]["specs"]
     assert len(specs) == len(user_ids), f"expected {len(user_ids)} specs, got {len(specs)}"
 
     enqueued_user_ids = {s["user_id"] for s in specs}

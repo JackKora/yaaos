@@ -363,6 +363,58 @@ async def get_workspace(workspace_id: UUID) -> Workspace | None:
     return _WorkspaceImpl(id=str(row.id), provider=provider, plugin_state=row.plugin_state)
 
 
+async def _seed_workspace_for_tests(
+    *,
+    org_id: UUID,
+    provider_id: str,
+    plugin_state: dict,
+    sha: str,
+    current_command_id: UUID | None = None,
+    current_holder_workflow_id: UUID | None = None,
+    status: str | None = None,
+    caller_session: AsyncSession | None = None,
+) -> str:
+    """Insert a workspace row in `active` state with caller-supplied plugin_state.
+
+    For cross-module tests that need a workspace in the DB without going through
+    the full provision flow. Returns the workspace id string.
+
+    When `caller_session` is supplied the row is added to the caller's transaction
+    (no commit — the caller commits). When omitted a new session is opened and
+    committed immediately.
+
+    `current_command_id` and `current_holder_workflow_id` are optional — set
+    them when the test needs to simulate a claimed workspace (agent_gateway tests).
+    """
+    from datetime import timedelta  # noqa: PLC0415
+
+    ws_id = uuid4()
+
+    def _build_row() -> WorkspaceRow:
+        return WorkspaceRow(
+            id=ws_id,
+            org_id=org_id,
+            provider_id=provider_id,
+            spec={"sha": sha},
+            status=status or WorkspaceStatus.ACTIVE.value,
+            expires_at=_utcnow() + timedelta(hours=1),
+            plugin_state=plugin_state,
+            current_command_id=current_command_id,
+            current_holder_workflow_id=current_holder_workflow_id,
+        )
+
+    if caller_session is not None:
+        row = _build_row()
+        caller_session.add(row)
+        await caller_session.flush()
+    else:
+        async with get_session() as s:
+            row = _build_row()
+            s.add(row)
+            await s.commit()
+    return str(ws_id)
+
+
 async def force_close_all(*, org_id: UUID, reason: str = "force_close_all") -> int:
     """Flip every active/creating workspace for the org to expired. Returns count.
 

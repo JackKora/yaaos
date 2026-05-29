@@ -18,9 +18,8 @@ from typing import Literal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 
-from app.core.tasks import OutboxEntryRow
+from app.core.tasks import get_pending_outbox_payloads
 from app.core.workflow import (
     CommandCategory,
     CommandContext,
@@ -114,15 +113,6 @@ async def test_prepare_pr_review_enqueues_ticket_status_change(db_session, _stub
     assert outcome.detail == "pr_review_started"
 
     # `running` is not in the notification-worthy set; no fanout row expected.
-    rows = (
-        (
-            await db_session.execute(
-                select(OutboxEntryRow).where(
-                    OutboxEntryRow.payload["task_name"].astext == "notifications.fanout"
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(rows) == 0, f"'running' status should not enqueue a fanout row, got {len(rows)}"
+    payloads = await get_pending_outbox_payloads(db_session)
+    fanout_rows = [p for p in payloads if p.get("task_name") == "notifications.fanout"]
+    assert len(fanout_rows) == 0, f"'running' status should not enqueue a fanout row, got {len(fanout_rows)}"

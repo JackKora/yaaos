@@ -94,13 +94,16 @@ async def get_token_by_hash(
     token_hash: str,
     *,
     session: AsyncSession,
-) -> McpReviewTokenRow | None:
-    """Return the `McpReviewTokenRow` for `token_hash`, or None if absent.
+) -> McpToken | None:
+    """Return a `McpToken` value object for `token_hash`, or None if absent.
     Targeted read for tests that need to assert on the persisted token row
     after minting without importing the Row type directly."""
-    return (
+    row = (
         await session.execute(select(McpReviewTokenRow).where(McpReviewTokenRow.token_hash == token_hash))
     ).scalar_one_or_none()
+    if row is None:
+        return None
+    return McpToken(review_id=row.review_id, org_id=row.org_id, expires_at=row.expires_at)
 
 
 async def revoke_token(

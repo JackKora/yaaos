@@ -109,9 +109,14 @@ async def test_config_status_fully_configured(seeded, db_session) -> None:
 
     register_onboarding_contributor("github_app_installed", yes)
     register_onboarding_contributor("anthropic_key_set", yes)
-    org = await orgs_repo.get_org(db_session, seeded["org_a"].id)
-    assert org is not None
-    org.workspace_provider = "in_memory"
+    from sqlalchemy import select as _select  # noqa: PLC0415
+
+    from app.domain.orgs.models import OrgRow as _OrgRow  # noqa: PLC0415
+
+    org_row = (
+        await db_session.execute(_select(_OrgRow).where(_OrgRow.id == seeded["org_a"].id))
+    ).scalar_one()
+    org_row.workspace_provider = "in_memory"
     await db_session.commit()
 
     sess = seeded["sess"]

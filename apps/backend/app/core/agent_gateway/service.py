@@ -306,6 +306,66 @@ async def ensure_agent_row(
     return row.id
 
 
+async def get_agent_info(
+    agent_id: UUID,
+    *,
+    session: AsyncSession,
+) -> dict | None:
+    """Return a plain dict snapshot of the agent row, or None if absent.
+
+    Keys: `id`, `org_id`, `agent_pod_id`, `iam_arn`, `version`, `state`,
+    `last_heartbeat_at`. Exists so cross-module tests can verify agent state
+    without importing the Row class.
+    """
+    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
+
+    row = await session.get(WorkspaceAgentRow, agent_id)
+    if row is None:
+        return None
+    return {
+        "id": row.id,
+        "org_id": row.org_id,
+        "agent_pod_id": row.agent_pod_id,
+        "iam_arn": row.iam_arn,
+        "version": row.version,
+        "state": row.state,
+        "last_heartbeat_at": row.last_heartbeat_at,
+    }
+
+
+async def _seed_agent_for_tests(
+    *,
+    org_id: UUID,
+    session: AsyncSession,
+    iam_arn: str = "arn:aws:iam::123456789012:role/yaaos-agent",
+    version: str = "0.0.1",
+    heartbeat_age_seconds: int = 0,
+) -> dict:
+    """Insert a reachable workspace-agent row for testing.
+
+    Returns a dict with `id` (row PK), `agent_pod_id` (pod UUID), and
+    `org_id`. Backdates `last_heartbeat_at` when `heartbeat_age_seconds > 0`.
+    """
+    from uuid import uuid4 as _uuid4  # noqa: PLC0415
+
+    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
+
+    pod_id = _uuid4()
+    agent_id = await ensure_agent_row(
+        org_id=org_id,
+        agent_pod_id=pod_id,
+        iam_arn=iam_arn,
+        version=version,
+        session=session,
+    )
+    if heartbeat_age_seconds > 0:
+        row = await session.get(WorkspaceAgentRow, agent_id)
+        if row is not None:
+            row.last_heartbeat_at = datetime.now(UTC) - timedelta(seconds=heartbeat_age_seconds)
+            await session.flush()
+    return {"id": agent_id, "agent_pod_id": pod_id, "org_id": org_id}
+
+
 async def pick_agent_for_org(
     org_id: UUID,
     *,

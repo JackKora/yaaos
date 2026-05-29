@@ -5,9 +5,10 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.core.audit_log import Actor, AuditEntryRow
+from app.core.audit_log import Actor, list_for_entity
 from app.core.identity import create_user
-from app.domain.orgs import MembershipRow, OrgRow, create_membership, create_org
+from app.domain.orgs import create_membership, create_org
+from app.domain.orgs.models import MembershipRow, OrgRow
 from app.domain.orgs.types import Role
 
 # ---------------------------------------------------------------------------
@@ -47,19 +48,7 @@ async def test_create_org_emits_audit_row(db_session) -> None:
     org = await create_org(db_session, slug="test-org-audit", display_name="Audit Org")
     await db_session.commit()
 
-    audit_rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.entity_id == org.id,
-                    AuditEntryRow.kind == "org.created",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-
+    audit_rows = await list_for_entity("org", org.id, org_id=org.id, kinds=["org.created"])
     assert len(audit_rows) == 1
     assert audit_rows[0].entity_kind == "org"
     assert audit_rows[0].payload["slug"] == "test-org-audit"
@@ -117,18 +106,6 @@ async def test_create_membership_emits_audit_row(db_session) -> None:
     )
     await db_session.commit()
 
-    audit_rows = (
-        (
-            await db_session.execute(
-                select(AuditEntryRow).where(
-                    AuditEntryRow.entity_id == org.id,
-                    AuditEntryRow.kind == "membership.created",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-
+    audit_rows = await list_for_entity("org", org.id, org_id=org.id, kinds=["membership.created"])
     assert len(audit_rows) == 1
     assert audit_rows[0].payload["role"] == "builder"

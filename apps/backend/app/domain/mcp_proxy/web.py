@@ -43,7 +43,7 @@ from app.core.database import session as db_session
 from app.core.observability import spawn
 from app.core.secrets import SecretsDecryptError, decrypt
 from app.core.webserver import RouteSpec, register_routes
-from app.domain.integrations import get, get_provider
+from app.domain.integrations import get, get_provider, mark_last_used
 from app.domain.mcp_proxy.service import lookup_token, record_broken_creds, run_sweep_loop
 
 log = structlog.get_logger("mcp_proxy.web")
@@ -203,7 +203,7 @@ async def dispatch(
             )
 
         # Stamp last_used_at; the UI surfaces "last used X minutes ago".
-        credential.last_used_at = datetime.now(UTC)
+        await mark_last_used(s, org_id=org_id, provider=server)
 
         # One audit row per dispatched method.
         try:

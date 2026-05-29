@@ -3,7 +3,6 @@
 See `apps/backend/docs/core_workflow.md`.
 """
 
-from app.core.workflow.models import PendingHumanDecisionRow, WorkflowExecutionRow
 from app.core.workflow.recovery import (
     clear_recovery_policies,
     get_recovery_policy,
@@ -63,7 +62,6 @@ __all__ = [
     "HitlHistoryEntry",
     "Outcome",
     "OutcomeKind",
-    "PendingHumanDecisionRow",
     "RetryPolicy",
     "Step",
     "TerminalAction",
@@ -72,7 +70,6 @@ __all__ = [
     "WorkflowEngine",
     "WorkflowError",
     "WorkflowExecutionNotFoundError",
-    "WorkflowExecutionRow",
     "WorkflowExecutionSummary",
     "WorkflowNotFoundError",
     "WorkflowState",

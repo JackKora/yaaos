@@ -7,6 +7,7 @@ from app.domain.integrations.service import (
     create_credential,
     get,
     list_broken_credentials_for_org,
+    mark_last_used,
     update_allowlist,
     validate,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "get_provider",
     "known_providers",
     "list_broken_credentials_for_org",
+    "mark_last_used",
     "register_provider",
     "update_allowlist",
     "validate",

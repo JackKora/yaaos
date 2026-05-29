@@ -11,8 +11,8 @@ from app.core.workspace.dispatch import (
     release_claim,
     try_claim,
 )
-from app.core.workspace.models import WorkspaceRow
 from app.core.workspace.service import (
+    _seed_workspace_for_tests,
     clear_workspace_providers,
     close_workspace,
     create_workspace,
@@ -86,10 +86,10 @@ __all__ = [
     "WorkspaceNotFoundError",
     "WorkspaceProvider",
     "WorkspaceProvisionError",
-    "WorkspaceRow",
     "WorkspaceSpec",
     "WorkspaceStatus",
     "WorkspaceTicketContext",
+    "_seed_workspace_for_tests",
     "clear_workflow_context_provider",
     "clear_workspace_providers",
     "close_workspace",

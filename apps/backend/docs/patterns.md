@@ -65,6 +65,8 @@ Exceptions: `core/database` (Postgres connections), `core/observability` (log fi
 - Absolute imports only.
 - Module-level only (heavy-ML exception requires `# noqa: PLC0415`).
 - Other modules import only `__all__` exports. Internal cross-module imports are Tach-rejected.
+- **No `*Row` types in `__all__`.** SQLAlchemy Row/mapped classes never appear in any module's `__all__` or `tach expose` list. Every public API that surfaces persisted state returns the module's Pydantic value object, not the Row. Foreign table access via an imported Row name fails tach `check --interfaces` — the intended path is the owning module's public service API.
+- Tests obey the same import rules. A test needing another module's persisted state drives the same service API real callers use, or constructs a VO directly (in-memory). No `*Row` constructor across module boundaries.
 
 ## Module structure
 

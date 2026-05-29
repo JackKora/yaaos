@@ -17,7 +17,6 @@ Provides:
 
 from app.core.agent_gateway import bearers, web  # noqa: F401 — registers /v1/* routes
 from app.core.agent_gateway.bearers import revoke_all_for_org
-from app.core.agent_gateway.models import WorkspaceAgentRow
 from app.core.agent_gateway.report_sink import (
     WorkspaceAgentReportSink,
     WorkspaceEventOutcome,
@@ -27,11 +26,13 @@ from app.core.agent_gateway.report_sink import (
     register_report_sink,
 )
 from app.core.agent_gateway.service import (
+    _seed_agent_for_tests,
     claim_next,
     clear_queues,
     connection_status_for_org,
     enqueue_command,
     ensure_agent_row,
+    get_agent_info,
     has_any_reachable_agent,
     pick_agent_for_org,
     queue_depth,
@@ -98,19 +99,20 @@ __all__ = [
     "SubscriberRegistry",
     "UnauthorizedError",
     "WorkspaceAgentReportSink",
-    "WorkspaceAgentRow",
     "WorkspaceEvent",
     "WorkspaceEventKind",
     "WorkspaceEventOutcome",
     "WorkspaceEventReport",
     "WriteFilesCommand",
     "WriteFilesEntry",
+    "_seed_agent_for_tests",
     "claim_next",
     "clear_queues",
     "clear_report_sink",
     "connection_status_for_org",
     "enqueue_command",
     "ensure_agent_row",
+    "get_agent_info",
     "get_report_sink",
     "get_subscriber_registry",
     "has_any_reachable_agent",

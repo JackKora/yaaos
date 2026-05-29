@@ -88,7 +88,7 @@ async def test_connect_callback_persists_encrypted_tokens(
     seeded, stub_provider, stub_exchange, db_session
 ) -> None:
     del stub_exchange
-    row = await integ.connect_callback(
+    cred = await integ.connect_callback(
         db_session,
         provider="stub",
         code="abc",
@@ -97,13 +97,17 @@ async def test_connect_callback_persists_encrypted_tokens(
         actor=seeded["actor"],
         upstream_identity="service@example.test",
     )
-    # Tokens are encrypted at rest; decrypt only at the call site.
+    # Tokens are encrypted at rest; verify via the intra-module row.
+    from app.domain.integrations.service import _get_row  # noqa: PLC0415
+
+    row = await _get_row(db_session, seeded["org"].id, "stub")
+    assert row is not None
     assert row.encrypted_access_token != "access-1"
     assert decrypt(row.encrypted_access_token.encode()) == b"access-1"
     assert row.encrypted_refresh_token is not None
     assert decrypt(row.encrypted_refresh_token.encode()) == b"refresh-1"
-    assert row.upstream_identity == "service@example.test"
-    assert row.last_refresh_status == "ok"
+    assert cred.upstream_identity == "service@example.test"
+    assert cred.last_refresh_status == "ok"
 
 
 @pytest.mark.asyncio

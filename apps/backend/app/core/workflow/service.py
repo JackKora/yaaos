@@ -619,6 +619,7 @@ class WorkflowExecutionSummary:
     # Tests that need to seed a WorkspaceRow with the matching command_id read
     # this field rather than reaching into workflow_executions directly.
     pending_agent_command_id: UUID | None = None
+    cancel_requested: bool = False
 
 
 @dataclass(frozen=True)
@@ -644,6 +645,7 @@ def _project_execution(row: WorkflowExecutionRow) -> WorkflowExecutionSummary:
         created_at=row.created_at,
         updated_at=row.updated_at,
         pending_agent_command_id=row.pending_agent_command_id,
+        cancel_requested=row.cancel_requested,
     )
 
 

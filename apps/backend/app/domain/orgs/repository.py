@@ -24,14 +24,20 @@ async def insert_org(session: AsyncSession, *, slug: str, display_name: str = ""
     return row
 
 
-async def get_org_by_slug(session: AsyncSession, slug: str) -> OrgRow | None:
-    return (
+async def get_org_by_slug(session: AsyncSession, slug: str) -> Org | None:  # noqa: F821
+    from app.domain.orgs.service import Org  # noqa: PLC0415
+
+    row = (
         await session.execute(select(OrgRow).where(OrgRow.slug == slug, OrgRow.archived_at.is_(None)))
     ).scalar_one_or_none()
+    return Org.from_row(row) if row is not None else None
 
 
-async def get_org(session: AsyncSession, org_id: UUID) -> OrgRow | None:
-    return (await session.execute(select(OrgRow).where(OrgRow.id == org_id))).scalar_one_or_none()
+async def get_org(session: AsyncSession, org_id: UUID) -> Org | None:  # noqa: F821
+    from app.domain.orgs.service import Org  # noqa: PLC0415
+
+    row = (await session.execute(select(OrgRow).where(OrgRow.id == org_id))).scalar_one_or_none()
+    return Org.from_row(row) if row is not None else None
 
 
 async def insert_membership(

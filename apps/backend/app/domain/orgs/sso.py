@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.saml import generate_sp_keypair as _generate_sp_keypair
 from app.core.saml import verify_assertion as _core_verify_assertion
 from app.domain.orgs.models import SsoConfigRow
+from app.domain.orgs.service import SsoConfig
 
 log = structlog.get_logger("orgs.sso")
 
@@ -61,7 +62,7 @@ async def upsert_config(
     enabled: bool = False,
     exempt_owner_user_id: UUID | None = None,
     email_domains: list[str] | None = None,
-) -> SsoConfigRow:
+) -> SsoConfig:
     """Insert or update the per-org SSO config. Caller must have checked
     `can_be_sso_exempt_owner` for `exempt_owner_user_id` if non-None."""
     if not idp_metadata_xml or "<" not in idp_metadata_xml:
@@ -88,7 +89,7 @@ async def upsert_config(
         )
         session.add(row)
         await session.flush()
-        return row
+        return SsoConfig.from_row(row)
     existing.idp_metadata_xml = idp_metadata_xml
     existing.jit_enabled = jit_enabled
     existing.enabled = enabled
@@ -96,15 +97,16 @@ async def upsert_config(
     existing.email_domains = domains
     existing.updated_at = datetime.now(UTC)
     await session.flush()
-    return existing
+    return SsoConfig.from_row(existing)
 
 
-async def get_config(session: AsyncSession, *, org_id: UUID) -> SsoConfigRow | None:
+async def get_config(session: AsyncSession, *, org_id: UUID) -> SsoConfig | None:
     from sqlalchemy import select  # noqa: PLC0415
 
-    return (
+    row = (
         await session.execute(select(SsoConfigRow).where(SsoConfigRow.org_id == org_id))
     ).scalar_one_or_none()
+    return SsoConfig.from_row(row) if row is not None else None
 
 
 def sp_metadata_xml(org_slug: str, base_url: str) -> str:

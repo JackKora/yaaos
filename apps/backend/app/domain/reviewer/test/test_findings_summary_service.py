@@ -13,7 +13,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 import app.web  # noqa: F401  — registers the reviewer router
 from app.core.auth import AuthMiddleware
@@ -22,7 +22,8 @@ from app.core.identity import sessions as session_lifecycle
 from app.domain.orgs import Role
 from app.domain.orgs import repository as orgs_repo
 from app.domain.reviewer.service import refresh_ticket_findings_summary
-from app.domain.tickets import TicketRow, update_findings_summary
+from app.domain.tickets import get as get_ticket
+from app.domain.tickets import update_findings_summary
 
 # ── shared seed helpers ───────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ async def test_reviewer_writes_findings_summary_on_review_end(db_session) -> Non
     await refresh_ticket_findings_summary(ticket_id, pr_id, org_id=org_id, session=db_session)
     await db_session.commit()
 
-    row = (await db_session.execute(select(TicketRow).where(TicketRow.id == ticket_id))).scalar_one()
+    row = await get_ticket(ticket_id, org_id=org_id)
     assert row.findings_count == 2
     assert row.max_severity == "high"
 
@@ -137,7 +138,7 @@ async def test_reviewer_writes_summary_zero_when_no_findings(db_session) -> None
     await refresh_ticket_findings_summary(ticket_id, pr_id, org_id=org_id, session=db_session)
     await db_session.commit()
 
-    row = (await db_session.execute(select(TicketRow).where(TicketRow.id == ticket_id))).scalar_one()
+    row = await get_ticket(ticket_id, org_id=org_id)
     assert row.findings_count == 0
     assert row.max_severity is None
 
@@ -206,7 +207,7 @@ async def test_findings_summary_refreshed_on_ack(ack_seeded, db_session) -> None
 
     # The finding is acknowledged; it's still counted in the rollup (state
     # change doesn't remove it from the aggregate query).
-    row = (await db_session.execute(select(TicketRow).where(TicketRow.id == ticket_id))).scalar_one()
+    row = await get_ticket(ticket_id, org_id=ack_seeded["org"].id)
     # findings_count is refreshed — acknowledged findings are still findings.
     assert row.findings_count == 1
     assert row.max_severity == "high"

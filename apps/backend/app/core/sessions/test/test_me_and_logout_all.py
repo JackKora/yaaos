@@ -64,15 +64,14 @@ async def test_me_returns_user_and_memberships(db_session) -> None:
     assert "current_org_slug" not in body
 
     # Cleanup so other tests start clean.
-    from sqlalchemy import delete  # noqa: PLC0415
+    from sqlalchemy import text  # noqa: PLC0415
 
     from app.core.database import get_sessionmaker  # noqa: PLC0415
     from app.core.identity import _delete_user_artifacts_for_tests  # noqa: PLC0415
-    from app.domain.orgs import MembershipRow, OrgRow  # noqa: PLC0415
 
     async with get_sessionmaker()() as cleanup:
-        await cleanup.execute(delete(MembershipRow).where(MembershipRow.user_id == user.id))
-        await cleanup.execute(delete(OrgRow).where(OrgRow.id.in_([org_a.id, org_b.id])))
+        await cleanup.execute(text("DELETE FROM memberships WHERE user_id = :uid"), {"uid": user.id})
+        await cleanup.execute(text("DELETE FROM orgs WHERE id = ANY(:ids)"), {"ids": [org_a.id, org_b.id]})
         await _delete_user_artifacts_for_tests(cleanup, user_id=user.id)
         await cleanup.commit()
 

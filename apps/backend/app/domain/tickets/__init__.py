@@ -1,7 +1,6 @@
 """domain/tickets — yaaos's unit of work."""
 
 from app.domain.tickets import web  # noqa: F401
-from app.domain.tickets.models import TicketRow
 from app.domain.tickets.notifications import build_status_change_specs
 from app.domain.tickets.service import (
     InvalidTicketTransition,
@@ -32,7 +31,6 @@ __all__ = [
     "Ticket",
     "TicketFilter",
     "TicketNotFoundError",
-    "TicketRow",
     "TicketStatus",
     "abandon",
     "attach_pr_to_ticket",
