@@ -28,7 +28,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -271,55 +271,3 @@ def serialize_for_sse(payload: dict[str, Any]) -> str:
     subscribers use this before writing to the HTTP response.
     """
     return f"data: {json.dumps(payload)}\n\n"
-
-
-# ---------------------------------------------------------------------------
-# Workspace-activity ownership registrar (boot-time dependency injection)
-# ---------------------------------------------------------------------------
-
-# `core/sse` must not import `domain/*`. The workspace_activity HTTP route
-# nonetheless needs a 404-on-cross-org ownership check that knows about
-# tickets + workflow rows (domain concerns). The control-plane bootstrap
-# registers the dep at startup; the route consumes it via a Depends thunk.
-_workspace_activity_ownership_check: Callable[[UUID], Awaitable[None]] | None = None
-
-
-def register_workspace_activity_ownership_check(
-    check: Callable[[UUID], Awaitable[None]],
-) -> None:
-    """Boot-time registrar for the workspace-activity ownership check.
-
-    Idempotent for the same callable (re-registering is a no-op so worker +
-    web boots can both wire it). Registering a *different* callable while
-    one is already set raises — catches double-registration in tests.
-    """
-    global _workspace_activity_ownership_check
-    if _workspace_activity_ownership_check is None:
-        _workspace_activity_ownership_check = check
-        return
-    if _workspace_activity_ownership_check is check:
-        return
-    raise RuntimeError(
-        "register_workspace_activity_ownership_check: a different callable is already registered"
-    )
-
-
-async def verify_workspace_activity_ownership(workflow_execution_id: UUID) -> None:
-    """Delegate to the registered ownership check; raise if unregistered.
-
-    Pure (framework-agnostic) so it stays in the service layer. `core/sse/web`
-    wraps it in a FastAPI `Depends` thunk that plucks `workflow_execution_id`
-    from the path.
-    """
-    if _workspace_activity_ownership_check is None:
-        raise RuntimeError(
-            "workspace_activity ownership check is not registered; "
-            "bootstrap must call register_workspace_activity_ownership_check"
-        )
-    await _workspace_activity_ownership_check(workflow_execution_id)
-
-
-def reset_workspace_activity_ownership_check() -> None:
-    """Drop the registered ownership check. For test isolation only."""
-    global _workspace_activity_ownership_check
-    _workspace_activity_ownership_check = None

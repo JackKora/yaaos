@@ -110,7 +110,7 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.c
 
 [[modules]]
 path = "app.domain.orgs"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.byok", "app.core.config", "app.core.database", "app.core.identity", "app.core.saml", "app.core.sessions", "app.core.webserver", "app.core.workflow", "app.domain.coding_agent", "app.domain.tickets", "app.domain.vcs"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.byok", "app.core.config", "app.core.database", "app.core.identity", "app.core.saml", "app.core.sessions", "app.core.webserver", "app.domain.coding_agent", "app.domain.vcs"]
 
 [[modules]]
 path = "app.domain.plugins"
@@ -462,9 +462,7 @@ expose = [
   "publish_general",
   "publish_general_after_commit",
   "publish_workspace_activity",
-  "register_workspace_activity_ownership_check",
   "reset_pubsub",
-  "reset_workspace_activity_ownership_check",
   "serialize_for_sse",
   "shutdown",
   "subscribe_general",
@@ -760,7 +758,6 @@ expose = [
   "SsoConfigError",
   "VcsState",
   "accept_invitation",
-  "assert_workflow_in_org",
   "audit_web",
   "change_role",
   "clear_vcs",
