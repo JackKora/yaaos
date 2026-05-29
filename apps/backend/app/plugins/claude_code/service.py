@@ -1003,14 +1003,11 @@ async def set_api_key(session, *, org_id: UUID, encrypted_anthropic_api_key: byt
     composes with sibling writes inside one ``async with db_session()`` block.
     See ``apps/backend/docs/patterns.md`` § Service-fn session-handling convention.
     """
-    from uuid import uuid4 as _uuid4  # noqa: PLC0415
-
     row = (
         await session.execute(select(ClaudeCodeSettingsRow).where(ClaudeCodeSettingsRow.org_id == org_id))
     ).scalar_one_or_none()
     if row is None:
         row = ClaudeCodeSettingsRow(
-            id=_uuid4(),
             org_id=org_id,
             encrypted_anthropic_api_key=encrypted_anthropic_api_key,
         )

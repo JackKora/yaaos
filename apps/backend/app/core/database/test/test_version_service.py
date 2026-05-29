@@ -34,16 +34,3 @@ def test_version_string_below_minimum_raises_with_readable_message() -> None:
 def test_version_string_pg16_raises() -> None:
     with pytest.raises(RuntimeError):
         _assert_min_pg_version("160008")
-
-
-def test_migrate_rejects_engine_below_18() -> None:
-    """Confirms _assert_min_pg_version raises a readable error for PG < 18.
-
-    The running test DB is PG18, so the happy path is covered by every service
-    test that calls migrate() via the _migrated_schema fixture.
-    """
-    with pytest.raises(RuntimeError) as exc_info:
-        _assert_min_pg_version("160000")
-    msg = str(exc_info.value)
-    assert "18" in msg
-    assert "16" in msg
