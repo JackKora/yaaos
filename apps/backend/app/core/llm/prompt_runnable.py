@@ -55,7 +55,7 @@ def _project_for_prompt(prompt: FilePrompt, default: str) -> str:
     parts = prompt.source_path.parts
     try:
         return parts[parts.index("domain") + 1]
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         return default
 
 

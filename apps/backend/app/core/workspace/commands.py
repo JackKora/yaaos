@@ -140,7 +140,7 @@ class CleanupWorkspace(_LifecycleCommand):
             return Outcome.success()
         try:
             ws_id = UUID(str(ws_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid workspace_id: {ws_id_raw!r}")
 
         try:

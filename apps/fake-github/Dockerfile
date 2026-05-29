@@ -1,5 +1,5 @@
 # Minimal fake-github image for the test stack.
-FROM python:3.13-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

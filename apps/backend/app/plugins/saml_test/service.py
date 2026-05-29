@@ -33,7 +33,7 @@ def verify_assertion(token: str) -> dict | None:
     """Verify + return the payload. None on bad signature / expired."""
     try:
         return _serializer().loads(token, max_age=_TTL_SECONDS)
-    except (BadSignature, SignatureExpired):
+    except BadSignature, SignatureExpired:
         return None
 
 

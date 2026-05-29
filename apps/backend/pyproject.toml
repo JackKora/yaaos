@@ -2,7 +2,7 @@
 name = "yaaos-backend"
 version = "0.0.1"
 description = "yaaos backend — FastAPI + SQLAlchemy"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",

@@ -224,7 +224,7 @@ class PRReviewAggregate:
         commit_sha: str,
         review_id: uuid.UUID | None = None,
     ) -> Review:
-        review_id = review_id or uuid.uuid4()
+        review_id = review_id or uuid.uuid7()
         sequence_number = max((r.sequence_number for r in self._state.reviews.values()), default=0) + 1
         review = Review(
             id=review_id,
@@ -456,7 +456,7 @@ class PRReviewAggregate:
 
     def _raise_finding(self, review_id: uuid.UUID, rf: RawFinding) -> Finding:
         f = Finding(
-            id=uuid.uuid4(),
+            id=uuid.uuid7(),
             pr_id=self._state.pr_id,
             org_id=self._state.org_id,
             fingerprint=rf.fingerprint,
@@ -493,7 +493,7 @@ class PRReviewAggregate:
         self, finding: Finding, review_id: uuid.UUID, rf: RawFinding
     ) -> FindingObservation:
         obs = FindingObservation(
-            id=uuid.uuid4(),
+            id=uuid.uuid7(),
             finding_id=finding.id,
             review_id=review_id,
             anchor=rf.anchor,
@@ -520,7 +520,7 @@ class PRReviewAggregate:
                     t.external_thread_id = external_thread_id
                 return t
         thread = CommentThread(
-            id=thread_id or uuid.uuid4(),
+            id=thread_id or uuid.uuid7(),
             finding_id=finding_id,
             external_thread_id=external_thread_id,
             created_at=self._now,
@@ -548,7 +548,7 @@ class PRReviewAggregate:
         classified_intent: ReplyIntent | None = None,
     ) -> CommentMessage:
         msg = CommentMessage(
-            id=uuid.uuid4(),
+            id=uuid.uuid7(),
             thread_id=thread_id,
             author_kind=author_kind,
             author_external_id=author_external_id,
@@ -590,7 +590,7 @@ class PRReviewAggregate:
         finding.updated_at = self._now
         self._pending.updated_findings.append(finding)
         ack = AcknowledgmentDecision(
-            id=uuid.uuid4(),
+            id=uuid.uuid7(),
             finding_id=finding_id,
             kind=kind,
             rationale=rationale,

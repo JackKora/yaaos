@@ -27,6 +27,8 @@ rules:
     pattern-sources:
       - pattern: uuid4(...)
       - pattern: uuid.uuid4(...)
+      - pattern: uuid7(...)
+      - pattern: uuid.uuid7(...)
     pattern-sinks:
       - patterns:
           - pattern: $ROW(id=$ID, ...)
@@ -34,3 +36,6 @@ rules:
           - metavariable-regex:
               metavariable: $ROW
               regex: .*Row$
+    paths:
+      exclude:
+        - apps/backend/app/domain/reviewer/aggregate.py

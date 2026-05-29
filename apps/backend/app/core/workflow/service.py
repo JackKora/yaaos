@@ -772,7 +772,7 @@ async def list_all_execution_states(*, session: AsyncSession) -> list[str]:
 async def _load_execution(session: AsyncSession, workflow_execution_id: str) -> WorkflowExecutionRow | None:
     try:
         wid = UUID(workflow_execution_id)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return await session.get(WorkflowExecutionRow, wid)
 

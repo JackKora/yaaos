@@ -24,7 +24,7 @@ RUN pnpm --filter ./apps/web build
 # ────────────────────────────────────────────────────────────────────────
 # Stage 2: backend runtime image
 # ────────────────────────────────────────────────────────────────────────
-FROM python:3.13-slim-bookworm AS backend
+FROM python:3.14-slim-bookworm AS backend
 
 # Runtime tools:
 #   - git: plugins/in_process_workspace runs `git clone` during workspace

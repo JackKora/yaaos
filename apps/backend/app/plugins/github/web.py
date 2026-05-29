@@ -254,7 +254,7 @@ async def github_install_callback(request: Request) -> RedirectResponse:
 
     try:
         org_id = UUID(payload["org_id"])
-    except (KeyError, ValueError):
+    except KeyError, ValueError:
         raise HTTPException(status_code=400, detail={"error": "state_invalid"})
 
     install_id_int = int(installation_id)

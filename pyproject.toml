@@ -2,7 +2,7 @@
 name = "yaaos"
 version = "0.0.1"
 description = "Self-hosted, team-scale agent orchestration service"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.14,<3.15"
 license = { file = "LICENSE" }
 
 [tool.uv.workspace]
@@ -10,7 +10,7 @@ members = ["apps/backend"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = [

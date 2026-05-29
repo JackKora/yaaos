@@ -82,7 +82,7 @@ class _WorkspaceReviewCommand:
             return Outcome.failure(reason="missing workspace_id input")
         try:
             ws_id = UUID(str(ws_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid workspace_id: {ws_id_raw!r}")
 
         workspace = await get_workspace(ws_id)
@@ -339,7 +339,7 @@ class IncrementalReview(_WorkspaceReviewCommand):
             return Outcome.failure(reason="missing review_id in ticket payload")
         try:
             review_id = UUID(str(review_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid review_id: {review_id_raw!r}")
 
         prev_sha = str(payload.get("prev_sha") or payload.get("base_sha") or "")
@@ -653,7 +653,7 @@ class VerifyFix(_WorkspaceReviewCommand):
             return Outcome.failure(reason="missing finding_id input")
         try:
             finding_id = UUID(str(finding_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid finding_id: {finding_id_raw!r}")
         if ticket_ctx.pr_id is None:
             return Outcome.failure(reason="ticket has no pr_id")
@@ -723,7 +723,7 @@ class StaleCheck(_WorkspaceReviewCommand):
         for raw in ids_raw:
             try:
                 fid = UUID(str(raw))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
             finding = await _load_finding_by_id(ticket_ctx.pr_id, ticket_ctx.org_id, fid)
             if finding is None:
@@ -768,7 +768,7 @@ class AnswerQuestion(_WorkspaceReviewCommand):
             return Outcome.success(outputs={"reply_body": "", "finding_id": None})
         try:
             finding_id = UUID(str(finding_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid finding_id: {finding_id_raw!r}")
         if ticket_ctx.pr_id is None:
             return Outcome.success(outputs={"reply_body": "", "finding_id": str(finding_id)})
@@ -1004,7 +1004,7 @@ class PostFindings(_LocalReviewCommand):
             return Outcome.failure(reason="missing workspace_id input")
         try:
             ws_id = UUID(str(ws_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid workspace_id: {ws_id_raw!r}")
 
         workspace = await get_workspace(ws_id)
@@ -1182,13 +1182,13 @@ class ResolveFinding(_LocalReviewCommand):
             return Outcome.success(outputs={"transitioned_to": None})
         try:
             finding_id = UUID(str(finding_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid finding_id: {finding_id_raw!r}")
 
         still_present = bool(verdict.get("still_present", True))
         try:
             confidence = float(verdict.get("confidence", 0.0))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid confidence: {verdict.get('confidence')!r}")
 
         provider = get_workflow_context_provider()
@@ -1312,7 +1312,7 @@ class ArchiveStaleFindings(_LocalReviewCommand):
             for raw_id in stale_ids_raw:
                 try:
                     fid = UUID(str(raw_id))
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     skipped += 1
                     continue
                 if fid not in known_ids:
@@ -1367,7 +1367,7 @@ class PostReply(_LocalReviewCommand):
 
         try:
             finding_id = UUID(str(finding_id_raw))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return Outcome.failure(reason=f"invalid finding_id: {finding_id_raw!r}")
 
         provider = get_workflow_context_provider()
