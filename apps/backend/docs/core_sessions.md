@@ -4,8 +4,8 @@
 
 ## Scope
 
-- Owns: `require(action)`, `require_session`, `public_route` dependency factories; `/api/auth/*` HTTP routes; `_REQUIRED_ROLE` registry.
-- Does NOT own: session rows (those are in [`core/identity`](core_identity.md)) or the middleware/`Action` enum (those are in [`core/auth`](core_auth.md)).
+- Owns: `require(action)`, `public_route` dependency factories; `/api/auth/*` HTTP routes; `_REQUIRED_ROLE` registry.
+- Does NOT own: session rows (those are in [`core/identity`](core_identity.md)), the middleware/`Action` enum (those are in [`core/auth`](core_auth.md)), or `require_session` (session-only dep; owned by [`core/identity`](core_identity.md) so it can avoid a cycle).
 - Why separate from `core/auth`: the dep factories need both `core/identity` and `domain/orgs`; `core/auth` stays free of domain reads.
 
 ## Why / invariants

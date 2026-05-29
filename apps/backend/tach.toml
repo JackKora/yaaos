@@ -30,7 +30,7 @@ depends_on = ["app.core.config", "app.core.shutdown_registry"]
 
 [[modules]]
 path = "app.core.identity"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.observability", "app.core.secrets", "app.core.sessions", "app.core.webserver", "app.domain.orgs"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.observability", "app.core.secrets", "app.core.webserver", "app.domain.orgs"]
 
 [[modules]]
 path = "app.core.llm"
@@ -360,6 +360,7 @@ expose = [
   "login_via_oauth",
   "register_provider",
   "repository",
+  "require_session",
   "sessions",
   "totp",
   "user_web",
@@ -454,7 +455,6 @@ expose = [
   "current_actor",
   "public_route",
   "require",
-  "require_session",
   "required_role_for",
   "web",
 ]

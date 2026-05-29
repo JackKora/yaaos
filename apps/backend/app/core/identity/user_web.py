@@ -8,8 +8,8 @@
 | GET    | `/api/user/me`                          | `USER_UPDATE_SELF` — user profile (display_name, github_username, emails, per-org handles) |
 | PATCH  | `/api/user/me`                          | `USER_UPDATE_SELF` — update display_name; clear github_username |
 
-Session is enforced by `_require_user()`. No `X-Org-Slug` header is
-required — these endpoints operate on the user, not on a single org.
+Session is enforced by `require_session` from `core/identity/session_dependency`.
+No `X-Org-Slug` header is required — these endpoints operate on the user, not on a single org.
 
 `users.github_username` is written automatically by the "Sign in with
 GitHub" login flow. Re-binding to a different GitHub account is "sign in
@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from app.core.auth import MUTATE_LIMIT, limiter, user_id_var
 from app.core.database import session as db_session
+from app.core.identity.session_dependency import require_session
 from app.core.webserver import RouteSpec, register_routes
 
 log = structlog.get_logger("identity.user.web")
@@ -49,15 +50,7 @@ def _err(status: int, code: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"error": code})
 
 
-def _require_user():
-    """Session-only auth: resolves the cookie → `user_id_var`. No org context.
-    Lazy import because `core/sessions` depends on `core/identity`."""
-    from app.core.sessions import require_session  # noqa: PLC0415
-
-    return require_session
-
-
-@router.get("/emails", dependencies=[Depends(_require_user())])
+@router.get("/emails", dependencies=[Depends(require_session)])
 async def list_emails() -> list[EmailView]:
     from app.core.identity import repository as identity_repo  # noqa: PLC0415
 
@@ -72,7 +65,7 @@ async def list_emails() -> list[EmailView]:
     ]
 
 
-@router.post("/emails", dependencies=[Depends(_require_user())])
+@router.post("/emails", dependencies=[Depends(require_session)])
 @limiter.limit(MUTATE_LIMIT)
 async def add_email(
     request: Request,
@@ -92,7 +85,7 @@ async def add_email(
     return EmailView(id=row.id, email=row.email, is_primary=row.is_primary, verified=False)
 
 
-@router.delete("/emails/{email_id}", dependencies=[Depends(_require_user())])
+@router.delete("/emails/{email_id}", dependencies=[Depends(require_session)])
 @limiter.limit(MUTATE_LIMIT)
 async def remove_email(request: Request, email_id: UUID) -> dict[str, str]:
     from sqlalchemy import select  # noqa: PLC0415
@@ -138,7 +131,7 @@ class _PatchUserRequest(BaseModel):
     clear_github_username: bool = False
 
 
-@router.get("/me", dependencies=[Depends(_require_user())])
+@router.get("/me", dependencies=[Depends(require_session)])
 async def user_me() -> _UserMeResponse:
     """Profile payload for the User > Details page."""
     from app.core.identity import repository as identity_repo  # noqa: PLC0415
@@ -179,7 +172,7 @@ async def user_me() -> _UserMeResponse:
     )
 
 
-@router.patch("/me", dependencies=[Depends(_require_user())])
+@router.patch("/me", dependencies=[Depends(require_session)])
 @limiter.limit(MUTATE_LIMIT)
 async def patch_user_me(
     request: Request,
