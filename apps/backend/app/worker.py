@@ -20,6 +20,10 @@ def main() -> int:
     # registries — those registries are empty until the modules below load.
     # Imported here (outside `core/tasks`) because `core` cannot depend on
     # `plugins` or `testing` under layering rules.
+    import app.core.redis as _redis  # noqa: PLC0415
+
+    _redis.bind_pubsub(_redis.RedisPubsub())
+
     import app.core.workflow  # noqa: PLC0415
     import app.domain.reviewer  # noqa: PLC0415
     import app.plugins.claude_code  # noqa: PLC0415

@@ -10,7 +10,12 @@ iterator's lifetime and tears down on iterator exit.
 `dict` events, never bytes. Channel naming and event semantics belong to
 consumers (`core/sse`) — this module is naming-agnostic. `subscriber_count`
 is local-process — Redis's `PUBSUB NUMSUB` is cluster-wide and not what
-callers want. The process-singleton (`get_pubsub`) holds the count state.
+callers want.
+
+The active `RedisPubsub` instance is held in a ContextVar. Production binds
+the default at startup via `bind_pubsub`; the `pubsub_isolation` fixture in
+`app/testing/isolation` binds a fresh instance per test. `get_pubsub()` raises
+`RuntimeError` if called before any bind — deliberate fail-fast.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator
+from contextvars import ContextVar
 from typing import Any
 
 import structlog
@@ -26,6 +32,8 @@ import structlog
 from app.core.redis.service import _get_client
 
 log = structlog.get_logger("core.redis.pubsub")
+
+_pubsub_var: ContextVar[RedisPubsub | None] = ContextVar("_pubsub_var", default=None)
 
 
 async def _publish_bytes(channel: str, payload: bytes) -> int:
@@ -105,30 +113,35 @@ class RedisPubsub:
         return self._local_counts.get(channel, 0)
 
 
-_singleton: RedisPubsub | None = None
+def bind_pubsub(instance: RedisPubsub) -> None:
+    """Bind `instance` as the active pub/sub bus for the current Context.
+
+    Called once at process startup (composition root) and once per test
+    (isolation fixture). Subsequent calls in the same Context replace the
+    prior binding.
+    """
+    _pubsub_var.set(instance)
 
 
 def get_pubsub() -> RedisPubsub:
-    """Process-singleton pub/sub bus. Holds the local subscriber-count state."""
-    global _singleton
-    if _singleton is None:
-        _singleton = RedisPubsub()
-    return _singleton
+    """Return the active pub/sub bus. Raises `RuntimeError` if `bind_pubsub`
+    has not been called — fail-fast so forgotten startup binds surface
+    immediately rather than silently producing wrong state."""
+    instance = _pubsub_var.get()
+    if instance is None:
+        raise RuntimeError(
+            "pubsub not bound: call bind_pubsub(RedisPubsub()) at process "
+            "startup or use the pubsub_isolation fixture in tests."
+        )
+    return instance
 
 
 async def shutdown() -> None:
-    """Drop the singleton. Called by web- and worker-process shutdown registries."""
-    global _singleton
-    if _singleton is not None:
-        await _singleton.aclose()
-    _singleton = None
-
-
-def reset_pubsub() -> None:
-    """Drop the singleton synchronously. For test isolation only — production
-    code uses the async `shutdown()` via the process shutdown registries."""
-    global _singleton
-    _singleton = None
+    """Drop the active bus instance. Called by web- and worker-process shutdown registries."""
+    instance = _pubsub_var.get()
+    if instance is not None:
+        await instance.aclose()
+    _pubsub_var.set(None)
 
 
 async def publish(channel: str, event: dict[str, Any]) -> int:

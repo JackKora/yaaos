@@ -127,7 +127,6 @@ async def test_aggregate_events_dispatched_to_sse_bus(db_session, redis_or_skip)
 
     from app.core.audit_log import ActorKind  # noqa: PLC0415
     from app.core.auth import org_context  # noqa: PLC0415
-    from app.core.redis import reset_pubsub  # noqa: PLC0415
     from app.core.sse import subscribe_general  # noqa: PLC0415
     from app.domain.reviewer.aggregate import RawFinding  # noqa: PLC0415
     from app.domain.reviewer.repository import SqlAlchemyAggregateRepository  # noqa: PLC0415
@@ -137,7 +136,6 @@ async def test_aggregate_events_dispatched_to_sse_bus(db_session, redis_or_skip)
         FindingFingerprint,
     )
 
-    reset_pubsub()
     pr_id, org_id = uuid.uuid4(), uuid.uuid4()
     await _seed_pr(db_session, pr_id, org_id)
     review_id = uuid.uuid4()

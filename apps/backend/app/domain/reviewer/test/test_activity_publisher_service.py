@@ -16,7 +16,6 @@ import pytest
 
 from app.core.audit_log import ActorKind
 from app.core.auth import org_context
-from app.core.redis import reset_pubsub
 from app.core.sse import subscribe_workspace_activity
 from app.core.workflow import CommandContext
 from app.domain.coding_agent import ActivityEvent
@@ -28,7 +27,6 @@ pytestmark = pytest.mark.usefixtures("redis_or_skip")
 async def test_activity_publisher_fans_out_to_subscribed_channel() -> None:
     """Subscribe to the workflow's org-scoped activity channel; trigger the
     publisher inside `org_context`; expect the event to land verbatim."""
-    reset_pubsub()
     org_id: UUID = uuid4()
     wfx_id: UUID = uuid4()
     ctx = CommandContext(
@@ -70,7 +68,6 @@ async def test_activity_publisher_fans_out_to_subscribed_channel() -> None:
 async def test_activity_publisher_no_subscribers_is_silent() -> None:
     """Publishing to a channel with no subscribers is a no-op — the
     coding-agent invocation must not block waiting for an SSE reader."""
-    reset_pubsub()
     org_id: UUID = uuid4()
     wfx_id: UUID = uuid4()
     ctx = CommandContext(

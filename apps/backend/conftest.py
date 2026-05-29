@@ -29,6 +29,11 @@ os.environ.setdefault("YAAOS_REAPER_INTERVAL_SECONDS", "1")
 os.environ.setdefault("YAAOS_HEARTBEAT_INTERVAL_SECONDS", "1")
 os.environ.setdefault("YAAOS_MCP_TOKEN_SWEEP_INTERVAL_SECONDS", "1")
 
+# Re-export autouse isolation fixtures so pytest auto-discovers them. The import
+# is deferred until after env vars are set because app.testing.isolation triggers
+# app.core.redis → app.core.config at import time.
+from app.testing.isolation import pubsub_isolation  # noqa: F401
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _quiet_pydantic_warnings() -> None:

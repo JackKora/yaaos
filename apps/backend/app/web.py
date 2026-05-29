@@ -14,8 +14,10 @@ from app.core import config  # noqa: F401
 # database — anything imported later (tasks, sse, agent_gateway)
 # registers afterwards and therefore shuts down first.
 from app.core import database  # noqa: F401
-from app.core import redis  # noqa: F401
+from app.core import redis
 from app.core import observability
+
+redis.bind_pubsub(redis.RedisPubsub())
 
 observability.configure(role="app")
 

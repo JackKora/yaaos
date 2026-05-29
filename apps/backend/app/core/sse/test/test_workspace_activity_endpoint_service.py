@@ -24,7 +24,6 @@ from fastapi import FastAPI
 
 from app.core.auth import AuthMiddleware, Role, register_handler
 from app.core.identity import repository as identity_repo
-from app.core.redis import reset_pubsub
 from app.core.sse import publish_workspace_activity
 from app.core.sse.web import _workspace_activity_stream
 from app.domain.orgs import repository as orgs_repo
@@ -44,13 +43,6 @@ def _make_app() -> FastAPI:
 
 def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=_make_app()), base_url="http://test")
-
-
-@pytest.fixture(autouse=True)
-def _isolate_pubsub() -> None:
-    reset_pubsub()
-    yield
-    reset_pubsub()
 
 
 @pytest_asyncio.fixture

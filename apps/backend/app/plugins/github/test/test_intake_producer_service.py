@@ -129,45 +129,40 @@ async def test_intake_enqueues_fanout_via_ticket_policy(
       org member (sourced from tickets.build_status_change_specs), and
     - publish a general SSE event after commit with kind 'ticket_status_changed'.
     """
-    from app.core.redis import reset_pubsub  # noqa: PLC0415
     from app.core.sse import subscribe_general  # noqa: PLC0415
 
-    reset_pubsub()
-    try:
-        org_id, _user_ids = await _seed_org_with_members(db_session, num_members=2)
-        received: list[dict] = []
+    org_id, _user_ids = await _seed_org_with_members(db_session, num_members=2)
+    received: list[dict] = []
 
-        async def _consume() -> None:
-            async for event in subscribe_general(org_id):
-                received.append(event)
-                return
+    async def _consume() -> None:
+        async for event in subscribe_general(org_id):
+            received.append(event)
+            return
 
-        consumer = asyncio.create_task(_consume())
-        await asyncio.sleep(0.1)  # let Redis subscription register
+    consumer = asyncio.create_task(_consume())
+    await asyncio.sleep(0.1)  # let Redis subscription register
 
-        outcome = await GithubIntakeType()._prepare_pr_review(
-            payload=_pr_payload(),
-            delivery=f"evt-{uuid4().hex}",
-            org_id=org_id,
-            session=db_session,
-        )
-        await db_session.commit()
+    outcome = await GithubIntakeType()._prepare_pr_review(
+        payload=_pr_payload(),
+        delivery=f"evt-{uuid4().hex}",
+        org_id=org_id,
+        session=db_session,
+    )
+    await db_session.commit()
 
-        assert outcome.detail == "pr_review_started"
+    assert outcome.detail == "pr_review_started"
 
-        # SSE event
-        await asyncio.wait_for(consumer, timeout=3.0)
-        assert len(received) == 1
-        evt = received[0]
-        assert evt["kind"] == "ticket_status_changed"
-        assert evt["new_status"] == "running"
-        assert "ts" in evt
+    # SSE event
+    await asyncio.wait_for(consumer, timeout=3.0)
+    assert len(received) == 1
+    evt = received[0]
+    assert evt["kind"] == "ticket_status_changed"
+    assert evt["new_status"] == "running"
+    assert "ts" in evt
 
-        # `running` status does not warrant user notifications, so no fanout row.
-        payloads = await get_pending_outbox_payloads(db_session)
-        fanout_rows = [p for p in payloads if p.get("task_name") == "notifications.fanout"]
-        assert len(fanout_rows) == 0, (
-            f"expected 0 fanout rows for 'running' status (no notification warranted), got {len(fanout_rows)}"
-        )
-    finally:
-        reset_pubsub()
+    # `running` status does not warrant user notifications, so no fanout row.
+    payloads = await get_pending_outbox_payloads(db_session)
+    fanout_rows = [p for p in payloads if p.get("task_name") == "notifications.fanout"]
+    assert len(fanout_rows) == 0, (
+        f"expected 0 fanout rows for 'running' status (no notification warranted), got {len(fanout_rows)}"
+    )

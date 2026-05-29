@@ -17,7 +17,6 @@ import pytest
 
 from app.core.audit_log import ActorKind
 from app.core.auth import org_context
-from app.core.redis import reset_pubsub
 from app.core.sse import GeneralEventKind, subscribe_general
 from app.domain.reviewer.aggregate import PRReviewAggregate, RawFinding
 from app.domain.reviewer.service import dispatch_events
@@ -79,7 +78,6 @@ async def test_dispatch_events_emits_after_commit(db_session) -> None:  # type: 
     flushes them on `after_commit`. The subscriber must be registered BEFORE the
     commit fires — small sleep ensures the Redis SUBSCRIBE round-trip completes.
     """
-    reset_pubsub()
     org_id = uuid.uuid4()
 
     agg = _agg(org_id)
@@ -122,7 +120,6 @@ async def test_dispatch_events_rollback_emits_nothing(db_session) -> None:  # ty
     `publish_general_after_commit` only flushes on `after_commit`; a rollback
     silently discards the stash.
     """
-    reset_pubsub()
     org_id = uuid.uuid4()
 
     agg = _agg(org_id)

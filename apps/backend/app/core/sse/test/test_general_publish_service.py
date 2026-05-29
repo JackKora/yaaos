@@ -15,20 +15,12 @@ import uuid
 
 import pytest
 
-from app.core.redis import reset_pubsub
 from app.core.sse import (
     GeneralEventKind,
     publish_general,
     publish_general_after_commit,
     subscribe_general,
 )
-
-
-@pytest.fixture(autouse=True)
-async def _isolate_singleton():
-    reset_pubsub()
-    yield
-    reset_pubsub()
 
 
 @pytest.mark.service

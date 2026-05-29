@@ -436,9 +436,10 @@ from = ["app.core.plugin_kit"]
 
 [[interfaces]]
 expose = [
+  "RedisPubsub",
+  "bind_pubsub",
   "ping",
   "publish",
-  "reset_pubsub",
   "shutdown",
   "sliding_window_hit",
   "subscribe",
