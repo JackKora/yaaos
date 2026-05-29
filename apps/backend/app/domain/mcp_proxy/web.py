@@ -83,7 +83,7 @@ def _rpc_error(rpc_id: Any, code: int, code_str: str, message: str) -> dict[str,
 def _args_hash(arguments: Any) -> str:
     try:
         canonical = json.dumps(arguments, sort_keys=True, default=str)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         canonical = "<unhashable>"
     return hashlib.sha256(canonical.encode()).hexdigest()
 

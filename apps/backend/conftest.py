@@ -68,7 +68,7 @@ async def _redis_reachable() -> bool:
             return True
         finally:
             await client.aclose()
-    except (RedisError, OSError):
+    except RedisError, OSError:
         return False
 
 

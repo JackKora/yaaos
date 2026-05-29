@@ -96,7 +96,7 @@ class StubWorkspaceProvider:
         try:
             with open(target, encoding="utf-8") as fh:
                 return fh.read()
-        except (FileNotFoundError, IsADirectoryError, PermissionError, UnicodeDecodeError):
+        except FileNotFoundError, IsADirectoryError, PermissionError, UnicodeDecodeError:
             return None
 
     async def write_text(self, plugin_state: dict[str, Any], path: str, content: str) -> None:

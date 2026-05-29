@@ -68,7 +68,7 @@ App private key is not real RSA. yaaos's `_build_app_jwt` detects the missing `B
 
 ## Tech
 
-- Python 3.13 + FastAPI.
+- Python 3.14 + FastAPI.
 - Own `pyproject.toml`; uv workspace member.
 - Single-file `Dockerfile`. ~280 LOC. No DB; state in-memory.
 

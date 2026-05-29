@@ -152,7 +152,7 @@ async def test_dispatch_events_rollback_emits_nothing(db_session) -> None:  # ty
     reader_task.cancel()
     try:
         await reader_task
-    except (asyncio.CancelledError, Exception):
+    except asyncio.CancelledError, Exception:
         pass
 
     assert len(received) == 0, f"Rollback must not emit events; got: {received}"

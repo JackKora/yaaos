@@ -71,13 +71,13 @@ tasks:
 
   - key: python
     # python is the backend's primary toolchain; web-ci and agent-ci also
-    # `use:` it for the semgrep step. Pinned to 3.13.11 to match the
-    # project's `requires-python = ">=3.13,<3.14"`. The `python/install`
-    # package requires a full patch version (not "3.13") and Ubuntu 24.04
-    # has 3.13.0–3.13.11 available per known-pythons-os-base.csv.
+    # `use:` it for the semgrep step. Pinned to 3.14.5 to match the
+    # project's `requires-python = ">=3.14,<3.15"`. The `python/install`
+    # package requires a full patch version (not "3.14") and Ubuntu 24.04
+    # has 3.14 available per known-pythons-os-base.csv.
     call: python/install 1.4.4
     with:
-      python-version: "3.13.11"
+      python-version: "3.14.5"
 
   - key: backend-ci
     use: [code, system-packages-backend, python]

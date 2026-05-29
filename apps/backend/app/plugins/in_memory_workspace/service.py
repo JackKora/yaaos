@@ -101,7 +101,7 @@ async def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
         await asyncio.sleep(2)
         if proc.returncode is None:
             os.killpg(proc.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError, PermissionError:
         pass
 
 
@@ -302,7 +302,7 @@ class InMemoryWorkspaceProvider:
             await _kill_process_group(proc)
             try:
                 await asyncio.wait_for(proc.communicate(), timeout=5)
-            except (TimeoutError, Exception):
+            except TimeoutError, Exception:
                 pass
             raise
 
@@ -334,7 +334,7 @@ class InMemoryWorkspaceProvider:
         try:
             with open(target, encoding="utf-8") as fh:
                 return fh.read()
-        except (FileNotFoundError, IsADirectoryError, PermissionError, UnicodeDecodeError):
+        except FileNotFoundError, IsADirectoryError, PermissionError, UnicodeDecodeError:
             return None
 
     async def write_text(self, plugin_state: dict[str, Any], path: str, content: str) -> None:

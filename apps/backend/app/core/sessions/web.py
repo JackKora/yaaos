@@ -388,14 +388,14 @@ async def totp_challenge(
         payload = _totp_challenge_serializer().loads(
             yaaos_totp_challenge, max_age=TOTP_CHALLENGE_MAX_AGE_SECONDS
         )
-    except (BadSignature, SignatureExpired):
+    except BadSignature, SignatureExpired:
         return JSONResponse(status_code=400, content={"error": "challenge_invalid"})
 
     from uuid import UUID as _UUID  # noqa: PLC0415
 
     try:
         user_id = _UUID(payload["user_id"])
-    except (KeyError, ValueError):
+    except KeyError, ValueError:
         return JSONResponse(status_code=400, content={"error": "challenge_invalid"})
     raw_next = _safe_next(payload.get("next"))
 

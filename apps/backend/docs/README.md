@@ -1,6 +1,6 @@
 # Backend docs
 
-FastAPI service in Python 3.13. Single Docker image runs the API, serves the bundled SPA, and spawns background coroutines for review work.
+FastAPI service in Python 3.14. Single Docker image runs the API, serves the bundled SPA, and spawns background coroutines for review work.
 
 ## Read first
 
