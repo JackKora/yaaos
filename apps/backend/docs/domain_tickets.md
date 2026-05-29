@@ -6,7 +6,7 @@
 
 Owns: ticket identity, status transitions, idempotent creation, SSE + durable-task publishing on every transition, notification policy for status changes (`notifications.py:build_status_change_specs`), findings rollup columns (`findings_count`, `max_severity`).
 
-Does NOT own: PR mirror state (`pull_requests`), review state (`reviewer`), workspace lifecycle, audit entries beyond `ticket.created` / `ticket.status_changed`, notification delivery (delegated to [core/notifications](core_notifications.md)). Does NOT aggregate findings at read time — `reviewer` writes the rollup via `update_findings_summary`.
+Does NOT own: PR mirror state (`pull_requests`), review state (`reviewer`), workspace lifecycle, notification delivery (delegated to [core/notifications](core_notifications.md)). Does NOT aggregate findings at read time — `reviewer` writes the rollup via `update_findings_summary`. The `GET /api/tickets/{id}/audit` endpoint aggregates ticket + PR audit entries only; review_job and finding audit entries are reviewer-owned and not included.
 
 ## Why / invariants
 

@@ -119,6 +119,7 @@ def render_tach_toml(modules: list[tuple[str, str]]) -> str:
         "",
         'source_roots = ["."]',
         'exclude = [".venv"]',
+        "forbid_circular_dependencies = true",
         "",
     ]
     for layer, name in modules:
