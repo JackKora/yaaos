@@ -1022,8 +1022,6 @@ async def set_api_key(session, *, org_id: UUID, encrypted_anthropic_api_key: byt
 
 async def _set_anthropic_key(org_id: UUID, raw_key: SecretStr) -> None:
     """Encrypt + upsert the Anthropic key on `claude_code_settings`."""
-    from uuid import uuid4  # noqa: PLC0415
-
     plaintext = raw_key.get_secret_value()
     fernet = Fernet(get_settings().yaaos_encryption_key.get_secret_value().encode())
     enc = fernet.encrypt(plaintext.encode())
@@ -1033,7 +1031,6 @@ async def _set_anthropic_key(org_id: UUID, raw_key: SecretStr) -> None:
         ).scalar_one_or_none()
         if row is None:
             row = ClaudeCodeSettingsRow(
-                id=uuid4(),
                 org_id=org_id,
                 encrypted_anthropic_api_key=enc,
             )

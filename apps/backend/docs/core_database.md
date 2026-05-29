@@ -21,6 +21,8 @@
 
 **`set_test_session_override`** — routes every `async with session()` call to the fixture-bound `AsyncSession` so production code runs inside the test's outer transaction. The `db_session` fixture uses a `restart_savepoint` listener so production `await s.commit()` becomes a SAVEPOINT release; teardown rolls back the outer transaction.
 
+**UUID primary keys via `uuidv7()`** — Postgres 18 ships `uuidv7()` natively. Every UUID PK column carries `server_default=text("uuidv7()")` so the DB mints a time-ordered UUID v7 on INSERT. Services never pass `id=` to Row constructors. See `apps/backend/docs/patterns.md` § UUID primary keys for the full convention and the semgrep enforcer.
+
 **`truncate_all_tables`** — uses `DELETE FROM` (not `TRUNCATE`) to avoid blocking SSE/WS/background `AccessShare` readers. Sets `lock_timeout=2s`. UUID PKs mean no sequence reset needed. Raises `RuntimeError` in `prod`. Only used by the test-reset path; never call elsewhere.
 
 ## Gotchas

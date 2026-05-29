@@ -168,6 +168,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("032_tickets_findings_rollup", "tickets_findings_rollup"),
     ("033_mcp_review_tokens_org_id", "mcp_review_tokens_org_id"),
     ("034_orgs_sso_authz_columns", "orgs_sso_authz_columns"),
+    ("035_uuid_pk_uuidv7_defaults", "uuid_pk_uuidv7_defaults"),
 )
 
 
@@ -979,6 +980,44 @@ async def _apply_mcp_review_tokens_org_id(conn) -> None:  # type: ignore[no-unty
         await conn.execute(text(stmt))
 
 
+async def _apply_uuid_pk_uuidv7_defaults(conn) -> None:  # type: ignore[no-untyped-def]
+    """Set `DEFAULT uuidv7()` on every UUID primary-key column.
+
+    All UUID PK columns now carry `server_default=text("uuidv7()")` on
+    the SQLAlchemy model. Fresh DBs created via `create_all` already get
+    the default. This migration backfills the default on existing tables.
+    Idempotent: `ALTER COLUMN ... SET DEFAULT` on an already-defaulted
+    column is a no-op.
+    """
+    # One literal per table. Non-literal text() args are rejected by
+    # check_table_access; every SQL string is a plain literal.
+    await conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE user_emails ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE oauth_identities ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE orgs ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE audit_entries ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE workspaces ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE workspace_agents ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE bearer_tokens ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE outbox_entries ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE workflow_executions ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE pending_human_decisions ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE notifications ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE claude_code_settings ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE github_app_installations ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE github_webhook_events ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE tickets ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE pull_requests ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE invitations ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE lessons ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE reviews ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE findings ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE finding_observations ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE comment_threads ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE comment_messages ALTER COLUMN id SET DEFAULT uuidv7()"))
+    await conn.execute(text("ALTER TABLE acknowledgment_decisions ALTER COLUMN id SET DEFAULT uuidv7()"))
+
+
 async def _apply_orgs_sso_authz_columns(conn) -> None:  # type: ignore[no-untyped-def]
     """Add denormalized SSO authz columns to `orgs`.
 
@@ -1141,6 +1180,8 @@ async def _apply_pending() -> None:
                 await _apply_mcp_review_tokens_org_id(conn)
             elif kind == "orgs_sso_authz_columns":
                 await _apply_orgs_sso_authz_columns(conn)
+            elif kind == "uuid_pk_uuidv7_defaults":
+                await _apply_uuid_pk_uuidv7_defaults(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

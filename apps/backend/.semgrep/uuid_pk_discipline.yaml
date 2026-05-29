@@ -1,0 +1,25 @@
+rules:
+  - id: uuid-pk-no-python-default
+    languages: [python]
+    severity: ERROR
+    message: >-
+      UUID primary-key columns must use `server_default=text("uuidv7()")`, not
+      `default=uuid.uuid4`. The DB mints the PK; Python never passes one.
+      See `apps/backend/docs/patterns.md` § UUID primary keys.
+    pattern-either:
+      - pattern: mapped_column(..., default=uuid.uuid4, ...)
+      - pattern: mapped_column(..., default=uuid4, ...)
+
+  - id: uuid-pk-no-explicit-id-in-row-constructor
+    languages: [python]
+    severity: ERROR
+    message: >-
+      `*Row(id=uuid4(), ...)` passes a Python-generated PK. Drop `id=`; the DB
+      mints a v7 UUID via `server_default`. Call `await session.flush()` before
+      reading `row.id` if you need the PK before commit.
+      See `apps/backend/docs/patterns.md` § UUID primary keys.
+    patterns:
+      - pattern: $ROW(id=uuid4(), ...)
+      - metavariable-regex:
+          metavariable: $ROW
+          regex: .*Row$
