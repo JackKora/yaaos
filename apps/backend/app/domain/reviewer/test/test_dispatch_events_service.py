@@ -17,7 +17,8 @@ import pytest
 
 from app.core.audit_log import ActorKind
 from app.core.auth import org_context
-from app.core.sse import GeneralEventKind, reset_pubsub, subscribe_general
+from app.core.redis import reset_pubsub
+from app.core.sse import GeneralEventKind, subscribe_general
 from app.domain.reviewer.aggregate import PRReviewAggregate, RawFinding
 from app.domain.reviewer.service import dispatch_events
 from app.domain.reviewer.types import (

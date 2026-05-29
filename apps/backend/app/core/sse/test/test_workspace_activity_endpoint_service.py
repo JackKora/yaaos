@@ -24,10 +24,8 @@ from fastapi import FastAPI
 
 from app.core.auth import AuthMiddleware, Role, register_handler
 from app.core.identity import repository as identity_repo
-from app.core.sse import (
-    publish_workspace_activity,
-    reset_pubsub,
-)
+from app.core.redis import reset_pubsub
+from app.core.sse import publish_workspace_activity
 from app.core.sse.web import _workspace_activity_stream
 from app.domain.orgs import repository as orgs_repo
 

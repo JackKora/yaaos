@@ -71,11 +71,11 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.cor
 
 [[modules]]
 path = "app.core.sse"
-depends_on = ["app.core.auth", "app.core.redis", "app.core.sessions", "app.core.shutdown_registry", "app.core.webserver"]
+depends_on = ["app.core.auth", "app.core.redis", "app.core.sessions", "app.core.webserver"]
 
 [[modules]]
 path = "app.core.tasks"
-depends_on = ["app.core.audit_log", "app.core.auth", "app.core.database", "app.core.observability", "app.core.redis", "app.core.shutdown_registry"]
+depends_on = ["app.core.audit_log", "app.core.auth", "app.core.config", "app.core.database", "app.core.observability", "app.core.shutdown_registry"]
 
 [[modules]]
 path = "app.core.tenancy"
@@ -438,13 +438,13 @@ from = ["app.core.plugin_kit"]
 
 [[interfaces]]
 expose = [
-  "aclose",
-  "get_client",
-  "get_url",
   "ping",
   "publish",
+  "reset_pubsub",
   "shutdown",
+  "sliding_window_hit",
   "subscribe",
+  "subscriber_count",
 ]
 from = ["app.core.redis"]
 
@@ -475,17 +475,12 @@ from = ["app.core.sessions"]
 [[interfaces]]
 expose = [
   "GeneralEventKind",
-  "RedisPubsub",
-  "get_pubsub",
   "publish_general",
   "publish_general_after_commit",
   "publish_workspace_activity",
-  "reset_pubsub",
   "serialize_for_sse",
-  "shutdown",
   "subscribe_general",
   "subscribe_workspace_activity",
-  "subscriber_count",
 ]
 from = ["app.core.sse"]
 

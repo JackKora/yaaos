@@ -23,10 +23,8 @@ import pytest
 from app.core.audit_log import ActorKind
 from app.core.auth import org_context
 from app.core.plugin_kit import PluginMeta
-from app.core.sse import (
-    reset_pubsub,
-    subscribe_workspace_activity,
-)
+from app.core.redis import reset_pubsub
+from app.core.sse import subscribe_workspace_activity
 from app.core.tasks import drain_once, get_pending_task_names
 from app.core.workflow import WorkflowState, get_execution_summary, scoped_engine
 from app.core.workspace import (

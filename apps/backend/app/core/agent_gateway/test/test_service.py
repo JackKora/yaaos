@@ -370,10 +370,10 @@ async def test_progress_event_publishes_to_sse(db_session, redis_or_skip) -> Non
     workspace-activity channel so the SPA's live-tail picks them up."""
     from app.core.audit_log import ActorKind  # noqa: PLC0415
     from app.core.auth import org_context  # noqa: PLC0415
-    from app.core.sse import shutdown as sse_shutdown  # noqa: PLC0415
+    from app.core.redis import shutdown as redis_shutdown  # noqa: PLC0415
     from app.core.sse import subscribe_workspace_activity  # noqa: PLC0415
 
-    await sse_shutdown()
+    await redis_shutdown()
 
     ws = await _seed_workspace(db_session)
     cmd_id = ws["command_id"]

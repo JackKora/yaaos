@@ -20,7 +20,8 @@ from starlette.testclient import TestClient
 from app.core.agent_gateway import bearers
 from app.core.agent_gateway.models import WorkspaceAgentRow
 from app.core.agent_gateway.subscribers import _reset_subscriber_singleton_for_tests
-from app.core.sse import reset_pubsub, subscribe_workspace_activity
+from app.core.redis import reset_pubsub
+from app.core.sse import subscribe_workspace_activity
 from app.domain.orgs import repository as orgs_repo
 
 

@@ -114,7 +114,8 @@ async def test_status_change_enqueues_fanout_specs(db_session) -> None:  # type:
 async def test_status_change_publishes_general_after_commit(db_session, redis_or_skip) -> None:  # type: ignore[no-untyped-def]
     """complete() publishes a general SSE event with kind 'ticket_status_changed'
     after the transaction commits."""
-    from app.core.sse import reset_pubsub, subscribe_general  # noqa: PLC0415
+    from app.core.redis import reset_pubsub  # noqa: PLC0415
+    from app.core.sse import subscribe_general  # noqa: PLC0415
 
     reset_pubsub()
     try:
@@ -152,10 +153,10 @@ async def test_status_change_publishes_general_after_commit(db_session, redis_or
 async def test_status_change_rollback_emits_no_general_event(db_session, redis_or_skip) -> None:  # type: ignore[no-untyped-def]
     """When publish_general_after_commit is called then the session is rolled back,
     no SSE event must reach subscribers."""
+    from app.core.redis import reset_pubsub  # noqa: PLC0415
     from app.core.sse import (  # noqa: PLC0415
         GeneralEventKind,
         publish_general_after_commit,
-        reset_pubsub,
         subscribe_general,
     )
 

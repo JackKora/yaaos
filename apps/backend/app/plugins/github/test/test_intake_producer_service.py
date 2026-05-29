@@ -129,7 +129,8 @@ async def test_intake_enqueues_fanout_via_ticket_policy(
       org member (sourced from tickets.build_status_change_specs), and
     - publish a general SSE event after commit with kind 'ticket_status_changed'.
     """
-    from app.core.sse import reset_pubsub, subscribe_general  # noqa: PLC0415
+    from app.core.redis import reset_pubsub  # noqa: PLC0415
+    from app.core.sse import subscribe_general  # noqa: PLC0415
 
     reset_pubsub()
     try:
