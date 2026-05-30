@@ -68,10 +68,11 @@ Exceptions: `core/database` (Postgres connections), `core/observability` (log fi
 - **No `*Row` types in `__all__`.** SQLAlchemy Row/mapped classes never appear in any module's `__all__` or `tach expose` list. Every public API that surfaces persisted state returns the module's Pydantic value object, not the Row. Foreign table access via an imported Row name fails tach `check --interfaces` — the intended path is the owning module's public service API.
 - **No circular module dependencies.** `forbid_circular_dependencies = true` is emitted by `bin/sync_modules` into `tach.toml`; tach rejects any new cycle under `tach check --interfaces` (the CI command). Canary `test_injected_cycle_is_rejected` in `apps/backend/bin/test_module_boundaries.py` verifies the guard fires.
 - **Layer ordering: `core < domain < plugins < testing`.** Enforced by `check_layering()` in `bin/sync_modules` — tach's `--interfaces` mode silently ignores tach-native `layers` config, so the Python check is the sole enforcer. The allowlist `PERMITTED_CROSS_LAYER_EDGES` is empty (`frozenset()`); no permitted cross-layer edges exist. Canary `test_injected_core_to_domain_is_rejected` in `apps/backend/bin/test_module_boundaries.py` verifies the guard fires.
-- **`bin/sync_modules` enforces two AST-level rules at every CI run:**
+- **`bin/sync_modules` enforces three AST-level rules at every CI run:**
   - **Rule-1** — a name in `__all__` that resolves to a SQLAlchemy mapped/Row class (class inheriting from `*Base*`, or any name imported `from <any>.models`) is rejected with exit 2.
   - **Rule-5** — a function listed in `__all__` whose return annotation or parameter annotations reference a Row type is rejected with exit 2.
-  - Both rules are AST-based (import-free, env-free, `# noqa`-immune). `apps/backend/bin/test_module_boundaries.py` carries canary tests that inject real violations into the tickets module and assert non-zero exit.
+  - **Test-seam export rule** — a `core`/`domain`/`plugins` `__all__` symbol is rejected iff its name matches a test-seam pattern (`reset_*`, `clear_*`, `scoped_*`, `*_for_tests`, `_seed_*`, `set_*_override`, `set_test_*`, `get_test_*`) AND it has zero production importers (no importer outside `*/test/`, `app/testing/`, and the top-level `conftest.py`; `app/web.py` and `app/worker.py` always count as production). The intersection is precise: name-only would false-positive on real production APIs (`clear_cookie_attrs`, `clear_vcs`); usage-only would false-positive on public types tests construct. No allowlist — a symbol matching both conditions is a test seam that leaked. Canary `test_test_helper_export_is_rejected` in `apps/backend/bin/test_module_boundaries.py` verifies the guard fires; `test_clean_tree_has_no_test_helper_exports` verifies zero real violations on the clean tree.
+  - All three rules are AST-based (import-free, env-free, `# noqa`-immune). `apps/backend/bin/test_module_boundaries.py` carries canary tests that inject real violations and assert non-zero exit.
 - **`bin/check_table_access` enforces two additional rules that tach cannot see:**
   - **Raw-SQL ownership** — AST-parses every `app/**/models.py` to build `table_name → owning_module`, then scans every production `.py` under `app/` (excluding `test/` dirs) for `text(...)` / `sa_text(...)` calls. Any call that references a table owned by a different module fails. Non-literal args (f-strings, variables) also fail — all auditable raw SQL must be a string literal.
   - **Suppression guard** — fails on any `# tach-ignore` directive in any `.py` under `app/` (prod + tests). One suppression reopens the import hole the tach interface check depends on.
@@ -116,7 +117,8 @@ Runs the full module-sync sequence:
 3. Check internal imports (no relative imports across boundaries, no `__init__` self-imports).
 4. Check layering.
 5. Check `__all__` boundary violations (Rule-1: no Row class in `__all__`; Rule-5: no Row type in a public function's annotations).
-6. Run `tach check --interfaces`.
+6. Check test-seam exports (seam-name AND zero production importers — see rule below).
+7. Run `tach check --interfaces`.
 
 Never hand-edit `tach.toml`. Re-run `bin/sync_modules` after adding or changing a module interface.
 

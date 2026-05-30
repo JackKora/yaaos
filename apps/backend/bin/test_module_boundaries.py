@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import re
 import subprocess
 import sys
 import textwrap
@@ -35,6 +36,7 @@ _spec.loader.exec_module(_sync_modules)  # type: ignore[union-attr]
 
 check_all_boundary_violations = _sync_modules.check_all_boundary_violations
 check_layering = _sync_modules.check_layering
+check_test_helper_exports = _sync_modules.check_test_helper_exports
 discover_modules = _sync_modules.discover_modules
 APP = Path(_sync_modules.APP)
 BACKEND = Path(_sync_modules.BACKEND)
@@ -215,6 +217,44 @@ def test_injected_cycle_is_rejected() -> None:
 # ---------------------------------------------------------------------------
 # Layer guard canary (Layer B)
 # ---------------------------------------------------------------------------
+
+
+def test_test_helper_export_is_rejected(tmp_path: Path) -> None:
+    """CI guard: a test-seam name with zero production importers in __all__ is rejected.
+
+    Injects a ``reset_something`` function (no callers outside tests/testing) into
+    the audit_log module's ``__init__.py``, asserts ``check_test_helper_exports`` flags
+    it, and restores the file in ``finally``.
+    """
+    original = AUDIT_LOG_INIT.read_text()
+    # Inject a seam-named function with no production importers.
+    stub = '\n\ndef reset_something_for_ci_canary() -> None:\n    """Test-seam: no production caller."""\n\n'
+    poisoned = original + stub
+    # Add the name to __all__ so the checker can find it.
+    if "__all__" in poisoned:
+        # Insert the name right after the opening bracket of __all__ = [...].
+        poisoned = re.sub(
+            r"(__all__\s*=\s*\[)",
+            r'\1\n    "reset_something_for_ci_canary",',
+            poisoned,
+            count=1,
+        )
+    try:
+        AUDIT_LOG_INIT.write_text(poisoned)
+        errors = check_test_helper_exports([("core", "audit_log")])
+        assert errors, "expected test-seam violation but check_test_helper_exports returned none"
+        assert any("reset_something_for_ci_canary" in e for e in errors), (
+            f"expected reset_something_for_ci_canary in errors but got: {errors}"
+        )
+    finally:
+        AUDIT_LOG_INIT.write_text(original)
+
+
+def test_clean_tree_has_no_test_helper_exports() -> None:
+    """check_test_helper_exports finds ZERO real violations on the clean tree."""
+    modules = discover_modules()
+    errs = check_test_helper_exports(modules)
+    assert not errs, "check_test_helper_exports found violations on the clean tree:\n" + "\n".join(errs)
 
 
 def test_injected_core_to_domain_is_rejected() -> None:
