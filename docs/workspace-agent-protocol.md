@@ -52,7 +52,20 @@ This prevents the agent from receiving a command for a workspace it no longer ho
 
 - Commands are FIFO per agent. Eligible commands are dequeued in order; ineligible commands hold their position.
 - Each command carries a `command_id` (UUID). The stale-claim guard on the backend matches the posted event's `command_id` against the workspace's current claim; a mismatch returns `410 Gone`.
-- The agent posts the terminal event exactly once per dispatch. Event-post reliability (retry + dedup) is addressed separately from this contract.
+
+## At-least-once delivery + dedup
+
+**Re-delivery:** the control plane may re-deliver a `command_id` after a transient ACK failure. The agent never re-executes a re-delivered command.
+
+**Dedup cache:** the agent keeps a bounded in-memory LRU (1024 entries, `command_id → terminal AgentEvent`). On a re-delivered `command_id`, the cached terminal event is replayed through the retry loop — no dispatch to the workspace subprocess.
+
+**Terminal-event retry:** after each dispatch the agent retries `POST /api/v1/commands/{id}/events` with backoff (1s/2s/5s/10s/30s ramp, last step pins). Two stop conditions:
+- Success (2xx) — done.
+- `410 Gone` (`ErrStaleClaim`) — the backend no longer holds the claim; the event is dropped silently.
+
+**Progress events** are best-effort single-shot; only terminal events use the retry loop.
+
+**Crash loss:** the dedup cache is in-memory only. A pod restart clears it; re-delivered commands after a restart are re-executed (at-least-once guarantee, not exactly-once).
 
 ## ISO-UTC wire convention
 

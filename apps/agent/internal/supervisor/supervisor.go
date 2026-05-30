@@ -21,6 +21,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/yaaos/agent/internal/activity"
 	"github.com/yaaos/agent/internal/backoff"
@@ -39,6 +40,17 @@ const (
 	surfaceHeartbeat = "heartbeat"
 	surfaceWS        = "ws"
 )
+
+// eventPostSteps is the backoff ramp for terminal-event POST retries.
+// Shorter than the connection-level ramp: the target is a brief HTTP blip
+// (a few seconds), not a multi-minute control-plane outage.
+var eventPostSteps = []time.Duration{
+	1 * time.Second,
+	2 * time.Second,
+	5 * time.Second,
+	10 * time.Second,
+	30 * time.Second,
+}
 
 // classifyConnErr returns "auth" if the error carries a 401 or 403
 // status indication, "network" otherwise. The protocol client wraps
@@ -173,6 +185,15 @@ type Supervisor struct {
 	claimBackoff     *backoff.Schedule
 	heartbeatBackoff *backoff.Schedule
 	wsBackoff        *backoff.Schedule
+	// eventPostBackoff is used to retry terminal-event POSTs on transient
+	// errors. Shorter ramp than connection surfaces — the target is a brief
+	// HTTP blip, not a multi-minute outage.
+	eventPostBackoff *backoff.Schedule
+
+	// dedup caches the terminal AgentEvent for each completed command_id.
+	// A re-delivered command_id returns the cached event without re-executing.
+	// Lost on restart (at-least-once; crash-loss accepted).
+	dedup *dedupCache
 }
 
 // New constructs a Supervisor. The client is wired but identity hasn't
@@ -209,6 +230,8 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 		claimBackoff:     backoff.New(),
 		heartbeatBackoff: backoff.New(),
 		wsBackoff:        backoff.New(),
+		eventPostBackoff: backoff.NewWithSteps(eventPostSteps),
+		dedup:            newDedupCache(dedupCacheSize),
 	}
 }
 
@@ -620,6 +643,23 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 		attribute.String("agent_id", s.agentID),
 	)
 
+	// Dedup check: if this command_id already produced a terminal event,
+	// replay the cached result without re-dispatching. Records deduped=true
+	// on the span so dashboards can distinguish re-delivery from fresh dispatch.
+	if cached, hit := s.dedup.lookup(header.CommandID); hit {
+		s.log.Info("supervisor.command_deduped", "command_id", header.CommandID)
+		observability.Metrics().CommandsDeduped.Add(ctx, 1,
+			metric.WithAttributes(
+				attribute.String("org_id", s.orgID),
+				attribute.String("agent_id", s.agentID),
+			),
+		)
+		oteltrace.SpanFromContext(ctx).SetAttributes(attribute.Bool("deduped", true))
+		postErr := s.postTerminalEvent(ctx, header, cached)
+		end(postErr)
+		return
+	}
+
 	// Rewrite the wire's traceparent so the workspace subprocess + the
 	// AgentEvent we'll post back upstream both see this dispatch span as
 	// their parent. The original (backend) parent is recorded via the
@@ -684,15 +724,12 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 		event.Traceparent = childTP
 	}
 
-	var postErr error
-	if err := s.client.PostCommandEvent(ctx, header.CommandID, event); err != nil {
-		if err == protocol.ErrStaleClaim {
-			s.log.Info("supervisor.event_stale_claim", "command_id", header.CommandID)
-		} else {
-			postErr = err
-			s.log.Warn("supervisor.event_post_failed", "command_id", header.CommandID, "err", err.Error())
-		}
-	}
+	// Cache the terminal event before posting so that a re-delivery while
+	// the POST is in-flight or after a crash-restart still replays correctly.
+	s.dedup.store(header.CommandID, event)
+
+	postErr := s.postTerminalEvent(ctx, header, event)
+
 	// Span carries the dispatch-level error (post-back failure or pool
 	// failure if Dispatch returned a completed_failure event).
 	result := "success"
@@ -712,6 +749,43 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 		return
 	}
 	end(postErr)
+}
+
+// postTerminalEvent posts a terminal AgentEvent to the control plane with
+// backoff retry. It stops on success (nil) or ErrStaleClaim (410 Gone —
+// the claim is no longer valid; drop silently). Any other error is retried
+// using eventPostBackoff. Progress events are NOT routed here — they remain
+// best-effort single-shot.
+func (s *Supervisor) postTerminalEvent(ctx context.Context, header protocol.CommandHeader, event protocol.AgentEvent) error {
+	s.eventPostBackoff.Reset()
+	for {
+		err := s.client.PostCommandEvent(ctx, header.CommandID, event)
+		if err == nil {
+			// Acked — done.
+			return nil
+		}
+		if err == protocol.ErrStaleClaim {
+			// 410 Gone — the backend no longer holds this claim.
+			// Drop silently; re-delivering would be wrong.
+			s.log.Info("supervisor.event_stale_claim", "command_id", header.CommandID)
+			return nil
+		}
+		// Transient error — record a retry metric and wait.
+		s.log.Warn("supervisor.event_post_failed",
+			"command_id", header.CommandID, "err", err.Error())
+		observability.Metrics().EventsPostRetries.Add(ctx, 1,
+			metric.WithAttributes(
+				attribute.String("kind", string(header.Kind)),
+				attribute.String("org_id", s.orgID),
+				attribute.String("agent_id", s.agentID),
+			),
+		)
+		if sleepErr := s.eventPostBackoff.Sleep(ctx); sleepErr != nil {
+			// Context cancelled (e.g. graceful shutdown) — return the
+			// original post error so the span records a failure.
+			return err
+		}
+	}
 }
 
 // setCommandTraceparent mutates the concrete command's embedded

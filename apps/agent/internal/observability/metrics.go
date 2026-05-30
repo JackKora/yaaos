@@ -23,6 +23,8 @@ type Instruments struct {
 	WorkspacesActive         metric.Int64UpDownCounter
 	ConnectionFailures       metric.Int64Counter // attributes: surface=sts|claim|heartbeat|ws, class=auth|network
 	ConnectionBackoffSeconds metric.Float64Gauge // attributes: surface=...
+	CommandsDeduped          metric.Int64Counter // attributes: org_id, agent_id — duplicate command_id hit the cache
+	EventsPostRetries        metric.Int64Counter // attributes: kind, org_id, agent_id — each retry of a terminal-event POST
 }
 
 var (
@@ -115,6 +117,18 @@ func bindMetrics() {
 		"yaaos.agent.connection.backoff_seconds",
 		metric.WithDescription("Current backoff sleep per control-plane surface."),
 		metric.WithUnit("s"),
+	); err != nil {
+		panic(err)
+	}
+	if inst.CommandsDeduped, err = m.Int64Counter(
+		"yaaos.agent.commands.deduped",
+		metric.WithDescription("Terminal-event cache hits: duplicate command_id re-delivered without re-execution."),
+	); err != nil {
+		panic(err)
+	}
+	if inst.EventsPostRetries, err = m.Int64Counter(
+		"yaaos.agent.events.post.retries",
+		metric.WithDescription("Each retry of a terminal-event POST to the control plane, by command kind."),
 	); err != nil {
 		panic(err)
 	}

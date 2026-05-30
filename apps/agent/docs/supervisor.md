@@ -23,6 +23,8 @@
 - **Busy-ness is tracked inside `Pool.Dispatch`** — `setCommandID`/`clearCommandID` toggle `current_command_id` around Send. A completed command's workspace stays `status="running"` until the backend explicitly reaps it.
 - **Claim request carries lifecycle + active_workspace_ids** — `buildClaimRequest()` reads the config pointer (lifecycle) and `pool.ActiveIDs()` (active workspace set) for every claim poll. The backend filters which commands are eligible based on this.
 - **OTLP exporter late-binds on first ConfigUpdate** — `observability.BindExporter` is called inside `ApplyConfig`. No-op when `OTLPEndpoint` is empty.
+- **Dedup cache guards against re-execution** — `routeCommand` checks an in-memory bounded LRU (1024 entries, `command_id → terminal AgentEvent`) before dispatch. A hit skips the workspace subprocess entirely and replays the cached event through the terminal-event retry loop. The cache entry is written before the first POST so re-delivery during an in-flight POST also hits the cache. The cache is cleared on pod restart (at-least-once; crash-loss accepted).
+- **Terminal-event retry loop in `postTerminalEvent`** — retries `PostCommandEvent` with a short backoff ramp (1s/2s/5s/10s/30s). Stops on success or `ErrStaleClaim` (410 Gone). Progress events bypass this and remain best-effort single-shot. The `eventPostBackoff` field is separate from connection-surface backoffs so event-post retries don't interfere with claim or heartbeat timing.
 
 ## Gotchas
 

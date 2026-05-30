@@ -36,6 +36,17 @@ OTel resources describe the emitting entity (the pod). Span/metric attributes de
 
 The supervisor adds `workspace_id` and `command_id` as span attributes on the `supervisor.dispatch.<kind>` span for each command (see `internal/supervisor`). These are span-scoped, not process-wide.
 
+## Instruments summary
+
+Key counters emitted by the supervisor (all carry `org_id` + `agent_id`):
+
+| Instrument | Extra attributes | Meaning |
+|---|---|---|
+| `yaaos.agent.commands.deduped` | — | Duplicate `command_id` hit the dedup cache; no re-execution |
+| `yaaos.agent.events.post.retries` | `kind` | Each retry of a terminal-event POST (transient failure) |
+| `yaaos.agent.commands.completed` | `result` | Terminal dispatch outcome (success / failure / timeout) |
+| `yaaos.agent.connection.failures` | `surface`, `class` | Auth or network failures per connection surface |
+
 ## Gotchas
 
 - `bindMetrics` is called from `Init` after the real provider installs, swapping out no-op instruments. Tests that call `Metrics()` before `Init` get no-ops — fine for unit tests; service tests need the real provider only if they assert metric values.
