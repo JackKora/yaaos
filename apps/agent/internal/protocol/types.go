@@ -3,14 +3,13 @@
 //
 // Hand-written. Field tags match the JSON keys the backend emits and accepts.
 //
-// AgentCommand is a discriminated union over `kind`. The wire form is a
-// flat JSON object — the decoder peeks at `kind` and routes into the
-// right concrete type via UnmarshalJSON on the wrapper.
+// Wire commands arrive as flat JSON discriminated by `kind`. Consumers call
+// command.Decode (internal/command) to unmarshal raw bytes into the concrete
+// typed command — this package does not decode the union itself.
 package protocol
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 )
 
@@ -93,85 +92,6 @@ type InvokeClaudeCodeCommand struct {
 
 type CleanupWorkspaceCommand struct {
 	CommandHeader
-}
-
-// AgentCommand is the discriminated union returned by the claim endpoint.
-// Exactly one of the typed pointers is non-nil after a successful
-// UnmarshalJSON call; the other fields are nil.
-type AgentCommand struct {
-	Kind                 CommandKind
-	CreateWorkspace      *CreateWorkspaceCommand
-	WriteFiles           *WriteFilesCommand
-	RefreshWorkspaceAuth *RefreshWorkspaceAuthCommand
-	InvokeClaudeCode     *InvokeClaudeCodeCommand
-	CleanupWorkspace     *CleanupWorkspaceCommand
-}
-
-// UnmarshalJSON peeks at the `kind` field to decide which concrete type
-// to decode into. Unknown kinds are an error — the supervisor MUST refuse
-// to dispatch a command shape it doesn't understand.
-func (c *AgentCommand) UnmarshalJSON(data []byte) error {
-	var probe struct {
-		Kind CommandKind `json:"kind"`
-	}
-	if err := json.Unmarshal(data, &probe); err != nil {
-		return fmt.Errorf("protocol: probe kind: %w", err)
-	}
-	c.Kind = probe.Kind
-	switch probe.Kind {
-	case KindCreateWorkspace:
-		var v CreateWorkspaceCommand
-		if err := json.Unmarshal(data, &v); err != nil {
-			return err
-		}
-		c.CreateWorkspace = &v
-	case KindWriteFiles:
-		var v WriteFilesCommand
-		if err := json.Unmarshal(data, &v); err != nil {
-			return err
-		}
-		c.WriteFiles = &v
-	case KindRefreshWorkspaceAuth:
-		var v RefreshWorkspaceAuthCommand
-		if err := json.Unmarshal(data, &v); err != nil {
-			return err
-		}
-		c.RefreshWorkspaceAuth = &v
-	case KindInvokeClaudeCode:
-		var v InvokeClaudeCodeCommand
-		if err := json.Unmarshal(data, &v); err != nil {
-			return err
-		}
-		c.InvokeClaudeCode = &v
-	case KindCleanupWorkspace:
-		var v CleanupWorkspaceCommand
-		if err := json.Unmarshal(data, &v); err != nil {
-			return err
-		}
-		c.CleanupWorkspace = &v
-	default:
-		return fmt.Errorf("protocol: unknown command kind %q", probe.Kind)
-	}
-	return nil
-}
-
-// Header returns the embedded CommandHeader from whichever concrete type
-// is set. Useful for logging + ack flow regardless of kind.
-func (c *AgentCommand) Header() CommandHeader {
-	switch c.Kind {
-	case KindCreateWorkspace:
-		return c.CreateWorkspace.CommandHeader
-	case KindWriteFiles:
-		return c.WriteFiles.CommandHeader
-	case KindRefreshWorkspaceAuth:
-		return c.RefreshWorkspaceAuth.CommandHeader
-	case KindInvokeClaudeCode:
-		return c.InvokeClaudeCode.CommandHeader
-	case KindCleanupWorkspace:
-		return c.CleanupWorkspace.CommandHeader
-	default:
-		return CommandHeader{}
-	}
 }
 
 // ── Events ──────────────────────────────────────────────────────────────

@@ -2,6 +2,10 @@
 
 > Conventions for writing and extending Go packages inside `apps/agent`.
 
+## Layer boundary rule
+
+Imports flow downward only — `supervisor` → `{workspace, command, activity}` → `protocol` → leaves. The forbidden edges are CI-enforced by `depguard`; see `apps/agent/.golangci.yml` for the rule list and `apps/agent/docs/architecture.md` for the diagram. A compile error is the correct signal — don't add `nolint` comments.
+
 ## Module boundary rule
 
 Test helpers must not cross package boundaries. A helper used only by a package's own tests stays private to that package. Cross-package test setup is not used here — the agent has no shared test-helper surface.

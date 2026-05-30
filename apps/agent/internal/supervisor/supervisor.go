@@ -6,7 +6,7 @@
 //   - identity exchange against the backend's placeholder verifier
 //   - N concurrent claim-loop workers (`Config.Concurrency`)
 //   - heartbeat loop reporting an in-memory workspace inventory
-//   - command routing that dispatches each AgentCommand kind
+//   - command routing that dispatches each command kind
 //   - graceful Stop via context cancellation
 package supervisor
 
@@ -22,6 +22,7 @@ import (
 
 	"github.com/yaaos/agent/internal/activity"
 	"github.com/yaaos/agent/internal/backoff"
+	"github.com/yaaos/agent/internal/command"
 	"github.com/yaaos/agent/internal/observability"
 	"github.com/yaaos/agent/internal/protocol"
 	"github.com/yaaos/agent/internal/tracing"
@@ -353,7 +354,7 @@ func (s *Supervisor) dialAndStartWS(ctx context.Context, bearer string) bool {
 	// first transport error; we log and let the reconnect loop re-dial.
 	go func() {
 		defer close(s.wsReadLoopDone)
-		if err := activity.RunInbound(ctx, conn, s.conductor); err != nil && ctx.Err() == nil {
+		if err := activity.RunInbound(ctx, conn, s.conductor); ctx.Err() == nil {
 			s.log.Warn("supervisor.activity_ws_read_loop_exited", "err", err.Error())
 		}
 	}()
@@ -465,15 +466,15 @@ func (s *Supervisor) knownWorkspaceIDs() map[string]struct{} {
 	return out
 }
 
-// claimLoop runs one long-poll worker. On a successful claim it dispatches
-// the command via routeCommand and emits the terminal event. On ErrNoCommand
-// (204) it re-arms; on ctx cancellation it exits.
+// claimLoop runs one long-poll worker. On a successful claim it decodes the
+// raw bytes into a typed Command and dispatches via routeCommand. On
+// ErrNoCommand (204) it re-arms; on ctx cancellation it exits.
 func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		cmd, err := s.client.ClaimCommand(ctx, s.agentID, protocol.ClaimRequest{
+		raw, err := s.client.ClaimCommand(ctx, s.agentID, protocol.ClaimRequest{
 			WaitSeconds: s.cfg.ClaimWaitSeconds,
 		})
 		if err != nil {
@@ -494,6 +495,11 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 			if sleepErr := s.claimBackoff.Sleep(ctx); sleepErr != nil {
 				return
 			}
+			continue
+		}
+		cmd, decErr := command.Decode(raw)
+		if decErr != nil {
+			s.log.Warn("supervisor.decode_error", "worker", workerNum, "err", decErr.Error())
 			continue
 		}
 		s.claimBackoff.Reset()
@@ -564,31 +570,32 @@ func (s *Supervisor) sendHeartbeat(ctx context.Context) {
 	s.mu.Unlock()
 }
 
-// routeCommand dispatches an AgentCommand into the per-workspace pool +
-// forwards the resulting event back to the control plane. The pool spawns
-// a workspace subprocess on the first command for a given workspace_id,
+// routeCommand dispatches a Command into either the in-supervisor path
+// (AgentCommand, e.g. ConfigUpdate) or the workspace pool (WorkspaceCommand).
+// It then forwards the resulting event back to the control plane. The pool
+// spawns a workspace subprocess on the first command for a given workspace_id,
 // reuses it for subsequent commands, and reaps it after CleanupWorkspace.
 //
 // Trace propagation: the command header carries the backend's W3C
 // traceparent; we extract that into the ctx, start a child
 // `supervisor.dispatch.<kind>` span, then rewrite the command's
-// traceparent on the wire so the workspace subprocess sees our span as
-// its parent. The resulting AgentEvent's traceparent likewise carries
-// our span back to the backend.
+// traceparent so the workspace subprocess sees our span as its parent.
+// The resulting AgentEvent's traceparent likewise carries our span back
+// to the backend.
 //
 // On runner I/O error / context cancel, the pool emits a synthetic
 // `completed_failure` event so the workflow-engine on the backend always
 // sees an outcome (it never silently hangs waiting for our reply).
-func (s *Supervisor) routeCommand(ctx context.Context, cmd *protocol.AgentCommand) {
+func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 	header := cmd.Header()
 	s.recordInventory(header.WorkspaceID, header.CommandID, "running")
 	defer s.clearInventory(header.WorkspaceID)
 
 	ctx = tracing.ExtractContext(ctx, header.Traceparent)
-	ctx, end := tracing.StartSpan(ctx, "supervisor.dispatch."+string(cmd.Kind),
+	ctx, end := tracing.StartSpan(ctx, "supervisor.dispatch."+string(header.Kind),
 		attribute.String("workspace_id", header.WorkspaceID),
 		attribute.String("command_id", header.CommandID),
-		attribute.String("kind", string(cmd.Kind)),
+		attribute.String("kind", string(header.Kind)),
 	)
 
 	// Rewrite the wire's traceparent so the workspace subprocess + the
@@ -597,7 +604,7 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd *protocol.AgentComman
 	// SDK's span linkage — no information lost.
 	childTP := tracing.InjectTraceparent(ctx)
 	if childTP != "" {
-		setHeaderTraceparent(cmd, childTP)
+		setCommandTraceparent(cmd, childTP)
 	}
 
 	// Progress-event forwarder: when the activity WS is up, each in-flight
@@ -618,7 +625,30 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd *protocol.AgentComman
 		}
 	}
 
-	event := s.pool.Dispatch(ctx, cmd, progressForwarder)
+	var event protocol.AgentEvent
+	switch c := cmd.(type) {
+	case command.WorkspaceCommand:
+		event = s.pool.Dispatch(ctx, c, progressForwarder)
+	case command.AgentCommand:
+		// AgentCommands execute in the supervisor itself. Progress events
+		// are not expected for the current AgentCommand kinds; the
+		// progressForwarder is available but unused here.
+		res, err := c.Execute(ctx, s)
+		if err != nil {
+			event = failureEvent(header, err.Error())
+		} else {
+			event = protocol.AgentEvent{
+				CommandID:   header.CommandID,
+				Kind:        protocol.EventCompletedSuccess,
+				Outputs:     res.ToWire(),
+				ReportedAt:  time.Now().UTC(),
+				Traceparent: childTP,
+			}
+		}
+	default:
+		event = failureEvent(header, fmt.Sprintf("unknown command family %T", cmd))
+	}
+
 	// The pool's failureEvent / runner-relayed events keep whatever
 	// traceparent the dispatcher saw. Make sure the supervisor's span is
 	// what the backend correlates against.
@@ -643,7 +673,7 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd *protocol.AgentComman
 	}
 	observability.Metrics().CommandsCompleted.Add(ctx, 1,
 		metric.WithAttributes(attribute.String("result", result),
-			attribute.String("kind", string(cmd.Kind))),
+			attribute.String("kind", string(header.Kind))),
 	)
 	if event.Kind == protocol.EventCompletedFailure {
 		end(fmt.Errorf("dispatch failure: %s", event.FailureReason))
@@ -652,23 +682,36 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd *protocol.AgentComman
 	end(postErr)
 }
 
-// setHeaderTraceparent mutates the concrete AgentCommand payload's
-// embedded CommandHeader.Traceparent in place. Used to rewrite the wire's
-// trace context to the supervisor's child span before forwarding to the
-// workspace subprocess.
-func setHeaderTraceparent(cmd *protocol.AgentCommand, tp string) {
-	switch cmd.Kind {
-	case protocol.KindCreateWorkspace:
-		cmd.CreateWorkspace.Traceparent = tp
-	case protocol.KindWriteFiles:
-		cmd.WriteFiles.Traceparent = tp
-	case protocol.KindRefreshWorkspaceAuth:
-		cmd.RefreshWorkspaceAuth.Traceparent = tp
-	case protocol.KindInvokeClaudeCode:
-		cmd.InvokeClaudeCode.Traceparent = tp
-	case protocol.KindCleanupWorkspace:
-		cmd.CleanupWorkspace.Traceparent = tp
+// setCommandTraceparent mutates the concrete command's embedded
+// CommandHeader.Traceparent in place, rewriting the trace context to the
+// supervisor's child span before forwarding to the workspace subprocess.
+func setCommandTraceparent(cmd command.Command, tp string) {
+	switch c := cmd.(type) {
+	case *command.CreateWorkspaceCommand:
+		c.Proto.Traceparent = tp
+	case *command.WriteFilesCommand:
+		c.Proto.Traceparent = tp
+	case *command.RefreshWorkspaceAuthCommand:
+		c.Proto.Traceparent = tp
+	case *command.InvokeClaudeCodeCommand:
+		c.Proto.Traceparent = tp
+	case *command.CleanupWorkspaceCommand:
+		c.Proto.Traceparent = tp
+	case *command.ConfigUpdateCommand:
+		c.CommandHeader.Traceparent = tp
 	}
+}
+
+// ApplyConfig implements command.AgentOps. It applies the runtime configuration
+// delivered by a ConfigUpdateCommand. The supervisor logs the update; more
+// sophisticated application (e.g., updating OTLP exporter) is wired as the
+// observability infrastructure matures.
+func (s *Supervisor) ApplyConfig(cfg command.AgentConfig) {
+	s.log.Info("supervisor.config_applied",
+		"max_workspaces", cfg.MaxWorkspaces,
+		"otlp_endpoint", cfg.OTLPEndpoint,
+		"otlp_dataset", cfg.OTLPDataset,
+	)
 }
 
 func (s *Supervisor) recordInventory(workspaceID, commandID, status string) {

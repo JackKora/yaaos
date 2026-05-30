@@ -24,18 +24,21 @@
 
 ## Why / invariants
 
-- **One kind-switch, in Decode.** You must peek `kind` to know which concrete type to unmarshal into — that is unavoidable. Every other switch that existed (`workspace.dispatch`, `pool.timeoutForCommand`, `supervisor.routeCommand`) is replaced by method dispatch on the interface.
+- **One kind-switch, in Decode.** You must peek `kind` to know which concrete type to unmarshal into — that is unavoidable. All other routing uses method dispatch on the interface, not kind-switches.
 - **`WorkspaceOps` / `AgentOps` are caller-owned seams** — the command types call the seam; the workspace or supervisor provides the implementation. This keeps the command package free of real I/O and makes unit-testing trivial (supply a fake ops).
-- **Timeouts live on the command type.** `InvokeClaudeCode.Timeout()` prefers `Limits.WallclockSeconds` from the wire (the control plane sets it per invocation); all other kinds use Go-side defaults.
+- **Timeouts live on the command type.** `InvokeClaudeCode.Timeout()` prefers `Limits.WallclockSeconds` from the wire (the control plane sets it per invocation); all other kinds use Go-side defaults. `Pool.Dispatch` uses `cmd.Timeout()` directly.
+- **Wire serialization via `MarshalWire()`.** The `WorkspaceCommand` interface includes `MarshalWire() ([]byte, error)` — each concrete type marshals its `.Proto` field. This is how `pool.inProcessRunner` and `execRunner` write commands to the workspace pipe. Custom wrappers (e.g. test overrides of `Timeout()`) inherit the method via embedding.
 - **Typed results, map wire.** `Execute` returns a typed `Result`; `ToWire()` produces the `map[string]any` that `AgentEvent.Outputs` carries. The backend wire contract stays `map[string]any`; the Go `command`↔`supervisor` boundary is fully typed.
 - **`ConfigUpdateCommand` is an `AgentCommand`, not a `WorkspaceCommand`.** It runs in the supervisor via `AgentOps.ApplyConfig` — never dispatched to a workspace child.
+- **The `protocol.AgentCommand` union is gone.** `ClaimCommand` returns `[]byte`; `command.Decode` is the only entry point for turning raw claim-response bytes into a typed `Command`.
 
 ## Gotchas
 
-- `AgentCommand` (the interface here) is unrelated to the `protocol.AgentCommand` union struct. Same term, different concept.
+- `AgentCommand` (the interface here) is unrelated to the now-deleted `protocol.AgentCommand` union struct. Same term, different concept.
 - `CreateResult.Path` carries the workspace path the supervisor registry keys on; don't rename it.
 - `InvokeResult.ToWire()` includes both `stdout` (full, for the backend's CodeReview parser) and `stdout_excerpt` (display-friendly, truncated at 16 KiB). Both keys are load-bearing — the backend reads `stdout`, operators read `stdout_excerpt`.
 - `secret.Secret` fields (`AgentConfig.OTLPToken`) print as `[REDACTED]` under all fmt/json paths. Use `.Value()` only at the OTLP-exporter install site.
+- When embedding a `WorkspaceCommand` to override `Timeout()` in tests, `MarshalWire()` is inherited automatically via embedding — no need to reimplement it.
 
 ## Vocabulary
 

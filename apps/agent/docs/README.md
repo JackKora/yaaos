@@ -5,10 +5,12 @@
 ## Where things are
 
 - `cmd/agent/` — entrypoint; `supervisor` and `workspace` subcommands.
-- `internal/` — packages: `ipc`, `protocol`, `supervisor`, `workspace`, `tracing`, `identity`, `activity`, `secret`, `backoff`, `observability`.
-- `bin/ci` — `gofmt`, `go mod tidy` drift, `golangci-lint`, build, `go test -race`, `govulncheck`, `semgrep`.
+- `internal/` — packages: `ipc`, `protocol`, `command`, `supervisor`, `workspace`, `tracing`, `identity`, `activity`, `secret`, `backoff`, `observability`.
+- `bin/ci` — `gofmt`, `go mod tidy` drift, `golangci-lint` (includes `depguard` layer checks), build, `go test -race`, `govulncheck`, `semgrep`.
 
 Internal architecture, package responsibilities, and wire-protocol details → [architecture.md](architecture.md).
+
+Per-module docs: [protocol.md](protocol.md) · [command.md](command.md) · [patterns.md](patterns.md).
 
 ## Configuration
 

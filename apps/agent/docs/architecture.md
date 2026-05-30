@@ -6,10 +6,23 @@
 
 The agent is **zero biz logic**. Every threshold, prompt, lesson, depth, and timeout comes from the control plane via AgentCommand payload. The agent owns: process spawning, IPC framing, repo clone, credential redaction, and telemetry. No policy.
 
+## Layer graph
+
+Imports flow downward only. `depguard` in `apps/agent/.golangci.yml` enforces the forbidden edges at lint time.
+
+```
+supervisor ──→ workspace, command, activity
+workspace  ──→ command, protocol
+command    ──→ protocol
+protocol   (leaf — no internal imports)
+```
+
+The key invariant: `protocol` does not import `command`. `ClaimCommand` returns `[]byte`; the supervisor calls `command.Decode` to get a typed `Command`. This keeps the arrow pointing down without a cycle.
+
 ## Subcommands
 
 - `agent supervisor` — long-polls [`core/agent_gateway`](../../backend/docs/core_agent_gateway.md), exchanges identity, spawns one OS process per active workspace, heartbeats inventory + liveness, runs the disk janitor.
-- `agent workspace` — per-workspace child process; reads AgentCommands over stdin, writes AgentEvents over stdout via `ipc` framing, dispatches by `kind` through the `Handler` interface.
+- `agent workspace` — per-workspace child process; reads raw JSON frames over stdin, decodes via `command.Decode`, calls `Execute` on the typed `WorkspaceCommand`, writes AgentEvents over stdout via `ipc` framing.
 
 ## Package layout
 
@@ -18,7 +31,7 @@ The agent is **zero biz logic**. Every threshold, prompt, lesson, depth, and tim
 - `internal/protocol/` — wire types + HTTP client matching [`apps/backend/openapi/agent-api.yaml`](../../backend/openapi/agent-api.yaml); `openapi_drift_test.go` asserts every property name has a matching `json:` tag.
 - `internal/command/` — polymorphic `Command` interface, the 5 workspace command types + `ConfigUpdateCommand`, `WorkspaceOps`/`AgentOps` capability seams, typed result structs, and the `Decode` factory. See [command.md](command.md).
 - `internal/supervisor/` — identity exchange, N concurrent claim-loop workers, heartbeat loop, per-workspace runner `Pool`; `pool.Dispatch` spawns/reuses/reaps workspace subprocesses.
-- `internal/workspace/` — per-workspace dispatch loop (`Run` + `Handler`); `RealHandler` (production) owns tempdir lifecycle: clone, write-files, auth-refresh, InvokeClaudeCode, cleanup; `StubHandler` for tests.
+- `internal/workspace/` — per-workspace dispatch loop (`Run`); `RealHandler` (production) implements `command.WorkspaceOps`: tempdir lifecycle, clone, write-files, auth-refresh, RunClaude, cleanup; `StubHandler` for tests.
 - `internal/tracing/` — OTel wiring; W3C TraceContext propagation; `TraceparentEnv` exports current span to child processes.
 - `internal/identity/` — SigV4-signed STS `GetCallerIdentity` for control-plane verification.
 - `internal/activity/` — activity WebSocket protocol: `SubscriptionSet`, `WorkspaceMapping`, `Batcher` (250 ms flush), `Conductor`.
@@ -34,15 +47,15 @@ Supervisor maintains a bidirectional WS to `/api/v1/agents/{id}/activity` when `
 
 ### Live progress streaming
 
-`RealHandler.InvokeClaudeCode` wires `RunStreaming.OnStdoutLine` to push each Claude Code stream-json line as a `kind=progress` AgentEvent while also accumulating locally for the terminal event. `progress` events record without resuming the workflow engine — only `completed_*` events resume it.
+`RealHandler.RunClaude` wires `RunStreaming.OnStdoutLine` to push each Claude Code stream-json line as a `kind=progress` AgentEvent while also accumulating locally for the terminal event. `progress` events record without resuming the workflow engine — only `completed_*` events resume it.
 
 ### Workspace lifecycle
 
-`RealHandler.CreateWorkspace` writes a `.workspace-id` manifest into each tempdir after clone. On startup `scanOrphanWorkspaces` reads those manifests and pre-loads orphans as `status="unknown"` so the first heartbeat reports them. The backend issues cleanup via `HeartbeatResponse.forgotten_workspaces`; `cleanupForgottenWorkspaces` honors it with `os.RemoveAll`.
+`RealHandler.CloneWorkspace` writes a `.workspace-id` manifest into each tempdir after clone. On startup `scanOrphanWorkspaces` reads those manifests and pre-loads orphans as `status="unknown"` so the first heartbeat reports them. The backend issues cleanup via `HeartbeatResponse.forgotten_workspaces`; `cleanupForgottenWorkspaces` honors it with `os.RemoveAll`.
 
 ### Per-command timeouts
 
-`Pool.Dispatch` wraps each `runner.Send` in `context.WithTimeout`. Deadlines come from the wire (`InvokeClaudeCodeCommand.Limits.WallclockSeconds`) or from `PoolTimeouts` Go-side defaults (5 m Create, 30 s Write/Refresh/Cleanup, 15 m InvokeClaudeCode fallback). On timeout the pool emits `completed_failure` with reason `timeout: <kind> exceeded <duration> wall-clock` and drops the runner so the next `CreateWorkspace` can respawn.
+`Pool.Dispatch` wraps each `runner.Send` in `context.WithTimeout` using `cmd.Timeout()`. Each command type owns its deadline: `InvokeClaudeCodeCommand.Timeout()` reads `Limits.WallclockSeconds` from the wire; all other kinds use Go-side defaults defined in `internal/command`. On timeout the pool emits `completed_failure` with reason `timeout: <kind> exceeded <duration> wall-clock` and drops the runner so the next `CreateWorkspace` can respawn.
 
 ### Credential redaction
 

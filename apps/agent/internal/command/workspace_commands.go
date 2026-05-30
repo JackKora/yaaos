@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/yaaos/agent/internal/protocol"
@@ -40,6 +41,9 @@ func (c *CreateWorkspaceCommand) Execute(ctx context.Context, ops WorkspaceOps) 
 	return ops.CloneWorkspace(ctx, &c.Proto)
 }
 
+// MarshalWire returns the flat JSON representation of this command.
+func (c *CreateWorkspaceCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
+
 // ── WriteFilesCommand ─────────────────────────────────────────────────────────
 
 // WriteFilesCommand writes a batch of files into an existing workspace dir.
@@ -62,6 +66,9 @@ func (c *WriteFilesCommand) Execute(ctx context.Context, ops WorkspaceOps) (Resu
 	return ops.WriteFiles(ctx, &c.Proto)
 }
 
+// MarshalWire returns the flat JSON representation of this command.
+func (c *WriteFilesCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
+
 // ── RefreshWorkspaceAuthCommand ───────────────────────────────────────────────
 
 // RefreshWorkspaceAuthCommand rotates the auth token held in the workspace slot.
@@ -83,6 +90,9 @@ func (c *RefreshWorkspaceAuthCommand) Timeout() time.Duration {
 func (c *RefreshWorkspaceAuthCommand) Execute(ctx context.Context, ops WorkspaceOps) (Result, error) {
 	return ops.RefreshAuth(ctx, &c.Proto)
 }
+
+// MarshalWire returns the flat JSON representation of this command.
+func (c *RefreshWorkspaceAuthCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
 
 // ── InvokeClaudeCodeCommand ───────────────────────────────────────────────────
 
@@ -113,6 +123,9 @@ func (c *InvokeClaudeCodeCommand) Execute(ctx context.Context, ops WorkspaceOps)
 	return ops.RunClaude(ctx, &c.Proto)
 }
 
+// MarshalWire returns the flat JSON representation of this command.
+func (c *InvokeClaudeCodeCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
+
 // ── CleanupWorkspaceCommand ───────────────────────────────────────────────────
 
 // CleanupWorkspaceCommand tears down a workspace dir.
@@ -134,3 +147,6 @@ func (c *CleanupWorkspaceCommand) Timeout() time.Duration {
 func (c *CleanupWorkspaceCommand) Execute(ctx context.Context, ops WorkspaceOps) (Result, error) {
 	return ops.Cleanup(ctx, &c.Proto)
 }
+
+// MarshalWire returns the flat JSON representation of this command.
+func (c *CleanupWorkspaceCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }

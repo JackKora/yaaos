@@ -1,9 +1,9 @@
-// Per-workspace runner pool. The supervisor receives a stream of
-// AgentCommands from the backend (interleaved across workspaces by the
-// claim-loop fan-in); the pool routes each command to the right
-// long-lived `agent workspace` child process based on `workspace_id`,
-// spawning a new one on the first command, serializing commands per
-// workspace, and reaping the runner after `CleanupWorkspace`.
+// Per-workspace runner pool. The supervisor receives a stream of commands
+// from the backend (interleaved across workspaces by the claim-loop fan-in);
+// the pool routes each command to the right long-lived `agent workspace`
+// child process based on `workspace_id`, spawning a new one on the first
+// command, serializing commands per workspace, and reaping the runner after
+// CleanupWorkspace.
 //
 // Two runner implementations ship:
 //
@@ -19,12 +19,14 @@ package supervisor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
 	"time"
 
+	"github.com/yaaos/agent/internal/command"
 	"github.com/yaaos/agent/internal/ipc"
 	"github.com/yaaos/agent/internal/protocol"
 	"github.com/yaaos/agent/internal/workspace"
@@ -45,7 +47,7 @@ import (
 // serializes them. `Close` tears the runner down (signal/grace/kill for
 // an OS process, pipe-close for in-process).
 type WorkspaceRunner interface {
-	Send(ctx context.Context, cmd *protocol.AgentCommand, onProgress func(protocol.AgentEvent)) (protocol.AgentEvent, error)
+	Send(ctx context.Context, cmd command.WorkspaceCommand, onProgress func(protocol.AgentEvent)) (protocol.AgentEvent, error)
 	Close(ctx context.Context) error
 }
 
@@ -66,11 +68,11 @@ type Pool struct {
 
 // PoolTimeouts caps how long each command kind can sit inside the
 // workspace process before the pool gives up + emits completed_failure.
-// InvokeClaudeCode reads `Limits.WallclockSeconds` off the wire when
-// present (the control plane owns that knob per CLAUDE.md "every
-// threshold/timeout comes from the control plane via payload"); the
-// other kinds use these Go-side defaults until they grow per-command
-// wire fields of their own. Zero values pick conservative defaults.
+// These are Go-side defaults — InvokeClaudeCode reads Limits.WallclockSeconds
+// off the wire when present (the control plane owns that knob per
+// the "zero biz logic" principle); the other kinds use these defaults until
+// they grow per-command wire fields of their own. Zero values pick
+// conservative defaults.
 type PoolTimeouts struct {
 	CreateWorkspace      time.Duration // default 5m (git clone may be slow)
 	WriteFiles           time.Duration // default 30s
@@ -100,29 +102,6 @@ func (t PoolTimeouts) withDefaults() PoolTimeouts {
 		t.InvokeClaudeCodeFallback = 15 * time.Minute
 	}
 	return t
-}
-
-// timeoutForCommand returns the per-command deadline duration. For
-// InvokeClaudeCode, prefers the wire-supplied Limits.WallclockSeconds;
-// otherwise falls back to the per-kind default.
-func (t PoolTimeouts) timeoutForCommand(cmd *protocol.AgentCommand) time.Duration {
-	switch cmd.Kind {
-	case protocol.KindCreateWorkspace:
-		return t.CreateWorkspace
-	case protocol.KindWriteFiles:
-		return t.WriteFiles
-	case protocol.KindRefreshWorkspaceAuth:
-		return t.RefreshWorkspaceAuth
-	case protocol.KindCleanupWorkspace:
-		return t.CleanupWorkspace
-	case protocol.KindInvokeClaudeCode:
-		if cmd.InvokeClaudeCode != nil && cmd.InvokeClaudeCode.Limits.WallclockSeconds > 0 {
-			return time.Duration(cmd.InvokeClaudeCode.Limits.WallclockSeconds) * time.Second
-		}
-		return t.InvokeClaudeCodeFallback
-	default:
-		return t.InvokeClaudeCodeFallback
-	}
 }
 
 // workspaceSlot pairs a runner with a per-workspace mutex. The pool grabs
@@ -156,11 +135,14 @@ func NewPoolWithTimeouts(spawn SpawnFunc, log Logger, timeouts PoolTimeouts) *Po
 	}
 }
 
-// Dispatch routes one command to the right runner and returns the event
-// the runner emits. If the runner doesn't exist yet and the command is
-// `CreateWorkspace`, the pool spawns it. Any other kind for an unknown
+// Dispatch routes one WorkspaceCommand to the right runner and returns the
+// event the runner emits. If the runner doesn't exist yet and the command is
+// CreateWorkspace, the pool spawns it. Any other kind for an unknown
 // workspace is a protocol violation — Dispatch returns a synthetic
 // `completed_failure` event so the supervisor can still ack the command.
+//
+// Per-command timeout comes from cmd.Timeout() — the command type owns its
+// deadline (wire-supplied for InvokeClaudeCode, Go-side defaults for others).
 //
 // Progress events (kind=progress) emitted by the runner are forwarded
 // to `onProgress` synchronously and the dispatch continues waiting for
@@ -168,7 +150,7 @@ func NewPoolWithTimeouts(spawn SpawnFunc, log Logger, timeouts PoolTimeouts) *Po
 //
 // After a `CleanupWorkspace` command the runner is closed + removed from
 // the pool regardless of whether the runner reported success or failure.
-func (p *Pool) Dispatch(ctx context.Context, cmd *protocol.AgentCommand, onProgress func(protocol.AgentEvent)) protocol.AgentEvent {
+func (p *Pool) Dispatch(ctx context.Context, cmd command.WorkspaceCommand, onProgress func(protocol.AgentEvent)) protocol.AgentEvent {
 	header := cmd.Header()
 	workspaceID := header.WorkspaceID
 	if workspaceID == "" {
@@ -178,9 +160,9 @@ func (p *Pool) Dispatch(ctx context.Context, cmd *protocol.AgentCommand, onProgr
 	p.mu.Lock()
 	slot, ok := p.runners[workspaceID]
 	if !ok {
-		if cmd.Kind != protocol.KindCreateWorkspace {
+		if header.Kind != protocol.KindCreateWorkspace {
 			p.mu.Unlock()
-			return failureEvent(header, fmt.Sprintf("no workspace runner for %s (kind=%s)", workspaceID, cmd.Kind))
+			return failureEvent(header, fmt.Sprintf("no workspace runner for %s (kind=%s)", workspaceID, header.Kind))
 		}
 		runner, err := p.spawn(ctx, workspaceID)
 		if err != nil {
@@ -197,10 +179,10 @@ func (p *Pool) Dispatch(ctx context.Context, cmd *protocol.AgentCommand, onProgr
 	slot.mu.Lock()
 	defer slot.mu.Unlock()
 
-	// Per-command wall-clock cap. InvokeClaudeCode honours the wire's
-	// Limits.WallclockSeconds; other kinds use the pool's Go-side
-	// defaults (overridable via NewPoolWithTimeouts).
-	timeout := p.timeouts.timeoutForCommand(cmd)
+	// Per-command wall-clock cap comes from the command itself — the
+	// command type owns its time budget (cmd.Timeout() reads from wire
+	// for InvokeClaudeCode; Go-side defaults for other kinds).
+	timeout := cmd.Timeout()
 	sendCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -215,14 +197,14 @@ func (p *Pool) Dispatch(ctx context.Context, cmd *protocol.AgentCommand, onProgr
 		// while the outer ctx is still alive; outer cancel cancels both.
 		reason := "runner: " + err.Error()
 		if errors.Is(sendCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			reason = fmt.Sprintf("timeout: %s exceeded %s wall-clock", cmd.Kind, timeout)
+			reason = fmt.Sprintf("timeout: %s exceeded %s wall-clock", header.Kind, timeout)
 		}
 		p.dropSlot(workspaceID)
 		_ = slot.runner.Close(context.Background())
-		p.log.Warn("pool.send_failed", "workspace_id", workspaceID, "kind", string(cmd.Kind), "err", err.Error())
+		p.log.Warn("pool.send_failed", "workspace_id", workspaceID, "kind", string(header.Kind), "err", err.Error())
 		return failureEvent(header, reason)
 	}
-	if cmd.Kind == protocol.KindCleanupWorkspace {
+	if header.Kind == protocol.KindCleanupWorkspace {
 		// Contract: CleanupWorkspace is always terminal — reap the runner.
 		p.dropSlot(workspaceID)
 		if cerr := slot.runner.Close(context.Background()); cerr != nil {
@@ -272,9 +254,10 @@ func failureEvent(header protocol.CommandHeader, reason string) protocol.AgentEv
 // ── In-process runner (test default) ────────────────────────────────────
 
 // inProcessRunner wraps `workspace.Run` in a goroutine fed by io.Pipe pairs.
-// `Send` writes one framed AgentCommand on the command pipe and reads one
-// framed AgentEvent off the event pipe. Use this in tests so the dispatch
-// frame is exercised end-to-end without OS-process spawning.
+// `Send` marshals the WorkspaceCommand's wire struct, writes it as a framed
+// message on the command pipe, and reads one framed AgentEvent off the event
+// pipe. Use this in tests so the dispatch frame is exercised end-to-end
+// without OS-process spawning.
 type inProcessRunner struct {
 	cmdW *io.PipeWriter
 	evR  *io.PipeReader
@@ -289,12 +272,12 @@ type inProcessRunner struct {
 	done      chan struct{}
 }
 
-// InProcessSpawn returns a SpawnFunc that runs `workspace.Run(handler)` in
-// a goroutine connected by io.Pipe pairs. The default handler is the
-// workspace package's `StubHandler` — tests can pass a custom one.
-func InProcessSpawn(handler workspace.Handler) SpawnFunc {
-	if handler == nil {
-		handler = workspace.StubHandler{}
+// InProcessSpawn returns a SpawnFunc that runs `workspace.Run(ops)` in a
+// goroutine connected by io.Pipe pairs. The default ops is StubHandler —
+// tests can pass a custom command.WorkspaceOps.
+func InProcessSpawn(ops command.WorkspaceOps) SpawnFunc {
+	if ops == nil {
+		ops = workspace.StubHandler{}
 	}
 	return func(ctx context.Context, _ string) (WorkspaceRunner, error) {
 		cmdR, cmdW := io.Pipe()
@@ -312,19 +295,19 @@ func InProcessSpawn(handler workspace.Handler) SpawnFunc {
 		}
 		go func() {
 			defer close(runner.done)
-			_ = workspace.Run(runCtx, cmdR, evW, handler, workspace.Options{})
+			_ = workspace.Run(runCtx, cmdR, evW, ops, workspace.Options{})
 			_ = evW.Close() // signal EOF to the parent decoder
 		}()
 		return runner, nil
 	}
 }
 
-func (r *inProcessRunner) Send(ctx context.Context, cmd *protocol.AgentCommand, onProgress func(protocol.AgentEvent)) (protocol.AgentEvent, error) {
-	wireCmd, err := encodeCommand(cmd)
+func (r *inProcessRunner) Send(ctx context.Context, cmd command.WorkspaceCommand, onProgress func(protocol.AgentEvent)) (protocol.AgentEvent, error) {
+	wireBytes, err := cmd.MarshalWire()
 	if err != nil {
 		return protocol.AgentEvent{}, fmt.Errorf("encode command: %w", err)
 	}
-	if err := r.enc.Write(wireCmd); err != nil {
+	if err := r.enc.Write(json.RawMessage(wireBytes)); err != nil {
 		return protocol.AgentEvent{}, fmt.Errorf("write command: %w", err)
 	}
 	// Read events in a loop: progress events fire `onProgress` + the
@@ -389,25 +372,4 @@ func (r *inProcessRunner) Close(_ context.Context) error {
 		<-r.done
 	}
 	return nil
-}
-
-// encodeCommand serializes the AgentCommand union into the flat wire shape
-// the workspace expects. The wrapper's UnmarshalJSON peeks at `kind` and
-// dispatches; for the encode direction we just write the concrete payload
-// (the pointer field that's set).
-func encodeCommand(cmd *protocol.AgentCommand) (any, error) {
-	switch cmd.Kind {
-	case protocol.KindCreateWorkspace:
-		return cmd.CreateWorkspace, nil
-	case protocol.KindWriteFiles:
-		return cmd.WriteFiles, nil
-	case protocol.KindRefreshWorkspaceAuth:
-		return cmd.RefreshWorkspaceAuth, nil
-	case protocol.KindInvokeClaudeCode:
-		return cmd.InvokeClaudeCode, nil
-	case protocol.KindCleanupWorkspace:
-		return cmd.CleanupWorkspace, nil
-	default:
-		return nil, errors.New("unknown command kind")
-	}
 }

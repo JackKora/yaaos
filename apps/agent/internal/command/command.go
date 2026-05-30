@@ -37,9 +37,17 @@ type Command interface {
 
 // WorkspaceCommand is a Command that executes work inside a workspace child
 // process. The five workspace kinds implement this interface.
+//
+// MarshalWire returns the flat JSON bytes that the workspace subprocess
+// deserializes with command.Decode. Marshaling is the caller's (pool's)
+// responsibility so the command package stays free of I/O concerns.
 type WorkspaceCommand interface {
 	Command
 	Execute(ctx context.Context, ops WorkspaceOps) (Result, error)
+	// MarshalWire returns the flat JSON representation of this command.
+	// The bytes are the same shape as what the backend sends on the claim
+	// endpoint — a flat JSON object with an embedded `kind` field.
+	MarshalWire() ([]byte, error)
 }
 
 // AgentCommand is a Command that executes in the supervisor itself. Only
