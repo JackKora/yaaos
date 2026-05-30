@@ -199,7 +199,10 @@ func TestStubHandler_OutputsCarryWorkspaceID(t *testing.T) {
 // causes Run to return an error — workspace processes don't handle
 // AgentCommands.
 func TestRun_NonWorkspaceKind_AgentCommandReturnsError(t *testing.T) {
-	in := strings.NewReader(`{"kind":"ConfigUpdate","command_id":"c-cfg","workspace_id":""}` + "\n")
+	// A valid (decodable) ConfigUpdate — nested config with a >=1 cap so it
+	// passes Decode — must still be rejected as a non-workspace command when
+	// it lands on a workspace child's pipe.
+	in := strings.NewReader(`{"kind":"ConfigUpdate","command_id":"c-cfg","config":{"max_workspaces":1}}` + "\n")
 	var out bytes.Buffer
 	err := Run(context.Background(), in, &out, StubHandler{}, Options{Now: fixedNow})
 	if err == nil {

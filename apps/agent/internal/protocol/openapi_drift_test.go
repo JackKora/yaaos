@@ -66,7 +66,7 @@ var schemaToStruct = map[string]struct {
 	"RefreshWorkspaceAuthCommand": {reflect.TypeOf(RefreshWorkspaceAuthCommand{}), nil},
 	"InvokeClaudeCodeCommand":     {reflect.TypeOf(InvokeClaudeCodeCommand{}), nil},
 	"CleanupWorkspaceCommand":     {reflect.TypeOf(CleanupWorkspaceCommand{}), nil},
-	"AgentConfig":                 {reflect.TypeOf(AgentConfig{}), nil},
+	"AgentConfig":                 {reflect.TypeOf(AgentConfigWire{}), nil},
 	"ConfigUpdateCommand":         {reflect.TypeOf(ConfigUpdateCommand{}), nil},
 	"AgentEvent":                  {reflect.TypeOf(AgentEvent{}), nil},
 }

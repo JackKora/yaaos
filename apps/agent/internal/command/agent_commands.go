@@ -28,16 +28,6 @@ type ConfigUpdateCommand struct {
 	Config        AgentConfig
 }
 
-// configUpdateWire is the flat JSON shape of a ConfigUpdate command on the wire.
-// The token field is a plain string here; Decode wraps it in secret.Secret.
-type configUpdateWire struct {
-	protocol.CommandHeader
-	MaxWorkspaces int    `json:"max_workspaces"`
-	OTLPEndpoint  string `json:"otlp_endpoint"`
-	OTLPToken     string `json:"otlp_token"`
-	OTLPDataset   string `json:"otlp_dataset"`
-}
-
 // secretFrom wraps a plain string as a secret.Secret. A local helper keeps the
 // import of secret contained to this file.
 func secretFrom(s string) secret.Secret {
@@ -54,6 +44,9 @@ func (c *ConfigUpdateCommand) Header() protocol.CommandHeader {
 func (c *ConfigUpdateCommand) Timeout() time.Duration {
 	return 30 * time.Second
 }
+
+// SetTraceparent implements Command.
+func (c *ConfigUpdateCommand) SetTraceparent(tp string) { c.CommandHeader.Traceparent = tp }
 
 // Execute calls ops.ApplyConfig with the command's AgentConfig and returns a
 // ConfigUpdateResult. ConfigUpdateCommand is an AgentCommand — it always runs

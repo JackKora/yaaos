@@ -76,10 +76,11 @@ func run() int {
 	}
 	defer func() { _ = otelRes.Shutdown(context.Background()) }()
 
+	// Wire the live log bridge into the fan-out once. It stays dormant until
+	// OTel is configured (env endpoint here, or a later ConfigUpdate), then
+	// exports logs without the fan-out needing to be rebuilt.
 	logCfg := logging.Config{StdoutWriter: consoleWriter}
-	if otelRes.SlogHandler != nil {
-		logCfg.ExtraHandlers = append(logCfg.ExtraHandlers, otelRes.SlogHandler)
-	}
+	logCfg.ExtraHandlers = append(logCfg.ExtraHandlers, otelRes.SlogHandler)
 	shutdownLogs, err := logging.Init(logCfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logging.init failed: %v\n", err)

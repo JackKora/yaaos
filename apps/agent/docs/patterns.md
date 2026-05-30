@@ -17,11 +17,11 @@ See [command.md § Adding a command kind](command.md#adding-a-command-kind) for 
 1. Add a `CommandKind` constant to `internal/protocol/types.go`.
 2. Add the wire struct (if new shape) to `internal/protocol/types.go`.
 3. Add a result struct + `ToWire()` to `internal/command/results.go`.
-4. Add the concrete command type + `Execute` to `internal/command/workspace_commands.go` or `agent_commands.go`.
+4. Add the concrete command type + `Execute` + `SetTraceparent` to `internal/command/workspace_commands.go` or `agent_commands.go`. `SetTraceparent` is a `Command`-interface method (sets the embedded `CommandHeader.Traceparent`); the compiler enforces it, so the supervisor's span-reparenting can never silently drop the new kind's traceparent.
 5. Add one `case` to `command.Decode` in `internal/command/command.go`.
 6. Add tests: Decode round-trip in `command_test.go`; Execute against a fake ops in `execute_test.go`.
 
-The `exhaustive` linter (see below) will fail CI if the new case is missing from `Decode`.
+The `exhaustive` linter (see below) will fail CI if the new case is missing from `Decode`. The traceparent rewrite needs no linter — a missing `SetTraceparent` is a compile error.
 
 ## Exhaustive enum switches
 

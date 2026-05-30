@@ -67,7 +67,7 @@ func TestSupervisor_Unconfigured_WorkspaceCommandFailsWithUnconfigured(t *testin
 
 	// Route a WorkspaceCommand while unconfigured — must return completed_failure.
 	cmd := newCreateCmd("ws-1", "cmd-1")
-	ev := s.routeWorkspaceCmd(context.Background(), cmd)
+	ev := s.routeWorkspaceCmd(context.Background(), cmd, nil)
 	if ev.Kind != protocol.EventCompletedFailure {
 		t.Fatalf("kind: want completed_failure got %q (reason=%q)", ev.Kind, ev.FailureReason)
 	}
@@ -85,7 +85,7 @@ func TestSupervisor_AfterConfig_WorkspaceCommandSucceeds(t *testing.T) {
 
 	// Same command now routes to the pool and succeeds.
 	cmd := newCreateCmd("ws-1", "cmd-1")
-	ev := s.routeWorkspaceCmd(context.Background(), cmd)
+	ev := s.routeWorkspaceCmd(context.Background(), cmd, nil)
 	if ev.Kind != protocol.EventCompletedSuccess {
 		t.Fatalf("kind: want completed_success after config, got %q (reason=%q)", ev.Kind, ev.FailureReason)
 	}
@@ -99,13 +99,13 @@ func TestSupervisor_CreatePastCap_FailsCapReached(t *testing.T) {
 	applyConfig(s, 1)
 
 	// First create succeeds.
-	ev1 := s.routeWorkspaceCmd(context.Background(), newCreateCmd("ws-a", "cmd-a"))
+	ev1 := s.routeWorkspaceCmd(context.Background(), newCreateCmd("ws-a", "cmd-a"), nil)
 	if ev1.Kind != protocol.EventCompletedSuccess {
 		t.Fatalf("first create: want completed_success got %q (reason=%q)", ev1.Kind, ev1.FailureReason)
 	}
 
 	// Second create should fail with cap reached.
-	ev2 := s.routeWorkspaceCmd(context.Background(), newCreateCmd("ws-b", "cmd-b"))
+	ev2 := s.routeWorkspaceCmd(context.Background(), newCreateCmd("ws-b", "cmd-b"), nil)
 	if ev2.Kind != protocol.EventCompletedFailure {
 		t.Fatalf("second create: want completed_failure got %q (reason=%q)", ev2.Kind, ev2.FailureReason)
 	}
@@ -117,8 +117,8 @@ func TestSupervisor_CreatePastCap_FailsCapReached(t *testing.T) {
 // ── Pool cap gate (concurrent, race-detector) ──────────────────────────────
 
 // TestPool_ConcurrentCreateActive_CapAdmitsExactlyMaxWorkspaces proves that
-// N concurrent createActive calls with cap=M admit exactly M and reject N-M
-// with ErrAtCap. Run with -race to exercise the atomic guard.
+// N concurrent reserveActiveSlot calls (distinct ids) with cap=M admit exactly
+// M and reject N-M with ErrAtCap. Run with -race to exercise the atomic guard.
 func TestPool_ConcurrentCreateActive_CapAdmitsExactlyMaxWorkspaces(t *testing.T) {
 	const maxWS = 3
 	const total = 10
@@ -134,7 +134,7 @@ func TestPool_ConcurrentCreateActive_CapAdmitsExactlyMaxWorkspaces(t *testing.T)
 		go func(i int) {
 			defer wg.Done()
 			id := fmtWS(i)
-			err := pool.createActiveCapped(id, nil, maxWS)
+			err := pool.reserveActiveSlot(id, maxWS)
 			if err == nil {
 				admitted.Add(1)
 			} else {

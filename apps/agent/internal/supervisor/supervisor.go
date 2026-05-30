@@ -41,10 +41,11 @@ const (
 	surfaceWS        = "ws"
 )
 
-// eventPostSteps is the backoff ramp for terminal-event POST retries.
+// defaultEventPostSteps is the backoff ramp for terminal-event POST retries.
 // Shorter than the connection-level ramp: the target is a brief HTTP blip
-// (a few seconds), not a multi-minute control-plane outage.
-var eventPostSteps = []time.Duration{
+// (a few seconds), not a multi-minute control-plane outage. Stored on the
+// Supervisor as eventPostSteps so tests can inject a fast ramp.
+var defaultEventPostSteps = []time.Duration{
 	1 * time.Second,
 	2 * time.Second,
 	5 * time.Second,
@@ -185,10 +186,11 @@ type Supervisor struct {
 	claimBackoff     *backoff.Schedule
 	heartbeatBackoff *backoff.Schedule
 	wsBackoff        *backoff.Schedule
-	// eventPostBackoff is used to retry terminal-event POSTs on transient
-	// errors. Shorter ramp than connection surfaces — the target is a brief
-	// HTTP blip, not a multi-minute outage.
-	eventPostBackoff *backoff.Schedule
+	// eventPostSteps is the backoff ramp for terminal-event POST retries.
+	// postTerminalEvent builds a fresh *backoff.Schedule from it on each
+	// call: the method runs concurrently on N claim-loop workers, so a
+	// shared schedule would let one worker's Reset collapse another's ramp.
+	eventPostSteps []time.Duration
 
 	// dedup caches the terminal AgentEvent for each completed command_id.
 	// A re-delivered command_id returns the cached event without re-executing.
@@ -230,7 +232,7 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 		claimBackoff:     backoff.New(),
 		heartbeatBackoff: backoff.New(),
 		wsBackoff:        backoff.New(),
-		eventPostBackoff: backoff.NewWithSteps(eventPostSteps),
+		eventPostSteps:   defaultEventPostSteps,
 		dedup:            newDedupCache(dedupCacheSize),
 	}
 }
@@ -374,7 +376,7 @@ func (s *Supervisor) dialAndStartWS(ctx context.Context, bearer string) bool {
 	// first transport error; we log and let the reconnect loop re-dial.
 	go func() {
 		defer close(s.wsReadLoopDone)
-		if err := activity.RunInbound(ctx, conn, s.conductor); ctx.Err() == nil {
+		if err := activity.RunInbound(ctx, conn, s.conductor); err != nil && ctx.Err() == nil {
 			s.log.Warn("supervisor.activity_ws_read_loop_exited", "err", err.Error())
 		}
 	}()
@@ -666,7 +668,7 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 	// SDK's span linkage — no information lost.
 	childTP := tracing.InjectTraceparent(ctx)
 	if childTP != "" {
-		setCommandTraceparent(cmd, childTP)
+		cmd.SetTraceparent(childTP)
 	}
 
 	// Progress-event forwarder: when the activity WS is up, each in-flight
@@ -690,13 +692,9 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 	var event protocol.AgentEvent
 	switch c := cmd.(type) {
 	case command.WorkspaceCommand:
-		// Lifecycle gate: workspace commands are rejected until the agent
-		// receives its first ConfigUpdate.
-		if cfg := s.config.Load(); cfg == nil {
-			event = failureEvent(header, "agent unconfigured")
-		} else {
-			event = s.pool.Dispatch(ctx, c, progressForwarder, cfg.MaxWorkspaces)
-		}
+		// Lifecycle gate + dispatch live in routeWorkspaceCmd — the single
+		// workspace-bound path, shared with the lifecycle tests.
+		event = s.routeWorkspaceCmd(ctx, c, progressForwarder)
 	case command.AgentCommand:
 		// AgentCommands execute in the supervisor itself. Progress events
 		// are not expected for the current AgentCommand kinds; the
@@ -754,10 +752,10 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 // postTerminalEvent posts a terminal AgentEvent to the control plane with
 // backoff retry. It stops on success (nil) or ErrStaleClaim (410 Gone —
 // the claim is no longer valid; drop silently). Any other error is retried
-// using eventPostBackoff. Progress events are NOT routed here — they remain
-// best-effort single-shot.
+// on a per-call backoff ramp (see s.eventPostSteps). Progress events are NOT
+// routed here — they remain best-effort single-shot.
 func (s *Supervisor) postTerminalEvent(ctx context.Context, header protocol.CommandHeader, event protocol.AgentEvent) error {
-	s.eventPostBackoff.Reset()
+	eventPostBackoff := backoff.NewWithSteps(s.eventPostSteps)
 	for {
 		err := s.client.PostCommandEvent(ctx, header.CommandID, event)
 		if err == nil {
@@ -780,7 +778,7 @@ func (s *Supervisor) postTerminalEvent(ctx context.Context, header protocol.Comm
 				attribute.String("agent_id", s.agentID),
 			),
 		)
-		if sleepErr := s.eventPostBackoff.Sleep(ctx); sleepErr != nil {
+		if sleepErr := eventPostBackoff.Sleep(ctx); sleepErr != nil {
 			// Context cancelled (e.g. graceful shutdown) — return the
 			// original post error so the span records a failure.
 			return err
@@ -788,35 +786,16 @@ func (s *Supervisor) postTerminalEvent(ctx context.Context, header protocol.Comm
 	}
 }
 
-// setCommandTraceparent mutates the concrete command's embedded
-// CommandHeader.Traceparent in place, rewriting the trace context to the
-// supervisor's child span before forwarding to the workspace subprocess.
-func setCommandTraceparent(cmd command.Command, tp string) {
-	switch c := cmd.(type) {
-	case *command.CreateWorkspaceCommand:
-		c.Proto.Traceparent = tp
-	case *command.WriteFilesCommand:
-		c.Proto.Traceparent = tp
-	case *command.RefreshWorkspaceAuthCommand:
-		c.Proto.Traceparent = tp
-	case *command.InvokeClaudeCodeCommand:
-		c.Proto.Traceparent = tp
-	case *command.CleanupWorkspaceCommand:
-		c.Proto.Traceparent = tp
-	case *command.ConfigUpdateCommand:
-		c.CommandHeader.Traceparent = tp
-	}
-}
-
 // routeWorkspaceCmd applies the lifecycle gate and dispatches a WorkspaceCommand
 // to the pool. It is the single path for all workspace-bound dispatch — both
-// the main routeCommand flow and tests use it.
-func (s *Supervisor) routeWorkspaceCmd(ctx context.Context, c command.WorkspaceCommand) protocol.AgentEvent {
+// the main routeCommand flow and the lifecycle tests call it. onProgress is
+// forwarded to Pool.Dispatch (pass nil to drop progress events).
+func (s *Supervisor) routeWorkspaceCmd(ctx context.Context, c command.WorkspaceCommand, onProgress func(protocol.AgentEvent)) protocol.AgentEvent {
 	cfg := s.config.Load()
 	if cfg == nil {
 		return failureEvent(c.Header(), "agent unconfigured")
 	}
-	return s.pool.Dispatch(ctx, c, nil, cfg.MaxWorkspaces)
+	return s.pool.Dispatch(ctx, c, onProgress, cfg.MaxWorkspaces)
 }
 
 // buildClaimRequest constructs the ClaimRequest the claim-loop POSTs to the

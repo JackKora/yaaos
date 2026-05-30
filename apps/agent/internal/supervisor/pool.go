@@ -69,23 +69,29 @@ type SpawnFunc func(ctx context.Context, workspaceID string) (WorkspaceRunner, e
 type WorkspaceState int
 
 const (
-	// Active — the workspace subprocess is running and accepting commands.
-	stateActive WorkspaceState = iota
-	// Defunct — the subprocess exited unexpectedly; the record is kept
+	// StateActive — the workspace subprocess is running and accepting commands.
+	StateActive WorkspaceState = iota
+	// StateDefunct — the subprocess exited unexpectedly; the record is kept
 	// in the registry until reaped so the disk sweep does not remove its dir.
-	stateDefunct
-	// Orphaned — leftover directory from a prior run, discovered at startup.
+	StateDefunct
+	// StateOrphaned — leftover directory from a prior run, discovered at startup.
 	// Runner is nil; the backend decides whether to signal cleanup.
-	stateOrphaned
+	StateOrphaned
 )
 
 // ErrUnknownWorkspace is returned by Dispatch when a non-create command
 // arrives for a workspace_id with no registry record.
 var ErrUnknownWorkspace = errors.New("no workspace runner")
 
-// ErrAtCap is returned by createActiveCapped when the Active-record count
+// ErrAtCap is returned by reserveActiveSlot when the Active-record count
 // has reached the configured max_workspaces limit.
 var ErrAtCap = errors.New("cap reached")
+
+// errSlotTaken is returned by reserveActiveSlot when another concurrent
+// CreateWorkspace dispatch already reserved (or owns) an Active record for
+// the same workspace_id. The loser of that race must not spawn a second
+// runner — it falls through to using the winner's record.
+var errSlotTaken = errors.New("active slot already reserved")
 
 // workspaceRecord is one entry in the pool's registry.
 // It is guarded by Pool.mu for state/path/currentCommandID writes
@@ -101,11 +107,11 @@ type workspaceRecord struct {
 // heartbeatStatus projects the liveness state onto the protocol status string.
 func (r *workspaceRecord) heartbeatStatus() string {
 	switch r.state {
-	case stateActive:
+	case StateActive:
 		return "running"
-	case stateDefunct:
+	case StateDefunct:
 		return "exited"
-	case stateOrphaned:
+	case StateOrphaned:
 		return "unknown"
 	default:
 		return "unknown"
@@ -115,70 +121,24 @@ func (r *workspaceRecord) heartbeatStatus() string {
 // Pool tracks one registry record per workspace_id, serializes commands per
 // workspace, and reaps the runner after `CleanupWorkspace`.
 type Pool struct {
-	spawn    SpawnFunc
-	log      Logger
-	timeouts PoolTimeouts
+	spawn SpawnFunc
+	log   Logger
 
 	mu       sync.Mutex
 	registry map[string]*workspaceRecord
 }
 
-// PoolTimeouts caps how long each command kind can sit inside the
-// workspace process before the pool gives up + emits completed_failure.
-// These are Go-side defaults — InvokeClaudeCode reads Limits.WallclockSeconds
-// off the wire when present (the control plane owns that knob per
-// the "zero biz logic" principle); the other kinds use these defaults until
-// they grow per-command wire fields of their own. Zero values pick
-// conservative defaults.
-type PoolTimeouts struct {
-	CreateWorkspace      time.Duration // default 5m (git clone may be slow)
-	WriteFiles           time.Duration // default 30s
-	RefreshWorkspaceAuth time.Duration // default 30s
-	CleanupWorkspace     time.Duration // default 30s
-	// InvokeClaudeCodeFallback applies when the command omits
-	// Limits.WallclockSeconds (shouldn't happen in production — the
-	// backend always sets it — but defensive defaults beat hangs).
-	// Default: 15m.
-	InvokeClaudeCodeFallback time.Duration
-}
-
-func (t PoolTimeouts) withDefaults() PoolTimeouts {
-	if t.CreateWorkspace == 0 {
-		t.CreateWorkspace = 5 * time.Minute
-	}
-	if t.WriteFiles == 0 {
-		t.WriteFiles = 30 * time.Second
-	}
-	if t.RefreshWorkspaceAuth == 0 {
-		t.RefreshWorkspaceAuth = 30 * time.Second
-	}
-	if t.CleanupWorkspace == 0 {
-		t.CleanupWorkspace = 30 * time.Second
-	}
-	if t.InvokeClaudeCodeFallback == 0 {
-		t.InvokeClaudeCodeFallback = 15 * time.Minute
-	}
-	return t
-}
-
-// NewPool constructs an empty pool. `spawn` is invoked on the first
-// command for a previously unseen workspace_id. Uses default
-// PoolTimeouts; call `NewPoolWithTimeouts` to override.
+// NewPool constructs an empty pool. `spawn` is invoked on the first command
+// for a previously unseen workspace_id. Per-command deadlines come from each
+// command's own Timeout() (wire-supplied for InvokeClaudeCode, Go-side
+// defaults for the rest) — the pool holds no timeout configuration.
 func NewPool(spawn SpawnFunc, log Logger) *Pool {
-	return NewPoolWithTimeouts(spawn, log, PoolTimeouts{})
-}
-
-// NewPoolWithTimeouts constructs a pool with custom per-kind timeouts.
-// Zero-value fields in `timeouts` get conservative defaults; explicit
-// values win.
-func NewPoolWithTimeouts(spawn SpawnFunc, log Logger, timeouts PoolTimeouts) *Pool {
 	if log == nil {
 		log = nullLogger{}
 	}
 	return &Pool{
 		spawn:    spawn,
 		log:      log,
-		timeouts: timeouts.withDefaults(),
 		registry: make(map[string]*workspaceRecord),
 	}
 }
@@ -197,23 +157,38 @@ func (p *Pool) createActive(id string, runner WorkspaceRunner) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.registry[id] = &workspaceRecord{
-		state:  stateActive,
+		state:  StateActive,
 		runner: runner,
 	}
 }
 
-// createActiveCapped inserts a new Active record only if the current count
-// of Active records is strictly less than maxWorkspaces. The check and insert
-// are performed atomically under Pool.mu — two concurrent Dispatch calls
-// cannot both pass a stale count. Returns ErrAtCap if the limit is reached.
+// reserveActiveSlot atomically claims an Active slot for a CreateWorkspace
+// dispatch. The existence check, cap check, and placeholder insert all happen
+// under a single Pool.mu critical section — concurrent same-id creates cannot
+// both pass, and concurrent creates across ids cannot both pass a stale count.
+//
+// The inserted record's runner is nil (a placeholder); the caller spawns the
+// runner outside the lock and calls assignRunner to fill it in. Until then the
+// record is NOT yet sendable — readers gate on runner == nil so no command can
+// observe a record whose runner is still nil (see Dispatch).
+//
+// Returns:
+//   - nil          → this caller reserved the slot and must spawn + assign.
+//   - errSlotTaken → another concurrent create already owns/reserved an Active
+//     record for this id; the caller must NOT spawn (avoids orphaning a runner).
+//   - ErrAtCap     → the Active-record count is at maxWorkspaces.
+//
 // maxWorkspaces <= 0 means no cap (unlimited).
-func (p *Pool) createActiveCapped(id string, runner WorkspaceRunner, maxWorkspaces int) error {
+func (p *Pool) reserveActiveSlot(id string, maxWorkspaces int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if existing, ok := p.registry[id]; ok && existing.state == StateActive {
+		return errSlotTaken
+	}
 	if maxWorkspaces > 0 {
 		activeCount := 0
 		for _, rec := range p.registry {
-			if rec.state == stateActive {
+			if rec.state == StateActive {
 				activeCount++
 			}
 		}
@@ -221,11 +196,32 @@ func (p *Pool) createActiveCapped(id string, runner WorkspaceRunner, maxWorkspac
 			return ErrAtCap
 		}
 	}
-	p.registry[id] = &workspaceRecord{
-		state:  stateActive,
-		runner: runner,
-	}
+	p.registry[id] = &workspaceRecord{state: StateActive}
 	return nil
+}
+
+// assignRunner attaches the spawned runner to a reserved placeholder record.
+// Pool.mu is acquired internally. After this the record is sendable.
+func (p *Pool) assignRunner(id string, runner WorkspaceRunner) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if rec, ok := p.registry[id]; ok {
+		rec.runner = runner
+	}
+}
+
+// lookupSendable returns the record for id when it is Active AND has a
+// non-nil runner — i.e. ready to accept a Send. Returns (nil, false)
+// otherwise: missing, non-Active, or a placeholder whose spawn has not yet
+// assigned a runner. Pool.mu is acquired internally.
+func (p *Pool) lookupSendable(id string) (*workspaceRecord, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rec, ok := p.registry[id]
+	if !ok || rec.state != StateActive || rec.runner == nil {
+		return nil, false
+	}
+	return rec, true
 }
 
 // seedOrphan inserts an Orphaned record for a workspace discovered at startup.
@@ -234,7 +230,7 @@ func (p *Pool) seedOrphan(id string, path string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.registry[id] = &workspaceRecord{
-		state: stateOrphaned,
+		state: StateOrphaned,
 		path:  path,
 	}
 }
@@ -250,7 +246,7 @@ func (p *Pool) markDefunct(id string) {
 	if !ok {
 		return
 	}
-	rec.state = stateDefunct
+	rec.state = StateDefunct
 }
 
 // remove deletes the record from the registry. Called after cleanup
@@ -350,7 +346,7 @@ func (p *Pool) ActiveIDs() []string {
 	defer p.mu.Unlock()
 	var out []string
 	for id, rec := range p.registry {
-		if rec.state == stateActive {
+		if rec.state == StateActive {
 			out = append(out, id)
 		}
 	}
@@ -393,55 +389,48 @@ func (p *Pool) Dispatch(ctx context.Context, cmd command.WorkspaceCommand, onPro
 		return failureEvent(header, "missing workspace_id")
 	}
 
-	// Find or create a registry record. Hold mu only long enough to find/insert;
-	// then release so other workspaces can dispatch in parallel.
-	p.mu.Lock()
-	rec, ok := p.registry[workspaceID]
+	// Find or create a registry record.
+	//
+	// CreateWorkspace reserves an Active slot atomically (existence + cap +
+	// placeholder insert under one Pool.mu critical section), then spawns the
+	// runner outside the lock and assigns it. Two concurrent same-id creates
+	// cannot both reserve — the loser gets errSlotTaken and falls through to
+	// the winner's record without spawning, so exactly one runner exists.
+	//
+	// Non-create commands require an already-sendable record (Active + a
+	// non-nil runner). A reserved-but-not-yet-spawned placeholder is NOT
+	// sendable, so no command can ever observe a record whose runner is nil.
 	isCreate := header.Kind == protocol.KindCreateWorkspace
-	if !ok || (isCreate && rec.state != stateActive) {
-		// No record, OR CreateWorkspace arriving for a Defunct/Orphaned record
-		// (respawn after child-exit or orphan adopt).
-		if !isCreate {
-			p.mu.Unlock()
-			return failureEvent(header, fmt.Sprintf("%s: %s (kind=%s)", ErrUnknownWorkspace, workspaceID, header.Kind))
-		}
-		// Atomic cap check + insert under mu. If at cap, return failure without
-		// spawning — avoids a race where two concurrent claim-workers both see a
-		// stale count and both attempt to insert.
-		p.mu.Unlock()
-		if capErr := p.createActiveCapped(workspaceID, nil, maxWorkspaces); capErr != nil {
+	if isCreate {
+		switch err := p.reserveActiveSlot(workspaceID, maxWorkspaces); {
+		case err == nil:
+			// We won the reservation — spawn and assign the runner.
+			runner, spawnErr := p.spawn(ctx, workspaceID)
+			if spawnErr != nil {
+				// Spawn failed — remove the placeholder so the workspace is
+				// not spuriously reported in Snapshot.
+				p.remove(workspaceID)
+				p.log.Error("pool.spawn_failed", "workspace_id", workspaceID, "err", spawnErr.Error())
+				return failureEvent(header, "spawn: "+spawnErr.Error())
+			}
+			p.assignRunner(workspaceID, runner)
+			p.log.Info("pool.workspace_spawned", "workspace_id", workspaceID)
+		case errors.Is(err, ErrAtCap):
 			p.log.Warn("pool.create_at_cap", "workspace_id", workspaceID, "max", maxWorkspaces)
 			return failureEvent(header, "cap reached")
+		case errors.Is(err, errSlotTaken):
+			// A concurrent create already owns the slot; do not spawn a
+			// second runner. Fall through to the sendable lookup below.
+			p.log.Info("pool.create_slot_taken", "workspace_id", workspaceID)
 		}
-		// Placeholder inserted. Fetch it for the runner assignment below.
-		p.mu.Lock()
-		placeholder := p.registry[workspaceID]
-		p.mu.Unlock()
-
-		runner, err := p.spawn(ctx, workspaceID)
-		if err != nil {
-			// Spawn failed — remove the placeholder so the workspace is
-			// not spuriously reported in Snapshot.
-			p.remove(workspaceID)
-			p.log.Error("pool.spawn_failed", "workspace_id", workspaceID, "err", err.Error())
-			return failureEvent(header, "spawn: "+err.Error())
-		}
-		p.mu.Lock()
-		placeholder.runner = runner
-		rec = placeholder
-		p.mu.Unlock()
-		p.log.Info("pool.workspace_spawned", "workspace_id", workspaceID)
-	} else {
-		p.mu.Unlock()
 	}
 
-	// Non-active records cannot accept non-create commands.
-	p.mu.Lock()
-	if rec.state != stateActive {
-		p.mu.Unlock()
+	// Require a sendable record (Active + spawned runner). Covers both
+	// non-create commands and the create loser that fell through.
+	rec, ok := p.lookupSendable(workspaceID)
+	if !ok {
 		return failureEvent(header, fmt.Sprintf("%s: %s (kind=%s)", ErrUnknownWorkspace, workspaceID, header.Kind))
 	}
-	p.mu.Unlock()
 
 	// Serialize Sends to the same workspace via the per-record mutex.
 	rec.slotMu.Lock()

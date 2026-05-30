@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -107,6 +108,42 @@ func TestPool_MultipleCommandsReuseSameRunner(t *testing.T) {
 	}
 	if spawnCount != 1 {
 		t.Errorf("spawn count: want 1, got %d", spawnCount)
+	}
+}
+
+// TestPool_ConcurrentSameIDCreate_SpawnsExactlyOneRunner proves the
+// check-and-set in reserveActiveSlot: N concurrent CreateWorkspace dispatches
+// for the SAME workspace_id spawn exactly one runner (no orphaned runner from
+// a lost reservation race) and leave exactly one Active registry record. Run
+// with -race to exercise the atomic reservation guard.
+func TestPool_ConcurrentSameIDCreate_SpawnsExactlyOneRunner(t *testing.T) {
+	var spawnCount atomic.Int64
+	inner := InProcessSpawn(workspace.StubHandler{})
+	counter := func(ctx context.Context, id string) (WorkspaceRunner, error) {
+		spawnCount.Add(1)
+		return inner(ctx, id)
+	}
+	pool := NewPool(counter, nil)
+	defer pool.CloseAll(context.Background())
+
+	const total = 16
+	var wg sync.WaitGroup
+	for i := 0; i < total; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			pool.Dispatch(context.Background(), newCreateCmd("ws-shared", fmtWS(i)), nil, 0)
+		}(i)
+	}
+	wg.Wait()
+
+	if got := spawnCount.Load(); got != 1 {
+		t.Errorf("spawn count for concurrent same-id create: want 1, got %d", got)
+	}
+	// Exactly one Active record survives — the at-most-one-runner invariant.
+	ids := pool.ActiveIDs()
+	if len(ids) != 1 || ids[0] != "ws-shared" {
+		t.Errorf("ActiveIDs: want [ws-shared], got %v", ids)
 	}
 }
 
@@ -373,7 +410,7 @@ func TestPool_TraceContinuity_BackendParentToWorkspaceChild(t *testing.T) {
 	ctx, end := tracing.StartSpan(ctx, "supervisor.dispatch.CreateWorkspace")
 
 	// Now rewrite the cmd's traceparent to the supervisor's span (the
-	// same rewrite routeCommand does via setCommandTraceparent before
+	// same rewrite routeCommand does via cmd.SetTraceparent before
 	// pool.Dispatch).
 	cmd := newCreateCmd("ws-1", "c-1").(*command.CreateWorkspaceCommand)
 	cmd.Proto.Traceparent = tracing.InjectTraceparent(ctx)
@@ -457,32 +494,11 @@ func (hangingForeverOps) Cleanup(ctx context.Context, _ *protocol.CleanupWorkspa
 	return command.CleanupResult{}, ctx.Err()
 }
 
-func TestPoolTimeouts_DefaultsApply(t *testing.T) {
-	got := PoolTimeouts{}.withDefaults()
-	if got.CreateWorkspace != 5*time.Minute {
-		t.Errorf("CreateWorkspace default: want 5m got %s", got.CreateWorkspace)
-	}
-	if got.WriteFiles != 30*time.Second {
-		t.Errorf("WriteFiles default: want 30s got %s", got.WriteFiles)
-	}
-	if got.InvokeClaudeCodeFallback != 15*time.Minute {
-		t.Errorf("InvokeClaudeCodeFallback default: want 15m got %s", got.InvokeClaudeCodeFallback)
-	}
-	// Explicit overrides win.
-	got = PoolTimeouts{CreateWorkspace: 1 * time.Second}.withDefaults()
-	if got.CreateWorkspace != 1*time.Second {
-		t.Errorf("explicit override lost: %s", got.CreateWorkspace)
-	}
-}
-
 func TestPool_TimeoutOnSend_EmitsFailureAndDropsRunner(t *testing.T) {
-	// Spawn handler that hangs forever; set CreateWorkspace timeout to
-	// 30ms so Dispatch returns quickly with a timeout-flavoured failure
-	// event. The slot should be dropped + the runner closed.
-	//
-	// Note: PoolTimeouts is no longer used by Dispatch — the command's
-	// own Timeout() is used. We shorten the timeout via a custom
-	// CreateWorkspaceCommand that overrides Timeout().
+	// Spawn handler that hangs forever; the command carries a 30ms timeout
+	// so Dispatch returns quickly with a timeout-flavoured failure event.
+	// The slot should be dropped + the runner closed. Per-command Timeout()
+	// is the sole deadline source — the pool holds no timeout config.
 	pool := NewPool(InProcessSpawn(hangingForeverOps{}), nil)
 	defer pool.CloseAll(context.Background())
 

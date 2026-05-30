@@ -44,6 +44,9 @@ func (c *CreateWorkspaceCommand) Execute(ctx context.Context, ops WorkspaceOps) 
 // MarshalWire returns the flat JSON representation of this command.
 func (c *CreateWorkspaceCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
 
+// SetTraceparent implements Command.
+func (c *CreateWorkspaceCommand) SetTraceparent(tp string) { c.Proto.Traceparent = tp }
+
 // ── WriteFilesCommand ─────────────────────────────────────────────────────────
 
 // WriteFilesCommand writes a batch of files into an existing workspace dir.
@@ -69,6 +72,9 @@ func (c *WriteFilesCommand) Execute(ctx context.Context, ops WorkspaceOps) (Resu
 // MarshalWire returns the flat JSON representation of this command.
 func (c *WriteFilesCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
 
+// SetTraceparent implements Command.
+func (c *WriteFilesCommand) SetTraceparent(tp string) { c.Proto.Traceparent = tp }
+
 // ── RefreshWorkspaceAuthCommand ───────────────────────────────────────────────
 
 // RefreshWorkspaceAuthCommand rotates the auth token held in the workspace slot.
@@ -93,6 +99,9 @@ func (c *RefreshWorkspaceAuthCommand) Execute(ctx context.Context, ops Workspace
 
 // MarshalWire returns the flat JSON representation of this command.
 func (c *RefreshWorkspaceAuthCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
+
+// SetTraceparent implements Command.
+func (c *RefreshWorkspaceAuthCommand) SetTraceparent(tp string) { c.Proto.Traceparent = tp }
 
 // ── InvokeClaudeCodeCommand ───────────────────────────────────────────────────
 
@@ -126,6 +135,9 @@ func (c *InvokeClaudeCodeCommand) Execute(ctx context.Context, ops WorkspaceOps)
 // MarshalWire returns the flat JSON representation of this command.
 func (c *InvokeClaudeCodeCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
 
+// SetTraceparent implements Command.
+func (c *InvokeClaudeCodeCommand) SetTraceparent(tp string) { c.Proto.Traceparent = tp }
+
 // ── CleanupWorkspaceCommand ───────────────────────────────────────────────────
 
 // CleanupWorkspaceCommand tears down a workspace dir.
@@ -150,3 +162,6 @@ func (c *CleanupWorkspaceCommand) Execute(ctx context.Context, ops WorkspaceOps)
 
 // MarshalWire returns the flat JSON representation of this command.
 func (c *CleanupWorkspaceCommand) MarshalWire() ([]byte, error) { return json.Marshal(c.Proto) }
+
+// SetTraceparent implements Command.
+func (c *CleanupWorkspaceCommand) SetTraceparent(tp string) { c.Proto.Traceparent = tp }

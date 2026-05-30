@@ -4,7 +4,7 @@
 
 ## Scope
 
-- **Owns:** `Init` (SDK bootstrap — traces, metrics, logs), `Instruments` (metric instruments), `SetStandardDimensions`/`StandardAttrs` (org_id + agent_id on metrics), `bindMetrics` (instrument resolution).
+- **Owns:** `Init` (SDK bootstrap from env vars — traces, metrics, logs), `BindExporter` (late-binds the OTLP exporter from a ConfigUpdate endpoint), `Instruments` (metric instruments), `SetStandardDimensions`/`StandardAttrs` (org_id + agent_id on metrics), `bindMetrics` (instrument resolution).
 - **Does not own:** the base slog logger (owned by `internal/logging`), span creation (owned by `internal/tracing`), or identity exchange (owned by `internal/identity` + `internal/supervisor`).
 - **Receives:** `Config{ServiceVersion, AgentPodID}` at startup; `(orgID, agentID)` pair after identity exchange.
 - **Emits:** OTel resource + SDK providers wired into the global `otel.*` registries; `Result.SlogHandler` for the logging fan-out.
@@ -29,8 +29,14 @@ OTel resources describe the emitting entity (the pod). Span/metric attributes de
 
 ## Local vs OTLP output
 
-- **OTLP disabled** (`OTEL_EXPORTER_OTLP_ENDPOINT` unset): `Init` is a no-op. Instruments resolve through the SDK no-op provider; `Metrics()` call sites work without nil-checking. No goroutines start.
-- **OTLP enabled**: traces/metrics/logs flow to the configured OTLP/HTTP endpoint. Customers configure their own collector (Datadog, Honeycomb, etc.) downstream; the agent speaks OTLP only.
+The OTLP endpoint arrives by one of two paths; both install the same SDK providers (traces, metrics, logs) and genuinely export.
+
+- **Env-var path** (`OTEL_EXPORTER_OTLP_ENDPOINT` set at startup): `Init` constructs the OTLP/HTTP exporters from the standard `OTEL_EXPORTER_OTLP_*` env vars and wires the providers immediately.
+- **ConfigUpdate path** (no env endpoint at startup): `Init` is a no-op — instruments resolve through the SDK no-op provider, `Metrics()` call sites work without nil-checking, no goroutines start. When a later `ConfigUpdateCommand` carries an `otlp_endpoint`, `BindExporter` constructs the exporters against that endpoint (`WithEndpointURL`; an `otlp_token`, when present, rides as a `Bearer` Authorization header) and installs the providers — late-binding the live pipeline. The supervisor calls it from `ApplyConfig`.
+- **Idempotent install**: `BindExporter` is a no-op when the endpoint is empty or the providers are already installed (env path already ran, or a prior ConfigUpdate already bound) — the pipeline is installed at most once.
+- **Log fan-out is late-bindable**: the logging fan-out is frozen at `logging.Init`, so `Init` always hands back a live log bridge (`Result.SlogHandler`) that `main` wires in once at startup. The bridge drops records until a logger provider exists, then delegates to it — so logs export on the ConfigUpdate path, not just traces and metrics. See `logbridge.go`.
+
+Either path: customers configure their own collector (Datadog, Honeycomb, etc.) downstream; the agent speaks OTLP/HTTP only.
 
 ## Per-command dimensions
 

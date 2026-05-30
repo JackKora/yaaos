@@ -12,6 +12,19 @@ canonicalized (assumed-role → role) and matched against
 bearer is issued via `core.agent_gateway.bearers`. Every other gateway
 endpoint and the WebSocket upgrade authenticate by looking that bearer
 up in the ledger.
+
+Per-endpoint authorization beyond bearer validity:
+- `heartbeat` / `claim_command` / the activity WebSocket bind on a path
+  `agent_id`. They additionally require `bearer.agent_id == path agent_id`
+  (see `_require_self`) so a bearer issued to one pod cannot address
+  another pod's heartbeat row, dispatch queue, or activity channel — a
+  within-org IDOR the `org_context` wrap alone does not close.
+- `post_workspace_event` / `post_command_event` bind on `workspace_id` /
+  `command_id`. The schema records no agent→workspace or agent→command
+  ownership edge (`workspaces` carries `org_id` + the single-flight
+  `current_command_id`/`current_holder_workflow_id`, never an `agent_id`),
+  so authorization for these is the org scope (`org_context`) plus the
+  stale-claim guard in the sink. They are not addressable by `agent_id`.
 """
 
 from __future__ import annotations
@@ -79,6 +92,26 @@ async def _bearer_dep(authorization: str | None = Header(default=None)) -> beare
         return await _verify_bearer(authorization)
     except UnauthorizedError as exc:
         raise HTTPException(status_code=401, detail={"error": "unauthorized", "detail": str(exc)}) from exc
+
+
+def _require_self(agent: bearers.BearerContext, agent_id: UUID) -> None:
+    """Reject when the bearer's resolved agent doesn't match the path `agent_id`.
+
+    Mirrors the WebSocket handler's `ctx.agent_id != agent_id → 4403` guard:
+    a stolen bearer for one pod must not address another pod's row or queue,
+    even within the same org. The `org_context` wrap blocks cross-org access;
+    this closes the within-org IDOR.
+    """
+    if agent.agent_id != agent_id:
+        log.warning(
+            "agent_gateway.agent_mismatch",
+            bearer_agent_id=str(agent.agent_id),
+            path_agent_id=str(agent_id),
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "detail": "bearer agent does not match path agent_id"},
+        )
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
@@ -208,6 +241,7 @@ async def heartbeat(
     agent_id: UUID = Path(...),
     agent: bearers.BearerContext = Depends(_bearer_dep),
 ) -> HeartbeatResponse:
+    _require_self(agent, agent_id)
     async with org_context(agent.org_id, ActorKind.WORKSPACE, actor_id=agent.agent_id):
         async with db_session() as s:
             response = await record_heartbeat(agent_id, request, session=s)
@@ -221,6 +255,7 @@ async def claim_command(
     agent_id: UUID = Path(...),
     agent: bearers.BearerContext = Depends(_bearer_dep),
 ) -> Response:
+    _require_self(agent, agent_id)
     async with org_context(agent.org_id, ActorKind.WORKSPACE, actor_id=agent.agent_id):
         cmd = await claim_next(
             agent_id,

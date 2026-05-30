@@ -33,6 +33,12 @@ type Command interface {
 	// for this command. Durations come from the wire (InvokeClaudeCode) or
 	// Go-side defaults (all other kinds).
 	Timeout() time.Duration
+	// SetTraceparent rewrites the command's embedded W3C traceparent in place.
+	// The supervisor calls this to reparent the command under its dispatch
+	// span before forwarding to the workspace subprocess. Implementing it on
+	// the interface makes the rewrite compiler-exhaustive — a new command kind
+	// cannot silently drop its traceparent.
+	SetTraceparent(tp string)
 }
 
 // WorkspaceCommand is a Command that executes work inside a workspace child
@@ -104,17 +110,23 @@ func Decode(raw []byte) (Command, error) {
 		}
 		return &CleanupWorkspaceCommand{Proto: v}, nil
 	case protocol.KindConfigUpdate:
-		var w configUpdateWire
-		if err := json.Unmarshal(raw, &w); err != nil {
+		var v protocol.ConfigUpdateCommand
+		if err := json.Unmarshal(raw, &v); err != nil {
 			return nil, fmt.Errorf("command: decode ConfigUpdate: %w", err)
 		}
+		// Fail-closed: the spec requires max_workspaces >= 1. Rejecting a
+		// zero/missing cap here keeps a malformed (or future wire-drifted)
+		// ConfigUpdate from silently defaulting the pool open to unlimited.
+		if v.Config.MaxWorkspaces < 1 {
+			return nil, fmt.Errorf("command: ConfigUpdate max_workspaces must be >= 1, got %d", v.Config.MaxWorkspaces)
+		}
 		return &ConfigUpdateCommand{
-			CommandHeader: w.CommandHeader,
+			CommandHeader: v.CommandHeader,
 			Config: AgentConfig{
-				MaxWorkspaces: w.MaxWorkspaces,
-				OTLPEndpoint:  w.OTLPEndpoint,
-				OTLPToken:     secretFrom(w.OTLPToken),
-				OTLPDataset:   w.OTLPDataset,
+				MaxWorkspaces: v.Config.MaxWorkspaces,
+				OTLPEndpoint:  v.Config.OTLPEndpoint,
+				OTLPToken:     secretFrom(v.Config.OTLPToken),
+				OTLPDataset:   v.Config.OTLPDataset,
 			},
 		}, nil
 	default:

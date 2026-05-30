@@ -9,6 +9,13 @@
 - **Receives:** HTTP requests from the Go WorkspaceAgent (wire types in `types.py`, OpenAPI spec in `openapi/agent-api.yaml`).
 - **Emits:** `AgentCommand` to the agent on claim; `HeartbeatResponse.forgotten_workspaces` for reconciliation; enqueues `HANDLE_AGENT_EVENT` outbox task on terminal events.
 
+## Endpoint authorization
+
+Every bearer endpoint authenticates by ledger lookup (`bearers.verify`) and runs inside `org_context(agent.org_id, …)`, which blocks cross-org access. Two endpoints need more:
+
+- **`heartbeat`, `claim_command`, activity WebSocket** — bind on a path `agent_id`. They require `bearer.agent_id == path agent_id` (`_require_self` in `web.py`; the WebSocket closes 4403, the HTTP endpoints raise 403 `forbidden`). Without it a bearer for pod A could bump pod B's heartbeat row or drain B's dispatch queue within the same org.
+- **`post_workspace_event`, `post_command_event`** — bind on `workspace_id` / `command_id`. There is **no agent→workspace or agent→command ownership column** in the schema (`workspaces` carries `org_id` + the single-flight `current_command_id` / `current_holder_workflow_id`, never `agent_id`; dispatch enqueues onto an in-memory FIFO keyed by pod, leaving no persisted edge). Authorization for these is therefore the org scope plus the [stale-claim guard](#stale-claim-guard) — not a per-agent ownership check.
+
 ## Lifecycle gate + claim gating
 
 - **Unconfigured claim** — the agent sends `lifecycle="unconfigured"`. The backend returns a `ConfigUpdateCommand` built from the org/global `max_workspaces` default. No workspace commands are dequeued regardless of queue depth. The agent accumulates queued commands while bootstrapping.

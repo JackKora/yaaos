@@ -154,22 +154,25 @@ type ClaimRequest struct {
 	ActiveWorkspaceIDs []string `json:"active_workspace_ids"` // IDs of Active-state workspaces
 }
 
-// AgentConfig carries the typed runtime configuration delivered via
-// ConfigUpdateCommand. The OTLP token is a credential — never log it.
-type AgentConfig struct {
+// AgentConfigWire is the raw JSON wire shape of the runtime configuration
+// delivered via ConfigUpdateCommand. The "Wire" suffix distinguishes it from
+// command.AgentConfig — the typed form Decode produces, whose OTLPToken is a
+// secret.Secret. OTLPToken is a plain string here (the raw wire value); Decode
+// wraps it in secret.Secret immediately, so this struct must never be logged
+// before that wrapping.
+type AgentConfigWire struct {
 	MaxWorkspaces int    `json:"max_workspaces"`
 	OTLPEndpoint  string `json:"otlp_endpoint"`
-	OTLPToken     string `json:"otlp_token"` // secret — never log
+	OTLPToken     string `json:"otlp_token"` // secret — wrapped by Decode; never log raw
 	OTLPDataset   string `json:"otlp_dataset"`
 }
 
 // ConfigUpdateCommand is the agent-scoped command that delivers runtime
-// configuration. It carries no workspace_id — it applies globally to the
-// agent process. See command.ConfigUpdateCommand for the typed form used
-// after Decode.
+// configuration. It applies globally to the agent process; the workspace_id
+// inherited from the embedded CommandHeader is always empty for this kind.
+// The config payload is nested under `config` (the workspace commands are
+// flat). See command.ConfigUpdateCommand for the typed form used after Decode.
 type ConfigUpdateCommand struct {
-	CommandID   string      `json:"command_id"`
-	Traceparent string      `json:"traceparent"`
-	Kind        CommandKind `json:"kind"`
-	Config      AgentConfig `json:"config"`
+	CommandHeader
+	Config AgentConfigWire `json:"config"`
 }

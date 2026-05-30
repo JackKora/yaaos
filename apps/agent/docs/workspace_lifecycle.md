@@ -21,9 +21,11 @@ These are orthogonal. A live workspace with no in-flight command has `state=Acti
 
 | State | `status` in heartbeat | Runner | When entered |
 |---|---|---|---|
-| `Active` | `"running"` | non-nil | `createActive` on first CreateWorkspace |
+| `Active` | `"running"` | non-nil once spawned | `reserveActiveSlot` + `assignRunner` on CreateWorkspace |
 | `Defunct` | `"exited"` | closed (was non-nil) | `markDefunct` on unexpected child exit |
 | `Orphaned` | `"unknown"` | nil | `seedOrphan` at startup scan |
+
+An Active record is briefly a placeholder (runner nil) between `reserveActiveSlot` and `assignRunner`. It is never sendable in that window — Dispatch gates Sends through `lookupSendable`, which requires a non-nil runner.
 
 ## Transition table
 
@@ -31,10 +33,12 @@ Each edge is a named Pool mutator — no direct state writes.
 
 | From | To | Mutator | Trigger |
 |---|---|---|---|
-| (absent) | Active | `createActive` | CreateWorkspace dispatch |
+| (absent / Defunct / Orphaned) | Active | `reserveActiveSlot` (placeholder) then `assignRunner` (runner) | CreateWorkspace dispatch |
 | (absent) | Orphaned | `seedOrphan` | startup scan finds leftover dir |
 | Active | Defunct | `markDefunct` | runner Send returns an error (child exited or timed out) |
-| any | (removed) | `remove` | CleanupWorkspace succeeds, or backend forgotten-workspaces janitor completes |
+| any | (removed) | `remove` | CleanupWorkspace succeeds, backend forgotten-workspaces janitor completes, or spawn fails after reservation |
+
+`createActive` (runner supplied at insert) remains the direct mutator used by tests and orphan-free seeding; the production CreateWorkspace path uses the `reserveActiveSlot` + `assignRunner` pair so the cap check and the at-most-one-runner guard are one atomic step.
 
 Busy-ness transitions:
 - `setCommandID(id, cmd)` — called when Dispatch begins Send
@@ -64,6 +68,6 @@ The lifecycle is derived from the `config` atomic pointer in the supervisor; the
 
 ## `max_workspaces` cap
 
-`Pool.Dispatch` enforces the cap atomically under the pool mutex via `createActiveCapped`. The cap counts **Active records only** — Defunct and Orphaned records do not count toward it. The check and insert are one operation under `Pool.mu`, so concurrent claim-workers cannot both pass a stale count.
+`Pool.Dispatch` enforces the cap atomically under the pool mutex via `reserveActiveSlot`. The cap counts **Active records only** — Defunct and Orphaned records do not count toward it. The existence check, cap check, and placeholder insert are one operation under `Pool.mu`, so concurrent claim-workers cannot both pass a stale count, and concurrent same-id creates cannot both reserve (the loser gets `errSlotTaken` and never spawns).
 
 The supervisor reads `config.Load().MaxWorkspaces` and passes it as `maxWorkspaces` to `Pool.Dispatch`. The pool itself is config-agnostic — the supervisor supplies the int. A `CreateWorkspace` that would exceed the cap returns `completed_failure "cap reached"`.

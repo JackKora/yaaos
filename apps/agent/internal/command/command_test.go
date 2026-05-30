@@ -149,15 +149,20 @@ func TestDecodeRoundTrip(t *testing.T) {
 	})
 
 	t.Run("ConfigUpdate", func(t *testing.T) {
+		// Nested `config` object — the exact shape the control plane emits
+		// (model_dump of ConfigUpdateCommand{config: AgentConfig{...}}). The
+		// decoder must read the cap and OTLP fields out of the nested object,
+		// not from flat top-level keys.
 		raw := mustMarshal(t, map[string]any{
-			"command_id":     "cmd-6",
-			"workspace_id":   "",
-			"traceparent":    "tp-6",
-			"kind":           "ConfigUpdate",
-			"max_workspaces": 5,
-			"otlp_endpoint":  "https://otel.example.com",
-			"otlp_token":     "secret-tok",
-			"otlp_dataset":   "yaaos-prod",
+			"command_id":  "cmd-6",
+			"traceparent": "tp-6",
+			"kind":        "ConfigUpdate",
+			"config": map[string]any{
+				"max_workspaces": 5,
+				"otlp_endpoint":  "https://otel.example.com",
+				"otlp_token":     "secret-tok",
+				"otlp_dataset":   "yaaos-prod",
+			},
 		})
 		cmd, err := command.Decode(raw)
 		if err != nil {
@@ -187,6 +192,24 @@ func TestDecodeRoundTrip(t *testing.T) {
 			t.Errorf("Config.OTLPDataset = %q, want yaaos-prod", cu.Config.OTLPDataset)
 		}
 	})
+
+	t.Run("ConfigUpdate rejects max_workspaces below 1", func(t *testing.T) {
+		// Fail-closed: the spec requires max_workspaces >= 1. A zero/missing
+		// cap must be rejected at Decode so a malformed (or future-drifted)
+		// ConfigUpdate can never silently default the pool open to unlimited.
+		raw := mustMarshal(t, map[string]any{
+			"command_id":  "cmd-7",
+			"traceparent": "tp-7",
+			"kind":        "ConfigUpdate",
+			"config": map[string]any{
+				"max_workspaces": 0,
+				"otlp_endpoint":  "",
+			},
+		})
+		if _, err := command.Decode(raw); err == nil {
+			t.Fatal("Decode: expected error for max_workspaces=0, got nil")
+		}
+	})
 }
 
 // TestDecodeUnknownKind verifies Decode returns an error for an unrecognised kind.
@@ -207,6 +230,29 @@ func TestDecodeMalformedJSON(t *testing.T) {
 	_, err := command.Decode([]byte(`{not valid json`))
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
+	}
+}
+
+// TestSetTraceparent_AllKinds verifies that SetTraceparent rewrites the
+// embedded CommandHeader.Traceparent for every concrete Command — the
+// compiler-enforced replacement for the old supervisor type-switch. A kind
+// that forgot the method would not satisfy command.Command and fail to
+// appear in this list.
+func TestSetTraceparent_AllKinds(t *testing.T) {
+	const newTP = "00-aabbccddeeff00112233445566778899-1122334455667788-01"
+	cmds := []command.Command{
+		&command.CreateWorkspaceCommand{},
+		&command.WriteFilesCommand{},
+		&command.RefreshWorkspaceAuthCommand{},
+		&command.InvokeClaudeCodeCommand{},
+		&command.CleanupWorkspaceCommand{},
+		&command.ConfigUpdateCommand{},
+	}
+	for _, c := range cmds {
+		c.SetTraceparent(newTP)
+		if got := c.Header().Traceparent; got != newTP {
+			t.Errorf("%T: Traceparent after SetTraceparent = %q, want %q", c, got, newTP)
+		}
 	}
 }
 

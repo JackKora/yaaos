@@ -27,9 +27,11 @@
 - **One kind-switch, in Decode.** You must peek `kind` to know which concrete type to unmarshal into — that is unavoidable. All other routing uses method dispatch on the interface, not kind-switches.
 - **`WorkspaceOps` / `AgentOps` are caller-owned seams** — the command types call the seam; the workspace or supervisor provides the implementation. This keeps the command package free of real I/O and makes unit-testing trivial (supply a fake ops).
 - **Timeouts live on the command type.** `InvokeClaudeCode.Timeout()` prefers `Limits.WallclockSeconds` from the wire (the control plane sets it per invocation); all other kinds use Go-side defaults. `Pool.Dispatch` uses `cmd.Timeout()` directly.
+- **`SetTraceparent` is on the `Command` interface.** Each concrete type rewrites its embedded `CommandHeader.Traceparent`. The supervisor calls `cmd.SetTraceparent(childTP)` to reparent under its dispatch span — a single dispatch, not a kind-switch. A new command kind that forgets the method fails to compile (it can't satisfy `Command`), so the traceparent rewrite is compiler-enforced — unlike a type-switch, which `exhaustive` does not guard.
 - **Wire serialization via `MarshalWire()`.** The `WorkspaceCommand` interface includes `MarshalWire() ([]byte, error)` — each concrete type marshals its `.Proto` field. This is how `pool.inProcessRunner` and `execRunner` write commands to the workspace pipe. Custom wrappers (e.g. test overrides of `Timeout()`) inherit the method via embedding.
 - **Typed results, map wire.** `Execute` returns a typed `Result`; `ToWire()` produces the `map[string]any` that `AgentEvent.Outputs` carries. The backend wire contract stays `map[string]any`; the Go `command`↔`supervisor` boundary is fully typed.
 - **`ConfigUpdateCommand` is an `AgentCommand`, not a `WorkspaceCommand`.** It runs in the supervisor via `AgentOps.ApplyConfig` — never dispatched to a workspace child.
+- **ConfigUpdate decodes through `protocol.ConfigUpdateCommand`.** `Decode` unmarshals the nested wire shape (payload under `config`) into the protocol mirror, then maps it to the typed `command.ConfigUpdateCommand`, wrapping the raw token into `AgentConfig.OTLPToken` (`secret.Secret`). There is no second flat wire struct to drift. Decode is fail-closed on the cap: a `max_workspaces < 1` (spec minimum is 1) is rejected, so a malformed or future-drifted ConfigUpdate can never silently leave the workspace pool uncapped.
 - **The `protocol.AgentCommand` union is gone.** `ClaimCommand` returns `[]byte`; `command.Decode` is the only entry point for turning raw claim-response bytes into a typed `Command`.
 
 ## Gotchas
@@ -63,7 +65,7 @@
 2. Add a `CommandKind` constant to `internal/protocol/types.go`.
 3. If the wire shape is new, add the typed struct to `internal/protocol/types.go`.
 4. Add a result struct + `ToWire()` to `results.go`.
-5. Add the concrete command type + `Execute` to `workspace_commands.go` or `agent_commands.go`.
+5. Add the concrete command type + `Execute` to `workspace_commands.go` or `agent_commands.go`. Implement `SetTraceparent` (set the embedded `CommandHeader.Traceparent`) — the compiler requires it to satisfy `Command`, so the supervisor's reparenting can't silently skip the new kind.
 6. Add one `case` to `Decode` in `command.go`.
 7. The compiler lists any unimplemented interface methods.
 8. Add tests in `command_test.go` (Decode round-trip) and `execute_test.go` (Execute against a fake ops).

@@ -91,7 +91,7 @@ func buildSupervisorForRetryTest(t *testing.T, srv *fakeEventServer, spawnFn Spa
 		claimBackoff:     backoff.New(),
 		heartbeatBackoff: backoff.New(),
 		wsBackoff:        backoff.New(),
-		eventPostBackoff: backoff.NewWithSteps([]time.Duration{time.Millisecond}),
+		eventPostSteps:   []time.Duration{time.Millisecond},
 		dedup:            newDedupCache(dedupCacheSize),
 	}
 	// Apply config so workspace commands are accepted.

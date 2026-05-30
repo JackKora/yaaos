@@ -111,7 +111,7 @@ func TestDedupCache_LookupPromotesToMRU(t *testing.T) {
 		c.store(id, protocol.AgentEvent{CommandID: id})
 	}
 	// Access "a" — now "b" is LRU.
-	c.lookup("a") //nolint:errcheck // return value intentionally ignored
+	_, _ = c.lookup("a")
 
 	// Insert "d" — "b" (LRU) should be evicted, not "a".
 	c.store("d", protocol.AgentEvent{CommandID: "d"})
