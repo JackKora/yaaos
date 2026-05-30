@@ -114,38 +114,33 @@ async def test_status_change_enqueues_fanout_specs(db_session) -> None:  # type:
 async def test_status_change_publishes_general_after_commit(db_session, redis_or_skip) -> None:  # type: ignore[no-untyped-def]
     """complete() publishes a general SSE event with kind 'ticket_status_changed'
     after the transaction commits."""
-    from app.core.redis import reset_pubsub  # noqa: PLC0415
     from app.core.sse import subscribe_general  # noqa: PLC0415
 
-    reset_pubsub()
-    try:
-        org_id, _ = await _make_org_with_members(db_session, num_members=1)
-        ticket_id = await _make_ticket(db_session, org_id)
+    org_id, _ = await _make_org_with_members(db_session, num_members=1)
+    ticket_id = await _make_ticket(db_session, org_id)
 
-        received: list[dict] = []
+    received: list[dict] = []
 
-        async def _consume() -> None:
-            async for event in subscribe_general(org_id):
-                received.append(event)
-                return
+    async def _consume() -> None:
+        async for event in subscribe_general(org_id):
+            received.append(event)
+            return
 
-        consumer = asyncio.create_task(_consume())
-        await asyncio.sleep(0.1)  # let Redis subscription register
+    consumer = asyncio.create_task(_consume())
+    await asyncio.sleep(0.1)  # let Redis subscription register
 
-        from app.domain.tickets import complete  # noqa: PLC0415
+    from app.domain.tickets import complete  # noqa: PLC0415
 
-        await complete(ticket_id, org_id=org_id)
+    await complete(ticket_id, org_id=org_id)
 
-        await asyncio.wait_for(consumer, timeout=3.0)
+    await asyncio.wait_for(consumer, timeout=3.0)
 
-        assert len(received) == 1
-        evt = received[0]
-        assert evt["kind"] == "ticket_status_changed"
-        assert evt["ticket_id"] == str(ticket_id)
-        assert evt["new_status"] == "done"
-        assert "ts" in evt
-    finally:
-        reset_pubsub()
+    assert len(received) == 1
+    evt = received[0]
+    assert evt["kind"] == "ticket_status_changed"
+    assert evt["ticket_id"] == str(ticket_id)
+    assert evt["new_status"] == "done"
+    assert "ts" in evt
 
 
 @pytest.mark.service
@@ -153,42 +148,37 @@ async def test_status_change_publishes_general_after_commit(db_session, redis_or
 async def test_status_change_rollback_emits_no_general_event(db_session, redis_or_skip) -> None:  # type: ignore[no-untyped-def]
     """When publish_general_after_commit is called then the session is rolled back,
     no SSE event must reach subscribers."""
-    from app.core.redis import reset_pubsub  # noqa: PLC0415
     from app.core.sse import (  # noqa: PLC0415
         GeneralEventKind,
         publish_general_after_commit,
         subscribe_general,
     )
 
-    reset_pubsub()
+    org_id = uuid4()
+    received: list[dict] = []
+
+    async def _consume() -> None:
+        async for event in subscribe_general(org_id):
+            received.append(event)
+            return
+
+    consumer = asyncio.create_task(_consume())
+    await asyncio.sleep(0.1)
+
+    publish_general_after_commit(
+        db_session,
+        org_id=org_id,
+        kind=GeneralEventKind.TICKET_STATUS_CHANGED,
+        payload={"ticket_id": str(uuid4()), "new_status": "done"},
+    )
+    await db_session.rollback()
+
+    await asyncio.sleep(0.2)
+
+    consumer.cancel()
     try:
-        org_id = uuid4()
-        received: list[dict] = []
+        await consumer
+    except asyncio.CancelledError:
+        pass
 
-        async def _consume() -> None:
-            async for event in subscribe_general(org_id):
-                received.append(event)
-                return
-
-        consumer = asyncio.create_task(_consume())
-        await asyncio.sleep(0.1)
-
-        publish_general_after_commit(
-            db_session,
-            org_id=org_id,
-            kind=GeneralEventKind.TICKET_STATUS_CHANGED,
-            payload={"ticket_id": str(uuid4()), "new_status": "done"},
-        )
-        await db_session.rollback()
-
-        await asyncio.sleep(0.2)
-
-        consumer.cancel()
-        try:
-            await consumer
-        except asyncio.CancelledError:
-            pass
-
-        assert received == [], "rollback must not emit SSE events"
-    finally:
-        reset_pubsub()
+    assert received == [], "rollback must not emit SSE events"

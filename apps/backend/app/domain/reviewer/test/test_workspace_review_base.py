@@ -25,8 +25,6 @@ from app.core.workspace import (
     ResourceCaps,
     WorkspaceSpec,
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
-    clear_workspace_providers,
     create_workspace,
     register_workflow_context_provider,
     register_workspace_provider,
@@ -82,14 +80,9 @@ def _default_ticket_ctx() -> WorkspaceTicketContext:
 
 
 @pytest.fixture
-def _stub_provider():
-    clear_workspace_providers()
-    clear_workflow_context_provider()
+def _stub_provider(workspace_providers_isolation, workflow_context_provider_isolation):  # type: ignore[no-untyped-def]
     register_workspace_provider(_StubProvider())
     register_workflow_context_provider(_StaticContextProvider(_default_ticket_ctx()))
-    yield
-    clear_workspace_providers()
-    clear_workflow_context_provider()
 
 
 def _ctx() -> CommandContext:
@@ -101,13 +94,15 @@ def _ctx() -> CommandContext:
     )
 
 
-async def test_missing_workspace_id_returns_failure() -> None:
+async def test_missing_workspace_id_returns_failure(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
+    register_workflow_context_provider(_StaticContextProvider(_default_ticket_ctx()))
     outcome = await CodeReview().execute({}, _ctx())
     assert outcome.label == "failure"
     assert "missing workspace_id" in (outcome.failure_reason or "")
 
 
-async def test_invalid_workspace_id_returns_failure() -> None:
+async def test_invalid_workspace_id_returns_failure(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
+    register_workflow_context_provider(_StaticContextProvider(_default_ticket_ctx()))
     outcome = await CodeReview().execute({"workspace_id": "not-a-uuid"}, _ctx())
     assert outcome.label == "failure"
     assert "invalid workspace_id" in (outcome.failure_reason or "")
@@ -151,36 +146,13 @@ async def test_happy_path_forwards_workspace_to_subclass(db_session, _stub_provi
     assert captured["inputs"]["workspace_id"] == ws_id  # type: ignore[index]
 
 
-async def test_no_context_provider_returns_failure(db_session) -> None:  # type: ignore[no-untyped-def]
-    """Workspace resolves but no WorkflowContextProvider is registered →
-    Outcome.failure. Domain bootstrap is expected to install the provider;
-    a missing one is a deployment misconfig, not a workflow input error."""
-    _ = db_session
-    clear_workspace_providers()
-    clear_workflow_context_provider()
-    register_workspace_provider(_StubProvider())
-    org_id = uuid4()
-    spec = WorkspaceSpec(
-        repo=RepoRefForSpec(plugin_id="github", external_id="me/repo"),
-        sha="x",
-        resource_caps=ResourceCaps(),
-    )
-    ws = await create_workspace("in_process", spec, org_id=org_id)
-    try:
-        outcome = await CodeReview().execute({"workspace_id": ws.id}, _ctx())
-        assert outcome.label == "failure"
-        assert "no workflow_context provider" in (outcome.failure_reason or "")
-    finally:
-        clear_workspace_providers()
-
-
-async def test_ticket_not_found_returns_failure(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_ticket_not_found_returns_failure(
+    db_session, workspace_providers_isolation, workflow_context_provider_isolation
+) -> None:  # type: ignore[no-untyped-def]
     """Workspace + provider both resolve but provider returns None for the
     ticket → Outcome.failure. The workflow can't proceed without ticket
     context."""
     _ = db_session
-    clear_workspace_providers()
-    clear_workflow_context_provider()
     register_workspace_provider(_StubProvider())
     register_workflow_context_provider(_StaticContextProvider(context=None))
     org_id = uuid4()
@@ -190,13 +162,9 @@ async def test_ticket_not_found_returns_failure(db_session) -> None:  # type: ig
         resource_caps=ResourceCaps(),
     )
     ws = await create_workspace("in_process", spec, org_id=org_id)
-    try:
-        outcome = await CodeReview().execute({"workspace_id": ws.id}, _ctx())
-        assert outcome.label == "failure"
-        assert "not found" in (outcome.failure_reason or "")
-    finally:
-        clear_workspace_providers()
-        clear_workflow_context_provider()
+    outcome = await CodeReview().execute({"workspace_id": ws.id}, _ctx())
+    assert outcome.label == "failure"
+    assert "not found" in (outcome.failure_reason or "")
 
 
 # ── Subclass contract — applies to all 5 Workspace reviewer commands ────
@@ -213,18 +181,24 @@ _ALL_WORKSPACE_REVIEWER_CMDS = [CodeReview, IncrementalReview, VerifyFix, StaleC
 
 
 @pytest.mark.parametrize("cmd_cls", _ALL_WORKSPACE_REVIEWER_CMDS)
-async def test_all_workspace_reviewers_fail_on_missing_workspace_id(cmd_cls) -> None:
+async def test_all_workspace_reviewers_fail_on_missing_workspace_id(
+    cmd_cls, workflow_context_provider_isolation
+) -> None:  # type: ignore[no-untyped-def]
     """Every Workspace reviewer command inherits the workspace_id-required
     contract from `_WorkspaceReviewCommand`. Regression guard: if someone
     overrides `execute()` on a subclass and forgets to call super(), this
     catches it."""
+    register_workflow_context_provider(_StaticContextProvider(_default_ticket_ctx()))
     outcome = await cmd_cls().execute({}, _ctx())
     assert outcome.label == "failure", f"{cmd_cls.__name__} accepted missing workspace_id"
     assert "missing workspace_id" in (outcome.failure_reason or "")
 
 
 @pytest.mark.parametrize("cmd_cls", _ALL_WORKSPACE_REVIEWER_CMDS)
-async def test_all_workspace_reviewers_fail_on_invalid_workspace_id(cmd_cls) -> None:
+async def test_all_workspace_reviewers_fail_on_invalid_workspace_id(
+    cmd_cls, workflow_context_provider_isolation
+) -> None:  # type: ignore[no-untyped-def]
+    register_workflow_context_provider(_StaticContextProvider(_default_ticket_ctx()))
     outcome = await cmd_cls().execute({"workspace_id": "not-a-uuid"}, _ctx())
     assert outcome.label == "failure", f"{cmd_cls.__name__} accepted invalid workspace_id"
     assert "invalid workspace_id" in (outcome.failure_reason or "")

@@ -17,9 +17,6 @@ from app.core.plugin_kit import PluginMeta
 from app.core.workflow import CommandContext
 from app.core.workspace import (
     WorkspaceTicketContext,
-    _seed_workspace_for_tests,
-    clear_workflow_context_provider,
-    clear_workspace_providers,
     register_workflow_context_provider,
     register_workspace_provider,
 )
@@ -28,6 +25,7 @@ from app.domain.reviewer.commands import PostFindings
 from app.domain.reviewer.models import FindingRow
 from app.domain.tickets import create as create_ticket
 from app.domain.vcs import VCSPullRequest
+from app.testing.seed import seed_workspace as _seed_workspace_for_tests
 
 
 class _StubWorkspaceProvider:
@@ -67,13 +65,8 @@ class _StaticContextProvider:
 
 
 @pytest.fixture
-def _stubs():
-    clear_workspace_providers()
-    clear_workflow_context_provider()
+def _stubs(workspace_providers_isolation, workflow_context_provider_isolation):
     register_workspace_provider(_StubWorkspaceProvider())
-    yield
-    clear_workspace_providers()
-    clear_workflow_context_provider()
 
 
 async def test_post_findings_persists_admitted_findings(db_session, _stubs) -> None:  # type: ignore[no-untyped-def]

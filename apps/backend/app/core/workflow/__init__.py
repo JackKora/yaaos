@@ -4,7 +4,6 @@ See `apps/backend/docs/core_workflow.md`.
 """
 
 from app.core.workflow.recovery import (
-    clear_recovery_policies,
     get_recovery_policy,
     register_recovery_policy,
     registered_recovery_labels,
@@ -16,6 +15,7 @@ from app.core.workflow.service import (
     HitlHistoryEntry,
     WorkflowEngine,
     WorkflowExecutionSummary,
+    bind_engine,
     get_awaiting_human_execution,
     get_engine,
     get_execution_summary,
@@ -28,8 +28,6 @@ from app.core.workflow.service import (
     request_cancel,
     resume_hitl,
     route_workflow,
-    scoped_engine,
-    scoped_workflow,
     start_step,
     unregister_workflow,
 )
@@ -73,7 +71,7 @@ __all__ = [
     "WorkflowExecutionSummary",
     "WorkflowNotFoundError",
     "WorkflowState",
-    "clear_recovery_policies",
+    "bind_engine",
     "get_awaiting_human_execution",
     "get_engine",
     "get_execution_summary",
@@ -89,8 +87,6 @@ __all__ = [
     "request_cancel",
     "resume_hitl",
     "route_workflow",
-    "scoped_engine",
-    "scoped_workflow",
     "start_step",
     "unregister_workflow",
 ]

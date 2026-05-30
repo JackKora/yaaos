@@ -26,7 +26,6 @@ from app.domain.coding_agent.prompts import (
 )
 from app.domain.coding_agent.service import (
     answer_question,
-    clear_plugins,
     get_plugin,
     health_check_all,
     incremental_review,
@@ -36,7 +35,6 @@ from app.domain.coding_agent.service import (
     register_plugin,
     registered_plugin_ids,
     review,
-    scoped_coding_agent,
     stale_check,
     unregister_coding_agent_plugin,
     validate_config,
@@ -106,7 +104,6 @@ __all__ = [
     "assemble_stale_check_prompt",
     "assemble_verify_fix_prompt",
     "build_invocation",
-    "clear_plugins",
     "get_plugin",
     "health_check_all",
     "incremental_review",
@@ -117,7 +114,6 @@ __all__ = [
     "registered_plugin_ids",
     "review",
     "schema_appendix",
-    "scoped_coding_agent",
     "stale_check",
     "unregister_coding_agent_plugin",
     "validate_config",

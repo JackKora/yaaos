@@ -15,7 +15,7 @@
 
 ## Gotchas
 
-- **The bus lives in `core/redis`** — `publish`/`subscribe`/`subscriber_count`, the singleton, and `reset_pubsub()` (tests only) are all imported from there. This module only names channels and shapes events.
+- **The bus lives in `core/redis`** — `publish`/`subscribe`/`subscriber_count` are imported from there. This module only names channels and shapes events.
 - **Workspace-activity events are passed through unchanged** — no envelope, no `ts` stamping (unlike the general pipeline).
 - **`/api/sse` prefix is `ORG_SCOPED`** in `core/auth/types.py` — all routes under `web.py` are auth-enforced without extra work.
 

@@ -20,8 +20,34 @@ def main() -> int:
     # registries — those registries are empty until the modules below load.
     # Imported here (outside `core/tasks`) because `core` cannot depend on
     # `plugins` or `testing` under layering rules.
+    import app.core.redis as _redis  # noqa: PLC0415
+
+    _redis.bind_pubsub(_redis.RedisPubsub())
+
+    import app.core.agent_gateway as _gw  # noqa: PLC0415
+
+    _gw.bind_agent_queues(_gw.AgentQueues())
+    _gw.bind_subscriber_registry(_gw.SubscriberRegistry())
+
+    from app.domain.orgs.email import _Inbox as _EmailInbox  # noqa: PLC0415
+    from app.domain.orgs.email import bind_email_inbox as _bind_inbox  # noqa: PLC0415
+
+    _bind_inbox(_EmailInbox())
+
     import app.core.workflow  # noqa: PLC0415
     import app.domain.reviewer  # noqa: PLC0415
+
+    # Startup assertions — crash loud at boot if wiring is wrong rather
+    # than surfacing mid-flow. Must run after domain/reviewer import so
+    # the workflow-context provider is already installed.
+    from app.core.workspace import (  # noqa: PLC0415
+        assert_workflow_context_provider,
+        register_workspace_recovery_policies,
+    )
+
+    register_workspace_recovery_policies()
+    assert_workflow_context_provider()
+
     import app.plugins.claude_code  # noqa: PLC0415
     import app.plugins.github  # noqa: PLC0415
     import app.plugins.in_memory_workspace  # noqa: F401, PLC0415

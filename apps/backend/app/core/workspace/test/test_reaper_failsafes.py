@@ -24,7 +24,6 @@ from sqlalchemy import select
 
 from app.core.plugin_kit import PluginMeta
 from app.core.workspace import (
-    clear_workspace_providers,
     register_workspace_provider,
 )
 from app.core.workspace.models import WorkspaceRow
@@ -99,10 +98,8 @@ class _GoodProvider:
 
 
 @pytest.fixture(autouse=True)
-def _reset_providers():
-    clear_workspace_providers()
-    yield
-    clear_workspace_providers()
+def _reset_providers(workspace_providers_isolation):
+    del workspace_providers_isolation  # fixture handles clear before+after
 
 
 def _make_row(

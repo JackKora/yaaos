@@ -22,7 +22,6 @@ from app.core.agent_gateway import (
     WorkspaceEvent,
     WorkspaceEventKind,
     claim_next,
-    clear_queues,
     enqueue_command,
     has_any_reachable_agent,
     pick_agent_for_org,
@@ -40,16 +39,9 @@ from app.core.workflow import (
     Workflow,
     WorkflowState,
     get_execution_summary,
-    scoped_engine,
 )
-from app.core.workspace import _seed_workspace_for_tests
-
-
-@pytest.fixture(autouse=True)
-def _isolate_queues() -> None:
-    clear_queues()
-    yield
-    clear_queues()
+from app.testing.seed import seed_workspace as _seed_workspace_for_tests
+from app.testing.workflow_harness import scoped_engine
 
 
 def _make_create_command() -> CreateWorkspaceCommand:
@@ -370,10 +362,14 @@ async def test_progress_event_publishes_to_sse(db_session, redis_or_skip) -> Non
     workspace-activity channel so the SPA's live-tail picks them up."""
     from app.core.audit_log import ActorKind  # noqa: PLC0415
     from app.core.auth import org_context  # noqa: PLC0415
+    from app.core.redis import RedisPubsub, bind_pubsub  # noqa: PLC0415
     from app.core.redis import shutdown as redis_shutdown  # noqa: PLC0415
     from app.core.sse import subscribe_workspace_activity  # noqa: PLC0415
 
     await redis_shutdown()
+    # redis_shutdown() clears the ContextVar binding; restore it so
+    # subscribe_workspace_activity (which calls get_pubsub()) does not raise.
+    bind_pubsub(RedisPubsub())
 
     ws = await _seed_workspace(db_session)
     cmd_id = ws["command_id"]

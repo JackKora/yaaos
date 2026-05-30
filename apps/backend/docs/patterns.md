@@ -68,10 +68,11 @@ Exceptions: `core/database` (Postgres connections), `core/observability` (log fi
 - **No `*Row` types in `__all__`.** SQLAlchemy Row/mapped classes never appear in any module's `__all__` or `tach expose` list. Every public API that surfaces persisted state returns the module's Pydantic value object, not the Row. Foreign table access via an imported Row name fails tach `check --interfaces` — the intended path is the owning module's public service API.
 - **No circular module dependencies.** `forbid_circular_dependencies = true` is emitted by `bin/sync_modules` into `tach.toml`; tach rejects any new cycle under `tach check --interfaces` (the CI command). Canary `test_injected_cycle_is_rejected` in `apps/backend/bin/test_module_boundaries.py` verifies the guard fires.
 - **Layer ordering: `core < domain < plugins < testing`.** Enforced by `check_layering()` in `bin/sync_modules` — tach's `--interfaces` mode silently ignores tach-native `layers` config, so the Python check is the sole enforcer. The allowlist `PERMITTED_CROSS_LAYER_EDGES` is empty (`frozenset()`); no permitted cross-layer edges exist. Canary `test_injected_core_to_domain_is_rejected` in `apps/backend/bin/test_module_boundaries.py` verifies the guard fires.
-- **`bin/sync_modules` enforces two AST-level rules at every CI run:**
+- **`bin/sync_modules` enforces three AST-level rules at every CI run:**
   - **Rule-1** — a name in `__all__` that resolves to a SQLAlchemy mapped/Row class (class inheriting from `*Base*`, or any name imported `from <any>.models`) is rejected with exit 2.
   - **Rule-5** — a function listed in `__all__` whose return annotation or parameter annotations reference a Row type is rejected with exit 2.
-  - Both rules are AST-based (import-free, env-free, `# noqa`-immune). `apps/backend/bin/test_module_boundaries.py` carries canary tests that inject real violations into the tickets module and assert non-zero exit.
+  - **Test-seam export rule** — a `core`/`domain`/`plugins` `__all__` symbol is rejected iff its name matches a test-seam pattern (`reset_*`, `clear_*`, `scoped_*`, `*_for_tests`, `_seed_*`, `set_*_override`, `set_test_*`, `get_test_*`) AND it has zero production importers (no importer outside `*/test/`, `app/testing/`, and the top-level `conftest.py`; `app/web.py` and `app/worker.py` always count as production). The intersection is precise: name-only would false-positive on real production APIs (`clear_cookie_attrs`, `clear_vcs`); usage-only would false-positive on public types tests construct. No allowlist — a symbol matching both conditions is a test seam that leaked. Canary `test_test_helper_export_is_rejected` in `apps/backend/bin/test_module_boundaries.py` verifies the guard fires; `test_clean_tree_has_no_test_helper_exports` verifies zero real violations on the clean tree.
+  - All three rules are AST-based (import-free, env-free, `# noqa`-immune). `apps/backend/bin/test_module_boundaries.py` carries canary tests that inject real violations and assert non-zero exit.
 - **`bin/check_table_access` enforces two additional rules that tach cannot see:**
   - **Raw-SQL ownership** — AST-parses every `app/**/models.py` to build `table_name → owning_module`, then scans every production `.py` under `app/` (excluding `test/` dirs) for `text(...)` / `sa_text(...)` calls. Any call that references a table owned by a different module fails. Non-literal args (f-strings, variables) also fail — all auditable raw SQL must be a string literal.
   - **Suppression guard** — fails on any `# tach-ignore` directive in any `.py` under `app/` (prod + tests). One suppression reopens the import hole the tach interface check depends on.
@@ -116,7 +117,8 @@ Runs the full module-sync sequence:
 3. Check internal imports (no relative imports across boundaries, no `__init__` self-imports).
 4. Check layering.
 5. Check `__all__` boundary violations (Rule-1: no Row class in `__all__`; Rule-5: no Row type in a public function's annotations).
-6. Run `tach check --interfaces`.
+6. Check test-seam exports (seam-name AND zero production importers — see rule below).
+7. Run `tach check --interfaces`.
 
 Never hand-edit `tach.toml`. Re-run `bin/sync_modules` after adding or changing a module interface.
 
@@ -258,7 +260,7 @@ The workspace state machine accepts one in-flight AgentCommand at a time. [`core
 
 ### Recovery policy registry
 
-AgentCommand failure labels (e.g. `auth_expired`) map to lifecycle WorkflowCommand kinds (e.g. `RefreshWorkspaceAuth`) via `core/workflow.register_recovery_policy` (`app/core/workflow/recovery.py`). The engine consults the registry on a recoverable failure and inserts the recovery command before re-dispatching the original. Producers (e.g. `core/workspace`) register their policies at module import time.
+AgentCommand failure labels (e.g. `auth_expired`) map to lifecycle WorkflowCommand kinds (e.g. `RefreshWorkspaceAuth`) via `core/workflow.register_recovery_policy` (`app/core/workflow/recovery.py`). The engine consults the registry on a recoverable failure and inserts the recovery command before re-dispatching the original. Producers (e.g. `core/workspace`) register their policies via an explicit startup call (`register_workspace_recovery_policies()`) in `web.py` / `worker.py` — not at import time.
 
 ## WorkspaceProvider contract
 
@@ -360,7 +362,7 @@ Naming: `test_<flow>_service.py` in the owning module's `test/` directory. Owner
 
 Marker: every service test is decorated `@pytest.mark.service`. Run only the service tier with `pytest -m service`; run the fast unit-only loop with `pytest -m "not service"`. The default `bin/ci` invocation runs both — the marker is for developer ergonomics, not a CI skip.
 
-Assert on the **durable state production reads** — audit rows by kind, posted-comment count via the stub vcs plugin, finding state in the aggregate, `last_refresh_status`, the test inbox (`get_test_inbox()`), event-bus publications. Don't assert on intermediate log lines unless the log is the contract.
+Assert on the **durable state production reads** — audit rows by kind, posted-comment count via the stub vcs plugin, finding state in the aggregate, `last_refresh_status`, the email inbox (via `app.testing.seed.read_email_inbox()`), event-bus publications. Don't assert on intermediate log lines unless the log is the contract.
 
 ### Integration test pattern
 
@@ -378,9 +380,10 @@ Tests obey the **same import rules as production code** — enforced by `tach ch
 - No `*Row` types in cross-module imports. If a test in module B needs to inspect persisted state owned by module A, use module A's targeted public read function (e.g. `get_token_by_hash`, `get_session_by_hash`) or assert on the observable outcome instead.
 - No test-only seams that bypass module interfaces. If a seam is needed, it belongs in `app/testing/` — but `app/testing/` is itself tach-governed; it may only import from `__all__`-gated module paths.
 - Service tests of multi-hop pipelines are sliced per-hop: each service test exercises one entry point end-to-end; chain tests by asserting on the durable state that the next hop reads, not by calling internal functions of the next module.
-- Singleton reset for test isolation: never poke private state via a submodule attribute (`mod._svc._singleton = None`). Use a named helper instead. Two flavors by reach:
-  - **Cross-module reach** (module A's tests reset module B's state) → public symbol in B's `__all__` and tach interface. Example: `redis.reset_pubsub()` — called from reviewer / tickets / github / agent_gateway tests that exercise SSE flows.
-  - **Intra-module reach only** (module's own `test/` directory) → private `_*_for_tests` helper in B's `service.py` (or sibling submodule), NOT in `__all__`, NOT in tach `expose`. Tests reach it via direct submodule import — intra-module, tach-permitted. Examples: `redis._reset_clients_for_tests`, `agent_gateway.subscribers._reset_subscriber_singleton_for_tests`, `orgs.onboarding._reset_contributors_for_tests`.
+- Singleton reset for test isolation: never poke private state via a submodule attribute (`mod._svc._singleton = None`). Use a named helper instead.
+  - **Intra-module reach only** (module's own `test/` directory) → private `_*_for_tests` helper in the module's `service.py` (or sibling submodule), NOT in `__all__`, NOT in tach `expose`. Tests reach it via direct submodule import — intra-module, tach-permitted. Example: `redis._reset_clients_for_tests`, `orgs.onboarding._reset_contributors_for_tests`.
+  - **Cross-module test machinery** (isolation fixtures, seed/cleanup, workflow harness) → lives in `app/testing/`, which calls each module's *production* `bind_*`/`register_*` APIs only. A test helper must NEVER be reachable across modules — not in `__all__`, not imported from another module's tests.
+  - **ContextVar-bound holders** — for process-local in-memory singletons (Redis pubsub, agent dispatch queues, subscriber registry, email inbox) the preferred isolation pattern is ContextVar + `bind_*` production DI seam + autouse fixture in `app/testing/isolation`. No explicit reset is needed in individual tests — the autouse fixture binds a fresh instance per test. See `app/core/redis/pubsub.py` as the reference implementation.
 
 ### DI over `@patch`
 
@@ -423,17 +426,19 @@ Don't wrap every domain function — noise hurts more than detail helps.
 
 ## `scoped_*` context managers for import-time registries
 
-Modules with import-time registries expose `register_*`, `unregister_*`, and `scoped_*` in `__all__`. Tests use `with scoped_*(...)` for temporary registrations — cleanup is automatic on block exit, even on exception.
+Modules with import-time registries expose `register_*` and `unregister_*` in `__all__`. Tests use `with scoped_*(...)` for temporary registrations — cleanup is automatic on block exit, even on exception. The `scoped_*` context managers themselves are NOT in a production module's `__all__` — they live in `app/testing/isolation` (cross-module callers) or in the submodule only (intra-module callers).
 
-Modules with this pattern today: `core.workflow` (`scoped_engine`, `scoped_workflow`), `domain.vcs` (`scoped_vcs_plugin`), `domain.coding_agent` (`scoped_coding_agent`), `core.tasks` (`scoped_task_registration`).
+`app.testing.isolation.scoped_vcs_plugin(plugin)` — cross-module tests import from `app.testing.isolation`; intra-module tests in `domain/vcs/test/` may import from `app.domain.vcs.registry` directly.
 
-`core.workflow.scoped_engine()` is the standard test-isolation helper for tests that register workflows or commands. It saves the current engine, creates a fresh one, yields it, then restores the prior one on exit — replacing the former `svc._engine = None; eng = get_engine(); svc._engine = eng; ... svc._engine = None` pattern.
+`app.testing.workflow_harness.scoped_engine()` is the standard test-isolation helper for tests that register workflows or commands. It swaps in a fresh engine via `core.workflow.bind_engine`, yields it, and restores the prior engine on exit — even on exception. Import from `app.testing.workflow_harness`, not from `core.workflow`. `scoped_workflow` follows the same contract and lives in the same harness module.
+
+`domain.coding_agent.service.scoped_coding_agent(plugin)` and `core.tasks.service.scoped_task_registration(task_ref)` follow the same contract but are intra-module helpers — they live in their submodule's `service.py` and are NOT re-exported from the package `__all__`. Tests inside those modules import them via direct submodule import.
 
 Rules:
 - No wholesale-wipe between tests. Test exactly what you need, clean it up with the scoped helper.
 - `unregister_*` is a no-op if the id is absent — safe to call in finally blocks.
 - `scoped_*` registers on entry, unregisters on exit. The yielded value is the same object passed in.
-- `scoped_task_registration(task_ref)` is the tasks variant: call `@task(name)(fn)` to get a `TaskRef`, then wrap the test body in `with scoped_task_registration(ref)`. On exit the name is popped from the broker registry so subsequent tests can reuse the same name.
+- `scoped_task_registration(task_ref)` — call `@task(name)(fn)` to get a `TaskRef`, then wrap the test body in `with scoped_task_registration(ref)`. On exit the name is popped from the broker registry so subsequent tests can reuse the same name.
 
 ## Subscription self-cleanup (async generator pattern)
 

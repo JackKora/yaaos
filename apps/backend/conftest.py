@@ -29,6 +29,19 @@ os.environ.setdefault("YAAOS_REAPER_INTERVAL_SECONDS", "1")
 os.environ.setdefault("YAAOS_HEARTBEAT_INTERVAL_SECONDS", "1")
 os.environ.setdefault("YAAOS_MCP_TOKEN_SWEEP_INTERVAL_SECONDS", "1")
 
+# Re-export autouse isolation fixtures so pytest auto-discovers them. The import
+# is deferred until after env vars are set because app.testing.isolation triggers
+# app.core.redis → app.core.config at import time.
+from app.testing.isolation import (  # noqa: F401
+    agent_queues_isolation,
+    email_inbox_isolation,
+    pubsub_isolation,
+    recovery_policies_isolation,
+    subscriber_registry_isolation,
+    workflow_context_provider_isolation,
+    workspace_providers_isolation,
+)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _quiet_pydantic_warnings() -> None:
@@ -161,7 +174,8 @@ async def db_session(_migrated_schema: None) -> AsyncIterator:
     from sqlalchemy import event  # noqa: PLC0415
     from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
 
-    from app.core.database import get_engine, set_test_session_override  # noqa: PLC0415
+    from app.core.database import get_engine  # noqa: PLC0415
+    from app.core.database.service import set_test_session_override  # noqa: PLC0415
 
     engine = get_engine()
     async with engine.connect() as connection:

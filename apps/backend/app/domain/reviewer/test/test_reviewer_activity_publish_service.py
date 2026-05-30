@@ -17,7 +17,6 @@ import pytest
 
 from app.core.audit_log import ActorKind
 from app.core.auth import org_context
-from app.core.redis import reset_pubsub
 from app.core.sse import subscribe_workspace_activity
 from app.core.workflow import CommandContext
 from app.domain.coding_agent import ActivityEvent
@@ -35,7 +34,6 @@ async def test_reviewer_activity_publishes_to_org_scoped_channel() -> None:
     The subscriber must be set up BEFORE the publish fires — small sleep
     ensures Redis SUBSCRIBE is registered before the publisher sends.
     """
-    reset_pubsub()
     org_id = uuid4()
     wfx_id = uuid4()
 
@@ -79,7 +77,6 @@ async def test_reviewer_activity_publishes_to_org_scoped_channel() -> None:
 @pytest.mark.service
 async def test_reviewer_activity_no_subscribers_is_silent() -> None:
     """Publishing when no subscriber is listening must not raise — best-effort."""
-    reset_pubsub()
     org_id = uuid4()
     wfx_id = uuid4()
 

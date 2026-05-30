@@ -61,9 +61,10 @@ class _WorkspaceReviewCommand:
        between provision and review).
     2. Fetches the `WorkspaceTicketContext` (org_id, plugin_id, repo,
        payload, pr_id) for the workflow's ticket via the registered
-       `WorkflowContextProvider`. Missing provider or missing ticket → also
-       `Outcome.failure` — the workflow can't proceed without org context
-       to look up plugins / build review context.
+       `WorkflowContextProvider`. Missing ticket → `Outcome.failure` — the
+       workflow can't proceed without org context to look up plugins / build
+       review context. A missing provider is a boot-time wiring error and
+       raises at startup via `assert_workflow_context_provider()`.
     3. Hands the resolved (workspace, ticket_ctx, inputs, ctx) to the
        subclass via `_run_in_workspace(...)`.
 
@@ -90,9 +91,6 @@ class _WorkspaceReviewCommand:
             return Outcome.failure(reason=f"workspace {ws_id} not resolvable")
 
         provider = get_workflow_context_provider()
-        if provider is None:
-            return Outcome.failure(reason="no workflow_context provider registered")
-
         try:
             ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         except Exception as exc:
@@ -898,8 +896,6 @@ class SecretsScan:
         del inputs
 
         provider = get_workflow_context_provider()
-        if provider is None:
-            return Outcome.failure(reason="no workflow_context provider registered")
         try:
             ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         except Exception as exc:
@@ -1012,9 +1008,6 @@ class PostFindings(_LocalReviewCommand):
             return Outcome.failure(reason=f"workspace {ws_id} not resolvable")
 
         provider = get_workflow_context_provider()
-        if provider is None:
-            return Outcome.failure(reason="no workflow_context provider registered")
-
         ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         if ticket_ctx is None or ticket_ctx.pr_id is None:
             log.info(
@@ -1192,9 +1185,6 @@ class ResolveFinding(_LocalReviewCommand):
             return Outcome.failure(reason=f"invalid confidence: {verdict.get('confidence')!r}")
 
         provider = get_workflow_context_provider()
-        if provider is None:
-            return Outcome.failure(reason="no workflow_context provider registered")
-
         try:
             ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         except Exception as exc:
@@ -1276,9 +1266,6 @@ class ArchiveStaleFindings(_LocalReviewCommand):
             return Outcome.success(outputs={"archived_count": 0})
 
         provider = get_workflow_context_provider()
-        if provider is None:
-            return Outcome.failure(reason="no workflow_context provider registered")
-
         try:
             ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         except Exception as exc:
@@ -1371,9 +1358,6 @@ class PostReply(_LocalReviewCommand):
             return Outcome.failure(reason=f"invalid finding_id: {finding_id_raw!r}")
 
         provider = get_workflow_context_provider()
-        if provider is None:
-            return Outcome.failure(reason="no workflow_context provider registered")
-
         ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         if ticket_ctx is None or ticket_ctx.pr_id is None:
             log.info(

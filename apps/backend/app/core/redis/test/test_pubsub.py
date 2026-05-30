@@ -1,6 +1,6 @@
 """core/redis JSON pub/sub bus round-trip against real Redis: publish reaches
-subscribers, subscriber bookkeeping balances on iterator exit, singleton
-identity.
+subscribers, subscriber bookkeeping balances on iterator exit, get_pubsub
+returns the bound instance.
 
 Requires a live Redis at `settings.redis_url`. Tests skip cleanly when Redis
 is unreachable — local dev without a Redis container shouldn't be blocked.
@@ -13,15 +13,8 @@ import uuid
 
 import pytest
 
-from app.core.redis import publish, reset_pubsub, subscribe, subscriber_count
+from app.core.redis import publish, subscribe, subscriber_count
 from app.core.redis.pubsub import RedisPubsub, get_pubsub
-
-
-@pytest.fixture(autouse=True)
-def _isolate_singleton():
-    reset_pubsub()
-    yield
-    reset_pubsub()
 
 
 def _unique_channel() -> str:
@@ -87,7 +80,10 @@ async def test_subscriber_count_balances_on_iterator_exit(redis_or_skip) -> None
 
 
 @pytest.mark.asyncio
-async def test_get_pubsub_returns_singleton() -> None:
-    # Construction is lazy and doesn't connect — safe without Redis.
-    assert get_pubsub() is get_pubsub()
-    assert isinstance(get_pubsub(), RedisPubsub)
+async def test_get_pubsub_returns_bound_instance() -> None:
+    # pubsub_isolation (autouse) has already called bind_pubsub; just verify
+    # get_pubsub() works and returns a RedisPubsub. No Redis needed.
+    instance = get_pubsub()
+    assert isinstance(instance, RedisPubsub)
+    # Stable across calls within the same Context.
+    assert get_pubsub() is instance

@@ -10,7 +10,6 @@ import pytest
 from app.core.workspace import (
     RepoRefForSpec,
     WorkspaceSpec,
-    clear_workspace_providers,
     get_provider,
     register_workspace_provider,
 )
@@ -22,10 +21,8 @@ from app.testing.stub_workspace import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry() -> None:
-    clear_workspace_providers()
-    yield
-    clear_workspace_providers()
+def _reset_registry(workspace_providers_isolation) -> None:
+    del workspace_providers_isolation  # fixture handles clear before+after
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,6 @@ import structlog
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.workflow import register_recovery_policy
 from app.core.workspace.models import WorkspaceRow
 
 log = structlog.get_logger("core.workspace.dispatch")
@@ -84,6 +83,11 @@ async def release_claim(
     return bool(result.rowcount)
 
 
-# Register workspace's boot-level recovery policy into the workflow engine's
-# registry. `workspace → workflow` is the kept direction (see commands.py).
-register_recovery_policy(failure_label="auth_expired", command_kind="RefreshWorkspaceAuth")
+def register_workspace_recovery_policies() -> None:
+    """Register workspace-level recovery policies into the workflow engine's
+    recovery registry. Called explicitly from web.py / worker.py after the
+    workspace module is loaded — not at import time, so the process controls
+    when registration happens."""
+    from app.core.workflow import register_recovery_policy  # noqa: PLC0415
+
+    register_recovery_policy(failure_label="auth_expired", command_kind="RefreshWorkspaceAuth")

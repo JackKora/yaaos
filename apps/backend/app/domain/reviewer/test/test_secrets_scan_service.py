@@ -10,12 +10,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
-
 from app.core.workflow import CommandContext
 from app.core.workspace import (
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
     register_workflow_context_provider,
 )
 from app.domain.reviewer.commands import SecretsScan
@@ -41,13 +38,7 @@ def _cmd_ctx() -> CommandContext:
     )
 
 
-@pytest.fixture(autouse=True)
-def _reset_context():
-    yield
-    clear_workflow_context_provider()
-
-
-async def test_secrets_scan_skips_when_diff_contains_aws_key() -> None:
+async def test_secrets_scan_skips_when_diff_contains_aws_key(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     """A `+`-prefixed line with an AWS access-key pattern triggers
     `Outcome.success(label="skip", outputs.reason="secrets_detected")`
     and posts the warning Review via the VCS plugin."""
@@ -79,7 +70,7 @@ async def test_secrets_scan_skips_when_diff_contains_aws_key() -> None:
     assert "aws_access_key" in (review.summary_body or "")
 
 
-async def test_secrets_scan_advances_when_diff_is_clean() -> None:
+async def test_secrets_scan_advances_when_diff_is_clean(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     """A clean diff returns `Outcome.success` with rule_id=None — no
     `skip` label, so the workflow advances to ProvisionWorkspace."""
     pr_external_id = "pr-clean"
@@ -105,7 +96,7 @@ async def test_secrets_scan_advances_when_diff_is_clean() -> None:
     assert stub.posted_reviews == []
 
 
-async def test_secrets_scan_advances_when_no_pr_link() -> None:
+async def test_secrets_scan_advances_when_no_pr_link(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     """Workflows whose ticket has no `pr_id` skip the gate as a no-op —
     upstream `CheckShouldReview` already handled ticket-payload signals."""
     register_workflow_context_provider(
@@ -126,7 +117,7 @@ async def test_secrets_scan_advances_when_no_pr_link() -> None:
     assert outcome.outputs.get("rule_id") is None
 
 
-async def test_secrets_scan_advances_when_diff_fetch_fails() -> None:
+async def test_secrets_scan_advances_when_diff_fetch_fails(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     """Diff-fetch failures are best-effort — log + advance. We don't
     want a transient VCS hiccup to block reviews."""
 
@@ -138,7 +129,7 @@ async def test_secrets_scan_advances_when_diff_fetch_fails() -> None:
         async def fetch_diff(self, external_id):  # type: ignore[no-untyped-def]
             raise RuntimeError("github transient")
 
-    from app.domain.vcs import scoped_vcs_plugin  # noqa: PLC0415
+    from app.testing.isolation import scoped_vcs_plugin  # noqa: PLC0415
 
     with scoped_vcs_plugin(_RaisingPlugin()):  # type: ignore[arg-type]
         register_workflow_context_provider(

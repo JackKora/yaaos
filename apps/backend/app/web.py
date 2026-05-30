@@ -14,8 +14,10 @@ from app.core import config  # noqa: F401
 # database — anything imported later (tasks, sse, agent_gateway)
 # registers afterwards and therefore shuts down first.
 from app.core import database  # noqa: F401
-from app.core import redis  # noqa: F401
+from app.core import redis
 from app.core import observability
+
+redis.bind_pubsub(redis.RedisPubsub())
 
 observability.configure(role="app")
 
@@ -28,13 +30,19 @@ from app.core import audit_log, workspace  # noqa: F401, E402
 # 4a. workflow engine + agent gateway. Workflow engine registers the
 # three taskiq task names at import; agent_gateway registers `/v1/*` routes.
 from app.core import workflow as _core_workflow  # noqa: F401, E402
-from app.core import agent_gateway as _core_agent_gateway  # noqa: F401, E402
+from app.core import agent_gateway as _core_agent_gateway  # noqa: E402
+
+_core_agent_gateway.bind_agent_queues(_core_agent_gateway.AgentQueues())
+_core_agent_gateway.bind_subscriber_registry(_core_agent_gateway.SubscriberRegistry())
 
 # 4b. Identity + tenancy + auth middleware. Must be imported before
 # any domain module that declares `Depends(require(...))` or
 # `Depends(public_route)` so the contextvars + middleware classes exist.
 from app.core import identity  # noqa: F401, E402
 from app.domain import orgs  # noqa: F401, E402
+from app.domain.orgs.email import _Inbox, bind_email_inbox  # noqa: E402
+
+bind_email_inbox(_Inbox())
 from app.core import auth  # noqa: F401, E402
 from app.core import sessions  # noqa: F401, E402
 
@@ -56,6 +64,18 @@ from app.domain import coding_agent  # noqa: F401, E402
 from app.domain import pull_requests  # noqa: F401, E402
 from app.domain import tickets  # noqa: F401, E402
 from app.domain import reviewer  # noqa: F401, E402
+
+# 5a. Startup assertions — must run after domain/reviewer import so the
+# workflow-context provider and recovery policies are registered by the
+# domain module's own bootstrap. These crash the process loudly at startup
+# if the wiring is wrong, rather than surfacing as a mid-flow None.
+from app.core.workspace import (  # noqa: E402
+    assert_workflow_context_provider,
+    register_workspace_recovery_policies,
+)
+
+register_workspace_recovery_policies()
+assert_workflow_context_provider()
 from app.domain import intake  # noqa: F401, E402
 from app.domain import plugins as _domain_plugins  # noqa: F401, E402
 from app.domain.plugins import web as _domain_plugins_web  # noqa: F401, E402

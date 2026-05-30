@@ -23,15 +23,12 @@ import pytest
 from app.core.audit_log import ActorKind
 from app.core.auth import org_context
 from app.core.plugin_kit import PluginMeta
-from app.core.redis import reset_pubsub
 from app.core.sse import subscribe_workspace_activity
 from app.core.tasks import drain_once, get_pending_task_names
-from app.core.workflow import WorkflowState, get_execution_summary, scoped_engine
+from app.core.workflow import WorkflowState, get_execution_summary
 from app.core.workspace import (
     ALL_LIFECYCLE_COMMANDS,
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
-    clear_workspace_providers,
     register_workflow_context_provider,
     register_workspace_provider,
 )
@@ -40,6 +37,7 @@ from app.domain.reviewer.commands import ALL_LOCAL_COMMANDS, ALL_WORKSPACE_COMMA
 from app.domain.reviewer.workflows import pr_review_v1
 from app.domain.tickets import create as create_ticket
 from app.testing.fake_coding_agent import register_fake_coding_agent
+from app.testing.workflow_harness import scoped_engine
 
 pytestmark = pytest.mark.usefixtures("redis_or_skip")
 
@@ -78,19 +76,13 @@ class _StaticCtxProvider:
 
 
 @pytest.fixture
-def _engine_with_in_memory():  # type: ignore[no-untyped-def]
-    clear_workspace_providers()
-    clear_workflow_context_provider()
-    reset_pubsub()
+def _engine_with_in_memory(workspace_providers_isolation, workflow_context_provider_isolation):  # type: ignore[no-untyped-def]
     register_workspace_provider(_StubWorkspaceProvider())
     with scoped_engine() as eng:
         for cmd in (*ALL_LIFECYCLE_COMMANDS, *ALL_WORKSPACE_COMMANDS, *ALL_LOCAL_COMMANDS):
             eng.register_command(cmd)
         eng.register_workflow(pr_review_v1)
         yield eng
-    clear_workspace_providers()
-    clear_workflow_context_provider()
-    reset_pubsub()
 
 
 async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]

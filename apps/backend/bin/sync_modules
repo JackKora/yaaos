@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import fnmatch
 import subprocess
 import sys
 from pathlib import Path
@@ -328,6 +329,127 @@ def check_all_boundary_violations(modules: list[tuple[str, str]]) -> list[str]:
     return errors
 
 
+# Glob patterns that flag a symbol as a potential test-seam name.
+# Intersection rule: flagged ONLY when name matches AND has zero production importers.
+_TEST_SEAM_PATTERNS: tuple[str, ...] = (
+    "reset_*",
+    "clear_*",
+    "scoped_*",
+    "*_for_tests",
+    "_seed_*",
+    "set_*_override",
+    "set_test_*",
+    "get_test_*",
+)
+
+# Files that count as production importers — the composition roots that legitimately
+# call bind_* and other seam-named symbols at startup.
+_PRODUCTION_ROOTS: frozenset[str] = frozenset(
+    [
+        str(APP / "web.py"),
+        str(APP / "worker.py"),
+    ]
+)
+
+
+def _is_seam_name(name: str) -> bool:
+    """Return True iff *name* matches any test-seam glob pattern."""
+    return any(fnmatch.fnmatch(name, pat) for pat in _TEST_SEAM_PATTERNS)
+
+
+def _has_production_importer(symbol: str, layer: str, mod_name: str) -> bool:
+    """Return True iff *symbol* has at least one importer outside test/testing scopes.
+
+    Production importers are any .py files that are NOT:
+      - inside a ``*/test/`` directory
+      - inside ``app/testing/``
+      - a top-level ``conftest.py`` (the ``apps/backend/conftest.py`` root conftest)
+
+    The composition roots ``app/web.py`` and ``app/worker.py`` always count as
+    production importers so that bind_* seams (bound at startup) are never flagged.
+    """
+    module_path = f"app.{layer}.{mod_name}"
+    # Walk every .py in app/ (and the two composition root files).
+    candidate_files: list[Path] = [APP / "web.py", APP / "worker.py"]
+    for py in APP.rglob("*.py"):
+        candidate_files.append(py)
+
+    for py in candidate_files:
+        path_str = str(py.resolve())
+        # Skip test directories.
+        if "/test/" in path_str or py.name.startswith("test_"):
+            continue
+        # Skip app/testing/ tree.
+        if str(APP / "testing") in path_str:
+            continue
+        # Skip top-level conftest.
+        if py.name == "conftest.py" and py.parent == BACKEND:
+            continue
+
+        try:
+            source = py.read_text()
+        except OSError:
+            continue
+
+        # Quick pre-filter: skip if neither the module path nor the symbol appears.
+        if module_path not in source and symbol not in source:
+            continue
+
+        try:
+            tree = ast.parse(source, filename=str(py))
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                # Matches: from app.layer.mod_name import symbol
+                # or:       from app.layer.mod_name import symbol as alias
+                if mod == module_path or mod.startswith(module_path + "."):
+                    for alias in node.names:
+                        if alias.name == symbol:
+                            return True
+                # Star imports count — can't rule it out statically.
+                if mod == module_path:
+                    for alias in node.names:
+                        if alias.name == "*":
+                            return True
+
+    return False
+
+
+def check_test_helper_exports(modules: list[tuple[str, str]]) -> list[str]:
+    """Return violations where a seam-named symbol in __all__ has no production importers.
+
+    A symbol is flagged iff BOTH conditions hold:
+      1. Its name matches a test-seam glob (``reset_*``, ``clear_*``, ``scoped_*``,
+         ``*_for_tests``, ``_seed_*``, ``set_*_override``, ``set_test_*``, ``get_test_*``).
+      2. It has ZERO production importers — no importer outside ``*/test/``,
+         ``app/testing/``, and the top-level ``conftest.py``.
+
+    The composition roots ``app/web.py`` and ``app/worker.py`` always count as
+    production importers so ``bind_*`` seams bound at startup are never flagged.
+
+    No allowlist — the intersection is precise enough that no legitimate production
+    symbol should match both conditions simultaneously.
+    """
+    errors: list[str] = []
+    for layer, name in modules:
+        # Only check core / domain / plugins — testing layer is allowed to export seams.
+        if layer == "testing":
+            continue
+        public_names = parse_module_interface(layer, name)
+        for sym in public_names:
+            if not _is_seam_name(sym):
+                continue
+            if not _has_production_importer(sym, layer, name):
+                errors.append(
+                    f"test-seam export: app.{layer}.{name}: "
+                    f'"{sym}" matches a test-seam name pattern and has no production importers'
+                )
+    return errors
+
+
 def check_layering(modules: list[tuple[str, str]]) -> list[str]:
     """Return human-readable layering violations, empty list if clean.
 
@@ -350,8 +472,7 @@ def check_layering(modules: list[tuple[str, str]]) -> list[str]:
                 if (my_path, dep) in PERMITTED_CROSS_LAYER_EDGES:
                     continue
                 errors.append(
-                    f"layering violation: app.{layer}.{name} depends on {dep} "
-                    f"({dep_layer} > {layer})"
+                    f"layering violation: app.{layer}.{name} depends on {dep} ({dep_layer} > {layer})"
                 )
     return errors
 
@@ -406,6 +527,13 @@ def main() -> int:
     if boundary_errs:
         print("__all__ boundary violations (Rule-1 / Rule-5):", file=sys.stderr)
         for e in boundary_errs:
+            print(f"  {e}", file=sys.stderr)
+        return 2
+
+    seam_errs = check_test_helper_exports(modules)
+    if seam_errs:
+        print("test-seam exports (seam-name AND no production importer):", file=sys.stderr)
+        for e in seam_errs:
             print(f"  {e}", file=sys.stderr)
         return 2
 

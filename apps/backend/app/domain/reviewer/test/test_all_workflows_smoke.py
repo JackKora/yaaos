@@ -21,11 +21,9 @@ import pytest
 
 from app.core.plugin_kit import PluginMeta
 from app.core.tasks import drain_once
-from app.core.workflow import Outcome, WorkflowState, get_execution_summary, scoped_engine
+from app.core.workflow import Outcome, WorkflowState, get_execution_summary
 from app.core.workspace import (
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
-    clear_workspace_providers,
     register_workflow_context_provider,
     register_workspace_provider,
 )
@@ -43,6 +41,7 @@ from app.domain.reviewer.workflows import (
     stale_check_v1,
     verify_fix_v1,
 )
+from app.testing.workflow_harness import scoped_engine
 
 
 class _StubWorkspaceProvider:
@@ -134,11 +133,9 @@ class _SpyAnswerQuestion(AnswerQuestion):
 
 
 @pytest.fixture
-def _engine_with_stubs():  # type: ignore[no-untyped-def]
+def _engine_with_stubs(workspace_providers_isolation, workflow_context_provider_isolation):  # type: ignore[no-untyped-def]
     from app.core.workspace import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
 
-    clear_workspace_providers()
-    clear_workflow_context_provider()
     register_workspace_provider(_StubWorkspaceProvider())
     register_workflow_context_provider(
         _StaticContextProvider(
@@ -162,8 +159,6 @@ def _engine_with_stubs():  # type: ignore[no-untyped-def]
         for cmd in ALL_LOCAL_COMMANDS:
             eng.register_command(cmd)
         yield eng
-    clear_workspace_providers()
-    clear_workflow_context_provider()
 
 
 _OTHER_FOUR_WORKFLOWS = [incremental_review_v1, verify_fix_v1, stale_check_v1, answer_question_v1]
