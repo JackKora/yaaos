@@ -36,12 +36,12 @@ from app.core.workflow import (
     Workflow,
     WorkflowEngine,
     WorkflowState,
-    clear_recovery_policies,
     register_recovery_policy,
     request_cancel,
     resume_hitl,
 )
 from app.core.workflow.models import PendingHumanDecisionRow, WorkflowExecutionRow
+from app.core.workflow.recovery import _clear_recovery_policies_for_tests
 
 # ── Test commands ───────────────────────────────────────────────────────
 
@@ -665,7 +665,7 @@ async def test_recovery_policy_inserts_recovery_step_before_retry(db_session) ->
     recovery policy, the engine inserts the recovery command as an
     appended step that runs BEFORE the failed step retries. Recovery
     fires at most once per step instance."""
-    clear_recovery_policies()
+    _clear_recovery_policies_for_tests()
     register_recovery_policy(failure_label="auth_expired", command_kind="DoRefresh")
 
     review_calls: list[str] = []
@@ -721,7 +721,7 @@ async def test_recovery_policy_inserts_recovery_step_before_retry(db_session) ->
 async def test_recovery_policy_fires_at_most_once_per_step(db_session) -> None:
     """Second failure with the same recovery-eligible label after recovery
     has already run falls through to Tier-3 fail — no infinite loop."""
-    clear_recovery_policies()
+    _clear_recovery_policies_for_tests()
     register_recovery_policy(failure_label="auth_expired", command_kind="DoRefresh")
 
     review_calls: list[str] = []

@@ -36,7 +36,10 @@ from app.testing.isolation import (  # noqa: F401
     agent_queues_isolation,
     email_inbox_isolation,
     pubsub_isolation,
+    recovery_policies_isolation,
     subscriber_registry_isolation,
+    workflow_context_provider_isolation,
+    workspace_providers_isolation,
 )
 
 

@@ -60,11 +60,6 @@ async def rereview_ticket(req: RereviewRequest) -> dict[str, Any]:
     from app.core.workspace import get_workflow_context_provider  # noqa: PLC0415
 
     provider = get_workflow_context_provider()
-    if provider is None:
-        raise HTTPException(
-            status_code=500,
-            detail="workflow context provider not registered",
-        )
     ctx = await provider.get_workspace_ticket_context(req.ticket_id)
     if ctx is None:
         raise HTTPException(status_code=404, detail="ticket not found")

@@ -4,22 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-import app.core.workspace  # noqa: F401  — side-effect: workspace registers auth_expired policy
-from app.core.workflow import (
-    clear_recovery_policies,
-    register_recovery_policy,
-)
-from app.core.workflow.recovery import (
-    get_recovery_policy,
-    registered_recovery_labels,
-)
+import app.core.workspace  # noqa: F401  — side-effect: workspace import (registration now explicit)
+from app.core.workflow import register_recovery_policy
+from app.core.workflow.recovery import get_recovery_policy, registered_recovery_labels
 
 
 @pytest.fixture(autouse=True)
-def _isolate() -> None:
-    clear_recovery_policies()
-    yield
-    clear_recovery_policies()
+def _isolate(recovery_policies_isolation) -> None:  # type: ignore[no-untyped-def]
+    del recovery_policies_isolation  # fixture handles clear before+after
 
 
 def test_register_and_get() -> None:
@@ -52,10 +44,11 @@ def test_registered_recovery_labels_sorted() -> None:
     assert "a_label" in labels
 
 
-def test_auth_expired_policy_resolves_after_workspace_registers() -> None:
-    """Workspace registers its boot policy into the workflow registry on import."""
-    # app.core.workspace imported at module level above causes dispatch to register
-    # auth_expired → RefreshWorkspaceAuth at import time; re-register here since
-    # _isolate fixture clears all policies before each test.
-    register_recovery_policy(failure_label="auth_expired", command_kind="RefreshWorkspaceAuth")
+def test_auth_expired_policy_resolves_after_explicit_registration() -> None:
+    """Workspace recovery policies are registered via an explicit startup call.
+    After calling `register_workspace_recovery_policies()`, the auth_expired
+    label resolves to RefreshWorkspaceAuth."""
+    from app.core.workspace import register_workspace_recovery_policies  # noqa: PLC0415
+
+    register_workspace_recovery_policies()
     assert get_recovery_policy("auth_expired") == "RefreshWorkspaceAuth"

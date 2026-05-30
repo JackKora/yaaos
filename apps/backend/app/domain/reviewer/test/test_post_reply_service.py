@@ -17,7 +17,6 @@ from sqlalchemy import select
 from app.core.workflow import CommandContext
 from app.core.workspace import (
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
     register_workflow_context_provider,
 )
 from app.domain.pull_requests import upsert as upsert_pr
@@ -52,37 +51,26 @@ class _StaticProvider:
         return self._context
 
 
-async def test_empty_inputs_is_noop_success() -> None:
-    clear_workflow_context_provider()
+async def test_empty_inputs_is_noop_success(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     outcome = await PostReply().execute({}, _ctx())
     assert outcome.label == "success"
     assert outcome.outputs.get("posted") is False
     assert outcome.outputs.get("reason") == "empty_input"
 
 
-async def test_empty_reply_body_is_noop() -> None:
-    clear_workflow_context_provider()
+async def test_empty_reply_body_is_noop(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     outcome = await PostReply().execute({"reply_body": "", "finding_id": str(uuid4())}, _ctx())
     assert outcome.label == "success"
     assert outcome.outputs.get("posted") is False
 
 
-async def test_invalid_finding_id_returns_failure() -> None:
-    clear_workflow_context_provider()
+async def test_invalid_finding_id_returns_failure(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     outcome = await PostReply().execute({"reply_body": "looks good", "finding_id": "not-a-uuid"}, _ctx())
     assert outcome.label == "failure"
     assert "invalid finding_id" in (outcome.failure_reason or "")
 
 
-async def test_no_provider_registered_returns_failure() -> None:
-    clear_workflow_context_provider()
-    outcome = await PostReply().execute({"reply_body": "looks good", "finding_id": str(uuid4())}, _ctx())
-    assert outcome.label == "failure"
-    assert "no workflow_context provider" in (outcome.failure_reason or "")
-
-
-async def test_no_pr_link_is_noop_success() -> None:
-    clear_workflow_context_provider()
+async def test_no_pr_link_is_noop_success(workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     register_workflow_context_provider(
         _StaticProvider(
             context=WorkspaceTicketContext(
@@ -100,10 +88,9 @@ async def test_no_pr_link_is_noop_success() -> None:
     assert outcome.outputs.get("reason") == "no_pr_link"
 
 
-async def test_unknown_finding_is_noop_success(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_unknown_finding_is_noop_success(db_session, workflow_context_provider_isolation) -> None:  # type: ignore[no-untyped-def]
     """pr_id present but the finding_id isn't in the aggregate. Success-no-op
     so the workflow drains."""
-    clear_workflow_context_provider()
     register_workflow_context_provider(
         _StaticProvider(
             context=WorkspaceTicketContext(
@@ -125,12 +112,13 @@ async def test_unknown_finding_is_noop_success(db_session) -> None:  # type: ign
 # ── Happy path: real GitHub-side post via stub vcs ─────────────────────
 
 
-async def test_post_reply_calls_vcs_when_real_parent_exists(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_post_reply_calls_vcs_when_real_parent_exists(
+    db_session, workflow_context_provider_isolation
+) -> None:  # type: ignore[no-untyped-def]
     """When the thread has a real (non-local) parent yaaos comment AND a
     PR row exists, PostReply calls vcs.post_comment_reply and persists the
     real external_comment_id (not the local-reply placeholder).
     """
-    clear_workflow_context_provider()
     org_id = uuid4()
 
     # 1. Seed ticket + PR rows.

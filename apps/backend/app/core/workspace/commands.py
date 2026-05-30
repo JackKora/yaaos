@@ -62,7 +62,6 @@ class ProvisionWorkspace(_LifecycleCommand):
     `CreateWorkspace` over the wire to the Go workspace subcommand.
 
     Falls back to `Outcome.failure` when:
-    - no `WorkflowContextProvider` is registered (bootstrap bug)
     - the provider returns None (ticket not found)
     - `create_workspace()` raises (provider-level provisioning failure)
     """
@@ -72,9 +71,6 @@ class ProvisionWorkspace(_LifecycleCommand):
     async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
         del inputs
         provider = get_workflow_context_provider()
-        if provider is None:
-            return Outcome.failure(reason="no workflow_context provider registered")
-
         try:
             ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         except Exception as exc:

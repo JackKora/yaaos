@@ -8,12 +8,12 @@ from app.core.agent_gateway import register_report_sink as _register_report_sink
 from app.core.workspace.agent_report import WorkspaceAgentReportSinkImpl
 from app.core.workspace.commands import ALL_LIFECYCLE_COMMANDS
 from app.core.workspace.dispatch import (
+    register_workspace_recovery_policies,
     release_claim,
     try_claim,
 )
 from app.core.workspace.service import (
     _seed_workspace_for_tests,
-    clear_workspace_providers,
     close_workspace,
     create_workspace,
     force_close_all,
@@ -57,7 +57,7 @@ from app.core.workspace.types import (
 from app.core.workspace.workflow_context import (
     WorkflowContextProvider,
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
+    assert_workflow_context_provider,
     get_workflow_context_provider,
     register_workflow_context_provider,
 )
@@ -89,8 +89,7 @@ __all__ = [
     "WorkspaceStatus",
     "WorkspaceTicketContext",
     "_seed_workspace_for_tests",
-    "clear_workflow_context_provider",
-    "clear_workspace_providers",
+    "assert_workflow_context_provider",
     "close_workspace",
     "create_workspace",
     "force_close_all",
@@ -106,6 +105,7 @@ __all__ = [
     "list_workspace_providers",
     "register_workflow_context_provider",
     "register_workspace_provider",
+    "register_workspace_recovery_policies",
     "release_claim",
     "start_reaper",
     "startup_recovery",

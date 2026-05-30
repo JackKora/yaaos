@@ -4,7 +4,6 @@ See `apps/backend/docs/core_workflow.md`.
 """
 
 from app.core.workflow.recovery import (
-    clear_recovery_policies,
     get_recovery_policy,
     register_recovery_policy,
     registered_recovery_labels,
@@ -73,7 +72,6 @@ __all__ = [
     "WorkflowExecutionSummary",
     "WorkflowNotFoundError",
     "WorkflowState",
-    "clear_recovery_policies",
     "get_awaiting_human_execution",
     "get_engine",
     "get_execution_summary",

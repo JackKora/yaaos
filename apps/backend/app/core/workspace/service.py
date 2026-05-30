@@ -109,8 +109,10 @@ def list_workspace_providers() -> list[WorkspaceProvider]:
     return list(_PROVIDERS.values())
 
 
-def clear_workspace_providers() -> None:
-    """Clear the workspace provider registry."""
+def _clear_workspace_providers_for_tests() -> None:
+    """Clear the workspace provider registry. For test isolation only —
+    call via the `workspace_providers_isolation` fixture in `app/testing/isolation`,
+    never from production code."""
     _PROVIDERS.clear()
 
 

@@ -129,14 +129,15 @@ def wrap_all_registered_workspace_providers() -> int:
     (mirrors how stub_coding_agent's wrap is wired).
     """
     from app.core.workspace import (  # noqa: PLC0415
-        clear_workspace_providers,
         list_workspace_providers,
         register_workspace_provider,
+        unregister_workspace_provider,
     )
 
     originals = list_workspace_providers()
     count = 0
-    clear_workspace_providers()
+    for p in originals:
+        unregister_workspace_provider(p.meta.id)
     for real in originals:
         if isinstance(real, StubWorkspaceProvider):
             register_workspace_provider(real)

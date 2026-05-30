@@ -27,7 +27,7 @@
 - **WorkflowCommand** — Protocol; one registered impl per `kind`. Carries `restart_safe`, `category` (`Workspace | Local | Hitl`).
 - **CommandContext** — payload a command sees: execution id, ticket id, step id, attempt counter, optional traceparent.
 - **Outcome** — tagged by `OutcomeKind` (`success | failure | hitl_pending`). Carries `outputs`, optional failure/hitl fields, and `append_steps` escape hatch.
-- **Recovery-policy insertion (Tier-1)** — engine checks `core/workflow.get_recovery_policy(label)` (via `app/core/workflow/recovery.py`) before Tier-2 retry; appends a synthetic recovery step and resets the failed step's attempt counter. Producers (e.g. `core/workspace`) register their policies into this registry at import.
+- **Recovery-policy insertion (Tier-1)** — engine checks `core/workflow.get_recovery_policy(label)` (via `app/core/workflow/recovery.py`) before Tier-2 retry; appends a synthetic recovery step and resets the failed step's attempt counter. Producers (e.g. `core/workspace`) register their policies via an explicit startup call (`register_workspace_recovery_policies()`), not at import time — both `web.py` and `worker.py` call this after importing workspace.
 
 ## Data owned
 
@@ -38,4 +38,4 @@
 
 `test/test_types.py` — typed data validation (workflows, steps, retry policy, outcomes, terminal transitions).
 `test/test_engine.py` — register validation (unknown entry step, dangling transitions, double-register), version-selection, `start()` writes `pending` row + enqueues `route_workflow`, `start()` fails loud on unregistered command.
-`test/test_recovery_registry.py` — register/get/conflict/idempotent/sorted-labels; verifies workspace's boot policy resolves correctly.
+`test/test_recovery_registry.py` — register/get/conflict/idempotent/sorted-labels; verifies workspace's recovery policy resolves after explicit `register_workspace_recovery_policies()` call.

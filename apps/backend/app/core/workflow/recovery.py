@@ -2,7 +2,9 @@
 
 The engine consults this registry (Tier-1 recovery) before falling through to
 Tier-2 retry or Tier-3 terminal transitions. Producers (e.g. `core/workspace`)
-register their policies at import; the engine reads them via `get_recovery_policy`.
+register their policies via an explicit startup call; the engine reads them via
+`get_recovery_policy`. Tests reset the registry via the `recovery_policies_isolation`
+fixture in `app/testing/isolation`.
 """
 
 from __future__ import annotations
@@ -35,6 +37,8 @@ def registered_recovery_labels() -> list[str]:
     return sorted(_RECOVERY_POLICIES.keys())
 
 
-def clear_recovery_policies() -> None:
-    """Clear all registered recovery policies. For test isolation only."""
+def _clear_recovery_policies_for_tests() -> None:
+    """Clear all registered recovery policies. For test isolation only —
+    call via the `recovery_policies_isolation` fixture in `app/testing/isolation`,
+    never from production code."""
     _RECOVERY_POLICIES.clear()

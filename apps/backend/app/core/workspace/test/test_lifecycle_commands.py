@@ -83,8 +83,6 @@ import pytest  # noqa: E402
 from app.core.plugin_kit import PluginMeta  # noqa: E402
 from app.core.workspace import (  # noqa: E402
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
-    clear_workspace_providers,
     register_workflow_context_provider,
     register_workspace_provider,
 )
@@ -130,26 +128,11 @@ class _StubWorkspaceProvider:
 
 
 @pytest.fixture
-def _stub_workspace_plugin():
-    clear_workspace_providers()
+def _stub_workspace_plugin(workspace_providers_isolation):
     register_workspace_provider(_StubWorkspaceProvider())
-    yield
-    clear_workspace_providers()
 
 
-@pytest.fixture(autouse=True)
-def _reset_workflow_context():
-    yield
-    clear_workflow_context_provider()
-
-
-async def test_provision_fails_without_registered_provider() -> None:
-    outcome = await ProvisionWorkspace().execute({}, _ctx())
-    assert outcome.label == "failure"
-    assert "no workflow_context provider" in (outcome.failure_reason or "")
-
-
-async def test_provision_fails_when_ticket_not_found() -> None:
+async def test_provision_fails_when_ticket_not_found(workflow_context_provider_isolation) -> None:
     register_workflow_context_provider(_StubProvider(context=None))
     outcome = await ProvisionWorkspace().execute({}, _ctx())
     assert outcome.label == "failure"
@@ -168,7 +151,9 @@ async def test_refresh_workspace_auth_is_noop_success_in_memory() -> None:
     assert outcome.label == "success"
 
 
-async def test_provision_creates_workspace_with_spec(db_session, _stub_workspace_plugin) -> None:  # type: ignore[no-untyped-def]
+async def test_provision_creates_workspace_with_spec(
+    db_session, _stub_workspace_plugin, workflow_context_provider_isolation
+) -> None:  # type: ignore[no-untyped-def]
     ticket_id = uuid4()
     org_id = uuid4()
     register_workflow_context_provider(

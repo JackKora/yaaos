@@ -64,6 +64,18 @@ from app.domain import coding_agent  # noqa: F401, E402
 from app.domain import pull_requests  # noqa: F401, E402
 from app.domain import tickets  # noqa: F401, E402
 from app.domain import reviewer  # noqa: F401, E402
+
+# 5a. Startup assertions — must run after domain/reviewer import so the
+# workflow-context provider and recovery policies are registered by the
+# domain module's own bootstrap. These crash the process loudly at startup
+# if the wiring is wrong, rather than surfacing as a mid-flow None.
+from app.core.workspace import (  # noqa: E402
+    assert_workflow_context_provider,
+    register_workspace_recovery_policies,
+)
+
+register_workspace_recovery_policies()
+assert_workflow_context_provider()
 from app.domain import intake  # noqa: F401, E402
 from app.domain import plugins as _domain_plugins  # noqa: F401, E402
 from app.domain.plugins import web as _domain_plugins_web  # noqa: F401, E402

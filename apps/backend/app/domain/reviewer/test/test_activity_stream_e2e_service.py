@@ -29,8 +29,6 @@ from app.core.workflow import WorkflowState, get_execution_summary, scoped_engin
 from app.core.workspace import (
     ALL_LIFECYCLE_COMMANDS,
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
-    clear_workspace_providers,
     register_workflow_context_provider,
     register_workspace_provider,
 )
@@ -77,17 +75,13 @@ class _StaticCtxProvider:
 
 
 @pytest.fixture
-def _engine_with_in_memory():  # type: ignore[no-untyped-def]
-    clear_workspace_providers()
-    clear_workflow_context_provider()
+def _engine_with_in_memory(workspace_providers_isolation, workflow_context_provider_isolation):  # type: ignore[no-untyped-def]
     register_workspace_provider(_StubWorkspaceProvider())
     with scoped_engine() as eng:
         for cmd in (*ALL_LIFECYCLE_COMMANDS, *ALL_WORKSPACE_COMMANDS, *ALL_LOCAL_COMMANDS):
             eng.register_command(cmd)
         eng.register_workflow(pr_review_v1)
         yield eng
-    clear_workspace_providers()
-    clear_workflow_context_provider()
 
 
 async def _drain(db_session) -> None:  # type: ignore[no-untyped-def]

@@ -31,8 +31,6 @@ from app.core.workflow import Outcome, WorkflowState, get_execution_summary, sco
 from app.core.workspace import (
     WorkspaceStatus,
     WorkspaceTicketContext,
-    clear_workflow_context_provider,
-    clear_workspace_providers,
     register_workflow_context_provider,
     register_workspace_provider,
 )
@@ -84,11 +82,9 @@ class _StaticWorkflowContextProvider:
 
 
 @pytest.fixture
-def _registered_engine():  # type: ignore[no-untyped-def]
+def _registered_engine(workspace_providers_isolation, workflow_context_provider_isolation):  # type: ignore[no-untyped-def]
     from app.core.workspace import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
 
-    clear_workspace_providers()
-    clear_workflow_context_provider()
     register_workspace_provider(_StubWorkspaceProvider())
     # Register lifecycle + reviewer commands (mirrors domain/reviewer bootstrap).
     with scoped_engine() as eng:
@@ -96,8 +92,6 @@ def _registered_engine():  # type: ignore[no-untyped-def]
             eng.register_command(cmd)
         eng.register_workflow(pr_review_v1)
         yield eng
-    clear_workspace_providers()
-    clear_workflow_context_provider()
 
 
 async def _drain_workflow_outbox(db_session, *, max_iterations: int = 50) -> int:
@@ -228,7 +222,9 @@ async def test_pr_review_v1_runs_end_to_end_in_memory(db_session, _registered_en
     assert ws_statuses[0][0] == WorkspaceStatus.EXPIRED.value
 
 
-async def test_pr_review_v1_with_findings_persists_to_db(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_pr_review_v1_with_findings_persists_to_db(
+    db_session, workspace_providers_isolation, workflow_context_provider_isolation
+) -> None:  # type: ignore[no-untyped-def]
     """Full workflow walk with a spy CodeReview that emits realistic
     FindingDrafts. Verifies the entire pipeline composes:
     intake → CheckShouldReview → ProvisionWorkspace → CodeReview (spy) →
@@ -240,9 +236,6 @@ async def test_pr_review_v1_with_findings_persists_to_db(db_session) -> None:  #
     from app.domain.reviewer.models import FindingRow  # noqa: PLC0415
     from app.domain.tickets import create as create_ticket2  # noqa: PLC0415
     from app.domain.vcs import VCSPullRequest as _VCSPullRequest  # noqa: PLC0415
-
-    clear_workspace_providers()
-    clear_workflow_context_provider()
 
     # 1. Workspace provider whose plugin_state carries the file content the
     #    finding's anchor references. CodeReview spy never reads it (it just
@@ -405,9 +398,6 @@ async def test_pr_review_v1_with_findings_persists_to_db(db_session) -> None:  #
         assert len(rows) == 1
         assert rows[0].rule_id == "spy_rule"
         assert rows[0].title == "Spy finding"
-
-    clear_workspace_providers()
-    clear_workflow_context_provider()
 
 
 async def test_pr_review_v1_runs_end_to_end_remote_agent(db_session, _registered_engine) -> None:  # type: ignore[no-untyped-def]

@@ -256,8 +256,6 @@ async def start_pr_review(
 
     del trigger_reason  # observed via workflow_executions.workflow_name today
     provider = get_workflow_context_provider()
-    if provider is None:
-        raise RuntimeError("workflow context provider not registered")
     ticket_uuid = ticket_id if isinstance(ticket_id, UUID) else UUID(str(ticket_id))
     ctx = await provider.get_workspace_ticket_context(ticket_uuid)
     if ctx is None:

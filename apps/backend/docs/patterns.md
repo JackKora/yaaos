@@ -258,7 +258,7 @@ The workspace state machine accepts one in-flight AgentCommand at a time. [`core
 
 ### Recovery policy registry
 
-AgentCommand failure labels (e.g. `auth_expired`) map to lifecycle WorkflowCommand kinds (e.g. `RefreshWorkspaceAuth`) via `core/workflow.register_recovery_policy` (`app/core/workflow/recovery.py`). The engine consults the registry on a recoverable failure and inserts the recovery command before re-dispatching the original. Producers (e.g. `core/workspace`) register their policies at module import time.
+AgentCommand failure labels (e.g. `auth_expired`) map to lifecycle WorkflowCommand kinds (e.g. `RefreshWorkspaceAuth`) via `core/workflow.register_recovery_policy` (`app/core/workflow/recovery.py`). The engine consults the registry on a recoverable failure and inserts the recovery command before re-dispatching the original. Producers (e.g. `core/workspace`) register their policies via an explicit startup call (`register_workspace_recovery_policies()`) in `web.py` / `worker.py` — not at import time.
 
 ## WorkspaceProvider contract
 

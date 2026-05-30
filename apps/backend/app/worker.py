@@ -36,6 +36,18 @@ def main() -> int:
 
     import app.core.workflow  # noqa: PLC0415
     import app.domain.reviewer  # noqa: PLC0415
+
+    # Startup assertions — crash loud at boot if wiring is wrong rather
+    # than surfacing mid-flow. Must run after domain/reviewer import so
+    # the workflow-context provider is already installed.
+    from app.core.workspace import (  # noqa: PLC0415
+        assert_workflow_context_provider,
+        register_workspace_recovery_policies,
+    )
+
+    register_workspace_recovery_policies()
+    assert_workflow_context_provider()
+
     import app.plugins.claude_code  # noqa: PLC0415
     import app.plugins.github  # noqa: PLC0415
     import app.plugins.in_memory_workspace  # noqa: F401, PLC0415

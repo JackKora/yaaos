@@ -70,10 +70,70 @@ def read_email_inbox() -> list:
     return get_email_inbox().messages
 
 
+@pytest_asyncio.fixture
+async def workflow_context_provider_isolation():
+    """Reset the workflow-context provider before and after the test.
+
+    Non-autouse: tests that need to control the registered provider (or
+    assert on its absence) must request this fixture explicitly. Tests
+    that just need a working provider should register one via
+    `register_workflow_context_provider` after requesting this fixture.
+    """
+    from app.core.workspace.workflow_context import (  # noqa: PLC0415
+        _clear_workflow_context_provider_for_tests,
+    )
+
+    _clear_workflow_context_provider_for_tests()
+    yield
+    _clear_workflow_context_provider_for_tests()
+
+
+@pytest_asyncio.fixture
+async def workspace_providers_isolation():
+    """Clear the workspace-provider registry before and after the test.
+
+    Non-autouse: tests that register custom workspace providers must
+    request this fixture to ensure isolation. Uses the public
+    list/unregister API to clear without needing a private clear function.
+    """
+    from app.core.workspace import (  # noqa: PLC0415
+        list_workspace_providers,
+        unregister_workspace_provider,
+    )
+
+    def _clear() -> None:
+        for p in list_workspace_providers():
+            unregister_workspace_provider(p.meta.id)
+
+    _clear()
+    yield
+    _clear()
+
+
+@pytest_asyncio.fixture
+async def recovery_policies_isolation():
+    """Clear all recovery policies before and after the test.
+
+    Non-autouse: tests that register custom recovery policies must
+    request this fixture. Tests that rely on the default
+    `auth_expired → RefreshWorkspaceAuth` policy should call
+    `register_workspace_recovery_policies()` after requesting this
+    fixture to explicitly install it.
+    """
+    from app.core.workflow.recovery import _clear_recovery_policies_for_tests  # noqa: PLC0415
+
+    _clear_recovery_policies_for_tests()
+    yield
+    _clear_recovery_policies_for_tests()
+
+
 __all__ = [
     "agent_queues_isolation",
     "email_inbox_isolation",
     "pubsub_isolation",
     "read_email_inbox",
+    "recovery_policies_isolation",
     "subscriber_registry_isolation",
+    "workflow_context_provider_isolation",
+    "workspace_providers_isolation",
 ]

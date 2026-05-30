@@ -9,8 +9,8 @@ build a `WorkspaceSpec`. The fix is dependency inversion: domain/reviewer
 boot; `core/workspace.commands` calls it when needed.
 
 The Protocol is the contract; concrete implementations live in domain
-modules. Only one provider may be registered at a time; tests can reset
-via `clear_workflow_context_provider()`.
+modules. Only one provider may be registered at a time; tests reset via
+the `workflow_context_provider_isolation` fixture in `app/testing/isolation`.
 """
 
 from __future__ import annotations
@@ -55,21 +55,31 @@ _PROVIDER: WorkflowContextProvider | None = None
 def register_workflow_context_provider(provider: WorkflowContextProvider) -> None:
     """Install the singleton workflow-context reader. Replaces any prior
     registration silently — the bootstrap path may re-register on module
-    reload (test isolation) and there's only ever one logical provider
-    in the process."""
+    reload and there's only ever one logical provider in the process."""
     global _PROVIDER
     _PROVIDER = provider
 
 
-def get_workflow_context_provider() -> WorkflowContextProvider | None:
-    """Read the registered provider. Callers must handle None — the bare
-    `core/workspace` module ships without a provider; only the full app
-    bootstrap installs one."""
+def get_workflow_context_provider() -> WorkflowContextProvider:
+    """Read the registered provider. Raises RuntimeError when no provider
+    has been installed — a missing provider is a boot-time wiring bug.
+    `assert_workflow_context_provider()` is the startup-check entry point."""
+    if _PROVIDER is None:
+        raise RuntimeError("workflow_context provider not registered")
     return _PROVIDER
 
 
-def clear_workflow_context_provider() -> None:
-    """Clear the registered workflow-context provider."""
+def assert_workflow_context_provider() -> None:
+    """Assert the provider is installed. Called from web.py / worker.py
+    after domain/reviewer import so a wiring bug crashes the process at
+    startup rather than surfacing mid-flow."""
+    get_workflow_context_provider()  # raises if unbound
+
+
+def _clear_workflow_context_provider_for_tests() -> None:
+    """Clear the registered workflow-context provider. For test isolation
+    only — call via the `workflow_context_provider_isolation` fixture in
+    `app/testing/isolation`, never from production code."""
     global _PROVIDER
     _PROVIDER = None
 
@@ -77,7 +87,7 @@ def clear_workflow_context_provider() -> None:
 __all__ = [
     "WorkflowContextProvider",
     "WorkspaceTicketContext",
-    "clear_workflow_context_provider",
+    "assert_workflow_context_provider",
     "get_workflow_context_provider",
     "register_workflow_context_provider",
 ]
