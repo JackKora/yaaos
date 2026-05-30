@@ -98,6 +98,6 @@ test.describe("auth + members", () => {
     // Sign out of every session. Action moved to the Security page.
     await page.goto(`${BASE}/orgs/acme/user/security`);
     await page.getByTestId("logout-all").click();
-    await page.waitForURL(/\/login$/);
+    await page.waitForURL(/\/login(\?|$)/);
   });
 });
