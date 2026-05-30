@@ -10,7 +10,7 @@
 
 Internal architecture, package responsibilities, and wire-protocol details → [architecture.md](architecture.md).
 
-Per-module docs: [protocol.md](protocol.md) · [command.md](command.md) · [patterns.md](patterns.md).
+Per-module docs: [protocol.md](protocol.md) · [command.md](command.md) · [patterns.md](patterns.md) · [supervisor.md](supervisor.md) · [workspace.md](workspace.md) · [workspace_lifecycle.md](workspace_lifecycle.md).
 
 ## Configuration
 

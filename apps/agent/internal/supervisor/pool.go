@@ -1,8 +1,10 @@
-// Per-workspace runner pool. The supervisor receives a stream of commands
-// from the backend (interleaved across workspaces by the claim-loop fan-in);
-// the pool routes each command to the right long-lived `agent workspace`
-// child process based on `workspace_id`, spawning a new one on the first
-// command, serializing commands per workspace, and reaping the runner after
+// Per-workspace runner pool with unified registry.
+//
+// The supervisor receives a stream of commands from the backend (interleaved
+// across workspaces by the claim-loop fan-in); the pool routes each command
+// to the right long-lived `agent workspace` child process based on
+// `workspace_id`, spawning a new one on the first CreateWorkspace command,
+// serializing commands per workspace, and reaping the runner after
 // CleanupWorkspace.
 //
 // Two runner implementations ship:
@@ -15,6 +17,13 @@
 //
 // Both produce values that satisfy `WorkspaceRunner`. The pool itself
 // doesn't care which one it's holding.
+//
+// Registry:
+//
+// The Pool owns a single registry (map[workspace_id]*workspaceRecord) guarded
+// by its mutex. Each record carries a liveness state (`WorkspaceState`) and
+// an orthogonal busy-ness field (`current_command_id`). State transitions
+// are the only way to change a record's state — no free-form field writes.
 package supervisor
 
 import (
@@ -55,15 +64,59 @@ type WorkspaceRunner interface {
 // calls this exactly once per workspace (on the `CreateWorkspace` arrival).
 type SpawnFunc func(ctx context.Context, workspaceID string) (WorkspaceRunner, error)
 
-// Pool tracks one runner per workspace_id, serializes commands per
+// WorkspaceState is the liveness axis of a registry record.
+// It is orthogonal to the busy-ness axis (current_command_id).
+type WorkspaceState int
+
+const (
+	// Active — the workspace subprocess is running and accepting commands.
+	stateActive WorkspaceState = iota
+	// Defunct — the subprocess exited unexpectedly; the record is kept
+	// in the registry until reaped so the disk sweep does not remove its dir.
+	stateDefunct
+	// Orphaned — leftover directory from a prior run, discovered at startup.
+	// Runner is nil; the backend decides whether to signal cleanup.
+	stateOrphaned
+)
+
+// ErrUnknownWorkspace is returned by Dispatch when a non-create command
+// arrives for a workspace_id with no registry record.
+var ErrUnknownWorkspace = errors.New("no workspace runner")
+
+// workspaceRecord is one entry in the pool's registry.
+// It is guarded by Pool.mu for state/path/currentCommandID writes
+// and by its own slotMu for serializing Send calls to the same runner.
+type workspaceRecord struct {
+	state            WorkspaceState
+	path             string // on-disk workspace directory; set after CreateWorkspace
+	currentCommandID string // "" when idle
+	runner           WorkspaceRunner
+	slotMu           sync.Mutex // serializes Send calls to this runner
+}
+
+// heartbeatStatus projects the liveness state onto the protocol status string.
+func (r *workspaceRecord) heartbeatStatus() string {
+	switch r.state {
+	case stateActive:
+		return "running"
+	case stateDefunct:
+		return "exited"
+	case stateOrphaned:
+		return "unknown"
+	default:
+		return "unknown"
+	}
+}
+
+// Pool tracks one registry record per workspace_id, serializes commands per
 // workspace, and reaps the runner after `CleanupWorkspace`.
 type Pool struct {
 	spawn    SpawnFunc
 	log      Logger
 	timeouts PoolTimeouts
 
-	mu      sync.Mutex
-	runners map[string]*workspaceSlot
+	mu       sync.Mutex
+	registry map[string]*workspaceRecord
 }
 
 // PoolTimeouts caps how long each command kind can sit inside the
@@ -104,15 +157,6 @@ func (t PoolTimeouts) withDefaults() PoolTimeouts {
 	return t
 }
 
-// workspaceSlot pairs a runner with a per-workspace mutex. The pool grabs
-// the outer mu briefly to find/insert the slot, then releases it so other
-// workspaces can dispatch in parallel; the per-slot mu serializes Sends
-// to the same workspace.
-type workspaceSlot struct {
-	runner WorkspaceRunner
-	mu     sync.Mutex
-}
-
 // NewPool constructs an empty pool. `spawn` is invoked on the first
 // command for a previously unseen workspace_id. Uses default
 // PoolTimeouts; call `NewPoolWithTimeouts` to override.
@@ -131,15 +175,173 @@ func NewPoolWithTimeouts(spawn SpawnFunc, log Logger, timeouts PoolTimeouts) *Po
 		spawn:    spawn,
 		log:      log,
 		timeouts: timeouts.withDefaults(),
-		runners:  make(map[string]*workspaceSlot),
+		registry: make(map[string]*workspaceRecord),
 	}
 }
 
+// ── Named mutators (state transitions) ─────────────────────────────────────
+//
+// Each mutator is the only way to reach its target state. Pool.mu must be
+// held by the caller OR the mutator acquires it internally — see each
+// function's comment. Callers that already hold Pool.mu call the *Locked
+// variant; external callers (including tests) call the public form.
+
+// createActive inserts a new Active record with the provided runner.
+// runner may be nil when the spawn hasn't completed yet (Dispatch sets it
+// after spawn returns). Pool.mu is acquired internally.
+func (p *Pool) createActive(id string, runner WorkspaceRunner) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.registry[id] = &workspaceRecord{
+		state:  stateActive,
+		runner: runner,
+	}
+}
+
+// seedOrphan inserts an Orphaned record for a workspace discovered at startup.
+// Runner is nil — no subprocess is associated. Pool.mu is acquired internally.
+func (p *Pool) seedOrphan(id string, path string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.registry[id] = &workspaceRecord{
+		state: stateOrphaned,
+		path:  path,
+	}
+}
+
+// markDefunct transitions an existing record (any state) to Defunct.
+// A Defunct record stays in the registry so KnownIDs still includes it —
+// the disk sweep won't remove its directory while it awaits reaping.
+// Pool.mu is acquired internally.
+func (p *Pool) markDefunct(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rec, ok := p.registry[id]
+	if !ok {
+		return
+	}
+	rec.state = stateDefunct
+}
+
+// remove deletes the record from the registry. Called after cleanup
+// completes or forgotten-workspaces reap. Pool.mu is acquired internally.
+func (p *Pool) remove(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.registry, id)
+}
+
+// setPath records the on-disk workspace directory for an existing record.
+// Pool.mu is acquired internally.
+func (p *Pool) setPath(id string, path string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rec, ok := p.registry[id]
+	if !ok {
+		return
+	}
+	rec.path = path
+}
+
+// setCommandID marks the workspace as executing commandID.
+// Pool.mu is acquired internally.
+func (p *Pool) setCommandID(id string, commandID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rec, ok := p.registry[id]
+	if !ok {
+		return
+	}
+	rec.currentCommandID = commandID
+}
+
+// clearCommandID clears the busy-ness field on an existing record.
+// Pool.mu is acquired internally.
+func (p *Pool) clearCommandID(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rec, ok := p.registry[id]
+	if !ok {
+		return
+	}
+	rec.currentCommandID = ""
+}
+
+// ── Read methods ────────────────────────────────────────────────────────────
+
+// Snapshot returns a heartbeat-ready snapshot of every record in the registry.
+// Status is derived from the record's WorkspaceState; current_command_id
+// is the in-flight command, empty when idle.
+func (p *Pool) Snapshot() []protocol.HeartbeatWorkspaceEntry {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]protocol.HeartbeatWorkspaceEntry, 0, len(p.registry))
+	for id, rec := range p.registry {
+		out = append(out, protocol.HeartbeatWorkspaceEntry{
+			WorkspaceID:      id,
+			Status:           rec.heartbeatStatus(),
+			CurrentCommandID: rec.currentCommandID,
+		})
+	}
+	return out
+}
+
+// KnownIDs returns a set of every workspace_id in the registry — Active,
+// Defunct, and Orphaned. The disk sweep uses this to determine which
+// on-disk directories are protected from removal.
+func (p *Pool) KnownIDs() map[string]struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[string]struct{}, len(p.registry))
+	for id := range p.registry {
+		out[id] = struct{}{}
+	}
+	return out
+}
+
+// Paths returns a workspace_id → on-disk path map for every record that
+// has a path set. Used by the forgotten-workspaces janitor to locate
+// directories for removal.
+func (p *Pool) Paths() map[string]string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[string]string)
+	for id, rec := range p.registry {
+		if rec.path != "" {
+			out[id] = rec.path
+		}
+	}
+	return out
+}
+
+// ActiveIDs returns the workspace IDs of all Active records.
+func (p *Pool) ActiveIDs() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []string
+	for id, rec := range p.registry {
+		if rec.state == stateActive {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// ── Dispatch ────────────────────────────────────────────────────────────────
+
 // Dispatch routes one WorkspaceCommand to the right runner and returns the
-// event the runner emits. If the runner doesn't exist yet and the command is
-// CreateWorkspace, the pool spawns it. Any other kind for an unknown
-// workspace is a protocol violation — Dispatch returns a synthetic
-// `completed_failure` event so the supervisor can still ack the command.
+// event the runner emits. If no registry record exists and the command is
+// CreateWorkspace, the pool spawns a runner and inserts an Active record.
+// Any other kind for an unknown workspace is a protocol violation — Dispatch
+// returns a synthetic `completed_failure` event so the supervisor can still
+// ack the command.
+//
+// Registry effects per kind:
+//
+//   - CreateWorkspace  → createActive, setPath from CreateResult.Path
+//   - other kinds      → require existing Active record; failure → completed_failure
+//   - CleanupWorkspace → remove on success
+//   - all kinds        → setCommandID around Execute, clearCommandID on completion
 //
 // Per-command timeout comes from cmd.Timeout() — the command type owns its
 // deadline (wire-supplied for InvokeClaudeCode, Go-side defaults for others).
@@ -148,8 +350,10 @@ func NewPoolWithTimeouts(spawn SpawnFunc, log Logger, timeouts PoolTimeouts) *Po
 // to `onProgress` synchronously and the dispatch continues waiting for
 // the terminal event. Pass nil to drop progress events.
 //
-// After a `CleanupWorkspace` command the runner is closed + removed from
-// the pool regardless of whether the runner reported success or failure.
+// Child-exit: when the runner's Send returns an error, the pool calls
+// markDefunct so the record stays in the registry (protecting the directory
+// from the disk sweep) until the backend explicitly reaps it via
+// forgotten_workspaces.
 func (p *Pool) Dispatch(ctx context.Context, cmd command.WorkspaceCommand, onProgress func(protocol.AgentEvent)) protocol.AgentEvent {
 	header := cmd.Header()
 	workspaceID := header.WorkspaceID
@@ -157,88 +361,124 @@ func (p *Pool) Dispatch(ctx context.Context, cmd command.WorkspaceCommand, onPro
 		return failureEvent(header, "missing workspace_id")
 	}
 
+	// Find or create a registry record. Hold mu only long enough to find/insert;
+	// then release so other workspaces can dispatch in parallel.
 	p.mu.Lock()
-	slot, ok := p.runners[workspaceID]
-	if !ok {
-		if header.Kind != protocol.KindCreateWorkspace {
+	rec, ok := p.registry[workspaceID]
+	isCreate := header.Kind == protocol.KindCreateWorkspace
+	if !ok || (isCreate && rec.state != stateActive) {
+		// No record, OR CreateWorkspace arriving for a Defunct/Orphaned record
+		// (respawn after child-exit or orphan adopt).
+		if !isCreate {
 			p.mu.Unlock()
-			return failureEvent(header, fmt.Sprintf("no workspace runner for %s (kind=%s)", workspaceID, header.Kind))
+			return failureEvent(header, fmt.Sprintf("%s: %s (kind=%s)", ErrUnknownWorkspace, workspaceID, header.Kind))
 		}
+		// Insert a placeholder Active record before releasing mu so
+		// concurrent Dispatches for the same workspace see it.
+		placeholder := &workspaceRecord{state: stateActive}
+		p.registry[workspaceID] = placeholder
+		p.mu.Unlock()
+
 		runner, err := p.spawn(ctx, workspaceID)
 		if err != nil {
-			p.mu.Unlock()
+			// Spawn failed — remove the placeholder so the workspace is
+			// not spuriously reported in Snapshot.
+			p.remove(workspaceID)
 			p.log.Error("pool.spawn_failed", "workspace_id", workspaceID, "err", err.Error())
 			return failureEvent(header, "spawn: "+err.Error())
 		}
-		slot = &workspaceSlot{runner: runner}
-		p.runners[workspaceID] = slot
+		p.mu.Lock()
+		placeholder.runner = runner
+		rec = placeholder
+		p.mu.Unlock()
 		p.log.Info("pool.workspace_spawned", "workspace_id", workspaceID)
+	} else {
+		p.mu.Unlock()
+	}
+
+	// Non-active records cannot accept non-create commands.
+	p.mu.Lock()
+	if rec.state != stateActive {
+		p.mu.Unlock()
+		return failureEvent(header, fmt.Sprintf("%s: %s (kind=%s)", ErrUnknownWorkspace, workspaceID, header.Kind))
 	}
 	p.mu.Unlock()
 
-	slot.mu.Lock()
-	defer slot.mu.Unlock()
+	// Serialize Sends to the same workspace via the per-record mutex.
+	rec.slotMu.Lock()
+	defer rec.slotMu.Unlock()
 
-	// Per-command wall-clock cap comes from the command itself — the
-	// command type owns its time budget (cmd.Timeout() reads from wire
-	// for InvokeClaudeCode; Go-side defaults for other kinds).
+	// Mark busy before Send returns.
+	p.setCommandID(workspaceID, header.CommandID)
+	defer p.clearCommandID(workspaceID)
+
+	// Per-command wall-clock cap comes from the command itself.
 	timeout := cmd.Timeout()
 	sendCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ev, err := slot.runner.Send(sendCtx, cmd, onProgress)
+	ev, err := rec.runner.Send(sendCtx, cmd, onProgress)
 	if err != nil {
 		// IO failure / runner died / outer context cancel / per-command
-		// timeout. Drop the slot so a subsequent CreateWorkspace can
-		// respawn; emit completed_failure with a kind-specific reason so
-		// the backend's audit log can tell timeouts apart from outer
-		// cancellation or runner crashes. The distinguishing signal: a
-		// per-command timeout fires when sendCtx hits DeadlineExceeded
-		// while the outer ctx is still alive; outer cancel cancels both.
+		// timeout. Transition to Defunct so the record stays in KnownIDs
+		// protecting the directory, then emit completed_failure.
 		reason := "runner: " + err.Error()
 		if errors.Is(sendCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 			reason = fmt.Sprintf("timeout: %s exceeded %s wall-clock", header.Kind, timeout)
 		}
-		p.dropSlot(workspaceID)
-		_ = slot.runner.Close(context.Background())
+		p.markDefunct(workspaceID)
+		_ = rec.runner.Close(context.Background())
 		p.log.Warn("pool.send_failed", "workspace_id", workspaceID, "kind", string(header.Kind), "err", err.Error())
 		return failureEvent(header, reason)
 	}
+
 	if header.Kind == protocol.KindCleanupWorkspace {
-		// Contract: CleanupWorkspace is always terminal — reap the runner.
-		p.dropSlot(workspaceID)
-		if cerr := slot.runner.Close(context.Background()); cerr != nil {
+		// CleanupWorkspace is always terminal — remove the record from the
+		// registry after a successful send, regardless of the event kind.
+		p.remove(workspaceID)
+		if cerr := rec.runner.Close(context.Background()); cerr != nil {
 			p.log.Warn("pool.close_failed", "workspace_id", workspaceID, "err", cerr.Error())
 		} else {
 			p.log.Info("pool.workspace_closed", "workspace_id", workspaceID)
 		}
+		return ev
 	}
+
+	// For CreateWorkspace, set the path from the event outputs so the
+	// janitor knows where to find the directory.
+	if header.Kind == protocol.KindCreateWorkspace {
+		if ev.Kind == protocol.EventCompletedSuccess {
+			if pathVal, ok := ev.Outputs["path"]; ok {
+				if pathStr, ok := pathVal.(string); ok && pathStr != "" {
+					p.setPath(workspaceID, pathStr)
+				}
+			}
+		}
+	}
+
 	return ev
 }
 
 // CloseAll terminates every runner. Called on supervisor shutdown.
 func (p *Pool) CloseAll(ctx context.Context) {
 	p.mu.Lock()
-	slots := make([]*workspaceSlot, 0, len(p.runners))
-	ids := make([]string, 0, len(p.runners))
-	for id, slot := range p.runners {
-		slots = append(slots, slot)
+	recs := make([]*workspaceRecord, 0, len(p.registry))
+	ids := make([]string, 0, len(p.registry))
+	for id, rec := range p.registry {
+		recs = append(recs, rec)
 		ids = append(ids, id)
 	}
-	p.runners = make(map[string]*workspaceSlot)
+	p.registry = make(map[string]*workspaceRecord)
 	p.mu.Unlock()
 
-	for i, slot := range slots {
-		if err := slot.runner.Close(ctx); err != nil {
+	for i, rec := range recs {
+		if rec.runner == nil {
+			continue
+		}
+		if err := rec.runner.Close(ctx); err != nil {
 			p.log.Warn("pool.close_all_failed", "workspace_id", ids[i], "err", err.Error())
 		}
 	}
-}
-
-func (p *Pool) dropSlot(workspaceID string) {
-	p.mu.Lock()
-	delete(p.runners, workspaceID)
-	p.mu.Unlock()
 }
 
 func failureEvent(header protocol.CommandHeader, reason string) protocol.AgentEvent {
@@ -251,7 +491,7 @@ func failureEvent(header protocol.CommandHeader, reason string) protocol.AgentEv
 	}
 }
 
-// ── In-process runner (test default) ────────────────────────────────────
+// ── In-process runner (test default) ────────────────────────────────────────
 
 // inProcessRunner wraps `workspace.Run` in a goroutine fed by io.Pipe pairs.
 // `Send` marshals the WorkspaceCommand's wire struct, writes it as a framed

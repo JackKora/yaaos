@@ -5,7 +5,7 @@
 // Responsibilities:
 //   - identity exchange against the backend's placeholder verifier
 //   - N concurrent claim-loop workers (`Config.Concurrency`)
-//   - heartbeat loop reporting an in-memory workspace inventory
+//   - heartbeat loop reporting a workspace registry snapshot
 //   - command routing that dispatches each command kind
 //   - graceful Stop via context cancellation
 package supervisor
@@ -146,22 +146,6 @@ type Supervisor struct {
 	agentID string
 	pool    *Pool
 
-	// In-memory workspace inventory the heartbeat reports. Each entry
-	// tracks the workspace_id, the currently in-flight command_id (if any),
-	// and a `running` / `exited` status. The pool's spawn/close path keeps
-	// this in lock-step with the live runner set.
-	mu        sync.Mutex
-	inventory map[string]protocol.HeartbeatWorkspaceEntry
-
-	// workspacePaths maps workspace_id → on-disk path for orphan
-	// directories the startup scan found. The disk janitor
-	// consults this when the heartbeat response carries a
-	// `forgotten_workspaces` list, then `os.RemoveAll`s the named paths.
-	// Live workspaces' paths are owned by the workspace process itself
-	// (not the supervisor) — only orphans (from a previous run) need
-	// supervisor-side path tracking.
-	workspacePaths map[string]string
-
 	// conductor + wsConn are non-nil iff cfg.ActivityWSURL is set AND
 	// the WS dial succeeded. Progress events route through the
 	// Conductor when present; otherwise they fall back to HTTP POSTs.
@@ -207,8 +191,6 @@ func New(cfg Config, client *protocol.Client, log Logger) *Supervisor {
 		cfg:              cfg,
 		client:           client,
 		log:              log,
-		inventory:        make(map[string]protocol.HeartbeatWorkspaceEntry),
-		workspacePaths:   make(map[string]string),
 		pool:             NewPool(cfg.Spawn, log),
 		stsBackoff:       backoff.New(),
 		claimBackoff:     backoff.New(),
@@ -250,21 +232,16 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	s.log.Info("supervisor.identity_exchanged", "agent_id", s.agentID)
 
 	// Startup reconciliation: any workspace directory left over from a
-	// previous run gets pre-loaded into the inventory as
-	// `status="unknown"` so the first heartbeat reports it. The backend
+	// previous run gets pre-loaded into the registry as Orphaned
+	// (status="unknown") so the first heartbeat reports it. The backend
 	// decides whether to reclaim or signal cleanup via
 	// `HeartbeatResponse.forgotten_workspaces` — the disk janitor in
 	// `sendHeartbeat` applies that.
 	orphans, paths := scanOrphanWorkspaces(s.cfg.WorkspaceRoot, s.log)
 	if len(orphans) > 0 {
-		s.mu.Lock()
 		for _, o := range orphans {
-			s.inventory[o.WorkspaceID] = o
+			s.pool.seedOrphan(o.WorkspaceID, paths[o.WorkspaceID])
 		}
-		for id, p := range paths {
-			s.workspacePaths[id] = p
-		}
-		s.mu.Unlock()
 		s.log.Info("supervisor.reconciliation_orphans", "count", len(orphans))
 	}
 
@@ -429,10 +406,10 @@ func (s *Supervisor) bearerRefreshLoop(ctx context.Context, expiresAt time.Time)
 }
 
 // diskSweepLoop is the proactive failsafe-5 pass — every 5 minutes it
-// walks the workspace root and `RemoveAll`s any directory that's not in
-// the supervisor's in-memory pool. Defence against orphans the backend's
-// `forgotten_workspaces` response never tells us about (e.g. agent
-// crashed mid-create before reporting).
+// walks the workspace root and `RemoveAll`s any directory whose
+// `.workspace-id` manifest names an id not in the pool's registry.
+// Defence against directories the backend never told us to clean up
+// (e.g. agent crashed mid-create before reporting).
 func (s *Supervisor) diskSweepLoop(ctx context.Context) {
 	const interval = 5 * time.Minute
 	if s.cfg.WorkspaceRoot == "" {
@@ -446,24 +423,11 @@ func (s *Supervisor) diskSweepLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 		}
-		removed := sweepOrphanWorkspaceDirs(s.cfg.WorkspaceRoot, s.knownWorkspaceIDs(), s.log)
+		removed := sweepOrphanWorkspaceDirs(s.cfg.WorkspaceRoot, s.pool.KnownIDs(), s.log)
 		if removed > 0 {
 			s.log.Info("supervisor.disk_sweep_removed", "count", removed)
 		}
 	}
-}
-
-// knownWorkspaceIDs returns a snapshot of workspace IDs currently in the
-// supervisor's pool — disk-sweep treats anything on disk and NOT in this
-// set as an orphan eligible for removal.
-func (s *Supervisor) knownWorkspaceIDs() map[string]struct{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make(map[string]struct{}, len(s.workspacePaths))
-	for id := range s.workspacePaths {
-		out[id] = struct{}{}
-	}
-	return out
 }
 
 // claimLoop runs one long-poll worker. On a successful claim it decodes the
@@ -508,9 +472,9 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 	}
 }
 
-// heartbeatLoop reports liveness + workspace inventory on the configured
-// interval. The reconciliation response (`forgotten_workspaces`) drives
-// the disk janitor in sendHeartbeat.
+// heartbeatLoop reports liveness + workspace registry snapshot on the
+// configured interval. The reconciliation response (`forgotten_workspaces`)
+// drives the disk janitor in sendHeartbeat.
 func (s *Supervisor) heartbeatLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.cfg.HeartbeatInterval)
 	defer ticker.Stop()
@@ -527,7 +491,7 @@ func (s *Supervisor) heartbeatLoop(ctx context.Context) {
 func (s *Supervisor) sendHeartbeat(ctx context.Context) {
 	resp, err := s.client.Heartbeat(ctx, s.agentID, protocol.HeartbeatRequest{
 		ReportedAt: time.Now().UTC(),
-		Workspaces: s.snapshotInventory(),
+		Workspaces: s.pool.Snapshot(),
 	})
 	if err != nil {
 		recordBackoff(ctx, s.heartbeatBackoff, surfaceHeartbeat, err)
@@ -548,26 +512,19 @@ func (s *Supervisor) sendHeartbeat(ctx context.Context) {
 	}
 	s.log.Info("supervisor.heartbeat_reconciled", "forgotten_count", len(resp.ForgottenWorkspaces))
 
-	// Disk janitor: the backend named workspaces it no
-	// longer tracks. Walk the supervisor's path map, `os.RemoveAll`
-	// each surviving dir, and drop the cleaned ids from both the path
-	// map AND the inventory so the next heartbeat doesn't keep
-	// reporting them. Live workspaces still in `s.pool` aren't in
-	// `workspacePaths` (their on-disk path lives in the workspace
-	// process), so the janitor only touches orphan dirs.
-	s.mu.Lock()
-	s.workspacePaths = cleanupForgottenWorkspaces(s.workspacePaths, resp.ForgottenWorkspaces, s.log)
+	// Disk janitor: the backend named workspaces it no longer tracks.
+	// Walk the pool's path map, `os.RemoveAll` each surviving dir, and
+	// drop the cleaned ids from the registry so the next heartbeat
+	// doesn't keep reporting them.
+	paths := s.pool.Paths()
+	surviving := cleanupForgottenWorkspaces(paths, resp.ForgottenWorkspaces, s.log)
 	for _, id := range resp.ForgottenWorkspaces {
-		// `cleanupForgottenWorkspaces` removes the entry when the path
-		// is successfully RemoveAll'd. Absence == cleaned == drop the
-		// inventory entry so it stops being reported. Presence ==
-		// remove failed; leave inventory alone so the next heartbeat
-		// signals the backend to retry.
-		if _, stillPresent := s.workspacePaths[id]; !stillPresent {
-			delete(s.inventory, id)
+		if _, stillPresent := surviving[id]; !stillPresent {
+			// Successfully removed — drop from registry so it no longer
+			// appears in heartbeats.
+			s.pool.remove(id)
 		}
 	}
-	s.mu.Unlock()
 }
 
 // routeCommand dispatches a Command into either the in-supervisor path
@@ -588,8 +545,6 @@ func (s *Supervisor) sendHeartbeat(ctx context.Context) {
 // sees an outcome (it never silently hangs waiting for our reply).
 func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 	header := cmd.Header()
-	s.recordInventory(header.WorkspaceID, header.CommandID, "running")
-	defer s.clearInventory(header.WorkspaceID)
 
 	ctx = tracing.ExtractContext(ctx, header.Traceparent)
 	ctx, end := tracing.StartSpan(ctx, "supervisor.dispatch."+string(header.Kind),
@@ -712,33 +667,4 @@ func (s *Supervisor) ApplyConfig(cfg command.AgentConfig) {
 		"otlp_endpoint", cfg.OTLPEndpoint,
 		"otlp_dataset", cfg.OTLPDataset,
 	)
-}
-
-func (s *Supervisor) recordInventory(workspaceID, commandID, status string) {
-	if workspaceID == "" {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.inventory[workspaceID] = protocol.HeartbeatWorkspaceEntry{
-		WorkspaceID:      workspaceID,
-		Status:           status,
-		CurrentCommandID: commandID,
-	}
-}
-
-func (s *Supervisor) clearInventory(workspaceID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.inventory, workspaceID)
-}
-
-func (s *Supervisor) snapshotInventory() []protocol.HeartbeatWorkspaceEntry {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]protocol.HeartbeatWorkspaceEntry, 0, len(s.inventory))
-	for _, v := range s.inventory {
-		out = append(out, v)
-	}
-	return out
 }

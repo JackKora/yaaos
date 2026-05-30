@@ -224,8 +224,26 @@ func TestPool_SendContextCancel_RunnerDroppedAndFailureEmitted(t *testing.T) {
 	if !strings.Contains(ev.FailureReason, "runner:") {
 		t.Errorf("failure_reason: want 'runner:' prefix, got %q", ev.FailureReason)
 	}
-	// The cancelled runner should be dropped — a CreateWorkspace
-	// respawns rather than reusing the broken one.
+	// The runner should be marked defunct — verify via KnownIDs (record
+	// stays) and Snapshot (status=exited).
+	known := pool.KnownIDs()
+	if _, ok := known["ws-1"]; !ok {
+		t.Errorf("defunct workspace should still be in KnownIDs after cancel")
+	}
+	snap := pool.Snapshot()
+	found := false
+	for _, e := range snap {
+		if e.WorkspaceID == "ws-1" {
+			found = true
+			if e.Status != "exited" {
+				t.Errorf("status after cancel: want exited got %q", e.Status)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("ws-1 should still be in Snapshot after runner failure")
+	}
+	// A new CreateWorkspace respawns into a fresh Active record.
 	if ev := pool.Dispatch(context.Background(), newCreateCmd("ws-1", "c-respawn"), nil); ev.Kind != protocol.EventCompletedSuccess {
 		t.Errorf("respawn after cancel: %q (reason=%q)", ev.Kind, ev.FailureReason)
 	}
@@ -490,13 +508,24 @@ func TestPool_TimeoutOnSend_EmitsFailureAndDropsRunner(t *testing.T) {
 	if !strings.Contains(ev.FailureReason, "CreateWorkspace") {
 		t.Errorf("failure_reason should name the kind, got %q", ev.FailureReason)
 	}
-	// Slot should be dropped — next Create respawns rather than reusing
-	// the timed-out runner.
-	pool.mu.Lock()
-	_, stillPresent := pool.runners["ws-1"]
-	pool.mu.Unlock()
-	if stillPresent {
-		t.Errorf("slot should be dropped after timeout")
+	// Runner is marked defunct after timeout — KnownIDs still includes
+	// it (directory protection), but a new Create respawns.
+	known := pool.KnownIDs()
+	if _, ok := known["ws-1"]; !ok {
+		t.Errorf("defunct workspace should be in KnownIDs after timeout (directory protection)")
+	}
+	snap := pool.Snapshot()
+	found := false
+	for _, e := range snap {
+		if e.WorkspaceID == "ws-1" {
+			found = true
+			if e.Status != "exited" {
+				t.Errorf("status after timeout: want exited got %q", e.Status)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("ws-1 should still be in Snapshot after timeout (Defunct)")
 	}
 }
 

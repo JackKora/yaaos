@@ -21,7 +21,7 @@ The key invariant: `protocol` does not import `command`. `ClaimCommand` returns 
 
 ## Subcommands
 
-- `agent supervisor` — long-polls [`core/agent_gateway`](../../backend/docs/core_agent_gateway.md), exchanges identity, spawns one OS process per active workspace, heartbeats inventory + liveness, runs the disk janitor.
+- `agent supervisor` — long-polls [`core/agent_gateway`](../../backend/docs/core_agent_gateway.md), exchanges identity, spawns one OS process per active workspace, heartbeats workspace registry + liveness, runs the disk janitor.
 - `agent workspace` — per-workspace child process; reads raw JSON frames over stdin, decodes via `command.Decode`, calls `Execute` on the typed `WorkspaceCommand`, writes AgentEvents over stdout via `ipc` framing.
 
 ## Package layout
@@ -49,9 +49,18 @@ Supervisor maintains a bidirectional WS to `/api/v1/agents/{id}/activity` when `
 
 `RealHandler.RunClaude` wires `RunStreaming.OnStdoutLine` to push each Claude Code stream-json line as a `kind=progress` AgentEvent while also accumulating locally for the terminal event. `progress` events record without resuming the workflow engine — only `completed_*` events resume it.
 
-### Workspace lifecycle
+### Workspace registry and lifecycle
 
-`RealHandler.CloneWorkspace` writes a `.workspace-id` manifest into each tempdir after clone. On startup `scanOrphanWorkspaces` reads those manifests and pre-loads orphans as `status="unknown"` so the first heartbeat reports them. The backend issues cleanup via `HeartbeatResponse.forgotten_workspaces`; `cleanupForgottenWorkspaces` honors it with `os.RemoveAll`.
+The `Pool` is the single owner of workspace state. It holds one record per workspace_id; each record tracks two orthogonal axes:
+
+- **Liveness** (`WorkspaceState`): `Active` → subprocess is running; `Defunct` → subprocess exited unexpectedly; `Orphaned` → leftover from a prior run.
+- **Busy-ness** (`current_command_id`): `""` when idle, set to the in-flight command_id during `Dispatch`.
+
+Heartbeat `status` is a pure projection of liveness: `Active → "running"`, `Defunct → "exited"`, `Orphaned → "unknown"`. An idle Active workspace reports `status="running"` — the heartbeat does not under-report between commands.
+
+The disk sweep reads `pool.KnownIDs()` — Active + Defunct + Orphaned — so no registered directory is ever removed. The startup scan calls `pool.seedOrphan(id, path)` per found manifest. The forgotten-workspaces janitor reads `pool.Paths()` and calls `pool.remove(id)` after `os.RemoveAll` succeeds.
+
+Full state machine and record shapes → [workspace_lifecycle.md](workspace_lifecycle.md).
 
 ### Per-command timeouts
 
