@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -148,6 +149,11 @@ type Supervisor struct {
 	agentID  string
 	orgID    string
 	pool     *Pool
+
+	// config holds the runtime AgentConfig delivered by ConfigUpdateCommand.
+	// Nil until the first ConfigUpdate arrives — nil means unconfigured.
+	// Lifecycle is derived: config.Load() == nil → unconfigured.
+	config atomic.Pointer[command.AgentConfig]
 
 	// conductor + wsConn are non-nil iff cfg.ActivityWSURL is set AND
 	// the WS dial succeeded. Progress events route through the
@@ -499,9 +505,7 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 		if ctx.Err() != nil {
 			return
 		}
-		raw, err := s.client.ClaimCommand(ctx, s.agentID, protocol.ClaimRequest{
-			WaitSeconds: s.cfg.ClaimWaitSeconds,
-		})
+		raw, err := s.client.ClaimCommand(ctx, s.agentID, s.buildClaimRequest())
 		if err != nil {
 			if err == protocol.ErrNoCommand {
 				s.claimBackoff.Reset()
@@ -646,7 +650,13 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 	var event protocol.AgentEvent
 	switch c := cmd.(type) {
 	case command.WorkspaceCommand:
-		event = s.pool.Dispatch(ctx, c, progressForwarder)
+		// Lifecycle gate: workspace commands are rejected until the agent
+		// receives its first ConfigUpdate.
+		if cfg := s.config.Load(); cfg == nil {
+			event = failureEvent(header, "agent unconfigured")
+		} else {
+			event = s.pool.Dispatch(ctx, c, progressForwarder, cfg.MaxWorkspaces)
+		}
 	case command.AgentCommand:
 		// AgentCommands execute in the supervisor itself. Progress events
 		// are not expected for the current AgentCommand kinds; the
@@ -724,14 +734,44 @@ func setCommandTraceparent(cmd command.Command, tp string) {
 	}
 }
 
-// ApplyConfig implements command.AgentOps. It applies the runtime configuration
-// delivered by a ConfigUpdateCommand. The supervisor logs the update; more
-// sophisticated application (e.g., updating OTLP exporter) is wired as the
-// observability infrastructure matures.
+// routeWorkspaceCmd applies the lifecycle gate and dispatches a WorkspaceCommand
+// to the pool. It is the single path for all workspace-bound dispatch — both
+// the main routeCommand flow and tests use it.
+func (s *Supervisor) routeWorkspaceCmd(ctx context.Context, c command.WorkspaceCommand) protocol.AgentEvent {
+	cfg := s.config.Load()
+	if cfg == nil {
+		return failureEvent(c.Header(), "agent unconfigured")
+	}
+	return s.pool.Dispatch(ctx, c, nil, cfg.MaxWorkspaces)
+}
+
+// buildClaimRequest constructs the ClaimRequest the claim-loop POSTs to the
+// backend. Lifecycle is derived from the config pointer; active_workspace_ids
+// is the current set of Active registry records.
+func (s *Supervisor) buildClaimRequest() protocol.ClaimRequest {
+	lifecycle := "unconfigured"
+	if s.config.Load() != nil {
+		lifecycle = "configured"
+	}
+	return protocol.ClaimRequest{
+		WaitSeconds:        s.cfg.ClaimWaitSeconds,
+		Lifecycle:          lifecycle,
+		ActiveWorkspaceIDs: s.pool.ActiveIDs(),
+	}
+}
+
+// ApplyConfig implements command.AgentOps. Stores the config atomically so
+// all goroutines see the update on the next read. After the store the agent
+// is considered configured (lifecycle = "configured"). Late-binds the OTLP
+// exporter when an endpoint is present in the config.
 func (s *Supervisor) ApplyConfig(cfg command.AgentConfig) {
-	s.log.Info("supervisor.config_applied",
+	s.config.Store(&cfg)
+	s.log.Info("supervisor.agent_configured",
 		"max_workspaces", cfg.MaxWorkspaces,
 		"otlp_endpoint", cfg.OTLPEndpoint,
 		"otlp_dataset", cfg.OTLPDataset,
 	)
+	// Late-bind the OTLP exporter. When OTLPEndpoint is set, installs the
+	// exporter into the global OTel providers. No-op when endpoint is empty.
+	observability.BindExporter(context.Background(), cfg.OTLPEndpoint, cfg.OTLPToken.Value(), cfg.OTLPDataset)
 }

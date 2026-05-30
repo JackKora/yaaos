@@ -13,11 +13,16 @@
 ## Why / invariants
 
 - **Single pool mutex guards the registry.** All state reads/writes to workspace records go through `Pool`'s named mutators. No free-form field access.
+- **Lifecycle is derived from `config.Load() == nil`** — no separate enum. Nil means unconfigured; non-nil means configured. A restart clears the pointer and re-enters unconfigured (safe by default).
+- **Unconfigured gate in `routeWorkspaceCmd`** — all `WorkspaceCommand` dispatch paths return `completed_failure "agent unconfigured"` until the first `ConfigUpdateCommand` is applied. The claim loop runs regardless; claim requests carry `lifecycle` so the backend gates which commands to deliver.
+- **`max_workspaces` cap is atomic in `Pool.createActiveCapped`** — check-and-insert under `Pool.mu`; concurrent claim-workers cannot both pass a stale count. The supervisor reads `config.MaxWorkspaces` and passes it to `Pool.Dispatch`.
 - **Heartbeat reads `pool.Snapshot()`** — a pure projection of the registry state. It reports every registered workspace (Active/Defunct/Orphaned), not just in-flight ones.
 - **Disk sweep reads `pool.KnownIDs()`** — covers Active, Defunct, and Orphaned. A Defunct record keeps its id in KnownIDs so the sweep never removes a directory the registry knows about.
 - **Orphan startup scan calls `pool.seedOrphan(id, path)`** per found directory, so the first heartbeat after a pod restart correctly reports leftover workspaces as `status="unknown"`.
 - **Forgotten-workspace janitor reads `pool.Paths()`** — includes every record that has a path set. After `os.RemoveAll` succeeds, calls `pool.remove(id)` to drop the record.
 - **Busy-ness is tracked inside `Pool.Dispatch`** — `setCommandID`/`clearCommandID` toggle `current_command_id` around Send. A completed command's workspace stays `status="running"` until the backend explicitly reaps it.
+- **Claim request carries lifecycle + active_workspace_ids** — `buildClaimRequest()` reads the config pointer (lifecycle) and `pool.ActiveIDs()` (active workspace set) for every claim poll. The backend filters which commands are eligible based on this.
+- **OTLP exporter late-binds on first ConfigUpdate** — `observability.BindExporter` is called inside `ApplyConfig`. No-op when `OTLPEndpoint` is empty.
 
 ## Gotchas
 

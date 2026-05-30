@@ -83,6 +83,10 @@ const (
 // arrives for a workspace_id with no registry record.
 var ErrUnknownWorkspace = errors.New("no workspace runner")
 
+// ErrAtCap is returned by createActiveCapped when the Active-record count
+// has reached the configured max_workspaces limit.
+var ErrAtCap = errors.New("cap reached")
+
 // workspaceRecord is one entry in the pool's registry.
 // It is guarded by Pool.mu for state/path/currentCommandID writes
 // and by its own slotMu for serializing Send calls to the same runner.
@@ -196,6 +200,32 @@ func (p *Pool) createActive(id string, runner WorkspaceRunner) {
 		state:  stateActive,
 		runner: runner,
 	}
+}
+
+// createActiveCapped inserts a new Active record only if the current count
+// of Active records is strictly less than maxWorkspaces. The check and insert
+// are performed atomically under Pool.mu — two concurrent Dispatch calls
+// cannot both pass a stale count. Returns ErrAtCap if the limit is reached.
+// maxWorkspaces <= 0 means no cap (unlimited).
+func (p *Pool) createActiveCapped(id string, runner WorkspaceRunner, maxWorkspaces int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if maxWorkspaces > 0 {
+		activeCount := 0
+		for _, rec := range p.registry {
+			if rec.state == stateActive {
+				activeCount++
+			}
+		}
+		if activeCount >= maxWorkspaces {
+			return ErrAtCap
+		}
+	}
+	p.registry[id] = &workspaceRecord{
+		state:  stateActive,
+		runner: runner,
+	}
+	return nil
 }
 
 // seedOrphan inserts an Orphaned record for a workspace discovered at startup.
@@ -338,13 +368,15 @@ func (p *Pool) ActiveIDs() []string {
 //
 // Registry effects per kind:
 //
-//   - CreateWorkspace  → createActive, setPath from CreateResult.Path
+//   - CreateWorkspace  → createActiveCapped (cap enforced atomically), setPath from CreateResult.Path
 //   - other kinds      → require existing Active record; failure → completed_failure
 //   - CleanupWorkspace → remove on success
 //   - all kinds        → setCommandID around Execute, clearCommandID on completion
 //
 // Per-command timeout comes from cmd.Timeout() — the command type owns its
 // deadline (wire-supplied for InvokeClaudeCode, Go-side defaults for others).
+//
+// maxWorkspaces is the cap on Active records. 0 means unlimited.
 //
 // Progress events (kind=progress) emitted by the runner are forwarded
 // to `onProgress` synchronously and the dispatch continues waiting for
@@ -354,7 +386,7 @@ func (p *Pool) ActiveIDs() []string {
 // markDefunct so the record stays in the registry (protecting the directory
 // from the disk sweep) until the backend explicitly reaps it via
 // forgotten_workspaces.
-func (p *Pool) Dispatch(ctx context.Context, cmd command.WorkspaceCommand, onProgress func(protocol.AgentEvent)) protocol.AgentEvent {
+func (p *Pool) Dispatch(ctx context.Context, cmd command.WorkspaceCommand, onProgress func(protocol.AgentEvent), maxWorkspaces int) protocol.AgentEvent {
 	header := cmd.Header()
 	workspaceID := header.WorkspaceID
 	if workspaceID == "" {
@@ -373,10 +405,17 @@ func (p *Pool) Dispatch(ctx context.Context, cmd command.WorkspaceCommand, onPro
 			p.mu.Unlock()
 			return failureEvent(header, fmt.Sprintf("%s: %s (kind=%s)", ErrUnknownWorkspace, workspaceID, header.Kind))
 		}
-		// Insert a placeholder Active record before releasing mu so
-		// concurrent Dispatches for the same workspace see it.
-		placeholder := &workspaceRecord{state: stateActive}
-		p.registry[workspaceID] = placeholder
+		// Atomic cap check + insert under mu. If at cap, return failure without
+		// spawning — avoids a race where two concurrent claim-workers both see a
+		// stale count and both attempt to insert.
+		p.mu.Unlock()
+		if capErr := p.createActiveCapped(workspaceID, nil, maxWorkspaces); capErr != nil {
+			p.log.Warn("pool.create_at_cap", "workspace_id", workspaceID, "max", maxWorkspaces)
+			return failureEvent(header, "cap reached")
+		}
+		// Placeholder inserted. Fetch it for the runner assignment below.
+		p.mu.Lock()
+		placeholder := p.registry[workspaceID]
 		p.mu.Unlock()
 
 		runner, err := p.spawn(ctx, workspaceID)

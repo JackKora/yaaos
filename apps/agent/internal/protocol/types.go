@@ -167,5 +167,27 @@ type HeartbeatResponse struct {
 }
 
 type ClaimRequest struct {
-	WaitSeconds int `json:"wait_seconds"`
+	WaitSeconds        int      `json:"wait_seconds"`
+	Lifecycle          string   `json:"lifecycle"`            // "unconfigured" | "configured"
+	ActiveWorkspaceIDs []string `json:"active_workspace_ids"` // IDs of Active-state workspaces
+}
+
+// AgentConfig carries the typed runtime configuration delivered via
+// ConfigUpdateCommand. The OTLP token is a credential — never log it.
+type AgentConfig struct {
+	MaxWorkspaces int    `json:"max_workspaces"`
+	OTLPEndpoint  string `json:"otlp_endpoint"`
+	OTLPToken     string `json:"otlp_token"` // secret — never log
+	OTLPDataset   string `json:"otlp_dataset"`
+}
+
+// ConfigUpdateCommand is the agent-scoped command that delivers runtime
+// configuration. It carries no workspace_id — it applies globally to the
+// agent process. See command.ConfigUpdateCommand for the typed form used
+// after Decode.
+type ConfigUpdateCommand struct {
+	CommandID   string      `json:"command_id"`
+	Traceparent string      `json:"traceparent"`
+	Kind        CommandKind `json:"kind"`
+	Config      AgentConfig `json:"config"`
 }

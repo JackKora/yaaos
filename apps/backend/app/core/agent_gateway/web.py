@@ -222,7 +222,12 @@ async def claim_command(
     agent: bearers.BearerContext = Depends(_bearer_dep),
 ) -> Response:
     async with org_context(agent.org_id, ActorKind.WORKSPACE, actor_id=agent.agent_id):
-        cmd = await claim_next(agent_id, wait_seconds=request.wait_seconds)
+        cmd = await claim_next(
+            agent_id,
+            wait_seconds=request.wait_seconds,
+            lifecycle=request.lifecycle,
+            active_workspace_ids=list(request.active_workspace_ids),
+        )
         if cmd is None:
             return Response(status_code=204)
         return JSONResponse(status_code=200, content=cmd.model_dump(mode="json"))

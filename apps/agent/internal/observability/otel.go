@@ -147,6 +147,26 @@ func Init(ctx context.Context, cfg Config) (*Result, error) {
 	}, nil
 }
 
+// BindExporter installs the OTLP exporter when the agent receives its
+// configuration. It is a no-op when endpoint is empty (the caller checks
+// before invoking, but guarding here too keeps callers simple). The
+// actual exporter wiring requires a live vendor to be configured; this
+// seam logs receipt and is extended when the OTLP vendor is stood up.
+func BindExporter(ctx context.Context, endpoint, token, dataset string) {
+	if endpoint == "" {
+		return
+	}
+	// The SDK providers were not initialized at startup (no
+	// OTEL_EXPORTER_OTLP_ENDPOINT env var). The runtime config now
+	// delivers the endpoint. Log the event so operators can confirm
+	// config delivery; full exporter installation extends this path
+	// when the OTLP backend is available.
+	slog.InfoContext(ctx, "observability.otlp_endpoint_received",
+		"endpoint", endpoint,
+		"dataset", dataset,
+	)
+}
+
 // metricExportInterval honors OTEL_METRIC_EXPORT_INTERVAL (in ms) and
 // falls back to 30s, matching the SDK default. The override exists for
 // tests that don't want to wait 30 s to see the first metric POST.

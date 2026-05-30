@@ -54,3 +54,16 @@ An Orphaned record has a nil runner and a path set from the startup scan. It is 
 ## Defunct record shape
 
 A Defunct record has a closed runner (kept in the struct but not used for Sends). It stays in `KnownIDs` — the directory is protected until the backend reaps it. A subsequent `CreateWorkspace` for the same id replaces the Defunct record with a fresh Active one (`createActive` overwrites the registry entry).
+
+## Lifecycle gate
+
+- **Unconfigured** — `config.Load() == nil` in the supervisor. The agent enters this state at startup (before the first `ConfigUpdate` arrives). All `WorkspaceCommand` dispatches are rejected immediately with `completed_failure "agent unconfigured"`. The claim loop still runs; the backend returns only a `ConfigUpdateCommand` on unconfigured claims (no workspace commands are dequeued).
+- **Configured** — `config.Load() != nil`. The supervisor received and applied a `ConfigUpdateCommand`. `WorkspaceCommands` are dispatched normally. A process restart clears the atomic pointer → re-enters unconfigured (safe by default).
+
+The lifecycle is derived from the `config` atomic pointer in the supervisor; there is no separate enum field.
+
+## `max_workspaces` cap
+
+`Pool.Dispatch` enforces the cap atomically under the pool mutex via `createActiveCapped`. The cap counts **Active records only** — Defunct and Orphaned records do not count toward it. The check and insert are one operation under `Pool.mu`, so concurrent claim-workers cannot both pass a stale count.
+
+The supervisor reads `config.Load().MaxWorkspaces` and passes it as `maxWorkspaces` to `Pool.Dispatch`. The pool itself is config-agnostic — the supervisor supplies the int. A `CreateWorkspace` that would exceed the cap returns `completed_failure "cap reached"`.

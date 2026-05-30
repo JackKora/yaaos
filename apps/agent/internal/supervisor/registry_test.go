@@ -151,7 +151,7 @@ func TestDispatch_Create_RegistryActiveAndPathSet(t *testing.T) {
 	p := NewPool(InProcessSpawn(workspace.StubHandler{}), nil)
 	defer p.CloseAll(context.Background())
 
-	ev := p.Dispatch(context.Background(), newCreateCmd("ws-1", "cmd-1"), nil)
+	ev := p.Dispatch(context.Background(), newCreateCmd("ws-1", "cmd-1"), nil, 0)
 	if ev.Kind != protocol.EventCompletedSuccess {
 		t.Fatalf("dispatch: want completed_success got %q (reason=%q)", ev.Kind, ev.FailureReason)
 	}
@@ -180,7 +180,7 @@ func TestDispatch_NonCreate_UnknownWorkspace_ErrUnknown(t *testing.T) {
 	p := NewPool(InProcessSpawn(workspace.StubHandler{}), nil)
 	defer p.CloseAll(context.Background())
 
-	ev := p.Dispatch(context.Background(), newWriteCmd("ws-never", "cmd-1"), nil)
+	ev := p.Dispatch(context.Background(), newWriteCmd("ws-never", "cmd-1"), nil, 0)
 	if ev.Kind != protocol.EventCompletedFailure {
 		t.Fatalf("want completed_failure for unknown workspace, got %q", ev.Kind)
 	}
@@ -192,8 +192,8 @@ func TestDispatch_Cleanup_RemovesRecord(t *testing.T) {
 	p := NewPool(InProcessSpawn(workspace.StubHandler{}), nil)
 	defer p.CloseAll(context.Background())
 
-	p.Dispatch(context.Background(), newCreateCmd("ws-1", "cmd-create"), nil)
-	p.Dispatch(context.Background(), newCleanupCmd("ws-1", "cmd-cleanup"), nil)
+	p.Dispatch(context.Background(), newCreateCmd("ws-1", "cmd-create"), nil, 0)
+	p.Dispatch(context.Background(), newCleanupCmd("ws-1", "cmd-cleanup"), nil, 0)
 
 	snap := p.Snapshot()
 	if len(snap) != 0 {
@@ -253,7 +253,7 @@ func TestSupervisor_IdleWorkspace_KnownAndHeartbeatedRunning(t *testing.T) {
 	p := NewPool(InProcessSpawn(workspace.StubHandler{}), nil)
 	defer p.CloseAll(context.Background())
 
-	ev := p.Dispatch(context.Background(), newCreateCmd("ws-a", "cmd-1"), nil)
+	ev := p.Dispatch(context.Background(), newCreateCmd("ws-a", "cmd-1"), nil, 0)
 	if ev.Kind != protocol.EventCompletedSuccess {
 		t.Fatalf("create: %q (reason=%q)", ev.Kind, ev.FailureReason)
 	}
@@ -307,7 +307,7 @@ func TestDispatch_MarkDefunct_ChildExitWatcher(t *testing.T) {
 	p := NewPool(InProcessSpawn(workspace.StubHandler{}), nil)
 	defer p.CloseAll(context.Background())
 
-	if ev := p.Dispatch(context.Background(), newCreateCmd("ws-exit", "cmd-create"), nil); ev.Kind != protocol.EventCompletedSuccess {
+	if ev := p.Dispatch(context.Background(), newCreateCmd("ws-exit", "cmd-create"), nil, 0); ev.Kind != protocol.EventCompletedSuccess {
 		t.Fatalf("create: %q", ev.Kind)
 	}
 
