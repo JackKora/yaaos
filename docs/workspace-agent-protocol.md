@@ -37,10 +37,14 @@ A fresh agent (or any restarted pod) enters the `unconfigured` lifecycle.
 ## Claim routing — capacity-pull
 
 The `ClaimRequest` body:
-- `new_workspaces = max_workspaces − active count` — capacity for new workspaces. The backend returns up to this many unassigned `CreateWorkspace` rows.
-- `workspace_ids` — idle Active workspaces (Active registry records with no in-flight command). The backend returns one pending command per named workspace.
+- `new_workspaces = max_workspaces − active count` — capacity for new workspaces.
+- `workspace_ids` — idle Active workspaces (Active registry records with no in-flight command).
 
-The backend draws commands from the durable `agent_commands` queue — capacity-pull means the agent declares what it can accept, and the backend selects matching rows.
+`claim_next` returns **exactly one** command per call via a single `FOR UPDATE SKIP LOCKED LIMIT 1` across the eligible set (FIFO by UUIDv7 id):
+1. A pending unassigned `CreateWorkspace` row (when `new_workspaces > 0`).
+2. The oldest pending row pinned to this agent for any `workspace_id` in `workspace_ids`.
+
+Returns 204 when nothing eligible. Each concurrent claim worker gets at most one row per call, leaving no rows stranded in `claimed` limbo from batch over-claim.
 
 ## Command lease + `received` event
 

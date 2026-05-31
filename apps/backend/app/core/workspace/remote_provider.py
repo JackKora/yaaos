@@ -152,7 +152,7 @@ class CreateWorkspaceDispatch(BaseModel):
 
     Carries the new `command_id` for `current_command_id`. The workspace
     is not pre-assigned to an agent — the durable queue lets any reachable
-    agent claim it via `claim_batch`.
+    agent claim it via `claim_next`.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -177,7 +177,7 @@ async def dispatch_create_workspace(
     can persist `current_command_id` atomically with the `try_claim` gate.
 
     Unlike the old path there is no agent pre-assignment here — the durable
-    queue lets whichever reachable agent has capacity claim it via `claim_batch`.
+    queue lets whichever reachable agent has capacity claim it via `claim_next`.
 
     Caller is responsible for calling `core/workspace.try_claim` to gate
     the dispatch through the single-flight machinery; this helper does NOT
@@ -211,7 +211,7 @@ async def dispatch_cleanup_workspace(
     `agent_id` is the workspace's stored owning agent (`WorkspaceRow.agent_id`)
     — the pod that ran `CreateWorkspace`. Post-create commands MUST go to that
     same agent; re-picking would route to a pod that has no such workspace.
-    The command row is pre-stamped with `agent_id` so `claim_batch` can
+    The command row is pre-stamped with `agent_id` so `claim_next` can
     find it in the workspace_ids sweep.
     Returns the new `command_id`.
     """
@@ -222,6 +222,6 @@ async def dispatch_cleanup_workspace(
         traceparent=traceparent,
     )
     await enqueue_command(org_id=org_id, command=cmd, session=session)
-    # Pre-assign the agent so claim_batch's workspace_ids sweep finds it.
+    # Pre-assign the agent so claim_next's workspace_ids sweep finds it.
     await pin_command_to_agent(command_id, agent_id, session=session)
     return command_id

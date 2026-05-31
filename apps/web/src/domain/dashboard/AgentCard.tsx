@@ -58,6 +58,7 @@ function StateBadge({ state }: { state: string }) {
         "inline-flex items-center gap-1 text-xs font-medium",
         STATE_COLOR[state] ?? "text-muted-foreground",
       )}
+      data-testid={`agent-state-${state}`}
     >
       <Activity className="w-3 h-3" />
       {STATE_LABEL[state] ?? state}
@@ -79,14 +80,13 @@ export function AgentCard({ agent }: AgentCardProps) {
       : null;
 
   return (
-    <div className="rounded-md border border-border bg-card p-4 flex flex-col gap-2 min-w-0">
+    <div
+      className="rounded-md border border-border bg-card p-4 flex flex-col gap-2 min-w-0"
+      data-testid={`agent-card-instance-${agent.instance_id}`}
+    >
       {/* Header row: instance name + state badge */}
       <div className="flex items-start justify-between gap-2">
-        <span
-          className="text-sm font-medium truncate"
-          title={agent.instance_id}
-          data-testid={`agent-card-instance-${agent.id}`}
-        >
+        <span className="text-sm font-medium truncate" title={agent.instance_id}>
           {agent.instance_id}
         </span>
         <StateBadge state={agent.state} />

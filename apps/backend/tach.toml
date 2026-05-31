@@ -223,7 +223,7 @@ expose = [
   "WriteFilesEntry",
   "acknowledge_command_received",
   "bind_subscriber_registry",
-  "claim_batch",
+  "claim_next",
   "compute_agent_liveness_transitions",
   "connection_status_for_org",
   "enqueue_command",

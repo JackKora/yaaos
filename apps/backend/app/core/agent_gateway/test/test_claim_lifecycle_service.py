@@ -1,9 +1,9 @@
-"""Service tests for lifecycle-gated claim_batch.
+"""Service tests for lifecycle-gated claim_next.
 
 Verifies:
 - Unconfigured claim returns ConfigUpdateCommand with default max_workspaces.
-- Configured claim returns CreateWorkspace commands up to new_workspaces cap.
-- Configured claim with workspace_ids returns pending per named workspace.
+- Configured claim returns a CreateWorkspace command when new_workspaces > 0.
+- Configured claim with workspace_ids returns the pending command for a named workspace.
 - Unconfigured claim leaves DB rows untouched.
 """
 
@@ -17,7 +17,7 @@ from sqlalchemy import select
 from app.core.agent_gateway.models import AgentCommandRow
 from app.core.agent_gateway.service import (
     DEFAULT_MAX_WORKSPACES,
-    claim_batch,
+    claim_next,
     enqueue_command,
 )
 from app.core.agent_gateway.types import (
@@ -77,7 +77,7 @@ async def test_unconfigured_claim_returns_config_update(db_session) -> None:
     await enqueue_command(org_id=org_id, command=ws_cmd, session=db_session)
     await db_session.flush()
 
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id,
         lifecycle="unconfigured",
         new_workspaces=0,
@@ -85,10 +85,10 @@ async def test_unconfigured_claim_returns_config_update(db_session) -> None:
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
-    assert isinstance(batch[0], ConfigUpdateCommand)
-    assert batch[0].kind == AgentCommandKind.CONFIG_UPDATE
-    assert batch[0].config.max_workspaces == DEFAULT_MAX_WORKSPACES
+    assert command is not None
+    assert isinstance(command, ConfigUpdateCommand)
+    assert command.kind == AgentCommandKind.CONFIG_UPDATE
+    assert command.config.max_workspaces == DEFAULT_MAX_WORKSPACES
 
     # The workspace command must remain pending.
     row = (
@@ -103,7 +103,7 @@ async def test_unconfigured_claim_returns_config_update(db_session) -> None:
 async def test_unconfigured_claim_returns_config_update_when_queue_empty(db_session) -> None:
     """Unconfigured claim returns ConfigUpdateCommand even with no pending rows."""
     agent_id = await _make_agent(db_session)
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id,
         lifecycle="unconfigured",
         new_workspaces=0,
@@ -111,9 +111,9 @@ async def test_unconfigured_claim_returns_config_update_when_queue_empty(db_sess
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
-    assert isinstance(batch[0], ConfigUpdateCommand)
-    assert batch[0].config.max_workspaces > 0
+    assert command is not None
+    assert isinstance(command, ConfigUpdateCommand)
+    assert command.config.max_workspaces > 0
 
 
 # ── Configured claim ───────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ async def test_unconfigured_claim_returns_config_update_when_queue_empty(db_sess
 
 @pytest.mark.asyncio
 @pytest.mark.service
-async def test_configured_claim_returns_create_workspaces(db_session) -> None:
+async def test_configured_claim_returns_create_workspace(db_session) -> None:
     """Configured claim with new_workspaces=1 returns one CreateWorkspace."""
     org_id = uuid4()
     agent_id = await _make_agent(db_session, org_id=org_id)
@@ -129,7 +129,7 @@ async def test_configured_claim_returns_create_workspaces(db_session) -> None:
     await enqueue_command(org_id=org_id, command=cmd, session=db_session)
     await db_session.flush()
 
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id,
         lifecycle="configured",
         new_workspaces=1,
@@ -137,16 +137,16 @@ async def test_configured_claim_returns_create_workspaces(db_session) -> None:
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
-    assert batch[0].command_id == cmd.command_id
+    assert command is not None
+    assert command.command_id == cmd.command_id
 
 
 @pytest.mark.asyncio
 @pytest.mark.service
 async def test_configured_claim_returns_none_when_empty(db_session) -> None:
-    """Configured claim with nothing enqueued returns empty batch."""
+    """Configured claim with nothing enqueued returns None."""
     agent_id = await _make_agent(db_session)
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id,
         lifecycle="configured",
         new_workspaces=4,
@@ -154,4 +154,4 @@ async def test_configured_claim_returns_none_when_empty(db_session) -> None:
         wait_seconds=0,
         session=db_session,
     )
-    assert batch == []
+    assert command is None

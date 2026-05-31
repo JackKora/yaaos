@@ -143,7 +143,7 @@ async def test_connection_status_lost_when_heartbeat_stale(db_session) -> None:
 @pytest.mark.asyncio
 async def test_dispatch_create_workspace_enqueues_pending_row(db_session) -> None:
     """dispatch_create_workspace enqueues a pending row claimable by any agent."""
-    from app.core.agent_gateway import claim_batch  # noqa: PLC0415
+    from app.core.agent_gateway import claim_next  # noqa: PLC0415
 
     org_id = uuid4()
     seeded = await _seed_reachable_agent(db_session, org_id=org_id, heartbeat_age_seconds=5)
@@ -164,7 +164,7 @@ async def test_dispatch_create_workspace_enqueues_pending_row(db_session) -> Non
     )
     assert result is not None
     # Verify the command is claimable (it was inserted as pending).
-    batch = await claim_batch(
+    command = await claim_next(
         seeded["id"],
         lifecycle="configured",
         new_workspaces=1,
@@ -172,8 +172,8 @@ async def test_dispatch_create_workspace_enqueues_pending_row(db_session) -> Non
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
-    assert batch[0].command_id == result.command_id
+    assert command is not None
+    assert command.command_id == result.command_id
 
 
 # ── Provider health_check ─────────────────────────────────────────────

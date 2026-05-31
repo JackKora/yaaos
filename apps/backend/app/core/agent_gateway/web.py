@@ -50,7 +50,7 @@ from app.core.agent_gateway.org_arn_lookup import lookup_org_by_arn
 from app.core.agent_gateway.rate_limit import RateLimitedError, check_identity_exchange
 from app.core.agent_gateway.report_sink import get_report_sink
 from app.core.agent_gateway.service import (
-    claim_batch,
+    claim_next,
     ensure_agent_row,
     mark_agent_shutdown,
     record_agent_event,
@@ -417,7 +417,7 @@ async def claim_command(
 ) -> Response:
     async with org_context(agent.org_id, ActorKind.WORKSPACE, actor_id=agent.agent_id):
         async with db_session() as s:
-            batch = await claim_batch(
+            command = await claim_next(
                 agent.agent_id,
                 lifecycle=request.lifecycle,
                 new_workspaces=request.new_workspaces,
@@ -426,10 +426,9 @@ async def claim_command(
                 session=s,
             )
             await s.commit()
-        if not batch:
+        if command is None:
             return Response(status_code=204)
-        # Return the first claimed command (batch responses are a follow-on).
-        return JSONResponse(status_code=200, content=batch[0].model_dump(mode="json"))
+        return JSONResponse(status_code=200, content=command.model_dump(mode="json"))
 
 
 @router.post("/workspaces/{workspace_id}/events")

@@ -73,7 +73,7 @@ async def enqueue_command(
     start_step transaction — the insert is atomic with `try_claim`.
 
     The DB-minted UUIDv7 PK serves as the idempotency key and FIFO sort key.
-    `agent_id` is left NULL at enqueue time; it is stamped by `claim_batch`.
+    `agent_id` is left NULL at enqueue time; it is stamped by `claim_next`.
     """
     from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
 
@@ -107,7 +107,7 @@ async def pin_command_to_agent(
     """Pre-assign a command row to `agent_id` before it is claimed.
 
     Used by `dispatch_cleanup_workspace` to route post-create commands to
-    the workspace's owning agent, so `claim_batch`'s `workspace_ids` sweep
+    the workspace's owning agent, so `claim_next`'s `workspace_ids` sweep
     can find them by `(agent_id, workspace_id, status=pending)`.
     Caller flushes/commits.
     """
@@ -162,7 +162,7 @@ def _row_to_command(row: object) -> AgentCommand:
     return _adapter.validate_python(row.payload)  # type: ignore[attr-defined]
 
 
-async def claim_batch(
+async def claim_next(
     agent_id: UUID,
     *,
     lifecycle: str,
@@ -170,35 +170,39 @@ async def claim_batch(
     workspace_ids: list[UUID],
     wait_seconds: int,
     session: AsyncSession,
-) -> list[AgentCommand]:
-    """Claim a capacity-bounded batch of commands for the agent.
+) -> AgentCommand | None:
+    """Claim exactly one command for the agent — the highest-priority eligible row.
 
     Lifecycle gate:
     - `unconfigured` → return a single ConfigUpdateCommand (no DB claim).
       The pending queue is untouched so commands accumulate while the agent
       bootstraps.
-    - `configured` → run two FOR UPDATE SKIP LOCKED selects:
-        1. Up to `new_workspaces` unassigned CreateWorkspace rows (status=pending,
-           workspace_id NULL, command_kind=CreateWorkspace).
-        2. One pending row per named workspace_id in `workspace_ids`.
-      Both selects FIFO by UUIDv7 id. Stamps `agent_id`, `status=claimed`,
-      `claimed_at=now`.
+    - `configured` → one `FOR UPDATE SKIP LOCKED LIMIT 1` pick across the
+      eligible set (FIFO by UUIDv7 id):
+        * A pending unassigned CreateWorkspace (status=pending, agent_id NULL,
+          kind=CreateWorkspace), when `new_workspaces > 0`.
+        * A pending command pinned to this agent for a workspace in
+          `workspace_ids` (status=pending, agent_id=this agent, workspace_id ∈
+          workspace_ids).
+      The two sets are evaluated with a single UNION-like approach: we query
+      each eligible set in priority order and take the first result, so the
+      caller receives exactly one command per call. Stamps `agent_id`,
+      `status=claimed`, `claimed_at=now`.
 
-    `wait_seconds=0` → non-blocking peek (returns immediately if nothing claimable).
-    Non-zero wait_seconds → short-interval re-SELECT loop (no Redis pub/sub needed
-    for POC; the reaper tick is the long-term wakeup path).
+    `wait_seconds=0` → non-blocking peek (returns None immediately if nothing
+    claimable). Non-zero `wait_seconds` → short-interval re-SELECT loop.
     """
     if lifecycle == "unconfigured":
-        return [_build_config_update()]
+        return _build_config_update()
 
     from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
 
     now = datetime.now(UTC)
-    claimed_rows: list[object] = []
+    row: object | None = None
 
-    # 1. Unassigned CreateWorkspace rows (org-scoped; no agent pre-assigned).
+    # Try unassigned CreateWorkspace first (capacity for new workspaces).
     if new_workspaces > 0:
-        create_rows = (
+        row = (
             (
                 await session.execute(
                     select(AgentCommandRow)
@@ -208,25 +212,25 @@ async def claim_batch(
                         AgentCommandRow.agent_id.is_(None),
                     )
                     .order_by(AgentCommandRow.id)
-                    .limit(new_workspaces)
+                    .limit(1)
                     .with_for_update(skip_locked=True)
                 )
             )
             .scalars()
-            .all()
+            .one_or_none()
         )
-        claimed_rows.extend(create_rows)
 
-    # 2. One pending row per workspace in workspace_ids (pinned to this agent).
-    for ws_id in workspace_ids:
-        ws_rows = (
+    # If no CreateWorkspace, try the oldest pending command pinned to this agent
+    # for any of the named workspaces.
+    if row is None and workspace_ids:
+        row = (
             (
                 await session.execute(
                     select(AgentCommandRow)
                     .where(
                         AgentCommandRow.status == "pending",
-                        AgentCommandRow.workspace_id == ws_id,
                         AgentCommandRow.agent_id == agent_id,
+                        AgentCommandRow.workspace_id.in_(workspace_ids),
                     )
                     .order_by(AgentCommandRow.id)
                     .limit(1)
@@ -234,18 +238,17 @@ async def claim_batch(
                 )
             )
             .scalars()
-            .all()
+            .one_or_none()
         )
-        claimed_rows.extend(ws_rows)
 
-    if not claimed_rows:
+    if row is None:
         if wait_seconds <= 0:
-            return []
+            return None
         # Short-interval poll — re-check once after a short sleep.
         import asyncio  # noqa: PLC0415
 
         await asyncio.sleep(min(wait_seconds, 2))
-        return await claim_batch(
+        return await claim_next(
             agent_id=agent_id,
             lifecycle=lifecycle,
             new_workspaces=new_workspaces,
@@ -254,14 +257,13 @@ async def claim_batch(
             session=session,
         )
 
-    # Stamp agent_id + claimed_at on all selected rows.
-    for row in claimed_rows:
-        row.agent_id = agent_id  # type: ignore[attr-defined]
-        row.status = "claimed"  # type: ignore[attr-defined]
-        row.claimed_at = now  # type: ignore[attr-defined]
+    # Stamp agent_id + claimed_at on the single selected row.
+    row.agent_id = agent_id  # type: ignore[attr-defined]
+    row.status = "claimed"  # type: ignore[attr-defined]
+    row.claimed_at = now  # type: ignore[attr-defined]
     await session.flush()
 
-    return [_row_to_command(r) for r in claimed_rows]
+    return _row_to_command(row)
 
 
 async def acknowledge_command_received(

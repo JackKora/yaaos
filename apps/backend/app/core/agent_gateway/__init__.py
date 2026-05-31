@@ -8,7 +8,7 @@ every operational channel is derived from the bearer (no `{agent_id}` in URLs).
 Provides:
 - Hand-written Pydantic wire types (mirror of `apps/backend/openapi/agent-api.yaml`).
 - Durable command dispatch via the `agent_commands` table + capacity-pull
-  `claim_batch` (lease: pending→claimed→delivered→done) with a requeue reaper.
+  `claim_next` (lease: pending→claimed→delivered→done) with a requeue reaper.
 - STS identity verification (sigv4 GetCallerIdentity replay) issuing 1h bearers.
 - Liveness sweeper (`compute_agent_liveness_transitions`) + agents-list query.
 - Heartbeat reconciliation (control-plane returns workspaces the agent
@@ -34,7 +34,7 @@ from app.core.agent_gateway.report_sink import (
 )
 from app.core.agent_gateway.service import (
     acknowledge_command_received,
-    claim_batch,
+    claim_next,
     compute_agent_liveness_transitions,
     connection_status_for_org,
     enqueue_command,
@@ -128,7 +128,7 @@ __all__ = [
     "WriteFilesEntry",
     "acknowledge_command_received",
     "bind_subscriber_registry",
-    "claim_batch",
+    "claim_next",
     "compute_agent_liveness_transitions",
     "connection_status_for_org",
     "enqueue_command",

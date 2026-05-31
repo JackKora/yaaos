@@ -3,9 +3,8 @@
 Verifies:
 - enqueue_command inserts a row with status=pending; the row survives a
   simulated backend restart (in-memory state dropped).
-- claim_batch returns ≤ new_workspaces CreateWorkspace rows + one pending
-  per named workspace_id; never returns a command for a workspace not in
-  workspace_ids; unconfigured claim returns only ConfigUpdate.
+- claim_next returns exactly one command per call; unconfigured claim returns
+  only ConfigUpdate; no row is left in `claimed` limbo after a single call.
 - Lease: no `received` event within 30s requeues to pending; `received`
   flips claimed→delivered; terminal event → done; attempt cap → loud terminal
   failure.
@@ -23,7 +22,7 @@ from sqlalchemy import select, update
 from app.core.agent_gateway.models import AgentCommandRow
 from app.core.agent_gateway.service import (
     DEFAULT_MAX_WORKSPACES,
-    claim_batch,
+    claim_next,
     enqueue_command,
     requeue_stale_claimed,
 )
@@ -110,15 +109,15 @@ async def test_enqueue_inserts_pending_row(db_session) -> None:
 @pytest.mark.service
 async def test_enqueue_then_simulated_restart_command_still_claimable(db_session) -> None:
     """Commands survive a backend restart: after the in-memory state is wiped
-    the row remains in the DB and is claimable via claim_batch."""
+    the row remains in the DB and is claimable via claim_next."""
     org_id = uuid4()
     agent_id = await _make_agent(db_session, org_id=org_id)
     cmd = _make_create_cmd()
     await enqueue_command(org_id=org_id, command=cmd, session=db_session)
     await db_session.flush()
 
-    # Simulate restart: DB state is durable; claim_batch reads from DB.
-    batch = await claim_batch(
+    # Simulate restart: DB state is durable; claim_next reads from DB.
+    command = await claim_next(
         agent_id=agent_id,
         lifecycle="configured",
         new_workspaces=4,
@@ -126,8 +125,8 @@ async def test_enqueue_then_simulated_restart_command_still_claimable(db_session
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
-    assert batch[0].command_id == cmd.command_id
+    assert command is not None
+    assert command.command_id == cmd.command_id
 
 
 # ── claim_batch: unconfigured ───────────────────────────────────────────────
@@ -144,7 +143,7 @@ async def test_unconfigured_claim_returns_only_config_update(db_session) -> None
     await enqueue_command(org_id=org_id, command=cmd, session=db_session)
     await db_session.flush()
 
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id=agent_id,
         lifecycle="unconfigured",
         new_workspaces=4,
@@ -152,11 +151,11 @@ async def test_unconfigured_claim_returns_only_config_update(db_session) -> None
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
+    assert command is not None
     from app.core.agent_gateway.types import ConfigUpdateCommand  # noqa: PLC0415
 
-    assert isinstance(batch[0], ConfigUpdateCommand)
-    assert batch[0].config.max_workspaces == DEFAULT_MAX_WORKSPACES
+    assert isinstance(command, ConfigUpdateCommand)
+    assert command.config.max_workspaces == DEFAULT_MAX_WORKSPACES
 
     # The pending workspace command must still be pending (not claimed).
     row = (
@@ -171,16 +170,16 @@ async def test_unconfigured_claim_returns_only_config_update(db_session) -> None
 
 @pytest.mark.asyncio
 @pytest.mark.service
-async def test_claim_batch_returns_create_workspaces_up_to_cap(db_session) -> None:
-    """claim_batch returns ≤ new_workspaces CreateWorkspace commands."""
+async def test_claim_next_returns_one_create_workspace(db_session) -> None:
+    """claim_next returns exactly one CreateWorkspace command per call."""
     org_id = uuid4()
     agent_id = await _make_agent(db_session, org_id=org_id)
-    # Enqueue 3 creates; cap is 2.
+    # Enqueue 3 creates.
     for _ in range(3):
         await enqueue_command(org_id=org_id, command=_make_create_cmd(), session=db_session)
     await db_session.flush()
 
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id=agent_id,
         lifecycle="configured",
         new_workspaces=2,
@@ -188,14 +187,30 @@ async def test_claim_batch_returns_create_workspaces_up_to_cap(db_session) -> No
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 2
-    assert all(c.kind == AgentCommandKind.CREATE_WORKSPACE for c in batch)
+    assert command is not None
+    assert command.kind == AgentCommandKind.CREATE_WORKSPACE
+
+    # Only one row must be in `claimed` — the other two remain `pending`.
+    from sqlalchemy import func  # noqa: PLC0415
+
+    claimed_count = (
+        await db_session.execute(
+            select(func.count()).select_from(AgentCommandRow).where(AgentCommandRow.status == "claimed")
+        )
+    ).scalar_one()
+    pending_count = (
+        await db_session.execute(
+            select(func.count()).select_from(AgentCommandRow).where(AgentCommandRow.status == "pending")
+        )
+    ).scalar_one()
+    assert claimed_count == 1
+    assert pending_count == 2
 
 
 @pytest.mark.asyncio
 @pytest.mark.service
-async def test_claim_batch_returns_one_pending_per_named_workspace(db_session) -> None:
-    """For each workspace_id in workspace_ids, claim_batch returns its pending command."""
+async def test_claim_next_returns_one_pending_for_named_workspace(db_session) -> None:
+    """claim_next returns one pending command for a named workspace_id per call."""
     org_id = uuid4()
     agent_id = await _make_agent(db_session, org_id=org_id)
     ws_a, ws_b = uuid4(), uuid4()
@@ -213,7 +228,8 @@ async def test_claim_batch_returns_one_pending_per_named_workspace(db_session) -
         )
     await db_session.flush()
 
-    batch = await claim_batch(
+    # First call claims one of the two.
+    first = await claim_next(
         agent_id=agent_id,
         lifecycle="configured",
         new_workspaces=0,
@@ -221,15 +237,27 @@ async def test_claim_batch_returns_one_pending_per_named_workspace(db_session) -
         wait_seconds=0,
         session=db_session,
     )
-    claimed_ids = {c.command_id for c in batch}
-    assert cmd_a.command_id in claimed_ids
-    assert cmd_b.command_id in claimed_ids
+    assert first is not None
+    assert first.command_id in {cmd_a.command_id, cmd_b.command_id}
+
+    # Second call claims the other (FIFO order).
+    second = await claim_next(
+        agent_id=agent_id,
+        lifecycle="configured",
+        new_workspaces=0,
+        workspace_ids=[ws_a, ws_b],
+        wait_seconds=0,
+        session=db_session,
+    )
+    assert second is not None
+    assert second.command_id != first.command_id
+    assert second.command_id in {cmd_a.command_id, cmd_b.command_id}
 
 
 @pytest.mark.asyncio
 @pytest.mark.service
-async def test_claim_batch_never_returns_busy_workspace_command(db_session) -> None:
-    """A workspace_id not in workspace_ids never yields a command in the batch."""
+async def test_claim_next_never_returns_excluded_workspace_command(db_session) -> None:
+    """A workspace_id not in workspace_ids never yields a command."""
     org_id = uuid4()
     agent_id = await _make_agent(db_session, org_id=org_id)
     busy_ws = uuid4()
@@ -245,7 +273,7 @@ async def test_claim_batch_never_returns_busy_workspace_command(db_session) -> N
         )
     await db_session.flush()
 
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id=agent_id,
         lifecycle="configured",
         new_workspaces=0,
@@ -253,9 +281,9 @@ async def test_claim_batch_never_returns_busy_workspace_command(db_session) -> N
         wait_seconds=0,
         session=db_session,
     )
-    claimed_ids = {c.command_id for c in batch}
-    assert cmd_idle.command_id in claimed_ids
-    assert cmd_busy.command_id not in claimed_ids
+    assert command is not None
+    assert command.command_id == cmd_idle.command_id
+    assert command.command_id != cmd_busy.command_id
 
 
 # ── Lease: received / requeue / done ───────────────────────────────────────
@@ -271,8 +299,8 @@ async def test_lease_received_event_flips_claimed_to_delivered(db_session) -> No
     await enqueue_command(org_id=org_id, command=cmd, session=db_session)
     await db_session.flush()
 
-    # Stamp agent_id so claim_batch picks it up as a CreateWorkspace.
-    batch = await claim_batch(
+    # Claim the command.
+    command = await claim_next(
         agent_id=agent_id,
         lifecycle="configured",
         new_workspaces=1,
@@ -280,7 +308,7 @@ async def test_lease_received_event_flips_claimed_to_delivered(db_session) -> No
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
+    assert command is not None
 
     # Flip claimed → delivered by recording a `received` event.
     await _flip_received(db_session, cmd.command_id)
@@ -327,7 +355,7 @@ async def test_lease_terminal_event_retires_command_to_done(db_session) -> None:
     await db_session.flush()
 
     # Claim then deliver.
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id=agent_id,
         lifecycle="configured",
         new_workspaces=1,
@@ -335,7 +363,7 @@ async def test_lease_terminal_event_retires_command_to_done(db_session) -> None:
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
+    assert command is not None
     await _flip_received(db_session, cmd.command_id)
     await _flip_done(db_session, cmd.command_id)
 
@@ -390,7 +418,7 @@ async def test_redelivered_received_event_is_idempotent(db_session) -> None:
     await enqueue_command(org_id=org_id, command=cmd, session=db_session)
     await db_session.flush()
 
-    batch = await claim_batch(
+    command = await claim_next(
         agent_id=agent_id,
         lifecycle="configured",
         new_workspaces=1,
@@ -398,7 +426,7 @@ async def test_redelivered_received_event_is_idempotent(db_session) -> None:
         wait_seconds=0,
         session=db_session,
     )
-    assert len(batch) == 1
+    assert command is not None
 
     # First received: claimed → delivered.
     await _flip_received(db_session, cmd.command_id)
