@@ -66,7 +66,7 @@ Supervisor maintains a bidirectional WS to `/api/v1/agents/{id}/activity` when `
 
 ### Live progress streaming
 
-`RealHandler.RunClaude` wires `RunStreaming.OnStdoutLine` to push each Claude Code stream-json line as a `kind=progress` AgentEvent while also accumulating locally for the terminal event. `progress` events record without resuming the workflow engine — only `completed_*` events resume it.
+`RealHandler.RunClaude` dispatches via the `RunFunc` seam (production default: `RunStreaming`) and wires `OnStdoutLine` to push each Claude Code stream-json line as a `kind=progress` AgentEvent while also accumulating locally for the terminal event. `progress` events record without resuming the workflow engine — only `completed_*` events resume it.
 
 ### Workspace registry and lifecycle
 
