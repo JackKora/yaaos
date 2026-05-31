@@ -27,6 +27,7 @@
 - **`ClaimCommand` returns raw bytes.** Decoding the union into a typed `Command` requires `command.Decode`, which lives above `protocol`. Returning `[]byte` keeps the dependency arrow pointing down.
 - **Field tags are load-bearing.** `json:` tags on every field must match the keys the backend emits and the openapi spec declares. `openapi_drift_test.go` enforces this mechanically.
 - **Flat wire shape (workspace commands).** The backend sends each workspace command's fields as a flat JSON object with `kind` embedded. Each concrete struct embeds `CommandHeader` so `kind`, `command_id`, `workspace_id`, and `traceparent` are always present. `ConfigUpdateCommand` is the one exception: it embeds `CommandHeader` too but nests its payload under a `config` object (`AgentConfigWire`). `command.Decode` unmarshals into `protocol.ConfigUpdateCommand` directly, so the decoded shape, the OpenAPI spec, and the drift test cannot diverge.
+- **No agent ID in URLs for operational channels.** `Heartbeat` and `ClaimCommand` use bearer-derived identity; no `agentID` parameter is passed to these methods. The caller no longer needs to thread `agentID` into every protocol call after the initial identity exchange.
 
 ## Gotchas
 
@@ -40,6 +41,17 @@
 - **CommandHeader** — the three routing fields every command carries: `command_id`, `workspace_id`, `traceparent`, `kind`.
 - **Leaf** — a package with no internal imports; safe for any layer to import without cycles.
 
+## Endpoint URLs
+
+| Method | URL | Notes |
+|---|---|---|
+| `POST` | `/api/v1/agent/identity` | Unauthenticated bootstrap |
+| `POST` | `/api/v1/agent/heartbeat` | Bearer-gated; no agent ID in URL |
+| `POST` | `/api/v1/agent/commands/claim` | Bearer-gated; no agent ID in URL |
+| `POST` | `/api/v1/commands/{id}/events` | Per-command ID retained |
+| `POST` | `/api/v1/workspaces/{id}/events` | Per-workspace ID retained |
+| `WSS` | `/api/v1/agent/activity` | Bearer-gated; no agent ID in URL |
+
 ## Identity wire format
 
 `POST /api/v1/agent/identity` body:
@@ -48,7 +60,7 @@
 |---|---|---|
 | `kind` | string | `"aws-sts"` (only value today) |
 | `agent_version` | string | semver, optional |
-| `agent_metadata` | `AgentMetadata` | `os`, `cpu_count`, `memory_bytes` — all optional |
+| `agent_metadata` | `AgentMetadata` | `os`, `cpu_count`, `memory_bytes` — static; reported once at identity exchange |
 | `payload` | string | JSON-encoded sigv4-signed STS envelope: `{url, headers, body}` |
 
 Response:

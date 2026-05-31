@@ -241,6 +241,10 @@ async def record_heartbeat(
     if row is not None:
         row.last_heartbeat_at = now
         row.state = "reachable"
+        # Persist the count from the heartbeat payload as the single source of truth.
+        # The column is populated here (not at identity exchange) because the agent
+        # only knows its active workspace set at heartbeat time.
+        row.claimed_workspace_count = len(request.workspaces)
     else:
         # Heartbeat arrived for a pod the control plane doesn't know about —
         # this happens transiently after a restart before identity exchange

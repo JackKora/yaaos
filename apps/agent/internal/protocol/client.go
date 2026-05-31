@@ -53,11 +53,11 @@ func (c *Client) ExchangeIdentity(ctx context.Context, req IdentityExchangeReque
 	return &resp, nil
 }
 
-// Heartbeat reports liveness + workspace inventory.
-func (c *Client) Heartbeat(ctx context.Context, agentID string, req HeartbeatRequest) (*HeartbeatResponse, error) {
+// Heartbeat reports liveness + workspace inventory. Agent identity is
+// derived from the bearer — no agent ID in the URL.
+func (c *Client) Heartbeat(ctx context.Context, req HeartbeatRequest) (*HeartbeatResponse, error) {
 	var resp HeartbeatResponse
-	path := fmt.Sprintf("/api/v1/agents/%s/heartbeat", agentID)
-	if err := c.doJSON(ctx, http.MethodPost, path, req, &resp, true); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/agent/heartbeat", req, &resp, true); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -65,9 +65,10 @@ func (c *Client) Heartbeat(ctx context.Context, agentID string, req HeartbeatReq
 
 // ClaimCommand long-polls for the next command. Returns the raw JSON bytes
 // on success; the caller passes these to command.Decode for typed dispatch.
-// Returns ErrNoCommand when the backend responds 204.
-func (c *Client) ClaimCommand(ctx context.Context, agentID string, req ClaimRequest) ([]byte, error) {
-	path := fmt.Sprintf("/api/v1/agents/%s/commands/claim", agentID)
+// Returns ErrNoCommand when the backend responds 204. Agent identity is
+// derived from the bearer — no agent ID in the URL.
+func (c *Client) ClaimCommand(ctx context.Context, req ClaimRequest) ([]byte, error) {
+	path := "/api/v1/agent/commands/claim"
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)

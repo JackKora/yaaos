@@ -105,7 +105,7 @@ async def test_ws_batch_publishes_workspace_activity_with_org_id(db_session) -> 
     def _send_batch() -> None:
         with TestClient(_app()) as client:
             with client.websocket_connect(
-                f"/api/v1/agents/{agent_id}/activity",
+                "/api/v1/agent/activity",
                 headers={"Authorization": f"Bearer {token}"},
             ) as ws:
                 ws.send_json(

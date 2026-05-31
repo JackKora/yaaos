@@ -122,14 +122,14 @@ type Config struct {
 	WorkspaceRoot string
 
 	// ActivityWSURL is the backend's activity-stream WebSocket URL
-	// (e.g. "wss://yaaos.example.com/api/v1/agents/<agent_id>/activity").
+	// (e.g. "wss://yaaos.example.com/api/v1/agent/activity").
+	// Agent identity is derived from the bearer — no agent ID in the URL.
 	// Empty disables the WS path: progress events fall back to per-event
 	// HTTP POSTs. Non-empty: the supervisor dials at startup,
 	// constructs an `activity.Conductor`, and routes progress events
 	// through it. Demand-pull semantics apply — events for workspaces
 	// the backend hasn't sent `subscribe` for are dropped at the
-	// Conductor's gate. The literal `{agent_id}` placeholder
-	// gets substituted post-identity-exchange.
+	// Conductor's gate.
 	ActivityWSURL string
 
 	// ActivityBatchInterval controls the Conductor's flush cadence.
@@ -223,12 +223,18 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 		cfg.ActivityBatchInterval = 250 * time.Millisecond
 	}
 	return &Supervisor{
-		cfg:              cfg,
-		client:           client,
-		log:              log,
-		provider:         prov,
-		pool:             NewPool(cfg.Spawn, log),
-		stsBackoff:       backoff.New(),
+		cfg:      cfg,
+		client:   client,
+		log:      log,
+		provider: prov,
+		pool:     NewPool(cfg.Spawn, log),
+		// stsBackoff: a fresh pod that has never successfully exchanged identity
+		// gives up after 1 hour so the container crashes and the orchestrator
+		// can restart it (a misconfigured ARN won't fix itself by retrying
+		// forever). Once bootstrapped, renewal failures use claimBackoff /
+		// heartbeatBackoff which are indefinite — a transient STS blip must
+		// not kill a running pod.
+		stsBackoff:       backoff.NewWithDeadline(1 * time.Hour),
 		claimBackoff:     backoff.New(),
 		heartbeatBackoff: backoff.New(),
 		wsBackoff:        backoff.New(),
@@ -240,10 +246,11 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 // Run exchanges identity and starts the claim + heartbeat goroutines.
 // Blocks until ctx is cancelled or identity exchange fails fatally.
 func (s *Supervisor) Run(ctx context.Context) error {
-	// STS bootstrap: retry forever on the 1m/3m/5m/15m/60m schedule.
-	// A misconfigured ARN (403) doesn't fix itself by us crashing-and-
-	// restarting the process; staying alive lets the local log + OTel
-	// metrics show the operator what's wrong without a restart loop.
+	// STS bootstrap: retry on the 1m/3m/5m/15m/60m schedule up to a 1h
+	// deadline. An unbootstrapped pod that cannot reach the control plane
+	// for 1h exits non-zero so the container orchestrator can restart it.
+	// The deadline only applies before the first successful exchange — once
+	// bootstrapped, renewal failures use the indefinite bearerRefreshLoop.
 	var resp *protocol.IdentityExchangeResponse
 	for {
 		var err error
@@ -261,7 +268,14 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			"class", classifyConnErr(err),
 			"next_sleep_seconds", int(s.stsBackoff.Peek().Seconds()),
 		)
-		if sleepErr := s.stsBackoff.Sleep(ctx); sleepErr != nil {
+		sleepErr := s.stsBackoff.Sleep(ctx)
+		if sleepErr == backoff.ErrDeadlineExceeded {
+			s.log.Error("supervisor.bootstrap_deadline_exceeded",
+				"detail", "identity exchange failed for 1h; exiting so the orchestrator can restart",
+			)
+			os.Exit(1)
+		}
+		if sleepErr != nil {
 			return sleepErr
 		}
 	}
@@ -570,7 +584,7 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 		if ctx.Err() != nil {
 			return
 		}
-		raw, err := s.client.ClaimCommand(ctx, s.agentID, s.buildClaimRequest())
+		raw, err := s.client.ClaimCommand(ctx, s.buildClaimRequest())
 		if err != nil {
 			if err == protocol.ErrNoCommand {
 				s.claimBackoff.Reset()
@@ -619,7 +633,7 @@ func (s *Supervisor) heartbeatLoop(ctx context.Context) {
 }
 
 func (s *Supervisor) sendHeartbeat(ctx context.Context) {
-	resp, err := s.client.Heartbeat(ctx, s.agentID, protocol.HeartbeatRequest{
+	resp, err := s.client.Heartbeat(ctx, protocol.HeartbeatRequest{
 		ReportedAt: time.Now().UTC(),
 		Workspaces: s.pool.Snapshot(),
 	})

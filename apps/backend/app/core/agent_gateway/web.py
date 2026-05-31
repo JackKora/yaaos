@@ -19,16 +19,15 @@ backend's canonical hostname (`HOST` request header); mismatched audience
 causes a 401.
 
 Per-endpoint authorization beyond bearer validity:
-- `heartbeat` / `claim_command` / the activity WebSocket bind on a path
-  `agent_id`. They additionally require `bearer.agent_id == path agent_id`
-  (see `_require_self`) so a bearer issued to one pod cannot address
-  another pod's heartbeat row, dispatch queue, or activity channel — a
-  within-org IDOR the `org_context` wrap alone does not close.
+- All agent operational channels — `heartbeat`, `claim`, `command-events`,
+  `workspace-events`, and the activity WebSocket — derive agent identity
+  solely from the bearer. No `{agent_id}` path segment on these routes;
+  `org_context` blocks cross-org access.
 - `post_workspace_event` / `post_command_event` bind on `workspace_id` /
   `command_id`, which resolve to a workspace carrying an owning `agent_id`
   (`WorkspaceRow.agent_id`, set at create-dispatch). When the resolved
   workspace has an owner that isn't the bearer's agent → 403 `forbidden`
-  (same envelope as `_require_self`). This closes the within-org IDOR where
+  (see `_require_workspace_owner`). This closes the within-org IDOR where
   one pod's bearer reports state for another pod's workspace. A command that
   resolves to no workspace (e.g. an agent-scoped `ConfigUpdate`, which has
   no `workspace_id`) or a workspace with a NULL `agent_id` (in-memory/legacy)
@@ -105,26 +104,6 @@ async def _bearer_dep(authorization: str | None = Header(default=None)) -> beare
         raise HTTPException(status_code=401, detail={"error": "unauthorized", "detail": str(exc)}) from exc
 
 
-def _require_self(agent: bearers.BearerContext, agent_id: UUID) -> None:
-    """Reject when the bearer's resolved agent doesn't match the path `agent_id`.
-
-    Mirrors the WebSocket handler's `ctx.agent_id != agent_id → 4403` guard:
-    a stolen bearer for one pod must not address another pod's row or queue,
-    even within the same org. The `org_context` wrap blocks cross-org access;
-    this closes the within-org IDOR.
-    """
-    if agent.agent_id != agent_id:
-        log.warning(
-            "agent_gateway.agent_mismatch",
-            bearer_agent_id=str(agent.agent_id),
-            path_agent_id=str(agent_id),
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "forbidden", "detail": "bearer agent does not match path agent_id"},
-        )
-
-
 def _require_workspace_owner(agent: bearers.BearerContext, owning_agent_id: UUID | None) -> None:
     """Reject when a workspace has an owning agent that isn't the bearer's.
 
@@ -132,7 +111,7 @@ def _require_workspace_owner(agent: bearers.BearerContext, owning_agent_id: UUID
     None means no ownership edge to enforce — the workspace has no owner
     (in-memory/legacy) or the command resolves to no workspace (e.g. an
     agent-scoped ConfigUpdate); authorization then falls back to org scope +
-    the stale-claim guard. Same 403 envelope as `_require_self`.
+    the stale-claim guard.
     """
     if owning_agent_id is not None and owning_agent_id != agent.agent_id:
         log.warning(
@@ -338,30 +317,26 @@ async def exchange_identity(
     )
 
 
-@router.post("/agents/{agent_id}/heartbeat")
+@router.post("/agent/heartbeat")
 async def heartbeat(
     request: HeartbeatRequest,
-    agent_id: UUID = Path(...),
     agent: bearers.BearerContext = Depends(_bearer_dep),
 ) -> HeartbeatResponse:
-    _require_self(agent, agent_id)
     async with org_context(agent.org_id, ActorKind.WORKSPACE, actor_id=agent.agent_id):
         async with db_session() as s:
-            response = await record_heartbeat(agent_id, request, session=s)
+            response = await record_heartbeat(agent.agent_id, request, session=s)
             await s.commit()
     return response
 
 
-@router.post("/agents/{agent_id}/commands/claim")
+@router.post("/agent/commands/claim")
 async def claim_command(
     request: ClaimRequest,
-    agent_id: UUID = Path(...),
     agent: bearers.BearerContext = Depends(_bearer_dep),
 ) -> Response:
-    _require_self(agent, agent_id)
     async with org_context(agent.org_id, ActorKind.WORKSPACE, actor_id=agent.agent_id):
         cmd = await claim_next(
-            agent_id,
+            agent.agent_id,
             wait_seconds=request.wait_seconds,
             lifecycle=request.lifecycle,
             active_workspace_ids=list(request.active_workspace_ids),
@@ -422,9 +397,9 @@ async def post_command_event(
 # ── Activity WebSocket ──────────────────────────────────────────────────
 
 
-@router.websocket("/agents/{agent_id}/activity")
-async def activity_ws(websocket: WebSocket, agent_id: UUID = Path(...)) -> None:
-    """Bidirectional activity-stream channel.
+@router.websocket("/agent/activity")
+async def activity_ws(websocket: WebSocket) -> None:
+    """Bidirectional activity-stream channel. Agent identity is bearer-derived.
 
     Auth on upgrade: the supervisor includes `Authorization: Bearer <token>`
     in the WebSocket handshake, validated against `bearer_tokens` via
@@ -445,9 +420,6 @@ async def activity_ws(websocket: WebSocket, agent_id: UUID = Path(...)) -> None:
       - Missing/malformed/expired/revoked bearer → close with 4401 on
         upgrade, never accept the WebSocket. Opaque rejection (no oracle
         distinguishing expired from revoked from never-seen).
-      - Bearer is valid but `agent_id` in the path doesn't match the
-        bearer's resolved agent → 4403. Stops a stolen bearer from one
-        pod being used to impersonate another pod's WebSocket.
       - Disconnect at any time → registry unregisters the sender; SSE
         subscribers that arrive later won't reach this agent until it
         reconnects.
@@ -458,16 +430,9 @@ async def activity_ws(websocket: WebSocket, agent_id: UUID = Path(...)) -> None:
     except UnauthorizedError:
         await websocket.close(code=4401)
         return
-    if ctx.agent_id != agent_id:
-        log.warning(
-            "agent_gateway.ws.agent_mismatch",
-            bearer_agent_id=str(ctx.agent_id),
-            path_agent_id=str(agent_id),
-        )
-        await websocket.close(code=4403)
-        return
     await websocket.accept()
 
+    agent_id = ctx.agent_id
     registry = _get_subscriber_registry()
 
     async def _send(message: dict) -> None:

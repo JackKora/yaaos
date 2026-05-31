@@ -62,7 +62,7 @@ The key invariant: `protocol` does not import `command`. `ClaimCommand` returns 
 
 ### Activity WebSocket
 
-Supervisor maintains a bidirectional WS to `/api/v1/agents/{id}/activity` when `Config.ActivityWSURL` is set. `Batcher` buffers events per subscribed key and flushes one `activity_batch` frame per key at 250 ms. On dial failure the supervisor falls back to per-event HTTP `PostCommandEvent`.
+Supervisor maintains a bidirectional WS to `/api/v1/agent/activity` when `Config.ActivityWSURL` is set. Agent identity is bearer-derived; no agent ID in the URL. `Batcher` buffers events per subscribed key and flushes one `activity_batch` frame per key at 250 ms. On dial failure the supervisor falls back to per-event HTTP `PostCommandEvent`.
 
 ### Live progress streaming
 

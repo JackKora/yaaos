@@ -6,14 +6,16 @@
 
 Five HTTPS endpoints + one WebSocket under `/api/v1/`. See `apps/backend/openapi/agent-api.yaml` for schemas.
 
+Agent identity on all operational channels is derived solely from the bearer — no `{agent_id}` path segment. The identity exchange endpoint is unauthenticated (it bootstraps the bearer).
+
 | Endpoint | Direction | Purpose |
 |---|---|---|
 | `POST /api/v1/agent/identity` | Agent → CP | STS-signed bootstrap → 1h bearer |
-| `POST /api/v1/agents/{id}/heartbeat` | Agent → CP | Liveness + workspace inventory; CP returns reconciliation hints |
-| `POST /api/v1/agents/{id}/commands/claim` | Agent → CP | Long-poll for next command (≤55s) |
+| `POST /api/v1/agent/heartbeat` | Agent → CP | Liveness + workspace inventory; CP returns reconciliation hints |
+| `POST /api/v1/agent/commands/claim` | Agent → CP | Long-poll for next command (≤55s) |
 | `POST /api/v1/commands/{id}/events` | Agent → CP | Progress + terminal AgentEvent |
 | `POST /api/v1/workspaces/{id}/events` | Agent → CP | Workspace state transitions |
-| `WSS /api/v1/agents/{id}/activity` | Bidirectional | High-frequency activity streaming; demand-pull |
+| `WSS /api/v1/agent/activity` | Bidirectional | High-frequency activity streaming; demand-pull |
 
 ## `unconfigured → configured` state machine
 
@@ -49,6 +51,18 @@ This prevents the agent from receiving a command for a workspace it no longer ho
 - Renewal is non-revoking — the old bearer stays valid to its own `expires_at`. The agent atomically swaps the bearer after rotation.
 - A renewal that returns different `agent_id`, `org_id`, or `instance_id` than the first exchange is an identity-integrity violation; the agent exits fatally.
 - The agent pins `agent_id`, `org_id`, and `instance_id` from the first exchange and carries them on every log/span/metric.
+
+## Bootstrap-retry asymmetry
+
+**Unbootstrapped pod** (identity exchange never succeeded): `stsBackoff` has a 1-hour max-elapsed deadline. After 1 hour of continuous failure the agent calls `os.Exit(1)` so the container orchestrator restarts it. A misconfigured ARN that won't fix itself in 1h becomes a loud crash rather than a silent retry loop.
+
+**Bootstrapped pod** (at least one successful exchange): bearer renewal failures use the indefinite `heartbeatBackoff`/`claimBackoff` ramp. A transient STS blip must not kill a running pod that holds active workspaces.
+
+## Heartbeat body
+
+`POST /api/v1/agent/heartbeat` body: `reported_at` (ISO-UTC), `workspaces[]` (array of `{workspace_id, status, current_command_id?}`).
+
+The backend derives `workspace_agents.claimed_workspace_count` from `len(workspaces)` on every heartbeat — it is not a wire field the agent supplies explicitly.
 
 ## Identity wire format
 

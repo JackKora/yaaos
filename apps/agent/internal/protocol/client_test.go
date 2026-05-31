@@ -43,6 +43,9 @@ func TestExchangeIdentityHappyPath(t *testing.T) {
 
 func TestClaimCommand204ReturnsErrNoCommand(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agent/commands/claim" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer x" {
 			t.Fatalf("bearer header = %q", got)
 		}
@@ -52,7 +55,7 @@ func TestClaimCommand204ReturnsErrNoCommand(t *testing.T) {
 
 	cli := NewClient(server.URL, nil)
 	cli.SetBearer("x")
-	_, err := cli.ClaimCommand(context.Background(), "agent-1", ClaimRequest{WaitSeconds: 0})
+	_, err := cli.ClaimCommand(context.Background(), ClaimRequest{WaitSeconds: 0})
 	if !errors.Is(err, ErrNoCommand) {
 		t.Fatalf("expected ErrNoCommand, got %v", err)
 	}
@@ -61,6 +64,9 @@ func TestClaimCommand204ReturnsErrNoCommand(t *testing.T) {
 func TestClaimCommand200ReturnsRawBytes(t *testing.T) {
 	const payload = `{"kind":"CleanupWorkspace","command_id":"cmd-1","workspace_id":"ws-1","traceparent":"00-..."}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agent/commands/claim" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(payload))
@@ -69,7 +75,7 @@ func TestClaimCommand200ReturnsRawBytes(t *testing.T) {
 
 	cli := NewClient(server.URL, nil)
 	cli.SetBearer("x")
-	raw, err := cli.ClaimCommand(context.Background(), "agent-1", ClaimRequest{WaitSeconds: 0})
+	raw, err := cli.ClaimCommand(context.Background(), ClaimRequest{WaitSeconds: 0})
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -110,6 +116,9 @@ func TestPostCommandEvent410IsStaleClaim(t *testing.T) {
 
 func TestHeartbeatHappyPath(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agent/heartbeat" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
 		_ = json.NewEncoder(w).Encode(HeartbeatResponse{
 			ReconciledAt:        time.Now().UTC(),
 			ForgottenWorkspaces: []string{"ws-orphan"},
@@ -119,7 +128,7 @@ func TestHeartbeatHappyPath(t *testing.T) {
 
 	cli := NewClient(server.URL, nil)
 	cli.SetBearer("x")
-	resp, err := cli.Heartbeat(context.Background(), "agent-1", HeartbeatRequest{
+	resp, err := cli.Heartbeat(context.Background(), HeartbeatRequest{
 		ReportedAt: time.Now().UTC(),
 	})
 	if err != nil {
