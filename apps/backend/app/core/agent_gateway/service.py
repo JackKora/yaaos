@@ -591,3 +591,138 @@ async def stale_agent_ids(
         .all()
     )
     return agent_ids - set(fresh)
+
+
+# Liveness thresholds (seconds since last heartbeat).
+_STALE_THRESHOLD_SECONDS: int = 60  # reachable → stale
+_OFFLINE_THRESHOLD_SECONDS: int = 5 * 60  # reachable/stale → offline
+_UI_RETENTION_SECONDS: int = 60 * 60  # agents older than this are hidden from the dashboard
+
+
+async def compute_agent_liveness_transitions(
+    now: datetime,
+    *,
+    session: AsyncSession,
+) -> list[UUID]:
+    """Compute and apply liveness-state transitions for all workspace-agent rows.
+
+    State machine (based on seconds since `last_heartbeat_at`):
+    - ``< 60 s`` → reachable (online)
+    - ``60 s - 5 min`` → stale
+    - ``> 5 min`` or explicit shutdown (last_shutdown_at is set and agent is not
+      reachable) → offline
+
+    Writes `state` only when a transition occurs — idempotent on the same tick.
+    Returns the list of agent UUIDs that newly became offline on this sweep.
+    Emits one ``agent_liveness_changed`` SSE event per transitioned agent via
+    ``publish_general_after_commit`` so the dashboard invalidates live.
+
+    Lives in ``core/agent_gateway`` because it owns the ``workspace_agents``
+    table; called each reaper tick from ``core/workspace`` (which can import
+    ``core/agent_gateway`` per the tach boundary).
+    """
+    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
+    from app.core.sse import GeneralEventKind, publish_general_after_commit  # noqa: PLC0415
+
+    # Exclude agents already offline (shutdowns are permanent until re-exchange).
+    rows = (
+        (
+            await session.execute(
+                select(WorkspaceAgentRow).where(
+                    WorkspaceAgentRow.last_heartbeat_at.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    newly_offline: list[UUID] = []
+
+    for row in rows:
+        if row.last_heartbeat_at is None:
+            continue
+        age_seconds = (now - row.last_heartbeat_at).total_seconds()
+
+        if age_seconds > _OFFLINE_THRESHOLD_SECONDS:
+            target_state = "offline"
+        elif age_seconds > _STALE_THRESHOLD_SECONDS:
+            target_state = "stale"
+        else:
+            target_state = "reachable"
+
+        if row.state == target_state:
+            continue  # No transition — skip write and SSE.
+
+        prev_state = row.state
+        row.state = target_state
+        await session.flush()
+
+        if target_state == "offline":
+            newly_offline.append(row.id)
+
+        log.info(
+            "agent_gateway.liveness_transition",
+            agent_id=str(row.id),
+            org_id=str(row.org_id),
+            from_state=prev_state,
+            to_state=target_state,
+        )
+
+        publish_general_after_commit(
+            session,
+            org_id=row.org_id,
+            kind=GeneralEventKind.AGENT_LIVENESS_CHANGED,
+            payload={},
+        )
+
+    return newly_offline
+
+
+async def list_agents_for_org(
+    org_id: UUID,
+    *,
+    now: datetime,
+    session: AsyncSession,
+) -> list[dict]:
+    """Return agent rows for `org_id` within the 1-hour UI-retention window.
+
+    Each dict contains the fields the dashboard ``AgentCard`` displays:
+    ``id``, ``instance_id``, ``state``, ``last_heartbeat_at``, ``os``,
+    ``cpu_count``, ``memory_bytes``, ``claimed_workspace_count``, ``version``.
+
+    Agents whose last heartbeat (or last shutdown) is older than 1 hour are
+    excluded — the row stays in the DB but the dashboard stops showing it.
+    DB rows are never deleted by this path.
+    """
+    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
+
+    retention_cutoff = now - timedelta(seconds=_UI_RETENTION_SECONDS)
+    rows = (
+        (
+            await session.execute(
+                select(WorkspaceAgentRow).where(
+                    WorkspaceAgentRow.org_id == org_id,
+                    WorkspaceAgentRow.last_heartbeat_at.is_not(None),
+                    WorkspaceAgentRow.last_heartbeat_at >= retention_cutoff,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        {
+            "id": row.id,
+            "instance_id": row.instance_id,
+            "state": row.state,
+            "last_heartbeat_at": row.last_heartbeat_at.isoformat() if row.last_heartbeat_at else None,
+            "os": row.os,
+            "cpu_count": row.cpu_count,
+            "memory_bytes": row.memory_bytes,
+            "claimed_workspace_count": row.claimed_workspace_count,
+            "version": row.version,
+        }
+        for row in rows
+    ]

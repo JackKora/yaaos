@@ -357,4 +357,49 @@ async def config_status() -> ConfigStatusResponse:
     )
 
 
+class AgentView(BaseModel):
+    id: UUID
+    instance_id: str
+    state: str
+    last_heartbeat_at: str | None
+    os: str | None
+    cpu_count: int | None
+    memory_bytes: int | None
+    claimed_workspace_count: int
+    version: str | None
+
+
+@router.get("/{slug}/agents", dependencies=[Depends(require(Action.ORG_READ))])
+async def list_org_agents(slug: str) -> list[AgentView]:
+    """List workspace agents within the 1-hour UI-retention window for `slug`.
+
+    Visible to all org members (ORG_READ). Returns agents whose last heartbeat
+    is within the past hour; excludes older rows so the dashboard stays clean.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from app.core.agent_gateway import list_agents_for_org  # noqa: PLC0415
+
+    org_id = org_id_var.get()
+    if org_id is None:
+        raise _err(400, "no_org_context")
+    now = datetime.now(UTC)
+    async with db_session() as s:
+        rows = await list_agents_for_org(org_id, now=now, session=s)
+    return [
+        AgentView(
+            id=r["id"],
+            instance_id=r["instance_id"],
+            state=r["state"],
+            last_heartbeat_at=r["last_heartbeat_at"],
+            os=r["os"],
+            cpu_count=r["cpu_count"],
+            memory_bytes=r["memory_bytes"],
+            claimed_workspace_count=r["claimed_workspace_count"],
+            version=r["version"],
+        )
+        for r in rows
+    ]
+
+
 register_routes(RouteSpec(module_name="orgs", router=router, url_prefix="/api/orgs"))

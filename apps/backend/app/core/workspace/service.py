@@ -549,6 +549,13 @@ async def _reaper_sweep_once() -> None:
                 reason="idle_timeout",
             )
 
+        # 1b-ii. Liveness sweeper — compute reachable/stale/offline transitions
+        # for all workspace-agent rows. Lives in core/agent_gateway (which owns
+        # workspace_agents); called here because this loop runs each reaper tick.
+        from app.core.agent_gateway import compute_agent_liveness_transitions  # noqa: PLC0415
+
+        await compute_agent_liveness_transitions(now, session=s)
+
         # 1c. Agent-loss (failsafe 6) — per-pod. A workspace whose owning
         # agent is individually stale is expired and that pod's bearers
         # revoked, even when sibling pods in the same org are healthy.

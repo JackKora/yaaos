@@ -1,27 +1,36 @@
 /**
- * Dashboard — anchor page (E2a.3).
+ * Dashboard — anchor page.
  *
  * Two states:
- *   - Configured: stat cards (4) + "In flight" band + "Needs attention" band.
+ *   - Configured: stat cards (4) + agent row + "In flight" band + "Needs attention" band.
  *   - Not configured: setup banner (`NotConfiguredBanner`) renders above
  *     stat cards; bands are still shown but typically empty.
  *
- * Single round-trip via `useDashboard()` → GET /api/tickets/dashboard.
- * `refetchInterval: 5_000` covers SSE gaps; invalidation wiring
- * (workflow_state_changed → invalidate) lands once dashboard kinds emit.
+ * Live updates are SSE-driven (`ticket_status_changed`, `review_*`, `finding_*`,
+ * `agent_liveness_changed` → TanStack Query invalidation). No polling.
  */
 
-import { type DashboardStats, type Ticket, useConfigStatus, useDashboard } from "@core/api";
+import {
+  type DashboardStats,
+  type Ticket,
+  getCurrentOrgSlug,
+  useAgents,
+  useConfigStatus,
+  useDashboard,
+} from "@core/api";
 import { EmptyState, NotConfiguredBanner, PageHeader } from "@shared/components/layout";
 import { Skeleton } from "@shared/components/ui/skeleton";
 import { ago } from "@shared/utils/ago";
 import { cn } from "@shared/utils/cn";
 import { Link } from "@tanstack/react-router";
 import { AlertCircle, Bell, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { AgentCard, AgentCardEmpty } from "./AgentCard";
 
 export function DashboardPage() {
   const { data: dashboard, isLoading } = useDashboard();
   const { data: configStatus } = useConfigStatus();
+  const orgSlug = getCurrentOrgSlug() ?? "";
+  const { data: agents } = useAgents(orgSlug);
 
   if (isLoading || !dashboard) {
     return (
@@ -72,6 +81,25 @@ export function DashboardPage() {
           tone="destructive"
         />
       </div>
+
+      {/* Workspace agents row */}
+      <section className="mb-8">
+        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
+          Workspace agents
+        </h2>
+        {agents && agents.length > 0 ? (
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+            data-testid="agent-cards"
+          >
+            {agents.map((agent) => (
+              <AgentCard key={agent.id} agent={agent} />
+            ))}
+          </div>
+        ) : (
+          <AgentCardEmpty />
+        )}
+      </section>
 
       <section className="mb-8">
         <BandHeader title="In flight" count={dashboard.in_flight.length} />

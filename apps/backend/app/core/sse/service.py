@@ -64,6 +64,7 @@ class GeneralEventKind(StrEnum):
     FINDING_STALE_DETECTED = "finding_stale_detected"
     COMMENT_REPLY_RECEIVED = "comment_reply_received"
     AGENT_REPLY_POSTED = "agent_reply_posted"
+    AGENT_LIVENESS_CHANGED = "agent_liveness_changed"
 
 
 # ---------------------------------------------------------------------------

@@ -297,6 +297,25 @@ def stage_oauth_test_profile(
     )
 
 
+async def seed_workspace_agent(*, org_slug: str) -> dict[str, str]:
+    """Seed a reachable ``workspace_agents`` row for the given org slug.
+
+    Inserts the row with ``state="reachable"`` and a recent ``last_heartbeat_at``
+    so the dashboard's 1-hour retention window includes it immediately. Returns
+    the agent's ``id`` and ``instance_id``.
+    """
+    from app.domain.orgs import get_org_by_slug  # noqa: PLC0415
+    from app.testing.seed import seed_agent  # noqa: PLC0415
+
+    org = await get_org_by_slug(org_slug)
+    if org is None:
+        raise ValueError(f"org {org_slug!r} not found — seed it first via bootstrap_owner")
+    async with db_session() as s:
+        result = await seed_agent(org_id=org.id, session=s)
+        await s.commit()
+    return {"id": str(result["id"]), "instance_id": result["instance_id"]}
+
+
 def read_and_clear_email_inbox() -> list[dict[str, str]]:
     """Return + clear the in-memory inbox ``domain.orgs.email.send_plain`` writes
     to in test env."""
@@ -317,5 +336,6 @@ __all__ = [
     "seed_github_install",
     "seed_lesson",
     "seed_user_with_session",
+    "seed_workspace_agent",
     "stage_oauth_test_profile",
 ]

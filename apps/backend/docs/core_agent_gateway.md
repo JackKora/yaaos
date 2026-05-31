@@ -20,6 +20,20 @@ All agent operational channels live under `/api/v1/agent/...` with identity deri
 
 The `SubscriberRegistry` keys the WS sender on the bearer-derived `agent_id`.
 
+## Liveness sweeper — `compute_agent_liveness_transitions`
+
+Called on each `_reaper_sweep_once` tick from `core/workspace` (the loop host). Computes and writes `workspace_agents.state` transitions for all rows with a known `last_heartbeat_at`. State machine based on seconds since last heartbeat:
+
+- `< 60 s` → `reachable` (online)
+- `60 s – 5 min` → `stale`
+- `> 5 min` → `offline`
+
+Writes `state` only on transition (idempotent on the same tick). Returns a list of agent UUIDs that newly became `offline` this sweep. Emits one `agent_liveness_changed` SSE event per transitioned agent via `publish_general_after_commit` on the org's general channel — cache-invalidate only, no state in payload.
+
+## `GET /api/orgs/{slug}/agents`
+
+Returns agents for the current org within the 1-hour UI-retention window. Fields: `id`, `instance_id`, `state`, `last_heartbeat_at`, `os`, `cpu_count`, `memory_bytes`, `claimed_workspace_count`, `version`. Excludes agents whose last heartbeat is older than 1 hour (rows stay in the DB). Requires `ORG_READ` (visible to all org members). Implemented in `app/domain/orgs/org_settings_web.py`; delegates to `list_agents_for_org`.
+
 ## Identity exchange — `POST /api/v1/agent/identity`
 
 Vault AWS-auth pattern. The agent submits a sigv4-signed STS `GetCallerIdentity` as `payload`; the backend replays it, derives `instance_id` from the role-session-name, and issues a 1-hour bearer.
@@ -69,6 +83,8 @@ Vault AWS-auth pattern. The agent submits a sigv4-signed STS `GetCallerIdentity`
 ## How it's tested
 
 `test/test_service.py` covers: per-agent FIFO independence; long-poll wakes on enqueue and times out cleanly; heartbeat reports unknown workspaces; terminal event enqueues `workflow.handle_agent_event`; progress events publish to the workspace-activity channel but do NOT enqueue; stale `command_id` raises `StaleClaimError`; `pick_agent_for_org` returns least-loaded `AgentRef` or `None`; `has_any_reachable_agent` respects the 90s cutoff.
+
+`test/test_liveness_sweeper_service.py` covers: `compute_agent_liveness_transitions` flips `reachable → stale` at 60s, `stale → offline` and `reachable → offline` beyond 5 min, writes only on transition, returns newly-offline IDs, emits SSE; `GET /api/orgs/{slug}/agents` returns within-retention agents with `claimed_workspace_count`; excludes agents beyond 1h window; excludes other-org agents; requires auth.
 
 `test/test_identity_exchange.py` covers: happy-path bearer issuance (row persisted by `instance_id`, OS metadata stored, bearer returned with `instance_id` in response); bearer TTL is 1 hour; non-revoking rotation (second call issues new bearer, old stays valid); ARN mismatch → 403; region mismatch → 401; invalid signature → 401; empty payload → 401; unsupported kind → 401; audience mismatch → 401; response includes `org_id` and `instance_id`.
 
