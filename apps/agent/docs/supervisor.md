@@ -29,6 +29,10 @@
 - **Shutdown-vs-in-flight contract** — when the root `ctx` is cancelled (supervisor shutdown) while `Pool.Dispatch` has a `Send` in-flight, the per-command `sendCtx` also cancels; `Send` returns `ctx.Err()`; the pool emits `completed_failure` with `failure_reason` prefixed `"runner:"`. No in-flight command is silently dropped — the caller always receives a terminal event. See `pool.go:failureEvent`.
 - **Concurrent invariants each have a `-race` test** — see [patterns.md § Testing](patterns.md) principle 7. Covered: registry cap, same-id atomicity, per-surface backoff independence, dedup LRU consistency, and `execRunner.Close` idempotency.
 
+## Testing
+
+- Timing-sensitive supervisor tests run in `testing/synctest` bubbles where feasible. The activity-WS integration test (`supervisor_activity_ws_test.go`) uses a real `httptest.Server` WS connection; its subscribe-propagation poll cannot be bubbled because the WS read goroutine blocks on OS network I/O. See [patterns.md § Testing](patterns.md) principle 6.
+
 ## Gotchas
 
 - `CloseAll` on shutdown: pool reaps all runners; already-nil runners (Orphaned records) are skipped.

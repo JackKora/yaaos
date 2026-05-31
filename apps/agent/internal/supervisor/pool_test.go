@@ -680,7 +680,7 @@ func TestPool_ShutdownDuringInFlight_EmitsCompletedFailure(t *testing.T) {
 
 	// Give the dispatch goroutine time to enter the blocking Send, then
 	// cancel the context (simulating supervisor shutdown).
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // reason: waiting for the dispatch goroutine to reach the blocking Send inside the fake RunFunc; channel rendezvous would require exposing internal pool state.
 	cancel()
 
 	var ev protocol.AgentEvent
