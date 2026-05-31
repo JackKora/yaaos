@@ -1,16 +1,19 @@
 """core/agent_gateway — wire protocol to WorkspaceAgents.
 
-Five HTTPS endpoints under `/v1/`: identity-exchange, heartbeat,
-commands/claim (long-poll), commands/{id}/events, workspaces/{id}/events,
-plus a WebSocket activity stream.
+HTTPS endpoints under `/api/v1/agent/`: identity (exchange + graceful-shutdown
+DELETE), heartbeat, commands/claim (long-poll), commands/{id}/events,
+workspaces/{id}/events, plus a WebSocket activity stream. Agent identity on
+every operational channel is derived from the bearer (no `{agent_id}` in URLs).
 
 Provides:
 - Hand-written Pydantic wire types (mirror of `apps/backend/openapi/agent-api.yaml`).
-- Per-agent in-memory dispatch FIFO + async long-poll.
+- Durable command dispatch via the `agent_commands` table + capacity-pull
+  `claim_batch` (lease: pending→claimed→delivered→done) with a requeue reaper.
+- STS identity verification (sigv4 GetCallerIdentity replay) issuing 1h bearers.
+- Liveness sweeper (`compute_agent_liveness_transitions`) + agents-list query.
 - Heartbeat reconciliation (control-plane returns workspaces the agent
   should forget).
 - Event ingestion with the stale-claim guard (`410 Gone` on mismatch).
-- A placeholder identity verifier that accepts any non-empty bearer.
 - `WorkspaceAgentReportSink` Protocol + single-slot registry; `core/workspace`
   registers its implementation at import so agent_gateway never imports workspace.
 """

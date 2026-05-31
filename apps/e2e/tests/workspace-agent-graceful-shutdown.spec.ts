@@ -64,7 +64,7 @@ test.describe("workspace agent graceful shutdown", () => {
     await expect(page.getByTestId("dashboard-populated")).toBeVisible({ timeout: 10_000 });
 
     // Seed a reachable agent.
-    const { instance_id } = await seedReachableAgent(request, { org_slug: "acme-shutdown" });
+    const { id, instance_id } = await seedReachableAgent(request, { org_slug: "acme-shutdown" });
 
     // Card must appear as reachable first.
     const agentCard = page.getByTestId(`agent-card-instance-${instance_id}`).first();
@@ -72,7 +72,7 @@ test.describe("workspace agent graceful shutdown", () => {
 
     // Trigger graceful shutdown via the testing surface (sends DELETE /api/v1/agent/identity).
     const r = await request.post(`${YAAOS_URL}/api/testing/seed/deregister_workspace_agent`, {
-      data: { instance_id },
+      data: { id },
     });
     expect(r.ok()).toBeTruthy();
 
