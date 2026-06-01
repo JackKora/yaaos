@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -122,14 +123,14 @@ type Config struct {
 	WorkspaceRoot string
 
 	// ActivityWSURL is the backend's activity-stream WebSocket URL
-	// (e.g. "wss://yaaos.example.com/api/v1/agents/<agent_id>/activity").
+	// (e.g. "wss://yaaos.example.com/api/v1/agent/activity").
+	// Agent identity is derived from the bearer — no agent ID in the URL.
 	// Empty disables the WS path: progress events fall back to per-event
 	// HTTP POSTs. Non-empty: the supervisor dials at startup,
 	// constructs an `activity.Conductor`, and routes progress events
 	// through it. Demand-pull semantics apply — events for workspaces
 	// the backend hasn't sent `subscribe` for are dropped at the
-	// Conductor's gate. The literal `{agent_id}` placeholder
-	// gets substituted post-identity-exchange.
+	// Conductor's gate.
 	ActivityWSURL string
 
 	// ActivityBatchInterval controls the Conductor's flush cadence.
@@ -223,12 +224,18 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 		cfg.ActivityBatchInterval = 250 * time.Millisecond
 	}
 	return &Supervisor{
-		cfg:              cfg,
-		client:           client,
-		log:              log,
-		provider:         prov,
-		pool:             NewPool(cfg.Spawn, log),
-		stsBackoff:       backoff.New(),
+		cfg:      cfg,
+		client:   client,
+		log:      log,
+		provider: prov,
+		pool:     NewPool(cfg.Spawn, log),
+		// stsBackoff: a fresh pod that has never successfully exchanged identity
+		// gives up after 1 hour so the container crashes and the orchestrator
+		// can restart it (a misconfigured ARN won't fix itself by retrying
+		// forever). Once bootstrapped, renewal failures use claimBackoff /
+		// heartbeatBackoff which are indefinite — a transient STS blip must
+		// not kill a running pod.
+		stsBackoff:       backoff.NewWithDeadline(1 * time.Hour),
 		claimBackoff:     backoff.New(),
 		heartbeatBackoff: backoff.New(),
 		wsBackoff:        backoff.New(),
@@ -240,10 +247,11 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 // Run exchanges identity and starts the claim + heartbeat goroutines.
 // Blocks until ctx is cancelled or identity exchange fails fatally.
 func (s *Supervisor) Run(ctx context.Context) error {
-	// STS bootstrap: retry forever on the 1m/3m/5m/15m/60m schedule.
-	// A misconfigured ARN (403) doesn't fix itself by us crashing-and-
-	// restarting the process; staying alive lets the local log + OTel
-	// metrics show the operator what's wrong without a restart loop.
+	// STS bootstrap: retry on the 1m/3m/5m/15m/60m schedule up to a 1h
+	// deadline. An unbootstrapped pod that cannot reach the control plane
+	// for 1h exits non-zero so the container orchestrator can restart it.
+	// The deadline only applies before the first successful exchange — once
+	// bootstrapped, renewal failures use the indefinite bearerRefreshLoop.
 	var resp *protocol.IdentityExchangeResponse
 	for {
 		var err error
@@ -261,7 +269,14 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			"class", classifyConnErr(err),
 			"next_sleep_seconds", int(s.stsBackoff.Peek().Seconds()),
 		)
-		if sleepErr := s.stsBackoff.Sleep(ctx); sleepErr != nil {
+		sleepErr := s.stsBackoff.Sleep(ctx)
+		if sleepErr == backoff.ErrDeadlineExceeded {
+			s.log.Error("supervisor.bootstrap_deadline_exceeded",
+				"detail", "identity exchange failed for 1h; exiting so the orchestrator can restart",
+			)
+			os.Exit(1)
+		}
+		if sleepErr != nil {
 			return sleepErr
 		}
 	}
@@ -332,7 +347,25 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// Reap any still-running workspace subprocesses on shutdown. Each
 	// runner gets SIGTERM → grace → SIGKILL via its own Close.
 	s.pool.CloseAll(context.Background())
+
+	// Graceful-shutdown "going away" signal — tell the control plane we're
+	// exiting cleanly so it can mark the agent offline + fail held workspaces
+	// immediately rather than waiting for the liveness sweeper's next tick.
+	// Best-effort: errors are logged but never cause a non-zero exit here.
+	if err := s.sendGoingAway(); err != nil {
+		s.log.Warn("supervisor.deregister_failed", "err", err.Error())
+	}
 	return nil
+}
+
+// sendGoingAway calls DELETE /api/v1/agent/identity with a short deadline.
+// The control plane eagerly marks the agent offline and expires its workspaces.
+// Called as the last act of a clean shutdown (after all loops have stopped).
+func (s *Supervisor) sendGoingAway() error {
+	// 5s deadline: if the backend isn't reachable in 5s during shutdown, skip.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.client.Deregister(ctx)
 }
 
 // setupActivityWS dials the activity-stream WebSocket and wires the
@@ -414,15 +447,44 @@ func (s *Supervisor) wsReconnectLoop(ctx context.Context, bearer string) {
 }
 
 func (s *Supervisor) exchangeIdentity(ctx context.Context) (*protocol.IdentityExchangeResponse, error) {
-	creds, err := s.provider.Exchange(ctx)
+	// The provider signs the claim; the supervisor owns the HTTP exchange.
+	// Audience is the backend's Host so the verifier can reject cross-instance
+	// replays; we pass the base URL's host portion. An empty audience is accepted
+	// by non-prod backends (e.g. mock-aws integration tests) — the backend only
+	// rejects a non-empty mismatching audience.
+	audience := hostFromURL(s.cfg.BaseURL)
+	payload, err := s.provider.SignClaim(ctx, audience)
 	if err != nil {
-		return nil, fmt.Errorf("identity provider: %w", err)
+		return nil, fmt.Errorf("identity: sign claim: %w", err)
 	}
+
+	meta := gatherAgentMetadata()
 	return s.client.ExchangeIdentity(ctx, protocol.IdentityExchangeRequest{
-		AgentPodID:    s.cfg.AgentPodID,
-		Version:       s.cfg.Version,
-		SignedRequest: creds.Bearer,
+		Kind:          s.provider.Kind(),
+		AgentVersion:  s.cfg.Version,
+		AgentMetadata: meta,
+		Payload:       string(payload),
 	})
+}
+
+// hostFromURL extracts the host (and optional port) from a URL string.
+// Used to derive the audience for the signed STS claim. On a parse error the
+// raw input is returned unchanged so the caller still has a non-empty audience.
+func hostFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	return u.Host
+}
+
+// gatherAgentMetadata collects static OS metadata for the identity exchange.
+// Fields that cannot be determined are left at their zero values (omitted from
+// the wire payload by the json:",omitempty" tags in IdentityExchangeRequest).
+func gatherAgentMetadata() protocol.AgentMetadata {
+	return protocol.AgentMetadata{
+		OS: goOS(),
+	}
 }
 
 // refreshResult carries the outcome of one identity-renewal attempt.
@@ -433,8 +495,8 @@ type refreshResult struct {
 }
 
 // runOneRefreshCycle calls exchangeIdentity and validates that the returned
-// AgentID+OrgID match the values pinned at startup. A mismatch is an
-// identity-integrity violation — caller must treat fatal=true as a
+// AgentID, OrgID, and InstanceID match the values pinned at startup. A mismatch
+// is an identity-integrity violation — caller must treat fatal=true as a
 // process-exit signal rather than a retryable error.
 func (s *Supervisor) runOneRefreshCycle(ctx context.Context, currentExpiry time.Time) refreshResult {
 	const retryInterval = 60 * time.Second
@@ -462,13 +524,14 @@ func (s *Supervisor) runOneRefreshCycle(ctx context.Context, currentExpiry time.
 	}
 }
 
-// bearerRefreshLoop re-exchanges identity ~1 hour before the bearer
-// expires so the supervisor keeps running across the 24-hour bearer TTL.
-// On exchange failure it logs and retries every 60s — the existing
-// bearer remains valid until its own expiry. An identity-integrity
-// violation (AgentID/OrgID mismatch) is fatal — the process exits.
+// bearerRefreshLoop re-exchanges identity ~5 minutes before the bearer
+// expires. Bearers have a 1-hour TTL; the 5-minute lead gives the agent
+// several retry attempts before the bearer expires. On exchange failure it
+// logs and retries every 60s — the existing bearer remains valid until its
+// own expiry. An identity-integrity violation (AgentID/OrgID mismatch) is
+// fatal — the process exits.
 func (s *Supervisor) bearerRefreshLoop(ctx context.Context, expiresAt time.Time) {
-	const refreshLead = time.Hour
+	const refreshLead = 5 * time.Minute
 	const retryInterval = 60 * time.Second
 	for {
 		wait := time.Until(expiresAt.Add(-refreshLead))
@@ -523,14 +586,15 @@ func (s *Supervisor) diskSweepLoop(ctx context.Context) {
 }
 
 // claimLoop runs one long-poll worker. On a successful claim it decodes the
-// raw bytes into a typed Command and dispatches via routeCommand. On
-// ErrNoCommand (204) it re-arms; on ctx cancellation it exits.
+// raw bytes into a typed Command, emits a `received` event to cancel the
+// lease requeue, and dispatches via routeCommand. On ErrNoCommand (204) it
+// re-arms; on ctx cancellation it exits.
 func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		raw, err := s.client.ClaimCommand(ctx, s.agentID, s.buildClaimRequest())
+		raw, err := s.client.ClaimCommand(ctx, s.buildClaimRequest())
 		if err != nil {
 			if err == protocol.ErrNoCommand {
 				s.claimBackoff.Reset()
@@ -558,7 +622,36 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 		}
 		s.claimBackoff.Reset()
 		observability.Metrics().CommandsClaimed.Add(ctx, 1, observability.StandardAttrs())
+
+		// Emit a `received` event to cancel the 30-second lease requeue
+		// on the backend. Best-effort: a failure here is logged but does not
+		// prevent dispatch — at worst the command gets re-queued to pending
+		// and re-delivered (at-least-once).
+		s.postReceivedEvent(ctx, cmd.Header())
+
 		s.routeCommand(ctx, cmd)
+	}
+}
+
+// postReceivedEvent posts a `received` non-terminal event to the backend.
+// This cancels the 30-second lease requeue on the command row
+// (claimed → delivered). Best-effort: errors are logged but never prevent
+// dispatch. ConfigUpdate commands carry no workspace_id and are agent-scoped;
+// they still have a command_id that the backend tracks for the lease.
+func (s *Supervisor) postReceivedEvent(ctx context.Context, header protocol.CommandHeader) {
+	ev := protocol.AgentEvent{
+		CommandID:   header.CommandID,
+		Kind:        protocol.EventReceived,
+		ReportedAt:  time.Now().UTC(),
+		Traceparent: header.Traceparent,
+	}
+	if err := s.client.PostCommandEvent(ctx, header.CommandID, ev); err != nil {
+		if err != protocol.ErrStaleClaim {
+			s.log.Warn("supervisor.received_event_failed",
+				"command_id", header.CommandID,
+				"err", err.Error(),
+			)
+		}
 	}
 }
 
@@ -579,7 +672,7 @@ func (s *Supervisor) heartbeatLoop(ctx context.Context) {
 }
 
 func (s *Supervisor) sendHeartbeat(ctx context.Context) {
-	resp, err := s.client.Heartbeat(ctx, s.agentID, protocol.HeartbeatRequest{
+	resp, err := s.client.Heartbeat(ctx, protocol.HeartbeatRequest{
 		ReportedAt: time.Now().UTC(),
 		Workspaces: s.pool.Snapshot(),
 	})
@@ -799,17 +892,37 @@ func (s *Supervisor) routeWorkspaceCmd(ctx context.Context, c command.WorkspaceC
 }
 
 // buildClaimRequest constructs the ClaimRequest the claim-loop POSTs to the
-// backend. Lifecycle is derived from the config pointer; active_workspace_ids
-// is the current set of Active registry records.
+// backend. Lifecycle is derived from the config pointer.
+//
+// Capacity-pull fields:
+//   - new_workspaces = max_workspaces − active count (how many new workspaces
+//     the agent can accept); 0 when unconfigured.
+//   - workspace_ids = idle Active workspaces (Active workspaces with no current
+//     command in-flight) awaiting a pending command; empty when unconfigured.
 func (s *Supervisor) buildClaimRequest() protocol.ClaimRequest {
-	lifecycle := "unconfigured"
-	if s.config.Load() != nil {
-		lifecycle = "configured"
+	cfg := s.config.Load()
+	if cfg == nil {
+		return protocol.ClaimRequest{
+			WaitSeconds:   s.cfg.ClaimWaitSeconds,
+			Lifecycle:     "unconfigured",
+			NewWorkspaces: 0,
+			WorkspaceIDs:  nil,
+		}
 	}
+	activeIDs := s.pool.ActiveIDs()
+	activeCount := len(activeIDs)
+	newWorkspaces := cfg.MaxWorkspaces - activeCount
+	if newWorkspaces < 0 {
+		newWorkspaces = 0
+	}
+	// workspace_ids = Active workspaces that have no in-flight command
+	// (i.e. idle and ready for the next command).
+	idleIDs := s.pool.IdleIDs()
 	return protocol.ClaimRequest{
-		WaitSeconds:        s.cfg.ClaimWaitSeconds,
-		Lifecycle:          lifecycle,
-		ActiveWorkspaceIDs: s.pool.ActiveIDs(),
+		WaitSeconds:   s.cfg.ClaimWaitSeconds,
+		Lifecycle:     "configured",
+		NewWorkspaces: newWorkspaces,
+		WorkspaceIDs:  idleIDs,
 	}
 }
 

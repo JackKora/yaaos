@@ -44,20 +44,20 @@ func NewClient(baseURL string, httpClient *http.Client) *Client {
 func (c *Client) SetBearer(b string) { c.bearer = b }
 
 // ExchangeIdentity POSTs the signed-STS payload and returns the bearer
-// + agent_id. On success the bearer is NOT stored — caller decides.
+// + agent_id + instance_id. On success the bearer is NOT stored — caller decides.
 func (c *Client) ExchangeIdentity(ctx context.Context, req IdentityExchangeRequest) (*IdentityExchangeResponse, error) {
 	var resp IdentityExchangeResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/identity/exchange", req, &resp, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/agent/identity", req, &resp, false); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
 
-// Heartbeat reports liveness + workspace inventory.
-func (c *Client) Heartbeat(ctx context.Context, agentID string, req HeartbeatRequest) (*HeartbeatResponse, error) {
+// Heartbeat reports liveness + workspace inventory. Agent identity is
+// derived from the bearer — no agent ID in the URL.
+func (c *Client) Heartbeat(ctx context.Context, req HeartbeatRequest) (*HeartbeatResponse, error) {
 	var resp HeartbeatResponse
-	path := fmt.Sprintf("/api/v1/agents/%s/heartbeat", agentID)
-	if err := c.doJSON(ctx, http.MethodPost, path, req, &resp, true); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/agent/heartbeat", req, &resp, true); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -65,9 +65,10 @@ func (c *Client) Heartbeat(ctx context.Context, agentID string, req HeartbeatReq
 
 // ClaimCommand long-polls for the next command. Returns the raw JSON bytes
 // on success; the caller passes these to command.Decode for typed dispatch.
-// Returns ErrNoCommand when the backend responds 204.
-func (c *Client) ClaimCommand(ctx context.Context, agentID string, req ClaimRequest) ([]byte, error) {
-	path := fmt.Sprintf("/api/v1/agents/%s/commands/claim", agentID)
+// Returns ErrNoCommand when the backend responds 204. Agent identity is
+// derived from the bearer — no agent ID in the URL.
+func (c *Client) ClaimCommand(ctx context.Context, req ClaimRequest) ([]byte, error) {
+	path := "/api/v1/agent/commands/claim"
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
@@ -152,6 +153,28 @@ func (c *Client) doJSON(ctx context.Context, method, path string, in, out any, w
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("%s %s: %d %s", method, path, resp.StatusCode, string(raw))
 	}
+}
+
+// Deregister sends DELETE /api/v1/agent/identity — the graceful-shutdown
+// "going away" signal. The control plane eagerly marks the agent offline,
+// revokes the bearer, and expires any held workspaces. Best-effort: errors
+// are returned but the caller (supervisor shutdown) always continues.
+func (c *Client) Deregister(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+"/api/v1/agent/identity", nil)
+	if err != nil {
+		return err
+	}
+	c.applyBearer(req)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("deregister: unexpected status %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil
 }
 
 func (c *Client) applyBearer(req *http.Request) {

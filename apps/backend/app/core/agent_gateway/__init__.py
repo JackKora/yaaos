@@ -1,22 +1,25 @@
 """core/agent_gateway — wire protocol to WorkspaceAgents.
 
-Five HTTPS endpoints under `/v1/`: identity-exchange, heartbeat,
-commands/claim (long-poll), commands/{id}/events, workspaces/{id}/events,
-plus a WebSocket activity stream.
+HTTPS endpoints under `/api/v1/agent/`: identity (exchange + graceful-shutdown
+DELETE), heartbeat, commands/claim (long-poll), commands/{id}/events,
+workspaces/{id}/events, plus a WebSocket activity stream. Agent identity on
+every operational channel is derived from the bearer (no `{agent_id}` in URLs).
 
 Provides:
 - Hand-written Pydantic wire types (mirror of `apps/backend/openapi/agent-api.yaml`).
-- Per-agent in-memory dispatch FIFO + async long-poll.
+- Durable command dispatch via the `agent_commands` table + capacity-pull
+  `claim_next` (lease: pending→claimed→delivered→done) with a requeue reaper.
+- STS identity verification (sigv4 GetCallerIdentity replay) issuing 1h bearers.
+- Liveness sweeper (`compute_agent_liveness_transitions`) + agents-list query.
 - Heartbeat reconciliation (control-plane returns workspaces the agent
   should forget).
 - Event ingestion with the stale-claim guard (`410 Gone` on mismatch).
-- A placeholder identity verifier that accepts any non-empty bearer.
 - `WorkspaceAgentReportSink` Protocol + single-slot registry; `core/workspace`
   registers its implementation at import so agent_gateway never imports workspace.
 """
 
 from app.core.agent_gateway import bearers, web  # noqa: F401 — registers /v1/* routes
-from app.core.agent_gateway.bearers import revoke_all_for_agent, revoke_all_for_org
+from app.core.agent_gateway.bearers import revoke_all_for_agent, revoke_all_for_arn, revoke_all_for_org
 from app.core.agent_gateway.org_arn_lookup import (
     OrgArnRef,
     lookup_org_by_arn,
@@ -30,19 +33,22 @@ from app.core.agent_gateway.report_sink import (
     register_report_sink,
 )
 from app.core.agent_gateway.service import (
-    AgentQueues,
-    bind_agent_queues,
+    acknowledge_command_received,
     claim_next,
+    compute_agent_liveness_transitions,
     connection_status_for_org,
     enqueue_command,
     ensure_agent_row,
     get_agent_info,
     has_any_reachable_agent,
-    pick_agent_for_org,
-    queue_depth,
+    list_agents_for_org,
+    mark_agent_shutdown,
+    pin_command_to_agent,
     record_agent_event,
     record_heartbeat,
     record_workspace_event,
+    requeue_stale_claimed,
+    retire_command,
     stale_agent_ids,
 )
 from app.core.agent_gateway.subscribers import (
@@ -60,6 +66,7 @@ from app.core.agent_gateway.types import (
     AgentConfig,
     AgentEvent,
     AgentEventKind,
+    AgentMetadata,
     AgentRef,
     AuthBlock,
     ClaimRequest,
@@ -91,7 +98,7 @@ __all__ = [
     "AgentConfig",
     "AgentEvent",
     "AgentEventKind",
-    "AgentQueues",
+    "AgentMetadata",
     "AgentRef",
     "AuthBlock",
     "ClaimRequest",
@@ -119,9 +126,10 @@ __all__ = [
     "WorkspaceEventReport",
     "WriteFilesCommand",
     "WriteFilesEntry",
-    "bind_agent_queues",
+    "acknowledge_command_received",
     "bind_subscriber_registry",
     "claim_next",
+    "compute_agent_liveness_transitions",
     "connection_status_for_org",
     "enqueue_command",
     "ensure_agent_row",
@@ -129,15 +137,19 @@ __all__ = [
     "get_report_sink",
     "get_subscriber_registry",
     "has_any_reachable_agent",
+    "list_agents_for_org",
     "lookup_org_by_arn",
-    "pick_agent_for_org",
-    "queue_depth",
+    "mark_agent_shutdown",
+    "pin_command_to_agent",
     "record_agent_event",
     "record_heartbeat",
     "record_workspace_event",
     "register_org_arn_lookup",
     "register_report_sink",
+    "requeue_stale_claimed",
+    "retire_command",
     "revoke_all_for_agent",
+    "revoke_all_for_arn",
     "revoke_all_for_org",
     "shutdown",
     "stale_agent_ids",

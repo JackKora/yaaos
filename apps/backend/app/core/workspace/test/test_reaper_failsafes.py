@@ -309,28 +309,27 @@ async def test_failsafe_agent_loss_per_pod_only_expires_stale_owner(db_session) 
         id=uuid4(),
         org_id=org_id,
         provider_id="remote_agent",
-        provider="remote_agent",
         spec={"sha": "a"},
         plugin_state={},
         status=WorkspaceStatus.ACTIVE.value,
         expires_at=_utcnow() + timedelta(hours=1),
-        agent_id=stale["id"],
+        owning_agent_id=stale["id"],
     )
     live_ws = WorkspaceRow(
         id=uuid4(),
         org_id=org_id,
         provider_id="remote_agent",
-        provider="remote_agent",
         spec={"sha": "b"},
         plugin_state={},
         status=WorkspaceStatus.ACTIVE.value,
         expires_at=_utcnow() + timedelta(hours=1),
-        agent_id=live["id"],
+        owning_agent_id=live["id"],
     )
     db_session.add_all([stale_ws, live_ws])
     await db_session.commit()
 
-    await _failsafe_agent_loss(db_session, _utcnow())
+    # Pass the stale agent's ID directly — the sweeper now feeds the offline set.
+    await _failsafe_agent_loss(db_session, {stale["id"]})
     await db_session.commit()
 
     refreshed = {r.id: r for r in (await db_session.execute(select(WorkspaceRow))).scalars().all()}

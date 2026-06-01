@@ -62,10 +62,9 @@ def test_ws_close_4401_when_missing_bearer() -> None:
     """The WebSocket upgrade requires an Authorization: Bearer <token>
     header. Empty / missing → close with 4401 before any messages flow."""
     app = _app()
-    agent_id = uuid4()
     with TestClient(app) as client:
         with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(f"/api/v1/agents/{agent_id}/activity"):
+            with client.websocket_connect("/api/v1/agent/activity"):
                 pass
         assert exc_info.value.code == 4401
 
@@ -76,7 +75,7 @@ def test_ws_accepts_bearer_and_registers_sender() -> None:
     bearer, _ = _install_bearer_stub(agent_id)
     with TestClient(app) as client:
         with client.websocket_connect(
-            f"/api/v1/agents/{agent_id}/activity",
+            "/api/v1/agent/activity",
             headers={"Authorization": f"Bearer {bearer}"},
         ):
             # While the WS is open, the registry has a sender for this agent.
@@ -84,23 +83,6 @@ def test_ws_accepts_bearer_and_registers_sender() -> None:
         # After exit, the sender is unregistered.
         # (TestClient is synchronous so the disconnect handler ran by now.)
         assert not get_subscriber_registry().has_sender(agent_id)
-
-
-def test_ws_rejects_when_bearer_agent_id_does_not_match_path() -> None:
-    """A bearer issued for pod A can't be used to upgrade the WS for pod B —
-    stolen-bearer-cross-pod attack defence. Closes with 4403."""
-    app = _app()
-    agent_id_in_bearer = uuid4()
-    different_path_agent = uuid4()
-    bearer, _ = _install_bearer_stub(agent_id_in_bearer)
-    with TestClient(app) as client:
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(
-                f"/api/v1/agents/{different_path_agent}/activity",
-                headers={"Authorization": f"Bearer {bearer}"},
-            ):
-                pass
-        assert exc_info.value.code == 4403
 
 
 @pytest.mark.asyncio
@@ -139,7 +121,7 @@ async def test_activity_batch_fans_out_to_sse() -> None:
     def _send_batch() -> None:
         with TestClient(app) as client:
             with client.websocket_connect(
-                f"/api/v1/agents/{agent_id}/activity",
+                "/api/v1/agent/activity",
                 headers={"Authorization": f"Bearer {bearer}"},
             ) as ws:
                 ws.send_json(
@@ -182,7 +164,7 @@ async def test_publish_with_no_subscriber_drops_nothing_breaks_nothing() -> None
     def _send_batch() -> None:
         with TestClient(app) as client:
             with client.websocket_connect(
-                f"/api/v1/agents/{agent_id}/activity",
+                "/api/v1/agent/activity",
                 headers={"Authorization": f"Bearer {bearer}"},
             ) as ws:
                 ws.send_json(

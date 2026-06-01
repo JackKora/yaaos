@@ -38,7 +38,9 @@ Type aliases in `client.ts` mirror backend Pydantic models. Non-obvious fields:
 
 ### Query hooks
 
-`queries.ts` — one hook per endpoint. Polling intervals (3–5s) are a safety net for missed SSE messages (see [core_sse.md](core_sse.md)); see the file for the full endpoint-to-hook mapping.
+`queries.ts` — one hook per endpoint. Polling intervals are used only for `useHealth`, `useConfigStatus`, `useNotifications`, and similar non-SSE queries. `useDashboard` and `useAgents` are pure-SSE — no polling. See [core_sse.md](core_sse.md) for the full invalidation map.
+
+`useAgents(orgSlug)` — fetches `GET /api/orgs/{slug}/agents`. Returns `AgentRow[]` within the 1-hour retention window. Invalidated live via `agent_liveness_changed` SSE. Enabled only when `orgSlug` is non-empty.
 
 ### Mutation hooks
 

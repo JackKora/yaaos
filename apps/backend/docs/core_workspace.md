@@ -4,7 +4,7 @@
 
 ## Scope
 
-- **Owns:** `Workspace` + `WorkspaceProvider` Protocols, provider registry, `workspaces` table lifecycle, reaper background loop, single-flight claim registry, three `WorkflowCommand` impls (`ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`). Implements and registers `WorkspaceAgentReportSink` (the IoC seam to [`core/agent_gateway`](core_agent_gateway.md)).
+- **Owns:** `Workspace` + `WorkspaceProvider` Protocols, `WorkspaceRegistry` (ContextVar-bound provider map), `workspaces` table lifecycle, reaper background loop, single-flight claim registry, three `WorkflowCommand` impls (`ProvisionWorkspace`, `CleanupWorkspace`, `RefreshWorkspaceAuth`). Implements and registers `WorkspaceAgentReportSink` (the IoC seam to [`core/agent_gateway`](core_agent_gateway.md)).
 - **Does not own:** lifecycle *policy* (that's callers); workspace filesystem internals (plugin-private); `domain/tickets` data (bridged via [Workflow-context callback](#workflow-context-callback)).
 - **Receives:** `WorkspaceSpec` from callers; AgentEvent ingestion goes through the registered sink. **Emits:** `workspace.transitioned` audit rows via [`core/audit_log`](core_audit_log.md); `WorkflowCommand` events to [`core/workflow`](core_workflow.md).
 
@@ -14,8 +14,10 @@
 - **`on_stream_line` callback** — when provided, the provider reads stdout line-by-line (live JSON parsing); when absent, buffers to completion. Timeout/cancel paths are unchanged either way.
 - **Each new workspace capability is a deliberate named method** (`run_coding_agent_cli`, `read_text`). A generic `exec(argv)` would silently broaden.
 - **`release_claim` preserves `current_holder_workflow_id`** even after clearing `current_command_id` — audit/reconciliation lookups still find which workflow last touched the workspace.
-- **Workspaces are hard-tied to their owning agent.** The pod that runs `CreateWorkspace` owns the workspace for its whole life; `try_claim` stamps `WorkspaceRow.agent_id` (the owning `workspace_agents.id`) at create-dispatch when an `agent_id` is passed. Post-create commands (cleanup, etc.) route back to that same agent — `dispatch_cleanup_workspace` takes the stored `agent_id`, never re-picks. In-memory/legacy rows keep `agent_id` NULL. The owning agent's id is what `core/agent_gateway` reads to authorize that agent's workspace/command-event posts (see [`core/agent_gateway`](core_agent_gateway.md)).
-- **Failsafe-6 is per-pod.** A workspace whose owning agent is individually stale (no heartbeat within `AGENT_LOSS_HEARTBEAT_THRESHOLD_SECONDS`) is expired with reason `agent_loss` even when sibling pods in the same org are healthy. Only the lost pod's bearers are revoked (`revoke_all_for_agent`), not the org's. Workspaces with a NULL `agent_id` are skipped — no owning pod to declare lost.
+- **Workspaces are hard-tied to their owning agent.** The agent that claims and executes `CreateWorkspace` owns the workspace for its whole life. Post-create commands (cleanup, etc.) are enqueued with `agent_id` pre-stamped via `pin_command_to_agent` so `claim_next`'s `workspace_ids` sweep routes them to the same agent. In-memory/legacy rows keep `agent_id` NULL. The owning agent's id is what `core/agent_gateway` reads to authorize that agent's workspace/command-event posts (see [`core/agent_gateway`](core_agent_gateway.md)).
+- **`dispatch_create_workspace` no longer pre-assigns an agent.** The command is enqueued as `pending` with no `agent_id`; whichever reachable agent has capacity claims it via `claim_next`'s `new_workspaces` pull. The agent that executes the command becomes the workspace owner via the `WorkspaceRow.agent_id` stamp at `try_claim`.
+- **Failsafe-6 is per-pod.** Workspaces whose owning agent newly transitioned to offline (from `compute_agent_liveness_transitions`) are expired with reason `agent_loss` on the same reaper tick; only that pod's bearers are revoked. The reaper passes the sweeper's newly-offline set directly to `_failsafe_agent_loss` — no second `stale_agent_ids` probe. The DELETE handler also calls `_failsafe_agent_loss` eagerly via `WorkspaceAgentReportSink.handle_agent_loss` for immediate cleanup. Workspaces with NULL `owning_agent_id` are skipped.
+- **Terminal-failure synthesis on agent loss.** For each expired workspace with a non-null `current_command_id` + `current_holder_workflow_id`, `_failsafe_agent_loss` enqueues a `workflow.handle_agent_event` outbox row with `outcome_label="failure"` so the owning WorkflowExecution resumes (fails the step) rather than waiting forever in `AWAITING_AGENT`.
 - **Workspace-context callback bridges `core → domain`** without violating layer order: `domain/reviewer` registers a concrete `WorkflowContextProvider` at boot; `ProvisionWorkspace` reads it to fetch ticket context. See [`domain/reviewer/__init__.py`](domain_reviewer.md).
 - **`get_workflow_context_provider()` is non-Optional** — raises `RuntimeError` when no provider is installed. A missing provider is a boot-time wiring bug, not a runtime option. `assert_workflow_context_provider()` is called from `web.py` / `worker.py` after `domain/reviewer` import so the crash happens at startup, not mid-flow. Test isolation via the `workflow_context_provider_isolation` fixture in `app/testing/isolation`.
 - **Recovery-policy registration is explicit** — `register_workspace_recovery_policies()` (in `dispatch.py`) is called from `web.py` / `worker.py` startup, not at import time. This ensures every process that dispatches workflows registers the policy explicitly. Tests that need the policy call the function directly or use the `recovery_policies_isolation` fixture.
@@ -24,20 +26,20 @@
 ## Gotchas
 
 - **Admin HTTP endpoints are unauthenticated.** Gate behind an authenticated proxy before exposing to untrusted networks.
-- **`ResourceCaps` / `NetworkPolicy` are advisory** — the `in_memory` plugin ignores them; values exist to stabilise the interface for future plugins.
+- **`ResourceCaps` / `NetworkPolicy` are advisory** — values exist to stabilise the interface across provider implementations; the remote agent forwards them to the Go process.
 - **Failsafe-5 (disk sweep) is in the Go agent** (`apps/agent/internal/supervisor`), not here.
 - **Never hand-edit `tach.toml`** — run `apps/backend/bin/sync_modules` after interface changes.
 
 ## Vocabulary
 
-- **WorkspaceProvider** — dumb actuator (provision + run + destroy + health-check); no policy.
-- **plugin_state** — opaque dict returned by `provision()`, persisted by this module, never exposed to consumers (e.g. `{"working_dir": "..."}` for in-process).
+- **WorkspaceProvider** — dumb actuator (provision + run + destroy + health-check); no policy. The only registered implementation is `RemoteAgentWorkspaceProvider` (`remote_agent`).
+- **plugin_state** — opaque dict returned by `provision()`, persisted by this module, never exposed to consumers.
 - **Reaper** — background loop enforcing TTL expiry, idle-timeout, agent-loss detection, and destroy retries.
 - **Recovery-policy registration** — `register_workspace_recovery_policies()` registers `auth_expired → RefreshWorkspaceAuth` into [`core/workflow`](core_workflow.md)'s recovery-policy registry. Called explicitly from `web.py` / `worker.py` startup after workspace import. The registry itself lives in `core/workflow/recovery.py`.
 
 ## Data owned
 
-- `workspaces` — `(id, org_id, agent_id, provider_id, spec jsonb, plugin_state jsonb, status, provider, current_command_id, current_holder_workflow_id, max_idle_seconds, created_at, activated_at, expires_at, destroyed_at, destroy_attempts, last_destroy_attempt_at, last_destroy_error)`. `agent_id` is the owning `workspace_agents.id` (soft FK; nullable; set at create-dispatch; NULL for in-memory/legacy rows). Indexes: `(status, expires_at)`, `(org_id, created_at)`, `current_holder_workflow_id`, `org_id`.
+- `workspaces` — `(id, org_id, agent_id, provider_id, spec jsonb, plugin_state jsonb, status, current_command_id, current_holder_workflow_id, max_idle_seconds, created_at, activated_at, expires_at, destroyed_at, destroy_attempts, last_destroy_attempt_at, last_destroy_error)`. `agent_id` is the owning `workspace_agents.id` (soft FK; nullable; set at create-dispatch). Indexes: `(status, expires_at)`, `(org_id, created_at)`, `current_holder_workflow_id`, `org_id`.
 
 ## Routes
 

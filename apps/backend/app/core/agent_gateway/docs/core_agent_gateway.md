@@ -4,10 +4,10 @@
 
 ## Scope
 
-- **Owns:** per-agent in-memory FIFO, claim long-poll, lifecycle-gated dispatch, heartbeat reconciliation, event ingestion with stale-claim guard, identity-exchange writer, `WorkspaceAgentReportSink` protocol, `workspace_agents` row management.
+- **Owns:** durable `agent_commands` queue, `claim_next` long-poll, lifecycle-gated dispatch, heartbeat reconciliation, event ingestion with stale-claim guard, identity-exchange writer, `WorkspaceAgentReportSink` protocol, `workspace_agents` row management.
 - **Does not own:** workspace state (delegates to `core/workspace` via `WorkspaceAgentReportSink`), workflow advancement (delegates to `core/workflow` via outbox), bearer token ledger (delegates to `core/agent_gateway/bearers`).
 - **Receives:** HTTP requests from the Go WorkspaceAgent (wire types in `types.py`, OpenAPI spec in `openapi/agent-api.yaml`).
-- **Emits:** `AgentCommand` to the agent on claim; `HeartbeatResponse.forgotten_workspaces` for reconciliation; enqueues `HANDLE_AGENT_EVENT` outbox task on terminal events.
+- **Emits:** one `AgentCommand` per claim call; `HeartbeatResponse.forgotten_workspaces` for reconciliation; enqueues `HANDLE_AGENT_EVENT` outbox task on terminal events.
 
 ## Endpoint authorization
 
@@ -18,12 +18,12 @@ Every bearer endpoint authenticates by ledger lookup (`bearers.verify`) and runs
 
 ## Lifecycle gate + claim gating
 
-- **Unconfigured claim** — the agent sends `lifecycle="unconfigured"`. The backend returns a `ConfigUpdateCommand` built from the org/global `max_workspaces` default. No workspace commands are dequeued regardless of queue depth. The agent accumulates queued commands while bootstrapping.
-- **Configured claim** — the agent sends `lifecycle="configured"` and `active_workspace_ids`. The backend returns the first *eligible* queued command:
-  - `ConfigUpdateCommand`: always eligible.
-  - `CreateWorkspaceCommand`: always eligible (creates a new Active workspace).
-  - Other workspace commands: eligible only when `workspace_id ∈ active_workspace_ids`.
-  - Ineligible commands remain at their queue position.
+- **Unconfigured claim** — the agent sends `lifecycle="unconfigured"`. The backend returns a single `ConfigUpdateCommand` (built from the global default — no DB row claimed). No workspace commands are dequeued regardless of queue depth. The agent accumulates queued commands while bootstrapping.
+- **Configured claim** (`claim_next`) — the agent sends `lifecycle="configured"`, `new_workspaces` (capacity for new workspaces), and `workspace_ids` (idle Active workspaces). The backend claims exactly ONE row per call via `FOR UPDATE SKIP LOCKED LIMIT 1` across the eligible set:
+  - A pending unassigned `CreateWorkspace` row (when `new_workspaces > 0`), OR
+  - The oldest pending row pinned to this agent for any `workspace_id` in `workspace_ids`.
+  - Stamps `agent_id`, `status=claimed`, `claimed_at=now` on the single selected row.
+  - Returns 204 if nothing eligible (zero rows in `claimed` limbo).
 
 ## `max_workspaces` source
 
@@ -43,6 +43,6 @@ Every bearer endpoint authenticates by ledger lookup (`bearers.verify`) and runs
 
 ## Entry points
 
-- `apps/backend/app/core/agent_gateway/service.py` — FIFO, `claim_next`, `record_agent_event`, heartbeat.
+- `apps/backend/app/core/agent_gateway/service.py` — durable queue, `claim_next` (single-row FOR UPDATE SKIP LOCKED), `record_agent_event`, heartbeat.
 - `apps/backend/app/core/agent_gateway/types.py` — Pydantic wire types.
 - `apps/backend/openapi/agent-api.yaml` — authoritative schema (drift-detected by `test_openapi_mirror_drift.py`).

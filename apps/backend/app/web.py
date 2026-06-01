@@ -32,7 +32,6 @@ from app.core import audit_log, workspace  # noqa: F401, E402
 from app.core import workflow as _core_workflow  # noqa: F401, E402
 from app.core import agent_gateway as _core_agent_gateway  # noqa: E402
 
-_core_agent_gateway.bind_agent_queues(_core_agent_gateway.AgentQueues())
 _core_agent_gateway.bind_subscriber_registry(_core_agent_gateway.SubscriberRegistry())
 
 # 4b. Identity + tenancy + auth middleware. Must be imported before
@@ -94,7 +93,7 @@ from app.core.sse import web as _core_sse_web  # noqa: F401, E402
 from app.domain import integrations as _domain_integrations  # noqa: F401, E402
 
 # 6. Plugins.
-from app.plugins import in_memory_workspace, claude_code, github, linear, notion  # noqa: F401, E402
+from app.plugins import claude_code, github, linear, notion  # noqa: F401, E402
 
 # GitHub OAuth identity provider lives inside `plugins/github` now —
 # `plugins/oauth_github` was deleted. The github plugin's __init__ calls

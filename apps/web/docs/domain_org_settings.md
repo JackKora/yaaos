@@ -4,7 +4,7 @@
 
 ## Scope
 
-Routes: `auth`, `members`, `audit`, `vcs`, `coding-agents`, `coding-agents/$pluginId`, `api-keys`, `mcp-proxy` — see `core/routing` for mounts. Consumes endpoints: `/api/coding-agents`, `/api/api-keys`, `/api/mcp-proxy`, `/api/orgs`, `/api/memberships`, `/api/audit`, `/api/github/*`, `/api/vcs`, `/api/sso/*`, `/api/claude_code/*`. Owns no data.
+Routes: `auth`, `members`, `audit`, `vcs`, `coding-agents`, `coding-agents/$pluginId`, `api-keys`, `mcp-proxy`, `workspaces` — see `core/routing` for mounts. Consumes endpoints: `/api/coding-agents`, `/api/api-keys`, `/api/mcp-proxy`, `/api/orgs`, `/api/memberships`, `/api/audit`, `/api/github/*`, `/api/vcs`, `/api/sso/*`, `/api/claude_code/*`. Owns no data.
 
 Tab visibility is role-gated: admin sees all tabs; builder sees Members only (`test/layout.test.tsx`).
 
@@ -31,6 +31,13 @@ Tab visibility is role-gated: admin sees all tabs; builder sees Members only (`t
 7. **`DangerZone`** — `ConfirmModal` → `useUninstallCodingAgent`.
 
 `AgentEditor` fields: `name`, `prompt`, `model`, `version`, `effort`, `use_default_system_prompt` (checkbox; default true; toggling off reveals `system_prompt` textarea). Toggling back to default clears `system_prompt` so the wire payload stays clean.
+
+## Workspaces page
+
+`WorkspacesSettingsPage.tsx` at `/orgs/$slug/settings/workspaces`. Admin-only. No mode selector — the system has exactly one provider (`remote_agent`). Renders:
+- **AWS configuration card** — IAM role ARN input + AWS region dropdown. Save calls `PATCH /api/orgs` with `registered_iam_arn` + `aws_region`. ARN validated client-side against `arn:aws:iam::\d{12}:role/[\w+=,.@-]+`; Save disabled until valid. Server lowercases before storing and returns 422 `arn_already_registered` if another org holds the same ARN.
+  - **ARN-change confirmation** — when the saved ARN differs from the current value and one or more online/stale agents exist, a `ConfirmModal` appears before saving: "This will disconnect N running WorkspaceAgents and fail their in-flight Workspaces. Continue?" N comes from `GET /api/orgs/{slug}/agents` (online + stale count). Cancel aborts the save; confirm proceeds. The modal uses the `destructive` tone.
+- **Agent deployment card** — deploy snippet + backend URL + min version info.
 
 ## Tests
 

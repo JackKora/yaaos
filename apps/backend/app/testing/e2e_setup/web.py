@@ -168,4 +168,35 @@ async def saml_sign(req: _SamlSignRequest) -> dict[str, str]:
     return {"token": token}
 
 
+class _WorkspaceAgentRequest(BaseModel):
+    org_slug: str = Field(..., min_length=1)
+
+
+@router.post("/seed/workspace_agent")
+async def seed_workspace_agent(req: _WorkspaceAgentRequest) -> dict[str, str]:
+    """Seed a reachable workspace-agent row for the given org slug.
+
+    Returns ``{"id": "<uuid>", "instance_id": "<string>"}`` so e2e specs can
+    assert the card appears on the dashboard without knowing the PK in advance.
+    """
+    _guard_dev()
+    return await service.seed_workspace_agent(org_slug=req.org_slug)
+
+
+class _DeregisterWorkspaceAgentRequest(BaseModel):
+    id: UUID
+
+
+@router.post("/seed/deregister_workspace_agent")
+async def deregister_workspace_agent(req: _DeregisterWorkspaceAgentRequest) -> dict[str, str]:
+    """Simulate an agent's graceful-shutdown signal for the given canonical id.
+
+    Marks the agent offline + publishes ``agent_liveness_changed`` so the
+    dashboard flips the card without a running container. Drives the
+    graceful-shutdown Playwright spec.
+    """
+    _guard_dev()
+    return await service.deregister_workspace_agent(agent_id=req.id)
+
+
 register_routes(RouteSpec(module_name="e2e_setup", router=router, url_prefix="/api/testing"))

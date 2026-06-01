@@ -24,6 +24,14 @@
 
 None. Transport only — Redis is the substrate.
 
+## `GeneralEventKind` values
+
+- `ticket_status_changed` — ticket workflow-state transition
+- `review_requested`, `review_started`, `review_completed`, `review_failed`, `review_superseded` — review job lifecycle
+- `finding_raised`, `finding_re_observed`, `finding_anchor_updated`, `finding_state_changed`, `finding_acknowledged`, `finding_resolution_detected`, `finding_stale_detected` — finding lifecycle
+- `comment_reply_received`, `agent_reply_posted` — conversation replies
+- `agent_liveness_changed` — workspace-agent liveness transition (reachable/stale/offline); cache-invalidate only (empty payload), org-scoped
+
 ## How it's tested
 
 `test/test_general_publish_service.py` — rollback discards events; commit delivers with correct shape; org isolation. Uses `db_session` + `redis_or_skip`.

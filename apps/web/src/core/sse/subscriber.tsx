@@ -26,13 +26,19 @@ import type { ServerEvent } from "./types";
  * single refetch rather than N.
  *
  * On every (re)connect (`onopen`) the list-level queries (`["tickets"]`,
- * `["reviewer", "metrics"]`) are invalidated to reconcile state: the stream
- * opens asynchronously and auto-reconnects after a drop, and any event
- * published while it was not OPEN is lost (Redis pub/sub has no replay).
+ * `["reviewer", "metrics"]`, `["agents"]`) are invalidated to reconcile state:
+ * the stream opens asynchronously and auto-reconnects after a drop, and any
+ * event published while it was not OPEN is lost (Redis pub/sub has no replay).
  *
  * Translation table (`kind` → which query prefixes to invalidate):
  * - `ticket_status_changed` → ["tickets"], ["tickets", ticket_id],
  *   ["tickets", ticket_id, "audit"], ["reviewer", "metrics"]
+ * - `review_requested` | `review_started` | `review_completed` |
+ *   `review_failed` | `review_superseded` → ["tickets"], ["tickets", "dashboard"]
+ * - `finding_raised` | `finding_re_observed` | `finding_anchor_updated` |
+ *   `finding_state_changed` | `finding_acknowledged` |
+ *   `finding_resolution_detected` | `finding_stale_detected` → ["tickets"], ["tickets", "dashboard"]
+ * - `agent_liveness_changed` → ["agents"]
  */
 
 let _source: EventSource | null = null;
@@ -74,6 +80,24 @@ function _handleEvent(evt: ServerEvent): void {
       }
       _scheduleInvalidate(["reviewer", "metrics"]);
       break;
+    case "review_requested":
+    case "review_started":
+    case "review_completed":
+    case "review_failed":
+    case "review_superseded":
+    case "finding_raised":
+    case "finding_re_observed":
+    case "finding_anchor_updated":
+    case "finding_state_changed":
+    case "finding_acknowledged":
+    case "finding_resolution_detected":
+    case "finding_stale_detected":
+      _scheduleInvalidate(["tickets"]);
+      _scheduleInvalidate(["tickets", "dashboard"]);
+      break;
+    case "agent_liveness_changed":
+      _scheduleInvalidate(["agents"]);
+      break;
     default:
       break;
   }
@@ -113,6 +137,7 @@ function _syncConnection(): void {
   es.onopen = () => {
     _scheduleInvalidate(["tickets"]);
     _scheduleInvalidate(["reviewer", "metrics"]);
+    _scheduleInvalidate(["agents"]);
   };
   es.onmessage = (msg) => {
     let evt: ServerEvent;

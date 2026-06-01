@@ -12,6 +12,7 @@ export {
   type Ticket,
 } from "./client";
 export {
+  type AgentRow,
   type BrokenIntegrationSummary,
   type BrokenSummaryOrg,
   type BrokenSummaryResponse,
@@ -76,5 +77,6 @@ export {
   useTicketAudit,
   useTickets,
   useUpdateOrgSettings,
+  useAgents,
   useWorkspaceConnectionStatus,
 } from "./queries";

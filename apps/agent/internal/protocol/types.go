@@ -100,6 +100,7 @@ type EventKind string
 
 const (
 	EventProgress         EventKind = "progress"
+	EventReceived         EventKind = "received"
 	EventCompletedSuccess EventKind = "completed_success"
 	EventCompletedFailure EventKind = "completed_failure"
 	EventCompletedSkipped EventKind = "completed_skipped"
@@ -119,17 +120,34 @@ type AgentEvent struct {
 
 // ── Identity / heartbeat / claim ───────────────────────────────────────
 
-type IdentityExchangeRequest struct {
-	AgentPodID    string `json:"agent_pod_id"`
-	Version       string `json:"version,omitempty"`
-	SignedRequest string `json:"signed_request"`
+// AgentMetadata carries static OS attributes reported once at identity exchange.
+type AgentMetadata struct {
+	OS          string `json:"os,omitempty"`
+	CPUCount    int    `json:"cpu_count,omitempty"`
+	MemoryBytes int64  `json:"memory_bytes,omitempty"`
 }
 
+// IdentityExchangeRequest is the body of POST /api/v1/agent/identity.
+// Kind identifies the signing mechanism (today: "aws-sts").
+// Payload is the JSON-encoded sigv4-signed STS GetCallerIdentity envelope.
+type IdentityExchangeRequest struct {
+	Kind          string        `json:"kind"`
+	AgentVersion  string        `json:"agent_version,omitempty"`
+	AgentMetadata AgentMetadata `json:"agent_metadata,omitempty"`
+	Payload       string        `json:"payload"`
+}
+
+// IdentityExchangeResponse is the response from POST /api/v1/agent/identity.
+// InstanceID is the backend-derived pod identifier (role-session-name from
+// the STS assumed-role ARN). The agent echoes it in logs but never uses it
+// as a key — the backend assigns it.
 type IdentityExchangeResponse struct {
-	Bearer    string    `json:"bearer"`
-	ExpiresAt time.Time `json:"expires_at"`
-	AgentID   string    `json:"agent_id"`
-	OrgID     string    `json:"org_id"`
+	Bearer       string    `json:"bearer"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	RenewalAfter time.Time `json:"renewal_after"`
+	AgentID      string    `json:"agent_id"`
+	InstanceID   string    `json:"instance_id"`
+	OrgID        string    `json:"org_id"`
 }
 
 type HeartbeatWorkspaceEntry struct {
@@ -149,9 +167,10 @@ type HeartbeatResponse struct {
 }
 
 type ClaimRequest struct {
-	WaitSeconds        int      `json:"wait_seconds"`
-	Lifecycle          string   `json:"lifecycle"`            // "unconfigured" | "configured"
-	ActiveWorkspaceIDs []string `json:"active_workspace_ids"` // IDs of Active-state workspaces
+	WaitSeconds   int      `json:"wait_seconds"`
+	Lifecycle     string   `json:"lifecycle"`      // "unconfigured" | "configured"
+	NewWorkspaces int      `json:"new_workspaces"` // capacity for new CreateWorkspace commands
+	WorkspaceIDs  []string `json:"workspace_ids"`  // idle Active workspaces awaiting a command
 }
 
 // AgentConfigWire is the raw JSON wire shape of the runtime configuration

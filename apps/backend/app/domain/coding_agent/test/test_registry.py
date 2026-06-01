@@ -9,6 +9,7 @@ import pytest
 
 from app.core.plugin_kit import PluginMeta
 from app.domain.coding_agent import (
+    CodingAgentRegistry,
     HealthStatus,
     InvocationStatus,
     InvocationTelemetry,
@@ -17,6 +18,7 @@ from app.domain.coding_agent import (
     ReviewContext,
     ReviewResult,
     ValidationResult,
+    bind_coding_agent_registry,
     get_plugin,
     health_check_all,
     list_registered_plugins,
@@ -25,7 +27,6 @@ from app.domain.coding_agent import (
     review,
     validate_config,
 )
-from app.domain.coding_agent.service import clear_plugins
 
 
 class _StubPlugin:
@@ -54,10 +55,11 @@ class _StubPlugin:
 
 
 @pytest.fixture(autouse=True)
-def _reset() -> None:
-    clear_plugins()
+def _fresh_registry():
+    """Bind a clean CodingAgentRegistry before each test so registrations don't
+    bleed across tests."""
+    bind_coding_agent_registry(CodingAgentRegistry())
     yield
-    clear_plugins()
 
 
 def test_register_and_get_plugin() -> None:
@@ -159,11 +161,3 @@ def test_list_registered_plugins_returns_insertion_order() -> None:
     register_plugin(_B())
     result = list_registered_plugins()
     assert [p.meta.id for p in result] == ["aaa", "bbb"]
-
-
-def test_clear_plugins_empties_registry() -> None:
-    register_plugin(_StubPlugin())
-    assert len(list_registered_plugins()) == 1
-    clear_plugins()
-    assert list_registered_plugins() == []
-    assert registered_plugin_ids() == []

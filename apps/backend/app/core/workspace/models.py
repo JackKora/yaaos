@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Index, Integer, String, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -21,19 +21,22 @@ class WorkspaceRow(Base):
         PgUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
     org_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
-    # owning agent (`workspace_agents.id`); soft FK. Set at create-dispatch to
-    # the agent that ran `CreateWorkspace` — that pod owns this workspace for
-    # its whole life, so every post-create command routes back to it. NULL for
-    # in-memory/legacy rows that never went through a remote agent.
-    agent_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    # owning agent (`workspace_agents.id`). Set at create-dispatch to the agent
+    # that ran `CreateWorkspace` — that pod owns this workspace for its whole
+    # life, so every post-create command routes back to it. NULL for legacy rows
+    # that never went through a remote agent. FK enforces referential integrity;
+    # ON DELETE SET NULL so dropping an agent row orphans the workspace (the
+    # workspace's remaining lifecycle is still visible to operators) rather than
+    # cascading a delete of potentially live workspaces.
+    owning_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("workspace_agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     provider_id: Mapped[str] = mapped_column(String, nullable=False)
     spec: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     plugin_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="creating")
-    # discriminator the engine uses to pick a dispatch path. `in_memory`
-    # (default) runs the in-process plugin; `remote_agent` dispatches through
-    # `core/agent_gateway`. Rows default to `in_memory` via the column default.
-    provider: Mapped[str] = mapped_column(String, nullable=False, server_default="in_memory")
     # single-flight claim: only one in-flight AgentCommand per workspace.
     # Set by `try_claim()`; cleared by `release_claim()` after the terminal
     # event has been observed (NOT before — failure-report-precedes-disposal).
@@ -59,4 +62,5 @@ class WorkspaceRow(Base):
         Index("ix_workspaces_status_expires", "status", "expires_at"),
         Index("ix_workspaces_org_created", "org_id", "created_at"),
         Index("ix_workspaces_current_holder_workflow_id", "current_holder_workflow_id"),
+        Index("ix_workspaces_owning_agent_id", "owning_agent_id"),
     )

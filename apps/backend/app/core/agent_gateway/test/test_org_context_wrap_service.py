@@ -6,9 +6,9 @@ Two categories covered:
 - WebSocket endpoint (activity) — verify `current_org_id()` equals the
   agent's org for the connection lifetime.
 
-The wrap is mechanical across all five bearer endpoints; the two tests
-here guard against a future regression where a new endpoint is added
-without the wrap.
+Both endpoints derive agent identity solely from the bearer (no path agent_id).
+The wrap is mechanical across all operational endpoints; these tests
+guard against a future regression where a new endpoint is added without it.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ async def _fixture_org_and_agent(db_session) -> tuple[UUID, UUID, str]:
     agent = WorkspaceAgentRow(
         id=uuid4(),
         org_id=org.org_id,
-        agent_pod_id=uuid4(),
+        instance_id=f"test-task-{uuid4().hex[:8]}",
         iam_arn=org.registered_iam_arn,
         version="0.0.1",
         state="reachable",
@@ -79,14 +79,14 @@ def _isolate():
 @pytest.mark.asyncio
 @pytest.mark.service
 async def test_heartbeat_endpoint_enters_org_context(db_session) -> None:
-    """POST /agents/{id}/heartbeat — the handler body runs inside
+    """POST /agent/heartbeat — the handler body runs inside
     org_context(agent.org_id, ActorKind.WORKSPACE). `current_org_id()`
     must equal the agent's org_id during the request.
 
     Strategy: monkeypatch `record_heartbeat` to capture `current_org_id()`
     at call time, then restore the real function after the call.
     """
-    org_id, agent_id, token = await _fixture_org_and_agent(db_session)
+    org_id, _agent_id, token = await _fixture_org_and_agent(db_session)
 
     captured: list[UUID | None] = []
 
@@ -102,7 +102,7 @@ async def test_heartbeat_endpoint_enters_org_context(db_session) -> None:
     try:
         async with _client() as c:
             resp = await c.post(
-                f"/api/v1/agents/{agent_id}/heartbeat",
+                "/api/v1/agent/heartbeat",
                 headers={"Authorization": f"Bearer {token}"},
                 json={"workspaces": [], "reported_at": "2026-01-01T00:00:00Z"},
             )
@@ -119,7 +119,7 @@ async def test_heartbeat_endpoint_enters_org_context(db_session) -> None:
 @pytest.mark.asyncio
 @pytest.mark.service
 async def test_activity_ws_endpoint_enters_org_context(db_session) -> None:
-    """WSS /agents/{id}/activity — the connection lifetime runs inside
+    """WSS /agent/activity — the connection lifetime runs inside
     org_context(agent.org_id, ActorKind.WORKSPACE). A message send
     (activity_batch or unknown) happens *within* the wrap, so
     `current_org_id()` is set at that point.
@@ -160,7 +160,7 @@ async def test_activity_ws_endpoint_enters_org_context(db_session) -> None:
         app = _app()
         with TestClient(app) as client:
             with client.websocket_connect(
-                f"/api/v1/agents/{agent_id}/activity",
+                "/api/v1/agent/activity",
                 headers={"Authorization": f"Bearer {token}"},
             ) as ws:
                 ws.send_json(
