@@ -1,3 +1,4 @@
+import { resolveMembership } from "@core/api/public/membership";
 import { useCurrentOrgSlug } from "@core/api/public/org-context";
 import { useCurrentUser, useLogout } from "@core/api/public/queries";
 import { toggleTheme } from "@core/layout/public/theme";
@@ -37,7 +38,7 @@ export function UserCard({ expanded }: { expanded: boolean }) {
   }, [open]);
 
   if (!data) return null;
-  const currentOrg = slug ? data.memberships.find((m) => m.slug === slug) : null;
+  const currentOrg = resolveMembership(data, slug);
   const initials = (data.user.display_name || data.user.primary_email || "?")
     .split(/\s+/)
     .map((p) => p[0])

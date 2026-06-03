@@ -5,7 +5,7 @@
 ## Surfaces
 
 - `/login` — `LoginPage`. Email-first SSO discovery form (`react-hook-form` + Zod; schema: `email: z.string().email()`). Submit calls `useSsoDiscover`; on a SAML hit, renders the SAML button. Falls back to multi-provider panel when discover returns no preferred provider. Provider buttons load under `<ErrorBoundary>` + `<Suspense>` via `useProviders` (`useSuspenseQuery`).
-- `RequireMembership` — renders `children` only when the authenticated user has at least `role` in `orgSlug`. Uses `useCurrentUser` (`useSuspenseQuery`); suspends while the auth check is in flight. Server `require()` is the authority — this is UI hinting only.
+- `RequireMembership` — renders `children` only when the authenticated user has at least `role` in `orgSlug`. Declarative render-gate over the shared role primitive in `@core/api/public/membership` (`resolveMembership` + `hasRole`); for boolean checks use that module's `useHasRole`/`useMembership` directly. Suspends via `useCurrentUser`. Server `require()` is the authority — UI hinting only.
 - Logout — `useLogoutAll` mutation; fired from the sidebar User Card popover. Lives in `core/api` (`public/queries.ts`); `domain/auth/queries.ts` re-exports it for within-domain use.
 
 ## Key behavior

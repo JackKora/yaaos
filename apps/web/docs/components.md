@@ -27,7 +27,6 @@
 | `textarea.tsx` | Multi-line text inputs. |
 | `select.tsx` | Native-feel dropdown select, Radix-driven. |
 | `checkbox.tsx` | Boolean field. |
-| `switch.tsx` | Boolean field — preferred over Checkbox for instant-apply settings. |
 | `label.tsx` | Form labels — associates via `htmlFor`. |
 | `form.tsx` | `react-hook-form` integration (FormField, FormItem, FormControl, FormMessage). |
 
@@ -35,11 +34,8 @@
 
 | File | Purpose |
 |---|---|
-| `dialog.tsx` | Modal dialog. Composed by ConfirmModal / PickerModal. |
+| `dialog.tsx` | Modal dialog. Composed by ConfirmModal. |
 | `popover.tsx` | Anchored floating panel. Used by Org switcher, Notifications. |
-| `dropdown-menu.tsx` | Menu list anchored to a trigger. |
-| `tooltip.tsx` | Hover/focus tooltip. |
-| `sheet.tsx` | Side-anchored drawer. Required transitively by the shadcn `sidebar` primitive's mobile collapse — yaaos's navigation doesn't expose a drawer pattern. |
 
 ### Display
 
@@ -47,18 +43,7 @@
 |---|---|
 | `table.tsx` | Semantic table primitives (`Table`, `TableHeader`, `TableRow`, `TableCell`, …). |
 | `badge.tsx` | Status pills. Variants: `default`, `secondary`, `destructive`, `outline`. |
-| `avatar.tsx` | Initials avatar with optional image fallback. |
-| `separator.tsx` | Horizontal/vertical divider. |
 | `skeleton.tsx` | Loading placeholder. |
-| `tabs.tsx` | In-page tab navigation. |
-
-### Layout
-
-| File | Purpose |
-|---|---|
-| `sidebar.tsx` | shadcn sidebar primitive — handles collapse, sub-items, mobile-sheet fallback. yaaos composes a `Sidebar` on top. |
-| `collapsible.tsx` | Inline expand/collapse panel. |
-| `scroll-area.tsx` | Custom-scrollbar viewport. |
 
 ### Toast
 
@@ -76,15 +61,6 @@ Public surface of the `shared/components` module. Import directly via `@shared/c
 | `empty-state.tsx` | `EmptyState` | Icon + headline + body + optional action; the C2 empty-list pattern. |
 | `error-banner.tsx` | `ErrorBanner` | In-page error with optional Retry. Voice rule (D3): blames the system, not the user. |
 | `confirm-modal.tsx` | `ConfirmModal`, `ConfirmTone` | Destructive + cost-protective variants share the shell; copy differs (D3). |
-| `picker-modal.tsx` | `PickerModal`, `PickerOption` | "Add X" flows (plugin type, integration provider). Lists `PickerOption[]`; caller wires the post-pick route push. |
-
-## Hooks (`src/shared/hooks/public/`)
-
-Public surface of the `shared/hooks` module. Import directly via `@shared/hooks/public/<file>`.
-
-| File | Export | Purpose |
-|---|---|---|
-| `use-mobile.ts` | `useIsMobile` | Returns `true` when the viewport is below the mobile breakpoint. Used by shadcn `sidebar`. |
 
 ## Adding a primitive
 

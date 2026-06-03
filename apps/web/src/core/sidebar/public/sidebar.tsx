@@ -1,5 +1,5 @@
+import { ROLE_RANK, useMembership } from "@core/api/public/membership";
 import { useCurrentOrgSlug } from "@core/api/public/org-context";
-import { useCurrentUser } from "@core/api/public/queries";
 import { getSidebarPinned, setSidebarPinned } from "@core/layout/public/theme";
 import { Popover, PopoverContent, PopoverTrigger } from "@shared/components/ui/popover";
 import { cn } from "@shared/utils/public/cn";
@@ -103,8 +103,7 @@ const NAV: NavConfig = {
 function _roleCovers(currentRole: NavRole | undefined, required: NavRole | undefined): boolean {
   if (!required) return true;
   if (!currentRole) return false;
-  const order: Record<NavRole, number> = { builder: 0, admin: 1 };
-  return order[currentRole] >= order[required];
+  return ROLE_RANK[currentRole] >= ROLE_RANK[required];
 }
 
 export function Sidebar() {
@@ -112,7 +111,6 @@ export function Sidebar() {
   const { location } = useRouterState();
   const active = location.pathname;
   const slug = useCurrentOrgSlug();
-  const { data: user } = useCurrentUser();
   const { isCollapsed, toggle, setCollapsed } = useCollapseState();
 
   // Auto-collapse rule: a group stays open only while one of its children
@@ -128,7 +126,7 @@ export function Sidebar() {
     }
   }, [active, slug, setCollapsed]);
 
-  const currentMembership = slug ? user?.memberships.find((m) => m.slug === slug) : undefined;
+  const currentMembership = useMembership(slug);
   // Owner satisfies any admin-gated nav item (Owner > Admin > Builder).
   const effectiveRole: NavRole | undefined =
     currentMembership?.role === "owner" || currentMembership?.role === "admin"

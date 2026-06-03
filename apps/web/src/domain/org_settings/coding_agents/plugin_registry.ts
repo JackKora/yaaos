@@ -30,10 +30,6 @@ export function getPluginSettingsComponent(pluginId: string): PluginSettingsComp
   return REGISTRY[pluginId];
 }
 
-export function registeredPluginIds(): string[] {
-  return Object.keys(REGISTRY).sort();
-}
-
 /** Test hook — never used in production code paths. */
 export function _resetRegistryForTests(): void {
   for (const k of Object.keys(REGISTRY)) delete REGISTRY[k];

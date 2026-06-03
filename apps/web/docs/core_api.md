@@ -4,26 +4,25 @@
 
 ## Purpose
 
-A thin layer between the FastAPI backend and the UI. Owns the typed `openapi-fetch` client, a generic `apiFetch<T>` helper, TypeScript shapes for every API resource, and one TanStack Query hook per endpoint.
+A thin layer between the FastAPI backend and the UI. Owns a generic `apiFetch<T>` helper, TypeScript shapes for every API resource, and one TanStack Query hook per endpoint.
 
 ## Public interface
 
 Files under `core/api/public/`, imported directly via `@core/api/public/<file>`:
 
-- `public/client.ts` — client helpers (`apiClient`, `apiFetch`) and one TypeScript type per backend resource.
+- `public/client.ts` — the `apiFetch<T>` helper and one TypeScript type per backend resource.
 - `public/queries.ts` — one TanStack Query hook per endpoint, one mutation hook per write operation.
 - `public/org-context.ts` — `getCurrentOrgSlug`, `useCurrentOrgSlug`.
 - `public/auth-failure.ts` — `AuthFailureReason` and the central 401 handler.
+- `public/membership.ts` — the one role-gating primitive: `Role`, `ROLE_RANK` (builder<admin<owner), `resolveMembership`, `hasRole`, and the hooks `useMembership` / `useHasRole`. Lives in `core/api` so both `core/*` and `domain/*` may use it (core must not import domain). `RequireMembership` (domain/auth) wraps it for render-gating.
 
 Private (non-`public/`): `generated/` (only `core/api` may import it).
 
 ## Module architecture
 
-### Two clients, one helper
+### The fetch helper
 
-`client.ts` exposes two surfaces:
-- `apiClient` — `openapi-fetch` typed client backed by the generated `paths` type from `generated/schema.d.ts`. Covers all endpoints in the schema; `/api/health` now carries a fully typed response.
-- `apiFetch<T>(path, init?)` — generic fetch wrapper. On 401, lazy-imports `handleAuthFailure` (breaks load-path cycle) which hard-navigates to `/login?reason=...&next=<current-path>`. Non-2xx throws `${status} ${path}: ${body}`. 204 → `undefined`. A W3C `traceparent` header is injected automatically by the OTel `FetchInstrumentation` registered in `core/observability` — no explicit header code in `client.ts`. The backend's `FastAPIInstrumentor` reads this header and continues the distributed trace.
+`apiFetch<T>(path, init?)` — generic fetch wrapper. On 401, lazy-imports `handleAuthFailure` (breaks load-path cycle) which hard-navigates to `/login?reason=...&next=<current-path>`. Non-2xx throws `${status} ${path}: ${body}`. 204 → `undefined`. A W3C `traceparent` header is injected automatically by the OTel `FetchInstrumentation` registered in `core/observability` — no explicit header code in `client.ts`. The backend's `FastAPIInstrumentor` reads this header and continues the distributed trace.
 
 ### Generated types
 
@@ -31,7 +30,7 @@ Private (non-`public/`): `generated/` (only `core/api` may import it).
 
 - Only `core/api` may import from `generated/` — the boundary is enforced by `.dependency-cruiser.cjs`.
 - The generated dir is excluded from Biome lint/format (`biome.json`).
-- `client.ts` re-exports generated types under consumer-facing names (`HealthResponse`, `Lesson`, `AuditEntry`). A type alias keeps `ReviewJob` typed with a concrete `activity_log: ReviewJobActivityEvent[]` overlay (the JSONB column is `unknown[]` in the spec).
+- `client.ts` re-exports generated types under consumer-facing names (`Lesson`). A type alias keeps `ReviewJob` typed with a concrete `activity_log: ReviewJobActivityEvent[]` overlay (the JSONB column is `unknown[]` in the spec).
 - The backend spec returns `unknown` for the notification and popover endpoints; those stay hand-typed in `queries.ts` until the spec is annotated.
 
 ### Central 401 handler
@@ -46,21 +45,18 @@ Private (non-`public/`): `generated/` (only `core/api` may import it).
 ### Resource types
 
 `client.ts` owns the type surface. Types sourced from the generated schema:
-- `HealthResponse` — alias of `components["schemas"]["HealthResponse"]`.
 - `Lesson` — alias of `components["schemas"]["Lesson"]`.
-- `AuditEntry` — alias of `components["schemas"]["AuditEntryView"]`.
 - `ReviewJob` — generated base with `activity_log` overridden to `ReviewJobActivityEvent[]` (JSONB column is untyped in spec).
 
 Hand-typed (no generated equivalent — backend endpoints return `unknown`):
 - `Ticket` — `pr_number`, `author_login`, `is_draft` enriched from the linked PR at read-time. Needs `response_model` on the tickets endpoints.
-- `Finding` — `severity: "must-fix" | "nit" | "suggestion" | "info"`; optional `rationale`, `snippet: FindingSnippetLine[]`, `applied_lesson_ids`, `source_agent`. Needs `response_model` on the findings endpoint.
 - `ReviewJobActivityEvent` — `{ts, kind, message, detail?}`; used in `ReviewJob.activity_log` and as the SSE payload for `/api/sse/workspace_activity/{id}`. JSONB column, no spec annotation.
 - `Notification` / `NotificationsPopover` — hand-typed in `queries.ts`; backend spec returns `unknown` for these endpoints.
 - `PluginMeta` — from `/api/settings/plugins`; drives the Settings UI plugin list.
 
 ### Query hooks
 
-`queries.ts` — one hook per endpoint. All data-display hooks use `useSuspenseQuery`; callers never see `isLoading` — loading is handled by `<Suspense>` fallbacks. This covers every hook that powers a page or section: `useCurrentUser`, `useTickets`, `useTicket`, `useLessons`, `useNotifications`, `useDashboard`, `useAgents`, `useFindingsForTicket`, `useReviewJobsForTicket`, `useHitlHistory`, `useMyOrgs`, `useGithubInstallation`, `useGithubRepositories`, `useAvailablePlugins`. `useLessons` accepts a `LessonsFilter` object only (no string shorthand). `useAvailablePlugins(type)` fetches `GET /api/plugins/available?type=...` and returns `PluginMeta[]`; consumed by the VCS and Coding Agents settings pages. Polling-based utility hooks (`useHealth`, `useConfigStatus`) stay as regular `useQuery` — they power ambient chrome (connection banner, onboarding gate), not data pages. See [core_sse.md](core_sse.md) for the full invalidation map.
+`queries.ts` — one hook per endpoint. All data-display hooks use `useSuspenseQuery`; callers never see `isLoading` — loading is handled by `<Suspense>` fallbacks. This covers every hook that powers a page or section: `useCurrentUser`, `useTickets`, `useTicket`, `useLessons`, `useNotifications`, `useDashboard`, `useAgents`, `useFindingsForTicket`, `useReviewJobsForTicket`, `useHitlHistory`, `useMyOrgs`, `useGithubInstallation`, `useGithubRepositories`, `useAvailablePlugins`. `useLessons` accepts a `LessonsFilter` object only (no string shorthand). `useAvailablePlugins(type)` fetches `GET /api/plugins/available?type=...` and returns `PluginMeta[]`; consumed by the VCS and Coding Agents settings pages. The polling-based utility hook `useConfigStatus` stays a regular `useQuery` — it powers ambient chrome (the onboarding gate), not data pages. See [core_sse.md](core_sse.md) for the full invalidation map.
 
 Auth hooks live in `queries.ts` so all layers can call them without importing from `domain/auth`:
 - `useCurrentUser()` — `GET /api/auth/me`; returns `CurrentUser | null`.

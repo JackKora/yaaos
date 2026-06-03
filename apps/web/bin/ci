@@ -39,6 +39,10 @@ echo "==> dependency-cruiser (layer/domain direction + public-only)"
 # Rules live in .dependency-cruiser.cjs; see apps/web/docs/patterns.md.
 node bin/check-deps.mjs
 
+echo "==> knip (unused files / exports / dependencies)"
+# Project-wide dead-code gate; config in knip.json. Exits non-zero on findings.
+pnpm exec knip
+
 echo "==> use-*.tsx hook naming check"
 # Logic hooks must be .ts not .tsx — hooks never return JSX.
 # Any use-*.tsx file in src/ fails the build.

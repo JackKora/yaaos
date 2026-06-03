@@ -47,8 +47,6 @@ export interface FormPrompt {
   fields: FormField[];
 }
 
-export type HitlPrompt = ChoicePrompt | TextPrompt | FormPrompt;
-
 interface HitlPanelProps {
   payload: Record<string, unknown>;
   onSubmit: (response: Record<string, unknown>) => void;

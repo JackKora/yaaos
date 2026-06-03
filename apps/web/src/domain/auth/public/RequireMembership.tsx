@@ -1,28 +1,26 @@
+import { type Role, hasRole, resolveMembership } from "@core/api/public/membership";
 import type { ReactNode } from "react";
 import { useCurrentUser } from "./queries";
-
-type Role = "owner" | "admin" | "builder";
-
-const RANK: Record<Role, number> = { builder: 0, admin: 1, owner: 2 };
 
 /**
  * Renders `children` only when the current user has at least `role` in
  * `orgSlug`. Otherwise renders `fallback` (or nothing). Server-side
  * `require()` is still the source of truth — this is UI hinting only.
  *
+ * Role logic lives in `@core/api/public/membership`; this is the declarative
+ * render-gate over it. For boolean checks use `useHasRole`/`useMembership`.
+ *
  * Suspends via `useCurrentUser` (useSuspenseQuery); must be rendered under
  * a `<Suspense>` boundary — typically the app shell provides one.
  */
 export function RequireMembership(props: {
   orgSlug: string;
-  role: Role;
+  minRole: Role;
   fallback?: ReactNode;
   children: ReactNode;
 }): ReactNode {
   const { data } = useCurrentUser();
-  if (!data) return props.fallback ?? null;
-  const membership = data.memberships.find((m) => m.slug === props.orgSlug);
-  if (!membership) return props.fallback ?? null;
-  if (RANK[membership.role] < RANK[props.role]) return props.fallback ?? null;
-  return props.children;
+  return hasRole(resolveMembership(data, props.orgSlug), props.minRole)
+    ? props.children
+    : (props.fallback ?? null);
 }

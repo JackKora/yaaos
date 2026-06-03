@@ -13,8 +13,6 @@ Owns the single browser-wide `EventSource` connecting to `/api/sse/general` and 
 Files under `core/sse/public/`, imported directly via `@core/sse/public/<file>`:
 
 - `public/subscriber.tsx` — `useServerEvents()`, `subscribe`, `getSnapshot`, `attachQueryClient`, `setOrgSlug`, `ConnectionStatus`, `SSESnapshot`, `_resetSSESubscriberForTests`.
-- `public/use-connection-status.ts` — `useConnectionStatus()` — hook returning `ConnectionStatus`; backed by `useSyncExternalStore`.
-- `public/use-server-events.ts` — `useSSESnapshot()` — hook returning the full `SSESnapshot` (`{ status, lastEvent }`).
 - `public/workflow_activity.ts` — `useWorkflowActivityStream(workflowExecutionId)` — opens per-workflow `EventSource`, yields `WorkflowActivityEvent` objects.
 - `public/types.ts` — `ServerEvent` — envelope type: `{ kind, source_module, ts, ticket_id, [extra]: unknown }`.
 

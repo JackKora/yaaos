@@ -12,24 +12,3 @@ export function ago(ts: string | null | undefined): string {
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
 }
-
-/** Wall-clock time-of-day in the browser's local timezone — `HH:MM:SS`. Use
- *  this anywhere the UI shows a specific moment (audit-log rows, etc.). The
- *  backend emits ISO-8601 UTC; `Intl` converts it to the user's local TZ.
- *
- *  Anti-pattern: never call `.toISOString()` for display — that returns UTC.
- */
-export function formatTime(ts: string | null | undefined): string {
-  if (!ts) return "—";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString(undefined, { hour12: false });
-}
-
-/** Full local-timezone date + time-of-day, e.g. "2026-05-16, 18:28:00". */
-export function formatDateTime(ts: string | null | undefined): string {
-  if (!ts) return "—";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, { hour12: false });
-}

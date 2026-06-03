@@ -6,7 +6,3 @@ export interface PluginMeta {
   description: string | null;
   docs_url: string | null;
 }
-
-export interface ListAvailableResponse {
-  plugins: PluginMeta[];
-}

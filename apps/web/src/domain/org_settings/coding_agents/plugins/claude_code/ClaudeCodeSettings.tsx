@@ -1,5 +1,6 @@
+import { useMembership } from "@core/api/public/membership";
 import { useCurrentOrgSlug } from "@core/api/public/org-context";
-import { useBrokenSummary, useCurrentUser } from "@core/api/public/queries";
+import { useBrokenSummary } from "@core/api/public/queries";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ConfirmModal } from "@shared/components/public/layout/confirm-modal";
 import { ErrorBanner } from "@shared/components/public/layout/error-banner";
@@ -391,12 +392,9 @@ function DangerZone({ pluginId }: { pluginId: string }) {
  *  org-wide config — the server-side `require(Action.CODING_AGENT_WRITE)`
  *  is the source of truth; the banner is UI affordance. */
 function BuilderReadOnlyBanner() {
-  const { data } = useCurrentUser();
   const slug = useCurrentOrgSlug();
-  if (!data || !slug) return null;
-  const currentOrg = data.memberships.find((m) => m.slug === slug);
-  if (!currentOrg) return null;
-  if (currentOrg.role !== "builder") return null;
+  const membership = useMembership(slug);
+  if (!membership || membership.role !== "builder") return null;
   return (
     <div
       className="rounded border border-info/40 bg-info/10 px-4 py-2 text-sm"
@@ -412,12 +410,10 @@ function BuilderReadOnlyBanner() {
  *  the current org has `last_refresh_status="failed"`. Reads from
  *  `/api/integrations/broken-summary`, merged by org_id from `/api/auth/me`. */
 function BrokenIntegrationsNotice() {
-  const { data: user } = useCurrentUser();
   const { data: summary } = useBrokenSummary();
   const slug = useCurrentOrgSlug();
-  if (!user || !summary || !slug) return null;
-  const currentMembership = user.memberships.find((m) => m.slug === slug);
-  if (!currentMembership) return null;
+  const currentMembership = useMembership(slug);
+  if (!summary || !currentMembership) return null;
   const orgEntry = summary.orgs.find((o) => o.org_id === currentMembership.org_id);
   if (!orgEntry || orgEntry.broken_integrations.length === 0) return null;
   const providers = orgEntry.broken_integrations.map((b) => b.provider).join(", ");

@@ -90,6 +90,7 @@ Target: WCAG 2.2 AA on all shipped pages.
 | Type check | `tsc --noEmit` |
 | Unit/integration tests | Vitest + RTL + MSW |
 | Boundary lint | dependency-cruiser (`apps/web/.dependency-cruiser.cjs`, error — fails `bin/ci`) |
+| Dead-code lint | knip (`apps/web/knip.json`) — unused files / exports / dependencies; fails `bin/ci` |
 | Build | Vite |
 | Bundle report | rollup-plugin-visualizer → `tmp/bundle-stats.html` after every build (non-gating) |
 
@@ -110,7 +111,7 @@ Terse, bullets, no code snippets, no `Decisions` section, link don't repeat.
 ## Auth + tenancy
 
 - `apiFetch` auto-injects `X-Org-Slug` from `core/api/org-context.ts`. Domain hooks are org-agnostic at the call site.
-- Use `<RequireMembership orgSlug="..." role="admin">` for UI role gates — hint only; backend `require(action)` is the authority.
+- UI role gates go through one primitive in `@core/api/public/membership` (single `Role` + `ROLE_RANK`): `<RequireMembership orgSlug="..." minRole="admin">` for render-gating, `useHasRole(slug, minRole)` / `useMembership(slug)` for boolean checks. Never hand-roll `memberships.find(...)` + a role compare in a component. All of it is a UI hint only — backend `require(action)` is the authority.
 - Every domain page is under `/orgs/$slug/...`. The `/` route probes `/api/auth/me` and redirects.
 
 ## Sidebar nav config
@@ -155,14 +156,12 @@ Mutations and the SSE subscriber ([core_sse.md](core_sse.md)) invalidate exactly
 Backend emits ISO-8601 UTC (`Z`). FE renders in browser local timezone via `apps/web/src/shared/utils/public/ago.ts`:
 
 - `ago(ts)` — relative duration (`"12s ago"`).
-- `formatTime(ts)` — local `HH:MM:SS` (audit-log rows).
-- `formatDateTime(ts)` — full local date + time.
 
 Anti-pattern: `new Date(ts).toISOString()` — always UTC, never use for display.
 
 ## API client
 
-Two surfaces in `core/api/client.ts`: `apiClient` (typed `openapi-fetch`) and `apiFetch<T>` (generic helper, throws on non-2xx). Every hook wraps one of these. Full surface: [core_api.md](core_api.md).
+One surface in `core/api/public/client.ts`: `apiFetch<T>` (generic helper, throws on non-2xx). Every hook wraps it. Full surface: [core_api.md](core_api.md).
 
 ## Error handling at the API boundary
 

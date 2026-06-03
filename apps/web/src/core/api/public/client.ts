@@ -7,20 +7,14 @@
  * `core/api/generated/schema.d.ts`.
  */
 
-import createClient from "openapi-fetch";
-import type { components, paths } from "../generated/schema";
+import type { components } from "../generated/schema";
 import { getCurrentOrgSlug } from "./org-context";
 
 // ── Generated type aliases ─────────────────────────────────────────────────
 // Simpler names for consumer import. Provenance: generated/schema.d.ts.
 
-export type HealthResponse = components["schemas"]["HealthResponse"];
-
 /** Lesson from backend schema. */
 export type Lesson = components["schemas"]["Lesson"];
-
-/** AuditEntry projected from `AuditEntryView` in backend schema. */
-export type AuditEntry = components["schemas"]["AuditEntryView"];
 
 // ── ReviewJob — generated base with typed activity_log overlay ─────────────
 // The backend schema types `activity_log` as `{[key: string]: unknown}[]`
@@ -102,35 +96,7 @@ export type Ticket = {
   };
 };
 
-/** Per-finding snippet line — agent emits these to render a structured diff under the body. */
-export type FindingSnippetLine = {
-  line_number: number;
-  kind: "context" | "add" | "del";
-  text: string;
-};
-
-// TODO(backend): `GET /api/reviewer/findings/by-ticket/{ticket_id}` returns
-// `{[key: string]: unknown}` — needs `response_model=list[FindingView]` in
-// backend/app/domain/reviewer/web.py before this type can be generated.
-export type Finding = {
-  file: string | null;
-  line_start: number | null;
-  line_end: number | null;
-  severity: "must-fix" | "nit" | "suggestion" | "info";
-  title: string;
-  body: string;
-  rationale: string | null;
-  snippet: FindingSnippetLine[] | null;
-  applied_lesson_ids: string[];
-  // Which yaaos subagent surfaced this finding (e.g. "yaaos-architecture").
-  source_agent: string | null;
-};
-
-// ── openapi-fetch client ──────────────────────────────────────────────────
-
 const baseUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost";
-
-export const apiClient = createClient<paths>({ baseUrl });
 
 function _readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;

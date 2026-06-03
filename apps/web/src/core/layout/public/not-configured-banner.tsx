@@ -10,8 +10,9 @@
  * Data source: `useConfigStatus()` → `/api/orgs/config-status`.
  */
 
+import { useHasRole } from "@core/api/public/membership";
 import { useCurrentOrgSlug } from "@core/api/public/org-context";
-import { useConfigStatus, useCurrentUser } from "@core/api/public/queries";
+import { useConfigStatus } from "@core/api/public/queries";
 import { cn } from "@shared/utils/public/cn";
 import { AlertTriangle } from "lucide-react";
 
@@ -28,12 +29,10 @@ interface NotConfiguredBannerProps {
 
 export function NotConfiguredBanner({ className }: NotConfiguredBannerProps) {
   const { data: status } = useConfigStatus();
-  const { data: user } = useCurrentUser();
   const slug = useCurrentOrgSlug();
+  const isAdminOrOwner = useHasRole(slug, "admin");
   if (!status || status.configured) return null;
 
-  const currentMembership = slug ? user?.memberships.find((m) => m.slug === slug) : undefined;
-  const isAdminOrOwner = currentMembership?.role === "admin" || currentMembership?.role === "owner";
   const missingLabels = status.missing.map((m) => HUMAN_LABEL[m] ?? m).join(", ");
   const adminLine =
     status.admins.length > 0

@@ -1,13 +1,5 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import {
-  type AuditEntry,
-  type HealthResponse,
-  type Lesson,
-  type ReviewJob,
-  type Ticket,
-  apiClient,
-  apiFetch,
-} from "./client";
+import { type Lesson, type ReviewJob, type Ticket, apiFetch } from "./client";
 
 // ── Auth / session ────────────────────────────────────────────────────────────
 
@@ -97,19 +89,6 @@ export function useBrokenSummary() {
       }
     },
     staleTime: 30_000,
-  });
-}
-
-export function useHealth() {
-  return useQuery<HealthResponse>({
-    queryKey: ["health"],
-    queryFn: async () => {
-      const { data, error } = await apiClient.GET("/api/health");
-      if (error) throw new Error("health check failed");
-      if (!data) throw new Error("no data");
-      return data;
-    },
-    refetchInterval: 5_000,
   });
 }
 
@@ -310,15 +289,6 @@ export function useTicket(ticket_id: string) {
   });
 }
 
-export function useTicketAudit(ticket_id: string) {
-  return useQuery<AuditEntry[]>({
-    queryKey: ["tickets", ticket_id, "audit"],
-    queryFn: () => apiFetch<AuditEntry[]>(`/api/tickets/${ticket_id}/audit`),
-    enabled: !!ticket_id,
-    refetchInterval: 3_000,
-  });
-}
-
 export function useReviewJobsForTicket(ticket_id: string) {
   return useSuspenseQuery<ReviewJob[]>({
     queryKey: ["reviewer", "jobs", ticket_id],
@@ -356,99 +326,6 @@ export function useFindingsForTicket(ticket_id: string, includeTerminal = false)
           includeTerminal ? "?include_terminal=true" : ""
         }`,
       ),
-    refetchInterval: 5_000,
-  });
-}
-
-/**
- * All-Conversations cross-cut (plan §9.3). Findings with ≥1 dev reply OR open
- * findings first raised before the latest review. Terminal states excluded.
- */
-export interface ConversationRow {
-  finding_id: string;
-  state: "open" | "acknowledged";
-  severity: "blocker" | "major" | "minor" | "nit";
-  title: string;
-  first_seen_review_id: string;
-  last_message_preview: string;
-  reply_count: number;
-}
-
-export function useConversationsForTicket(ticket_id: string) {
-  return useQuery<ConversationRow[]>({
-    queryKey: ["reviewer", "conversations", ticket_id],
-    queryFn: () =>
-      apiFetch<ConversationRow[]>(`/api/reviewer/conversations/by-ticket/${ticket_id}`),
-    enabled: !!ticket_id,
-    refetchInterval: 5_000,
-  });
-}
-
-/**
- * Per-review timeline metadata (plan §9.2). One row per Review row, newest
- * first. Frontend renders each as a collapsible <details> section with
- * sequence_number / trigger_reason / scope as the header.
- */
-export interface ReviewTimelineRow {
-  id: string;
-  sequence_number: number;
-  trigger_reason: string;
-  scope_kind: "full" | "incremental";
-  scope_prev_sha: string | null;
-  commit_sha_at_start: string | null;
-  status: string;
-  scheduled_at: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  model: string | null;
-  effort: string | null;
-  tokens_in: number | null;
-  tokens_out: number | null;
-  duration_s: number | null;
-}
-
-export function useReviewsForTicket(ticket_id: string) {
-  return useQuery<ReviewTimelineRow[]>({
-    queryKey: ["reviewer", "reviews", ticket_id],
-    queryFn: () => apiFetch<ReviewTimelineRow[]>(`/api/reviewer/reviews/by-ticket/${ticket_id}`),
-    enabled: !!ticket_id,
-    refetchInterval: 5_000,
-  });
-}
-
-/**
- * Thread messages + ack banner for one finding (plan §9.4).
- */
-export interface ThreadMessage {
-  id: string;
-  author_kind: "yaaos" | "human";
-  author_external_id: string;
-  external_comment_id: string;
-  body: string;
-  classified_intent: string | null;
-  created_at: string | null;
-}
-
-export interface FindingThread {
-  finding_id: string;
-  state: string;
-  title: string;
-  thread_id: string | null;
-  external_thread_id: string | null;
-  acknowledgment: {
-    kind: string;
-    rationale: string;
-    made_by_external_id: string;
-    created_at: string | null;
-  } | null;
-  messages: ThreadMessage[];
-}
-
-export function useThreadForFinding(finding_id: string | null) {
-  return useQuery<FindingThread>({
-    queryKey: ["reviewer", "thread", finding_id],
-    queryFn: () => apiFetch<FindingThread>(`/api/reviewer/findings/${finding_id}/thread`),
-    enabled: !!finding_id,
     refetchInterval: 5_000,
   });
 }
@@ -512,28 +389,6 @@ export function useHitlRespond(ticket_id: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tickets", ticket_id] });
       qc.invalidateQueries({ queryKey: ["tickets", ticket_id, "hitl-history"] });
-    },
-  });
-}
-
-/**
- * `@yaaos full review` from the UI — schedules a full review.
- * Reuses the existing /api/reviewer/rereview endpoint (trigger_reason="ui_button"
- * which schedule_review treats as a full run today; the user-facing semantic
- * is "full re-review").
- */
-export function useFullRereviewMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (ticket_id: string) =>
-      apiFetch<{ scheduled_count: number }>("/api/reviewer/rereview", {
-        method: "POST",
-        body: JSON.stringify({ ticket_id }),
-      }),
-    onSuccess: (_, ticket_id) => {
-      qc.invalidateQueries({ queryKey: ["reviewer", "jobs", ticket_id] });
-      qc.invalidateQueries({ queryKey: ["reviewer", "reviews", ticket_id] });
-      qc.invalidateQueries({ queryKey: ["reviewer", "findings", ticket_id] });
     },
   });
 }
@@ -626,34 +481,6 @@ export function useDeleteLesson() {
   });
 }
 
-export function useMetricsSummary() {
-  return useQuery<{
-    review_jobs_by_status: Record<string, number>;
-    total_reviews_posted: number;
-    failure_count: number;
-    failure_rate: number;
-  }>({
-    queryKey: ["reviewer", "metrics"],
-    queryFn: () => apiFetch("/api/reviewer/metrics"),
-    refetchInterval: 5_000,
-  });
-}
-
-export function useSetAnthropicKey() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (api_key: string) =>
-      apiFetch<{ status: string }>("/api/claude_code/api_key", {
-        method: "POST",
-        body: JSON.stringify({ api_key }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["onboarding"] });
-      qc.invalidateQueries({ queryKey: ["plugin-health", "claude_code"] });
-    },
-  });
-}
-
 export type GithubInstallation = {
   app_configured: boolean;
   installed: boolean;
@@ -662,12 +489,6 @@ export type GithubInstallation = {
   install_external_id: string | null;
   installed_at: string | null;
   installations_url: string | null;
-};
-
-export type PluginHealth = {
-  healthy: boolean;
-  message: string;
-  checked_at: string;
 };
 
 export type PluginType = "vcs" | "coding_agent" | "workspace";
@@ -708,70 +529,9 @@ export function useGithubInstallation() {
   });
 }
 
-export function usePluginHealth(pluginId: string) {
-  return useQuery<PluginHealth>({
-    queryKey: ["plugin-health", pluginId],
-    queryFn: () => apiFetch<PluginHealth>(`/api/${pluginId}/health`),
-    refetchInterval: 10_000,
-  });
-}
-
-// ── Org settings (registered_iam_arn + session timeout) ─────────────────
-
-export type OrgSettings = {
-  slug: string;
-  session_timeout_override: number | null;
-  registered_iam_arn: string | null;
-};
-
-export function useOrgSettings() {
-  return useQuery<OrgSettings>({
-    queryKey: ["org-settings"],
-    queryFn: () => apiFetch<OrgSettings>("/api/orgs"),
-  });
-}
-
-export type UpdateOrgSettingsInput = {
-  registered_iam_arn?: string | null;
-};
-
-export function useUpdateOrgSettings() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: UpdateOrgSettingsInput) =>
-      apiFetch<OrgSettings>("/api/orgs", {
-        method: "PATCH",
-        body: JSON.stringify(input),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["org-settings"] });
-      qc.invalidateQueries({ queryKey: ["workspace-connection-status"] });
-    },
-  });
-}
-
-// ── Workspace connection status (heartbeat banner) ──────────────────────
-
-export type WorkspaceConnectionState = "connected" | "lost" | "not_configured";
-
-export type WorkspaceConnectionStatus = {
-  state: WorkspaceConnectionState;
-  pod_count: number;
-  latest_heartbeat_at: string | null;
-};
-
-export function useWorkspaceConnectionStatus(enabled = true) {
-  return useQuery<WorkspaceConnectionStatus>({
-    queryKey: ["workspace-connection-status"],
-    queryFn: () => apiFetch<WorkspaceConnectionStatus>("/api/workspaces/connection_status"),
-    refetchInterval: 3_000,
-    enabled,
-  });
-}
-
 // ── Plugin discovery ─────────────────────────────────────────────────────────
 
-export interface ListAvailableResponse {
+interface ListAvailableResponse {
   plugins: PluginMeta[];
 }
 

@@ -8,7 +8,7 @@ Owns all browser-side OpenTelemetry concerns: SDK boot, span-processor identity 
 
 - **Receives:** collector endpoint from `VITE_OTEL_COLLECTOR_ENDPOINT` (env var read in `main.tsx`); authenticated identity from `AppShell` via `useOtelIdentitySync`.
 - **Emits:** OTLP spans to the configured collector (endpoint-gated); `traceparent` on all `/api/*` fetches via global fetch instrumentation.
-- **Hands to:** `core/api` — `traceparent` is injected at the global fetch layer, so `apiFetch` and `apiClient` carry it without any client-side changes.
+- **Hands to:** `core/api` — `traceparent` is injected at the global fetch layer, so `apiFetch` carries it without any client-side changes.
 
 ## Why / invariants
 

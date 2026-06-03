@@ -27,5 +27,4 @@ The `$slug` in the path is a frontend routing concern only. Backend routes (`/ap
 
 - `apps/web/src/domain/user/public/DetailsPage.tsx` — `DetailsPage`
 - `apps/web/src/domain/user/public/SecurityPage.tsx` — `SecurityPage`
-- `apps/web/src/domain/user/public/MessagingPage.tsx` — `MessagingPage`
 - `apps/web/src/domain/user/public/queries.ts` — `useUserMe`, `useClearGithubUsername`, `useUpdateDisplayName`, `useUpdateOrgHandle`, `UserEmail`, `UserMe`, `UserMembership`
