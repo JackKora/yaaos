@@ -147,7 +147,7 @@ Two static specs are committed under `apps/backend/openapi/`:
 
 ### Distributed tracing
 
-- Web SPA runs `@opentelemetry/sdk-trace-web`. `FetchInstrumentation` injects a W3C `traceparent` header on every `/api/*` fetch — browser spans become children of the backend trace automatically.
+- Web SPA runs `@opentelemetry/sdk-trace-web`. `FetchInstrumentation` injects a W3C `traceparent` header on same-origin `/api/*` fetches — browser spans become children of the backend trace automatically. Cross-origin fetches (collector, CDN, third-party) never receive `traceparent`.
 - `FastAPIInstrumentor` on the backend extracts `traceparent` and continues the same trace. The backend stamps `yaaos.org_id`/`yaaos.user_id` on its spans authoritatively from session context.
 - **No baggage crosses the wire.** Identity is stamped independently on each side. `traceparent` is the only cross-wire trace context.
 - Export is endpoint-gated on both sides: backend via `OTEL_EXPORTER_OTLP_ENDPOINT`, web via `VITE_OTEL_COLLECTOR_ENDPOINT`.

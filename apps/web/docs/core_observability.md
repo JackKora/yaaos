@@ -38,6 +38,7 @@ Private (non-`public/`): `identity.ts`, `span-processor.ts`.
 
 ## Gotchas
 
+- **`VITE_OTEL_COLLECTOR_ENDPOINT` must be a public-facing URL in production.** Vite inlines `VITE_*` env vars at build time — the value is embedded in the client bundle. Setting it to an internal hostname (e.g. `http://otel-collector.internal:4318`) leaks internal network topology to anyone inspecting the bundle. If a collector behind a private network is required, proxy it through a public path (e.g. `/api/telemetry`) and point the env var at that proxy.
 - Call `configure()` exactly once, before `ReactDOM.createRoot()`. The provider registers globally; a second call is a no-op (guarded by `_provider !== null`).
 - `setIdentity(null)` must be called on logout to avoid stale org/user attributes on spans after the session ends. `useOtelIdentitySync` clears identity automatically — only on 401, not on transient errors.
 - `_resetObservabilityForTests()` must be called in `afterEach` for any test that calls `configure()` — it shuts the provider down, removes only our `addEventListener` error handlers, and clears the identity holder.
