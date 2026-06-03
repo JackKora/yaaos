@@ -10,7 +10,7 @@
 | **Review job** | One review run for one PR (`queued → running → posted / failed / skipped / cancelled`). Owned by `domain/reviewer`. |
 | **Subagent** | A shipped reviewer specialty (`yaaos-architecture`, `-security`, `-line-level`, `-tests`, `-docs`, `-skill`). Markdown-defined in `app/domain/coding_agent/reviewers/`, installed into `~/.claude/agents/`. Each finding carries `source_agent`. |
 | **Coding agent** | The external CLI yaaos shells out to (Claude Code). Protocol: `domain/coding_agent.CodingAgentPlugin`. yaaos never calls an LLM directly. |
-| **Workspace** | Provisioned execution environment (tempdir + git clone). Lifecycle owned by `core/workspace` via `WorkspaceProvider`. |
+| **Workspace** | Provisioned execution environment owned by a remote WorkspaceAgent. Lifecycle owned by `core/workspace`; the only registered `WorkspaceProvider` is `remote_agent`. Dispatch via AgentCommand; org-level IAM ARN (`orgs.registered_iam_arn`) authorizes the agent pod. |
 | **Finding** | One reviewer comment: `file`, `line_start/end`, `severity` (`must-fix / nit / suggestion / info`), `title`, `body`, optional `rationale`, `snippet`, `source_agent`. Defined in `domain/vcs`. |
 | **Lesson** | Repo-scoped institutional memory: `{title, body, source_pr_url}`, 1000-char body cap. Surfaces in agent prompts. Owned by `domain/lessons`. |
 | **Plugin** | Vendor-specific implementation of a Protocol in `domain/` or `core/`. Three Protocols: `VCSPlugin` (github), `CodingAgentPlugin` (claude_code), `WorkspaceProvider`. Vendor SDKs only in `apps/backend/app/plugins/`. |
@@ -43,16 +43,21 @@
 | **Broken-creds** | Integration state when `last_refresh_status == "failed"`. Surfaces in six places (banner, email, audit, settings badge, Claude Code warning, review-output prefix). |
 | **Upstream identity** | Display string the OAuth flow returned for the connected account. Stored on `mcp_credentials.upstream_identity` for UI; never used as auth principal. |
 | **Intake** | Inbound surface turning an external signal into a ticket. `domain/intake` ships a typed registry keyed by name; `POST /api/intake/{type}` dispatches via the registry. `github_pr` is the only type today. |
-| **WorkspaceAgent** | Customer-deployed Go binary in `apps/agent/` that holds source code locally and spawns workspace processes. Zero biz logic — all policy comes from control plane via AgentCommand payload. |
+| **WorkspaceAgent** | Customer-deployed Go binary in `apps/agent/` that holds source code locally and spawns workspace processes. Zero biz logic — all policy comes from control plane via AgentCommand payload. Each running instance is an agent instance tracked by a `workspace_agents` row keyed on `(org_id, instance_id)`. |
 | **Workflow** | Typed Pydantic data structure: `name`, `version`, ordered `steps`, `entry_step_id`. Five ship. Owned by `core/workflow`. |
 | **WorkflowCommand** | One unit of work within a workflow. Three categories: **Workspace** (parks in `awaiting_agent`), **Local** (inline), **HITL** (parks in `awaiting_human`). |
-| **AgentCommand** | Wire message backend → WorkspaceAgent. Five kinds: `CreateWorkspace`, `WriteFiles`, `RefreshWorkspaceAuth`, `InvokeClaudeCode`, `CleanupWorkspace`. Defined in `apps/backend/openapi/agent-api.yaml`. |
-| **AgentEvent** | Wire message WorkspaceAgent → backend. Kinds: `progress`, `completed_success`, `completed_failure`, `completed_skipped`. Terminal events resume parked workflow. |
+| **AgentCommand** | Wire message backend → WorkspaceAgent. Five kinds: `CreateWorkspace`, `WriteFiles`, `RefreshWorkspaceAuth`, `InvokeClaudeCode`, `CleanupWorkspace`. Defined in `apps/backend/openapi/agent-api.yaml`. Persisted in `agent_commands` (durable queue). |
+| **AgentEvent** | Wire message WorkspaceAgent → backend. Kinds: `progress`, `received`, `completed_success`, `completed_failure`, `completed_skipped`. `received` cancels the lease requeue. Terminal events resume parked workflow. |
+| **agent_commands** | Durable command queue in Postgres. One row per dispatched AgentCommand; lifecycle: `pending → claimed → delivered → done`. Commands survive backend restarts. `attempt` increments on each lease-timeout requeue; capped at `MAX_ATTEMPT`. |
+| **Command lease** | 30-second window after a command is `claimed`: the agent must POST a `received` event to flip the row to `delivered`. Without it the reaper requeues to `pending` on the next `cleanup_loop` tick. |
+| **Capacity-pull** | The agent declares `new_workspaces` (capacity for new CreateWorkspace commands) and `workspace_ids` (idle Active workspaces) on each claim request; the backend selects a matching batch from `agent_commands`. |
 | **WorkflowExecution** | In-flight workflow run. State: `pending → running → (awaiting_agent \| awaiting_human)* → done \| failed \| cancelled`. Carries `step_state` JSONB + `otel_trace_context`. |
 | **Pending human decision** | HITL pause row in `pending_human_decisions`. Resumed via `core/workflow.resume_hitl()`; resolution + re-enqueue in one transaction. |
 | **Outbox** | DB-atomic outbound queue (`outbox_entries`). Written in the caller's transaction; drained post-commit. Backs `core/tasks.enqueue`. |
 | **`core/tasks`** | Thin taskiq + Redis wrapper. Three task names: `workflow.start_step`, `workflow.handle_agent_event`, `workflow.route_workflow`. |
 | **Activity event** | High-frequency CodingAgent telemetry. Flows WebSocket → `core/sse` → SSE → UI. Never persisted; demand-pull. |
+| **InstanceID** | The role-session-name extracted from the STS assumed-role ARN (`arn:aws:sts::ACCT:assumed-role/ROLE/SESSION` → `SESSION`). Derived by the backend at identity exchange; stable across pod restarts when the ECS task reuses the same session name. Stored as `workspace_agents.instance_id`. The agent learns its own `instance_id` from the exchange response — it never supplies it. |
+| **VerifiedInstanceID** | Synonym for `instance_id` when emphasizing that it was derived from a backend-verified STS ARN rather than self-reported by the agent. |
 | **Stale-claim guard** | `POST /api/v1/commands/{id}/events` returns `410 Gone` when inbound `command_id` no longer matches `workspaces.current_command_id`. Agent abandons silently. |
 | **Failure-report-precedes-disposal** | `core/workspace.release_claim` clears `current_command_id` but preserves `current_holder_workflow_id`. Workflows always resolve their workspace after claim release. |
 | **Demand-pull** | Activity events only flow when ≥1 UI tab is subscribed. `SubscriberRegistry` issues `subscribe`/`unsubscribe` on `0 → 1` / `1 → 0` transitions. |

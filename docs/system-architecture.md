@@ -25,7 +25,7 @@
 2. `domain/intake.web` looks up the `github` IntakeType and calls `handle()`.
 3. The intake type verifies HMAC, parses payload, and (for opened/reopened/ready_for_review) inserts a race-safe ticket + PR row and starts a `pr_review_v1` workflow via `core/workflow` — single transaction.
 4. Workflow engine routes `CheckShouldReview → SecretsScan → ProvisionWorkspace → CodeReview → PostFindings → CleanupWorkspace`. Each step is a `WorkflowCommand` under `domain/reviewer/commands/`.
-5. `CodeReview` dispatches via the configured provider (in-memory locally; remote-agent in prod). The parent Claude Code agent dispatches `yaaos-*` subagents in parallel, synthesizes findings, and returns one merged result. `PostFindings` runs admission then posts a single `vcs.Review` to GitHub. `CleanupWorkspace` always runs as the workflow's `final` step.
+5. `ProvisionWorkspace`, `CodeReview`, and `CleanupWorkspace` are Workspace-category commands — each parks the workflow in `awaiting_agent` and dispatches an AgentCommand over the wire to the remote WorkspaceAgent; the terminal AgentEvent resumes routing. `PostFindings` runs admission then posts a single `vcs.Review` to GitHub.
 
 Every state transition writes to `audit_log`. SSE events publish for the SPA.
 
@@ -38,7 +38,9 @@ SPA mounts one org-keyed `EventSource` on `GET /api/sse/general?org=<slug>` (`wi
 | `ticket_status_changed` | `["tickets"]`, `["tickets", id]`, `["tickets", id, "audit"]`, `["reviewer", "metrics"]` |
 | anything else | silently ignored |
 
-Events carry `ticket_id`, `previous_status`, `new_status`. There is no polling fallback (`refetchOnWindowFocus` is off, no `refetchInterval`); SSE is the only live-update path, so the client reconciles list-level caches on every (re)connect (`onopen`) and the server emits a connect prelude so that fires promptly.
+Events carry `ticket_id`, `previous_status`, `new_status`. There is no polling fallback (`refetchOnWindowFocus` is off, no `refetchInterval` on SSE-driven queries); SSE is the only live-update path for the dashboard. The client reconciles list-level caches on every (re)connect (`onopen`) and the server emits a connect prelude so that fires promptly.
+
+**Agent liveness.** The `core/workspace` reaper loop calls `compute_agent_liveness_transitions` each tick. That function reads `workspace_agents.last_heartbeat_at` and writes `state` (reachable / stale / offline) only on transition. Each transition emits one `agent_liveness_changed` event on the org's general channel. The SPA's subscriber maps `agent_liveness_changed` → invalidate `["agents"]`; the dashboard `AgentCard` row refreshes live without polling. The `GET /api/orgs/{slug}/agents` endpoint returns agents within a 1-hour UI-retention window.
 
 ### GitHub auth chain
 
@@ -74,14 +76,15 @@ Flow: `reviewer.queue` mints a per-review token (raw `secrets.token_urlsafe(32)`
 Three concepts span all apps:
 
 - **Workflow engine** (`core/workflow`) — typed `Workflow` definitions driven by three taskiq task bodies over `core/tasks` + `core/outbox`. Workspace commands park in `awaiting_agent` and resume on terminal AgentEvent. Five workflows: `pr_review_v1`, `incremental_review_v1`, `verify_fix_v1`, `stale_check_v1`, `answer_question_v1`. See [`core_workflow.md`](../apps/backend/docs/core_workflow.md).
-- **Workspace provider abstraction** (`core/workspace`) — `InMemoryWorkspaceProvider` (in-process) and `RemoteAgentWorkspaceProvider` (dispatches via wire protocol to customer-deployed Go agent). Single-flight claim via `try_claim`/`release_claim`. See [`core_workspace.md`](../apps/backend/docs/core_workspace.md).
-- **WorkspaceAgent** (`apps/agent/`) — customer-deployed Go binary; holds source code locally. Five HTTPS endpoints + one bidirectional WebSocket under `/api/v1/`. Full protocol contract: [`docs/workspace-agent-protocol.md`](../docs/workspace-agent-protocol.md).
-  - `POST /api/v1/identity/exchange` — SigV4-signed STS → 24h bearer. Replays the customer's `GetCallerIdentity` against AWS STS; canonicalizes ARN; matches against `orgs.registered_iam_arn`; issues bearer via `bearer_tokens` ledger (sha256 stored, plaintext returned once).
-  - `POST /api/v1/agents/{id}/heartbeat` — liveness + workspace inventory reconciliation.
-  - `POST /api/v1/agents/{id}/commands/claim` — long-poll for next AgentCommand.
+- **Workspace provider abstraction** (`core/workspace`) — `RemoteAgentWorkspaceProvider` dispatches via wire protocol to the customer-deployed Go agent. Single-flight claim via `try_claim`/`release_claim`. See [`core_workspace.md`](../apps/backend/docs/core_workspace.md).
+- **WorkspaceAgent** (`apps/agent/`) — customer-deployed Go binary; holds source code locally. Five HTTPS endpoints + one bidirectional WebSocket under `/api/v1/`. Agent identity on operational channels is bearer-derived — no `{agent_id}` path segment. Full protocol contract: [`docs/workspace-agent-protocol.md`](../docs/workspace-agent-protocol.md).
+  - `POST /api/v1/agent/identity` — SigV4-signed STS → 1-hour bearer. Replays the customer's `GetCallerIdentity` against AWS STS (or mock-aws in dev/test); audience-checks `X-Yaaos-Audience`; canonicalizes ARN; derives `instance_id` from role-session-name; matches against `orgs.registered_iam_arn`; issues bearer via `bearer_tokens` ledger (sha256 stored, plaintext returned once). Region mismatch (verified ARN matched org, wrong region) writes an `identity_exchange_failed` audit row on the org.
+  - `DELETE /api/v1/agent/identity` — graceful-shutdown "going away" signal. Sets agent offline, revokes bearer, expires held workspaces, synthesizes terminal failures for in-flight commands. Dashboard flips offline without waiting for the sweeper.
+  - `POST /api/v1/agent/heartbeat` — liveness + workspace inventory reconciliation. Persists `claimed_workspace_count = len(workspaces)`.
+  - `POST /api/v1/agent/commands/claim` — long-poll for next AgentCommand.
   - `POST /api/v1/workspaces/{id}/events` — workspace-state transitions.
   - `POST /api/v1/commands/{id}/events` — AgentCommand events; terminal events resume workflow.
-  - `WSS /api/v1/agents/{id}/activity` — bidirectional activity stream; demand-pull (no traffic unless a UI tab is subscribed). See [`core_agent_gateway.md`](../apps/backend/docs/core_agent_gateway.md).
+  - `WSS /api/v1/agent/activity` — bidirectional activity stream; demand-pull (no traffic unless a UI tab is subscribed). See [`core_agent_gateway.md`](../apps/backend/docs/core_agent_gateway.md).
 
 ### End-to-end (remote-agent path)
 
@@ -112,6 +115,8 @@ Three concepts span all apps:
 
 One append-only `audit_log` table owned by `core/audit_log`. Row shape: `{id, org_id, created_at, entity_kind, entity_id, kind ("<entity>.<verb_past>"), payload (Pydantic-validated JSONB), actor}`. Reads never write. Progress steps go to structlog, not audit. Each domain module writes its own entries.
 
+**Identity-exchange failures.** Only org-attributable failures reach audit (`entity_kind="org"`): a region mismatch where the canonical ARN matched a registered org writes `identity_exchange_failed` with `{category, attempted_arn, source_ip}`. Non-attributable failures (unregistered ARN, parse/replay/AWS errors) stay structlog-only — `audit_entries.org_id` is mandatory.
+
 ### Org scoping
 
 Every domain function takes `org_id` kwarg; every query filters by it. Per-request org from `X-Org-Slug` header (HTTP) or `org_context()` async-context-manager (background jobs).
@@ -131,7 +136,7 @@ All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secret
 
 ### Persistence (new tables)
 
-`workflow_executions`, `pending_human_decisions`, `outbox_entries`, `workspace_agents`, `bearer_tokens`. Existing tables extended: `tickets` (type, idempotency_key, payload, current_workflow_execution_id), `workspaces` (provider, current_command_id, current_holder_workflow_id, max_idle_seconds), `orgs` (workspace_provider, registered_iam_arn, aws_region). Activity events are never persisted — they exist only in flight from WebSocket → `core/sse` → SSE → UI.
+`workflow_executions`, `pending_human_decisions`, `outbox_entries`, `workspace_agents`, `bearer_tokens`. Existing tables extended: `tickets` (type, idempotency_key, payload, current_workflow_execution_id), `workspaces` (current_command_id, current_holder_workflow_id, max_idle_seconds, agent_id), `orgs` (registered_iam_arn, aws_region). Activity events are never persisted — they exist only in flight from WebSocket → `core/sse` → SSE → UI.
 
 ### Dumb frontend
 

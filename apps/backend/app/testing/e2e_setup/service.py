@@ -226,6 +226,16 @@ async def seed_bootstrap_owner(
             handle=email.split("@", 1)[0][:64].lower(),
             actor=Actor.system(),
         )
+        # Non-prod: seed IAM ARN + region from env so test-stack agents can
+        # exchange identity against mock-aws without manual UI configuration.
+        import os as _os  # noqa: PLC0415
+
+        from app.core.tenancy import update_org_fields  # noqa: PLC0415
+
+        seed_arn = _os.environ.get("YAAOS_DEV_SEED_ARN")
+        seed_region = _os.environ.get("YAAOS_DEV_SEED_REGION")
+        if seed_arn and seed_region:
+            await update_org_fields(s, org.id, registered_iam_arn=seed_arn, aws_region=seed_region)
         await s.commit()
         return {"user_id": str(user.id), "org_id": str(org.id), "org_slug": org_slug}
 
@@ -287,6 +297,72 @@ def stage_oauth_test_profile(
     )
 
 
+async def seed_workspace_agent(*, org_slug: str) -> dict[str, str]:
+    """Seed a reachable ``workspace_agents`` row for the given org slug.
+
+    Inserts the row with ``state="reachable"`` and a recent ``last_heartbeat_at``
+    so the dashboard's 1-hour retention window includes it immediately. Publishes
+    ``agent_liveness_changed`` after commit so the dashboard's pure-SSE path
+    invalidates the agents query without a manual reload. Returns the agent's
+    ``id`` and ``instance_id``.
+    """
+    from app.core.sse import GeneralEventKind, publish_general_after_commit  # noqa: PLC0415
+    from app.domain.orgs import get_org_by_slug  # noqa: PLC0415
+    from app.testing.seed import seed_agent  # noqa: PLC0415
+
+    org = await get_org_by_slug(org_slug)
+    if org is None:
+        raise ValueError(f"org {org_slug!r} not found — seed it first via bootstrap_owner")
+    async with db_session() as s:
+        result = await seed_agent(org_id=org.id, session=s)
+        publish_general_after_commit(
+            s,
+            org_id=org.id,
+            kind=GeneralEventKind.AGENT_LIVENESS_CHANGED,
+            payload={},
+        )
+        await s.commit()
+    return {"id": str(result["id"]), "instance_id": result["instance_id"]}
+
+
+async def deregister_workspace_agent(*, agent_id: UUID) -> dict[str, str]:
+    """Simulate an agent's graceful-shutdown "going away" signal.
+
+    Mirrors ``DELETE /api/v1/agent/identity`` for the agent with the given
+    canonical ``id``: marks the row offline + ``last_shutdown_at``, runs
+    agent-loss cleanup, and publishes ``agent_liveness_changed`` so the
+    dashboard flips the card offline live. Drives the graceful-shutdown
+    Playwright spec without a real bearer or running container.
+    """
+    from app.core.agent_gateway import (  # noqa: PLC0415
+        get_agent_info,
+        get_report_sink,
+        mark_agent_shutdown,
+    )
+    from app.core.audit_log import ActorKind  # noqa: PLC0415
+    from app.core.auth import org_context  # noqa: PLC0415
+    from app.core.sse import GeneralEventKind, publish_general_after_commit  # noqa: PLC0415
+
+    async with db_session() as s:
+        info = await get_agent_info(agent_id, session=s)
+    if info is None:
+        raise ValueError(f"workspace agent id={agent_id!r} not found")
+    org_id = info["org_id"]
+
+    async with org_context(org_id, ActorKind.WORKSPACE, actor_id=agent_id):
+        async with db_session() as s:
+            await mark_agent_shutdown(agent_id, session=s)
+            await get_report_sink().handle_agent_loss({agent_id}, s)
+            publish_general_after_commit(
+                s,
+                org_id=org_id,
+                kind=GeneralEventKind.AGENT_LIVENESS_CHANGED,
+                payload={},
+            )
+            await s.commit()
+    return {"id": str(agent_id), "instance_id": info["instance_id"]}
+
+
 def read_and_clear_email_inbox() -> list[dict[str, str]]:
     """Return + clear the in-memory inbox ``domain.orgs.email.send_plain`` writes
     to in test env."""
@@ -300,6 +376,7 @@ def read_and_clear_email_inbox() -> list[dict[str, str]]:
 
 __all__ = [
     "DEFAULT_ORG_ID",
+    "deregister_workspace_agent",
     "is_dev_env",
     "read_and_clear_email_inbox",
     "reset",
@@ -307,5 +384,6 @@ __all__ = [
     "seed_github_install",
     "seed_lesson",
     "seed_user_with_session",
+    "seed_workspace_agent",
     "stage_oauth_test_profile",
 ]

@@ -80,6 +80,94 @@ func TestSchedule_SleepRespectsContextCancel(t *testing.T) {
 	}
 }
 
+// TestScheduleDeadline_SignalsExhaustionAfterElapsed verifies that a Schedule
+// created with NewWithDeadline returns ErrDeadlineExceeded once the cumulative
+// elapsed time exceeds the cap.
+func TestScheduleDeadline_SignalsExhaustionAfterElapsed(t *testing.T) {
+	// Use a very short deadline so the test doesn't spin for minutes.
+	const deadline = 50 * time.Millisecond
+
+	// Use tiny steps so Sleep doesn't block longer than deadline.
+	s := &Schedule{steps: []time.Duration{1 * time.Millisecond}, rng: zeroJitter, maxElapsed: deadline}
+
+	ctx := context.Background()
+
+	// First Sleep call: stamps firstFailed; should succeed (barely any time has
+	// passed, so the pre-sleep check passes).
+	err := s.Sleep(ctx)
+	if err != nil {
+		t.Fatalf("first Sleep: want nil, got %v", err)
+	}
+
+	// Spin calling Sleep until we hit the deadline or exhaust patience.
+	const maxAttempts = 200
+	var gotDeadline bool
+	for i := 0; i < maxAttempts; i++ {
+		if s.Exhausted() {
+			gotDeadline = true
+			break
+		}
+		err := s.Sleep(ctx)
+		if err == ErrDeadlineExceeded {
+			gotDeadline = true
+			break
+		}
+		if err != nil {
+			t.Fatalf("Sleep attempt %d: unexpected error %v", i, err)
+		}
+	}
+	if !gotDeadline {
+		t.Fatalf("deadline schedule did not signal exhaustion after %d attempts / %s", maxAttempts, deadline)
+	}
+}
+
+// TestScheduleDeadline_IndefiniteScheduleNeverExhausts verifies that a plain
+// New() schedule never returns ErrDeadlineExceeded regardless of how many
+// times Sleep is called.
+func TestScheduleDeadline_IndefiniteScheduleNeverExhausts(t *testing.T) {
+	// Use tiny steps so the test completes quickly.
+	s := NewWithSteps([]time.Duration{1 * time.Millisecond})
+	ctx := context.Background()
+	for i := 0; i < 10; i++ {
+		err := s.Sleep(ctx)
+		if err == ErrDeadlineExceeded {
+			t.Fatalf("indefinite schedule returned ErrDeadlineExceeded at attempt %d", i)
+		}
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if s.Exhausted() {
+		t.Fatal("indefinite schedule reports Exhausted() == true")
+	}
+}
+
+// TestScheduleDeadline_ResetClearsElapsed verifies that Reset on a deadline
+// schedule restarts the elapsed timer, so a successful exchange after partial
+// failure doesn't permanently shorten subsequent retry windows.
+func TestScheduleDeadline_ResetClearsElapsed(t *testing.T) {
+	const deadline = 50 * time.Millisecond
+	s := &Schedule{steps: []time.Duration{1 * time.Millisecond}, rng: zeroJitter, maxElapsed: deadline}
+	ctx := context.Background()
+
+	// Sleep a few times to advance the timer.
+	for i := 0; i < 3; i++ {
+		_ = s.Sleep(ctx)
+	}
+
+	// Reset clears firstFailed — Exhausted should be false.
+	s.Reset()
+	if s.Exhausted() {
+		t.Fatal("Exhausted() true immediately after Reset()")
+	}
+
+	// A Sleep after Reset should succeed (timer is fresh).
+	err := s.Sleep(ctx)
+	if err == ErrDeadlineExceeded {
+		t.Fatal("Sleep returned ErrDeadlineExceeded immediately after Reset()")
+	}
+}
+
 // zeroJitter forces windowed() to return exactly the base step (no
 // random component). Used for deterministic step-progression tests.
 func zeroJitter() float64 { return 0.5 } // (0.5*2 - 1) * 0.2 == 0

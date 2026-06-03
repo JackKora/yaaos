@@ -49,10 +49,15 @@ import (
 const scopeName = "github.com/yaaos/agent"
 
 // Config carries identity attributes that travel as OTel resource
-// attributes on every signal. Read once at startup.
+// attributes on every signal. Read once at startup; InstanceID may be
+// updated later via SetInstanceID once the backend assigns it.
 type Config struct {
 	ServiceVersion string // e.g. "0.0.1" or build-stamped commit.
-	AgentPodID     string // per-pod identifier; matches the value sent on heartbeat.
+	// InstanceID is the backend-derived role-session-name from the STS ARN
+	// (workspace_agents.instance_id). Only known after identity exchange;
+	// set via SetInstanceID before BindExporter runs so the late-bind path
+	// emits the correct service.instance.id.
+	InstanceID string
 }
 
 // installState tracks whether the SDK providers have been wired into the
@@ -128,6 +133,22 @@ func Init(ctx context.Context, cfg Config) (*Result, error) {
 	}, nil
 }
 
+// SetInstanceID updates the stored startup config with the backend-assigned
+// instance_id (role-session-name from the STS ARN). Must be called after
+// identity exchange and before BindExporter so the late-bind path emits the
+// correct service.instance.id on every OTel signal.
+//
+// No-op when the SDK providers are already installed (env-var Init path
+// already ran), because rebuilding the resource after wireProviders would
+// require restarting the SDK — callers should ensure BindExporter hasn't
+// been called yet, which is the normal production ordering (ConfigUpdate
+// arrives after identity exchange).
+func SetInstanceID(instanceID string) {
+	installMu.Lock()
+	startupCfg.InstanceID = instanceID
+	installMu.Unlock()
+}
+
 // buildResource constructs the OTel resource from the startup identity
 // attributes. Shared by Init and BindExporter so both paths emit the same
 // service.name / service.version / service.instance.id.
@@ -138,10 +159,12 @@ func buildResource(cfg Config) (*resource.Resource, error) {
 			semconv.SchemaURL,
 			semconv.ServiceName("yaaos-workspace-agent"),
 			semconv.ServiceVersion(cfg.ServiceVersion),
-			// agent.pod_id is yaaos-specific; matches the value the
-			// backend stores in workspace_agents.agent_pod_id so an
-			// operator can correlate metrics to a heartbeat row.
-			semconv.ServiceInstanceID(cfg.AgentPodID),
+			// service.instance.id is the backend-assigned instance_id
+			// (workspace_agents.instance_id = role-session-name from the STS
+			// ARN). Operators use it to correlate OTel signals to a specific
+			// workspace_agents row. Empty at early startup (before identity
+			// exchange); populated via SetInstanceID before BindExporter.
+			semconv.ServiceInstanceID(cfg.InstanceID),
 		),
 	)
 	if err != nil {

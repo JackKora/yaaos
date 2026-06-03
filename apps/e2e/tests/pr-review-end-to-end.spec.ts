@@ -51,17 +51,20 @@ async function setupAuthedAcmeOwner(page: Page, request: APIRequestContext): Pro
 }
 
 /**
- * Both tests below depend on the outbox → taskiq dispatcher to
- * actually run the workflow. No broker + drain loop runs in the e2e
- * stack — `taskiq_enqueue` outbox rows pile up and `workflow_executions`
- * stay in `pending` forever. Backend service tests cover the workflow
- * engine itself; the e2e flow stays skipped until the dispatcher exists.
+ * Both tests below need a review to execute end-to-end. The only workspace
+ * provider is `remote_agent`, which dispatches WORKSPACE commands to a remote
+ * WorkspaceAgent; the e2e stack runs no agent, so the review parks in
+ * `awaiting_agent` and posts nothing. The review logic itself is covered by
+ * the inline service test
+ * `apps/backend/app/domain/reviewer/test/test_pr_review_v1_e2e_service.py`;
+ * what these two add is the browser-level assertion (findings render, the
+ * review card updates live via SSE). They stay skipped until the e2e stack
+ * runs a real agent against the dispatch path.
  *
- * To re-enable: drop the `test.skip` once
- *   - a real `core/tasks` broker runs in the FastAPI lifespan, AND
- *   - the outbox drain loop dispatches `taskiq_enqueue` rows post-commit.
+ * To re-enable: run a WorkspaceAgent + mock-aws in the e2e stack so reviews
+ * execute through `claim_next` → agent → terminal event.
  */
-test("PR open → reviewer posts; ticket detail renders findings", async ({ page, request }) => {
+test.skip("PR open → reviewer posts; ticket detail renders findings", async ({ page, request }) => {
   await setupAuthedAcmeOwner(page, request);
 
   await dispatchWebhook({
@@ -100,7 +103,7 @@ test("PR open → reviewer posts; ticket detail renders findings", async ({ page
  * Folded in from the standalone `sse-step-progress-live.spec.ts` so we
  * don't pay the docker-compose bring-up twice for the same backend flow.
  */
-test("review card state transitions live via SSE without reload", async ({ page, request }) => {
+test.skip("review card state transitions live via SSE without reload", async ({ page, request }) => {
   await setupAuthedAcmeOwner(page, request);
 
   // Land on the tickets list FIRST so the SSE subscriber is mounted before

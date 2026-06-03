@@ -27,9 +27,12 @@ The connection is keyed by org slug: switching org closes the old stream and ope
 | Event `kind` | Invalidates |
 |---|---|
 | `ticket_status_changed` | `["tickets"]`, `["tickets", id]`, `["tickets", id, "audit"]`, `["reviewer", "metrics"]` |
+| `review_requested` / `review_started` / `review_completed` / `review_failed` / `review_superseded` | `["tickets"]`, `["tickets", "dashboard"]` |
+| `finding_raised` / `finding_re_observed` / `finding_anchor_updated` / `finding_state_changed` / `finding_acknowledged` / `finding_resolution_detected` / `finding_stale_detected` | `["tickets"]`, `["tickets", "dashboard"]` |
+| `agent_liveness_changed` | `["agents"]` |
 | anything else | silently ignored |
 
-`ticket_id` on the envelope scopes invalidations. Events without it fall back to the global keys (`["tickets"]`, `["reviewer", "metrics"]`).
+`ticket_id` on the envelope scopes invalidations. Events without it fall back to the global keys (`["tickets"]`, `["reviewer", "metrics"]`). `onopen` reconciles by invalidating `["tickets"]`, `["reviewer", "metrics"]`, and `["agents"]`.
 
 ### Coalesced invalidations
 

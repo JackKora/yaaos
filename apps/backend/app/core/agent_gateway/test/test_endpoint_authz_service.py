@@ -1,10 +1,9 @@
-"""Service tests: per-endpoint identity authz on the bearer HTTP endpoints.
+"""Service tests: per-endpoint authorization on the bearer HTTP endpoints.
 
-`heartbeat` and `claim_command` bind on a path `agent_id`. The bearer
-resolves to its own `agent.agent_id`. A bearer for agent A must NOT be
-able to address agent B's row (heartbeat) or queue (claim) inside the
-same org — that is the IDOR these tests guard. Mirrors the WebSocket
-handler's `ctx.agent_id != agent_id → 4403` precedent.
+Bearer identity is derived solely from the token — no path `agent_id`.
+The `heartbeat` and `claim` endpoints operate on the bearer's own agent.
+`post_workspace_event` / `post_command_event` enforce ownership via the
+workspace's owning `agent_id` (within-org IDOR guard).
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ async def _insert_agent(db_session, org_id: UUID) -> UUID:
     agent = WorkspaceAgentRow(
         id=uuid4(),
         org_id=org_id,
-        agent_pod_id=uuid4(),
+        instance_id=f"test-task-{uuid4().hex[:8]}",
         iam_arn=f"arn:aws:iam::123456789012:role/test-{uuid4().hex[:6]}",
         version="0.0.1",
         state="reachable",
@@ -80,47 +79,19 @@ def _isolate():
     bearers.set_verify_override(None)
 
 
-# ── Tests ─────────────────────────────────────────────────────────────────
+# ── Heartbeat: bearer-derived identity ────────────────────────────────────
 
 
 @pytest.mark.asyncio
 @pytest.mark.service
-async def test_heartbeat_rejects_foreign_agent_id(db_session) -> None:
-    """A bearer for agent A bumping agent B's heartbeat row → 403."""
-    _agent_a, agent_b, token = await _two_agents_one_org(db_session)
-    async with _client() as c:
-        resp = await c.post(
-            f"/api/v1/agents/{agent_b}/heartbeat",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"workspaces": [], "reported_at": "2026-01-01T00:00:00Z"},
-        )
-    assert resp.status_code == 403, resp.text
-    assert resp.json()["detail"]["error"] == "forbidden"
-
-
-@pytest.mark.asyncio
-@pytest.mark.service
-async def test_claim_rejects_foreign_agent_id(db_session) -> None:
-    """A bearer for agent A claiming against agent B's queue → 403."""
-    _agent_a, agent_b, token = await _two_agents_one_org(db_session)
-    async with _client() as c:
-        resp = await c.post(
-            f"/api/v1/agents/{agent_b}/commands/claim",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"wait_seconds": 0, "lifecycle": "unconfigured"},
-        )
-    assert resp.status_code == 403, resp.text
-    assert resp.json()["detail"]["error"] == "forbidden"
-
-
-@pytest.mark.asyncio
-@pytest.mark.service
-async def test_heartbeat_allows_own_agent_id(db_session) -> None:
-    """The happy path — a bearer addressing its own agent_id still succeeds."""
+async def test_heartbeat_uses_bearer_identity(db_session) -> None:
+    """Heartbeat operates on the bearer's own agent — no path agent_id.
+    A valid bearer produces 200 regardless of the agent it's issued to."""
     agent_a, _agent_b, token = await _two_agents_one_org(db_session)
+    del agent_a
     async with _client() as c:
         resp = await c.post(
-            f"/api/v1/agents/{agent_a}/heartbeat",
+            "/api/v1/agent/heartbeat",
             headers={"Authorization": f"Bearer {token}"},
             json={"workspaces": [], "reported_at": "2026-01-01T00:00:00Z"},
         )
@@ -129,18 +100,74 @@ async def test_heartbeat_allows_own_agent_id(db_session) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.service
-async def test_claim_allows_own_agent_id(db_session) -> None:
-    """The happy path — a bearer claiming against its own queue still succeeds
-    (204 when nothing is configured-eligible at wait_seconds=0 is fine; an
-    unconfigured claim returns a ConfigUpdate at 200)."""
-    agent_a, _agent_b, token = await _two_agents_one_org(db_session)
+async def test_heartbeat_rejects_missing_bearer(db_session) -> None:
+    """Heartbeat with no Authorization header → 401."""
+    _agent_a, _agent_b, _token = await _two_agents_one_org(db_session)
     async with _client() as c:
         resp = await c.post(
-            f"/api/v1/agents/{agent_a}/commands/claim",
+            "/api/v1/agent/heartbeat",
+            json={"workspaces": [], "reported_at": "2026-01-01T00:00:00Z"},
+        )
+    assert resp.status_code == 401, resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_heartbeat_rejects_empty_bearer(db_session) -> None:
+    """Heartbeat with an empty bearer value → 401."""
+    _agent_a, _agent_b, _token = await _two_agents_one_org(db_session)
+    async with _client() as c:
+        resp = await c.post(
+            "/api/v1/agent/heartbeat",
+            headers={"Authorization": "Bearer "},
+            json={"workspaces": [], "reported_at": "2026-01-01T00:00:00Z"},
+        )
+    assert resp.status_code == 401, resp.text
+
+
+# ── Claim: bearer-derived identity ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_claim_uses_bearer_identity(db_session) -> None:
+    """Claim operates on the bearer's own agent (204 or 200 is fine)."""
+    agent_a, _agent_b, token = await _two_agents_one_org(db_session)
+    del agent_a
+    async with _client() as c:
+        resp = await c.post(
+            "/api/v1/agent/commands/claim",
             headers={"Authorization": f"Bearer {token}"},
             json={"wait_seconds": 0, "lifecycle": "unconfigured"},
         )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code in (200, 204), resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_claim_rejects_missing_bearer(db_session) -> None:
+    """Claim with no Authorization header → 401."""
+    _agent_a, _agent_b, _token = await _two_agents_one_org(db_session)
+    async with _client() as c:
+        resp = await c.post(
+            "/api/v1/agent/commands/claim",
+            json={"wait_seconds": 0, "lifecycle": "unconfigured"},
+        )
+    assert resp.status_code == 401, resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_claim_rejects_empty_bearer(db_session) -> None:
+    """Claim with an empty bearer value → 401."""
+    _agent_a, _agent_b, _token = await _two_agents_one_org(db_session)
+    async with _client() as c:
+        resp = await c.post(
+            "/api/v1/agent/commands/claim",
+            headers={"Authorization": "Bearer "},
+            json={"wait_seconds": 0, "lifecycle": "unconfigured"},
+        )
+    assert resp.status_code == 401, resp.text
 
 
 # ── post_workspace_event / post_command_event ownership authz ──────────────
@@ -271,3 +298,40 @@ async def test_command_event_config_update_not_regressed(db_session) -> None:
     # 410 (stale-claim), NOT 403 — authz let the agent-scoped command through.
     assert resp.status_code == 410, resp.text
     assert resp.json()["error"] == "stale_claim"
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_workspace_event_rejects_missing_bearer(db_session) -> None:
+    """workspace events endpoint with no bearer → 401."""
+    ws_id = uuid4()
+    cmd_id = uuid4()
+    async with _client() as c:
+        resp = await c.post(
+            f"/api/v1/workspaces/{ws_id}/events",
+            json={
+                "workspace_id": str(ws_id),
+                "command_id": str(cmd_id),
+                "kind": "ready",
+                "reported_at": datetime.now(UTC).isoformat(),
+            },
+        )
+    assert resp.status_code == 401, resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_command_event_rejects_missing_bearer(db_session) -> None:
+    """command events endpoint with no bearer → 401."""
+    cmd_id = uuid4()
+    async with _client() as c:
+        resp = await c.post(
+            f"/api/v1/commands/{cmd_id}/events",
+            json={
+                "command_id": str(cmd_id),
+                "kind": "completed_success",
+                "reported_at": datetime.now(UTC).isoformat(),
+                "traceparent": "00-aabb-1122-01",
+            },
+        )
+    assert resp.status_code == 401, resp.text

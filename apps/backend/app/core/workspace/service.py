@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -78,41 +79,87 @@ async def _audit_transition(
 log = structlog.get_logger("workspace")
 
 
-_PROVIDERS: dict[str, WorkspaceProvider] = {}
+class WorkspaceRegistry:
+    """Workspace provider map. ContextVar-bound so each test context gets a
+    fresh, isolated instance; production rides the import-time default for the
+    process lifetime — it never calls bind_workspace_registry(). The ContextVar
+    exists solely for per-test isolation (see app/testing/isolation.py)."""
+
+    def __init__(self) -> None:
+        self._providers: dict[str, WorkspaceProvider] = {}
+
+    def register(self, provider: WorkspaceProvider) -> None:
+        if provider.meta.id in self._providers:
+            raise ValueError(f"workspace provider {provider.meta.id!r} already registered")
+        self._providers[provider.meta.id] = provider
+
+    def replace(self, provider: WorkspaceProvider) -> None:
+        """Overwrite-or-insert; used by stub helpers."""
+        self._providers[provider.meta.id] = provider
+
+    def get(self, provider_id: str) -> WorkspaceProvider:
+        try:
+            return self._providers[provider_id]
+        except KeyError as e:
+            raise WorkspaceError(f"workspace provider not found: {provider_id}") from e
+
+    def get_or_none(self, provider_id: str) -> WorkspaceProvider | None:
+        """Return the provider for `provider_id`, or None if not registered.
+        Used in paths where an unknown provider id is a warning-level event,
+        not an exception (e.g. get_workspace, _attempt_destroy)."""
+        return self._providers.get(provider_id)
+
+    def is_registered(self, provider_id: str) -> bool:
+        return provider_id in self._providers
+
+    def list(self) -> list[WorkspaceProvider]:
+        return list(self._providers.values())
+
+    def items(self) -> tuple[tuple[str, WorkspaceProvider], ...]:
+        """Return a snapshot of (provider_id, provider) pairs.
+
+        Returns a tuple so callers cannot mutate registry state through the
+        returned collection.
+        """
+        return tuple(self._providers.items())
+
+    def copy(self) -> WorkspaceRegistry:
+        clone = WorkspaceRegistry()
+        clone._providers = dict(self._providers)
+        return clone
+
+
+_providers_var: ContextVar[WorkspaceRegistry | None] = ContextVar("_workspace_registry_var", default=None)
+# Import-time default: plugins that call register_workspace_provider() at
+# module-import time (bootstrap()) land here when no per-test binding is active.
+# Production never calls bind_workspace_registry(); the ContextVar exists solely
+# for per-test isolation.
+_default_registry = WorkspaceRegistry()
+
+
+def bind_workspace_registry(instance: WorkspaceRegistry) -> None:
+    _providers_var.set(instance)
+
+
+def current_workspace_registry() -> WorkspaceRegistry:
+    return _providers_var.get() or _default_registry
 
 
 def register_workspace_provider(provider: WorkspaceProvider) -> None:
-    if provider.meta.id in _PROVIDERS:
-        raise ValueError(f"workspace provider {provider.meta.id!r} already registered")
-    _PROVIDERS[provider.meta.id] = provider
-
-
-def unregister_workspace_provider(plugin_id: str) -> None:
-    """Remove a workspace provider from the registry. No-op if not registered."""
-    _PROVIDERS.pop(plugin_id, None)
+    current_workspace_registry().register(provider)
 
 
 def get_provider(provider_id: str) -> WorkspaceProvider:
-    try:
-        return _PROVIDERS[provider_id]
-    except KeyError as e:
-        raise WorkspaceError(f"workspace provider not found: {provider_id}") from e
+    return current_workspace_registry().get(provider_id)
 
 
 def is_workspace_provider_registered(plugin_id: str) -> bool:
-    return plugin_id in _PROVIDERS
+    return current_workspace_registry().is_registered(plugin_id)
 
 
 def list_workspace_providers() -> list[WorkspaceProvider]:
     """Return registered providers in insertion order."""
-    return list(_PROVIDERS.values())
-
-
-def _clear_workspace_providers_for_tests() -> None:
-    """Clear the workspace provider registry. For test isolation only —
-    call via the `workspace_providers_isolation` fixture in `app/testing/isolation`,
-    never from production code."""
-    _PROVIDERS.clear()
+    return current_workspace_registry().list()
 
 
 class _WorkspaceImpl:
@@ -332,7 +379,7 @@ async def get_workspace(workspace_id: UUID) -> Workspace | None:
         ).scalar_one_or_none()
     if row is None or row.plugin_state is None:
         return None
-    provider = _PROVIDERS.get(row.provider_id)
+    provider = current_workspace_registry().get_or_none(row.provider_id)
     if provider is None:
         log.warning(
             "workspace.get_workspace.provider_not_registered",
@@ -510,10 +557,25 @@ async def _reaper_sweep_once() -> None:
                 reason="idle_timeout",
             )
 
+        # 1b-ii. Liveness sweeper — compute reachable/stale/offline transitions
+        # for all workspace-agent rows. Lives in core/agent_gateway (which owns
+        # workspace_agents); called here because this loop runs each reaper tick.
+        # Returns newly-offline agent IDs to feed directly into failsafe-6.
+        from app.core.agent_gateway import compute_agent_liveness_transitions  # noqa: PLC0415
+
+        newly_offline = await compute_agent_liveness_transitions(now, session=s)
+
         # 1c. Agent-loss (failsafe 6) — per-pod. A workspace whose owning
-        # agent is individually stale is expired and that pod's bearers
-        # revoked, even when sibling pods in the same org are healthy.
-        await _failsafe_agent_loss(s, now)
+        # agent just went offline is expired and that pod's bearers revoked,
+        # even when sibling pods in the same org are healthy.
+        if newly_offline:
+            await failsafe_agent_loss(s, set(newly_offline))
+
+        # 1d. Command-lease reaper — requeue claimed commands whose 30-second
+        # receipt deadline has passed without a `received` event from the agent.
+        from app.core.agent_gateway import requeue_stale_claimed  # noqa: PLC0415
+
+        await requeue_stale_claimed(session=s)
 
         # 2. Find rows to destroy.
         rows = (
@@ -538,45 +600,54 @@ async def _reaper_sweep_once() -> None:
         await _attempt_destroy(row)
 
 
-async def _failsafe_agent_loss(s: Any, now: datetime) -> None:
-    """Mark workspaces EXPIRED + revoke their owning pod's bearers when that
-    pod has gone stale beyond the heartbeat threshold (failsafe 6).
+async def failsafe_agent_loss(s: Any, offline_agent_ids: set[UUID]) -> None:
+    """Mark workspaces EXPIRED + revoke their owning pod's bearers for each
+    newly-offline agent (failsafe 6).
 
-    Per-pod: a workspace whose owning `agent_id` is individually stale (no
-    heartbeat within the threshold) is expired even when sibling pods in the
-    same org are healthy. Only the dead pod's bearers are revoked, not the
-    whole org's — healthy pods keep their bearers and their workspaces.
+    Per-pod: only the supplied `offline_agent_ids` are processed — healthy
+    sibling pods keep their bearers and their workspaces untouched.
 
-    Workspaces with a NULL `agent_id` (in-memory/legacy) are skipped — they
+    For each expired workspace that holds an in-flight `current_command_id`,
+    a synthetic terminal-failure event is enqueued via `HANDLE_AGENT_EVENT`
+    so the owning WorkflowExecution resumes (fails the step) rather than
+    hanging in AWAITING_AGENT indefinitely.
+
+    Workspaces with a NULL `owning_agent_id` (legacy rows) are skipped — they
     carry no owning pod to declare lost.
-    """
-    from app.core.agent_gateway import revoke_all_for_agent, stale_agent_ids  # noqa: PLC0415
 
-    cutoff = now - timedelta(seconds=AGENT_LOSS_HEARTBEAT_THRESHOLD_SECONDS)
-    # Active remote-agent workspaces with a known owning pod. `workspaces.provider`
-    # and `workspaces.agent_id` are this module's own columns — no cross-module
-    # query needed to find candidates.
+    Called both by the reaper sweep (with the newly-offline set from
+    `compute_agent_liveness_transitions`) and eagerly by the graceful-shutdown
+    DELETE handler (with the single agent's ID).
+    """
+    from app.core.agent_gateway import revoke_all_for_agent  # noqa: PLC0415
+    from app.core.tasks import enqueue  # noqa: PLC0415
+    from app.core.workflow import HANDLE_AGENT_EVENT  # noqa: PLC0415
+
+    # Active/Creating workspaces whose owning pod is in the offline set.
     candidate_rows = (
         await s.execute(
-            select(WorkspaceRow.id, WorkspaceRow.org_id, WorkspaceRow.status, WorkspaceRow.agent_id).where(
-                WorkspaceRow.provider == "remote_agent",
-                WorkspaceRow.agent_id.is_not(None),
+            select(
+                WorkspaceRow.id,
+                WorkspaceRow.org_id,
+                WorkspaceRow.status,
+                WorkspaceRow.owning_agent_id,
+                WorkspaceRow.current_command_id,
+                WorkspaceRow.current_holder_workflow_id,
+            ).where(
+                WorkspaceRow.owning_agent_id.in_(offline_agent_ids),
                 WorkspaceRow.status.in_([WorkspaceStatus.ACTIVE.value, WorkspaceStatus.CREATING.value]),
             )
         )
     ).all()
     if not candidate_rows:
-        return
-
-    owning_agent_ids = {row[3] for row in candidate_rows}
-    stale_ids = await stale_agent_ids(owning_agent_ids, cutoff=cutoff, session=s)
-    if not stale_ids:
+        # Still revoke bearers even if there are no workspace rows (agent
+        # may have been idle with no workspaces claimed).
+        for owning_agent_id in offline_agent_ids:
+            await revoke_all_for_agent(owning_agent_id, "agent_loss", session=s)
         return
 
     expired_count = 0
-    for ws_id, org_id, status, agent_id in candidate_rows:
-        if agent_id not in stale_ids:
-            continue
+    for ws_id, org_id, status, _owning_agent_id, current_command_id, holder_workflow_id in candidate_rows:
         await s.execute(
             update(WorkspaceRow).where(WorkspaceRow.id == ws_id).values(status=WorkspaceStatus.EXPIRED.value)
         )
@@ -590,19 +661,35 @@ async def _failsafe_agent_loss(s: Any, now: datetime) -> None:
         )
         expired_count += 1
 
-    # Revoke each lost pod's bearers — that pod re-exchanges when it returns.
-    for agent_id in stale_ids:
-        await revoke_all_for_agent(agent_id, "agent_loss", session=s)
+        # Synthesize a terminal failure for any in-flight command so the
+        # owning WorkflowExecution resumes (fails its step) rather than
+        # waiting forever in AWAITING_AGENT.
+        if current_command_id is not None and holder_workflow_id is not None:
+            await enqueue(
+                HANDLE_AGENT_EVENT,
+                args={
+                    "workflow_execution_id": str(holder_workflow_id),
+                    "agent_command_id": str(current_command_id),
+                    "outcome_label": "failure",
+                    "outputs": {},
+                    "traceparent": None,
+                },
+                session=s,
+            )
+
+    # Revoke each offline pod's bearers — that pod re-exchanges when it returns.
+    for owning_agent_id in offline_agent_ids:
+        await revoke_all_for_agent(owning_agent_id, "agent_loss", session=s)
 
     log.warning(
         "workspace.failsafe_agent_loss",
-        stale_agent_count=len(stale_ids),
+        offline_agent_count=len(offline_agent_ids),
         expired_count=expired_count,
     )
 
 
 async def _attempt_destroy(row: WorkspaceRow) -> None:
-    provider = _PROVIDERS.get(row.provider_id)
+    provider = current_workspace_registry().get_or_none(row.provider_id)
     if provider is None:
         log.warning("workspace.destroy_no_provider", workspace_id=str(row.id), provider_id=row.provider_id)
         async with get_session() as s:
@@ -730,7 +817,7 @@ def start_reaper(interval_seconds: int) -> None:
 async def health_check_all() -> dict[str, HealthStatus]:
     """Aggregate health across registered providers (used by settings)."""
     out: dict[str, HealthStatus] = {}
-    for plugin_id, provider in _PROVIDERS.items():
+    for plugin_id, provider in current_workspace_registry().items():
         try:
             out[plugin_id] = await provider.health_check()
         except Exception as e:
@@ -754,7 +841,7 @@ async def get_workspace_claim_state(
                 WorkspaceRow.id,
                 WorkspaceRow.current_holder_workflow_id,
                 WorkspaceRow.status,
-                WorkspaceRow.agent_id,
+                WorkspaceRow.owning_agent_id,
             ).where(WorkspaceRow.current_command_id == command_id)
         )
     ).one_or_none()
@@ -764,7 +851,7 @@ async def get_workspace_claim_state(
         workspace_id=row[0],
         current_holder_workflow_id=row[1],
         status=row[2],
-        agent_id=row[3],
+        owning_agent_id=row[3],
     )
 
 
@@ -784,7 +871,7 @@ async def get_workspace_command_state(
                 WorkspaceRow.id,
                 WorkspaceRow.current_command_id,
                 WorkspaceRow.status,
-                WorkspaceRow.agent_id,
+                WorkspaceRow.owning_agent_id,
             ).where(WorkspaceRow.id == workspace_id)
         )
     ).one_or_none()
@@ -794,7 +881,7 @@ async def get_workspace_command_state(
         workspace_id=row[0],
         current_command_id=row[1],
         status=row[2],
-        agent_id=row[3],
+        owning_agent_id=row[3],
     )
 
 

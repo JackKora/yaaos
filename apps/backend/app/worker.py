@@ -26,7 +26,6 @@ def main() -> int:
 
     import app.core.agent_gateway as _gw  # noqa: PLC0415
 
-    _gw.bind_agent_queues(_gw.AgentQueues())
     _gw.bind_subscriber_registry(_gw.SubscriberRegistry())
 
     from app.domain.orgs.email import _Inbox as _EmailInbox  # noqa: PLC0415
@@ -49,8 +48,7 @@ def main() -> int:
     assert_workflow_context_provider()
 
     import app.plugins.claude_code  # noqa: PLC0415
-    import app.plugins.github  # noqa: PLC0415
-    import app.plugins.in_memory_workspace  # noqa: F401, PLC0415
+    import app.plugins.github  # noqa: F401, PLC0415
 
     if os.environ.get("YAAOS_CODING_AGENT_STUB", "").lower() in {"1", "true", "yes"}:
         from app.testing.stub_coding_agent import wrap_all_registered_plugins  # noqa: PLC0415

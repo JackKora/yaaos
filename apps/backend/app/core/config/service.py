@@ -84,6 +84,15 @@ class Settings(BaseSettings):
     # The project is auto-created on first request if it doesn't exist.
     braintrust_project: str = "yaaos"
 
+    # Canonical public hostname of this backend deployment. Used to validate the
+    # `X-Yaaos-Audience` header inside the agent's signed STS payload. Must match
+    # what `hostFromURL(YAAOS_BACKEND_URL)` produces on the agent side — typically
+    # "app.yaaos.cloud" (no scheme, no path). Required; boot fails if unset.
+    yaaos_public_hostname: str = Field(
+        ...,
+        description="Canonical public hostname (no scheme/path, e.g. app.yaaos.cloud). Required for agent identity-exchange audience binding.",
+    )
+
     # Time controls. Production defaults are reasonable; tests set short.
     # yaaos_review_debounce_seconds: int = 30
     yaaos_reaper_interval_seconds: int = 30

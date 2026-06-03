@@ -62,7 +62,7 @@ The key invariant: `protocol` does not import `command`. `ClaimCommand` returns 
 
 ### Activity WebSocket
 
-Supervisor maintains a bidirectional WS to `/api/v1/agents/{id}/activity` when `Config.ActivityWSURL` is set. `Batcher` buffers events per subscribed key and flushes one `activity_batch` frame per key at 250 ms. On dial failure the supervisor falls back to per-event HTTP `PostCommandEvent`.
+Supervisor maintains a bidirectional WS to `/api/v1/agent/activity` when `Config.ActivityWSURL` is set. Agent identity is bearer-derived; no agent ID in the URL. `Batcher` buffers events per subscribed key and flushes one `activity_batch` frame per key at 250 ms. On dial failure the supervisor falls back to per-event HTTP `PostCommandEvent`.
 
 ### Live progress streaming
 
@@ -93,7 +93,7 @@ All auth tokens flow through `internal/secret.Secret`. `fmt.Sprintf`, `json.Mars
 
 All three OTel signals (traces, metrics, logs) share two standard dimensions on every record produced after identity exchange: `org_id` and `agent_id`. These are set once via `observability.SetStandardDimensions` immediately after the first successful identity exchange and never change for the process lifetime.
 
-- **Resource attributes** (pod-level): `service.name`, `service.version`, `service.instance.id` = `agent_pod_id`.
+- **Resource attributes** (static for the process lifetime): `service.name`, `service.version`, `service.instance.id` = `instance_id` (backend-assigned role-session-name from the STS ARN; stored via `observability.SetInstanceID` after identity exchange, before `BindExporter` runs).
 - **Span / metric attributes** (post-exchange): `org_id`, `agent_id`. Per-command spans also carry `workspace_id`, `command_id`, `kind`.
 - **Base slog logger**: the supervisor calls `slog.SetDefault(slog.Default().With("org_id", ..., "agent_id", ...))` after first exchange so every subsequent `slog.*` call emits both dimensions automatically.
 - **OTLP disabled**: `observability.Init` is a no-op; instruments resolve to no-op SDK providers. Zero overhead.
@@ -106,7 +106,7 @@ The supervisor's normal error model is: retry-with-backoff forever, log warnings
 
 After first exchange, `supervisor` pins `agentID` and `orgID`. Every subsequent call to `exchangeIdentity` (bearer renewal) must return the same values. If the backend returns different `AgentID` or `OrgID`, `runOneRefreshCycle` returns `fatal=true` and `bearerRefreshLoop` calls `os.Exit(1)`.
 
-Rationale: a pod that silently continues operating under a different identity would corrupt org-scoped audit and workflow records. A hard exit forces the orchestrator to restart with a fresh exchange rather than propagating bad identity silently.
+Rationale: an agent instance that silently continues operating under a different identity would corrupt org-scoped audit and workflow records. A hard exit forces the orchestrator to restart with a fresh exchange rather than propagating bad identity silently.
 
 ## Concurrency model
 

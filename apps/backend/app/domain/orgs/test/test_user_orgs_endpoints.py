@@ -83,8 +83,8 @@ async def test_mine_returns_user_memberships_sorted_by_slug(seeded) -> None:
 @pytest.mark.asyncio
 async def test_config_status_unconfigured_reports_missing_pieces(seeded) -> None:
     _reset_contributors_for_tests()
-    # Both contributors absent → both come back "missing"; workspace_provider
-    # null on the org row → also missing.
+    # Both contributors absent → both come back "missing"; workspace
+    # not configured (no registered_iam_arn) → also missing.
     sess = seeded["sess"]
     async with _client() as c:
         r = await c.get(
@@ -95,7 +95,7 @@ async def test_config_status_unconfigured_reports_missing_pieces(seeded) -> None
     assert r.status_code == 200
     body = r.json()
     assert body["configured"] is False
-    assert set(body["missing"]) == {"vcs", "api_key", "workspace_provider"}
+    assert set(body["missing"]) == {"vcs", "api_key", "workspace"}
     assert any(a["user_id"] == str(seeded["user"].id) for a in body["admins"])
 
 
@@ -110,7 +110,13 @@ async def test_config_status_fully_configured(seeded, db_session) -> None:
     register_onboarding_contributor("anthropic_key_set", yes)
     from app.core.tenancy import update_org_fields  # noqa: PLC0415
 
-    await update_org_fields(db_session, seeded["org_a"].org_id, workspace_provider="in_memory")
+    # Workspace is configured when registered_iam_arn is set.
+    await update_org_fields(
+        db_session,
+        seeded["org_a"].org_id,
+        registered_iam_arn="arn:aws:iam::123456789012:role/yaaos-agent",
+        aws_region="us-east-1",
+    )
     await db_session.commit()
 
     sess = seeded["sess"]

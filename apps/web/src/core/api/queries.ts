@@ -57,7 +57,7 @@ export function useHealth() {
 /** Aggregated readiness for the "not configured" gate. */
 export interface ConfigStatus {
   configured: boolean;
-  missing: Array<"vcs" | "coding_agent" | "api_key" | "workspace_provider">;
+  missing: Array<"vcs" | "coding_agent" | "api_key" | "workspace">;
   admins: Array<{ user_id: string; display_name: string; primary_email: string | null }>;
 }
 
@@ -143,7 +143,28 @@ export function useDashboard() {
   return useQuery<DashboardResponse>({
     queryKey: ["tickets", "dashboard"],
     queryFn: () => apiFetch<DashboardResponse>("/api/tickets/dashboard"),
-    refetchInterval: 5_000,
+  });
+}
+
+/** Per-org workspace agents within the 1-hour retention window.
+ *  Invalidated live via `agent_liveness_changed` SSE; no polling. */
+export interface AgentRow {
+  id: string;
+  instance_id: string;
+  state: "reachable" | "stale" | "offline";
+  last_heartbeat_at: string | null;
+  os: string | null;
+  cpu_count: number | null;
+  memory_bytes: number | null;
+  claimed_workspace_count: number;
+  version: string | null;
+}
+
+export function useAgents(orgSlug: string) {
+  return useQuery<AgentRow[]>({
+    queryKey: ["agents"],
+    queryFn: () => apiFetch<AgentRow[]>(`/api/orgs/${encodeURIComponent(orgSlug)}/agents`),
+    enabled: !!orgSlug,
   });
 }
 
@@ -636,14 +657,11 @@ export function usePluginHealth(pluginId: string) {
   });
 }
 
-// ── Org settings (workspace_provider + registered_iam_arn) ──────────────
-
-export type WorkspaceProvider = "in_memory" | "remote_agent";
+// ── Org settings (registered_iam_arn + session timeout) ─────────────────
 
 export type OrgSettings = {
   slug: string;
   session_timeout_override: number | null;
-  workspace_provider: WorkspaceProvider | null;
   registered_iam_arn: string | null;
 };
 
@@ -655,7 +673,6 @@ export function useOrgSettings() {
 }
 
 export type UpdateOrgSettingsInput = {
-  workspace_provider?: WorkspaceProvider | null;
   registered_iam_arn?: string | null;
 };
 

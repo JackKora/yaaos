@@ -1,33 +1,29 @@
-"""Per-agent in-memory dispatch queue + event ingestion + stale-claim guard.
+"""Durable command dispatch + event ingestion + stale-claim guard.
 
-The control plane keeps one FIFO per `agent_id`. Workflows write commands
-into the queue via `enqueue_command(agent_id, command)`; the agent's
-long-poll consumes them with `claim_next(agent_id, *, wait_seconds)`.
-The queue is process-local — single-instance backends only at the POC scale.
+Commands are persisted in `agent_commands` (Postgres) and claimed via
+`FOR UPDATE SKIP LOCKED` batches. A 30-second lease on `claimed` rows is
+enforced by `requeue_stale_claimed`; the `cleanup_loop` in `core/workspace`
+calls it on each reaper tick.
 
 Event ingestion (`record_agent_event`) delegates the stale-claim guard lookup
 to the registered `WorkspaceAgentReportSink` (owned by `core/workspace`), then
 enqueues `core/workflow.handle_agent_event` via the outbox in the same
 transaction when the event is terminal.
 
-The active `AgentQueues` instance is ContextVar-bound. `bind_agent_queues` is
-the production DI seam — the composition root calls it at startup; the
-`agent_queues_isolation` fixture in `app/testing/isolation` binds a fresh
-instance per test. `get_agent_queues()` raises `RuntimeError` if called before
-any bind — fail-fast so forgotten startup binds surface immediately.
+`received` is a non-terminal event: when the agent POSTs it for a claimed
+command the lease is cancelled (`claimed → delivered`). Terminal events retire
+the row to `done`.
 """
 
 from __future__ import annotations
 
-import asyncio
-from collections import defaultdict, deque
-from contextvars import ContextVar
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from pydantic import Field, TypeAdapter
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.agent_gateway.report_sink import (
@@ -36,15 +32,19 @@ from app.core.agent_gateway.report_sink import (
 )
 from app.core.agent_gateway.types import (
     AgentCommand,
+    AgentCommandKind,
     AgentConfig,
     AgentEvent,
-    AgentRef,
+    CleanupWorkspaceCommand,
     ConfigUpdateCommand,
     CreateWorkspaceCommand,
     HeartbeatRequest,
     HeartbeatResponse,
+    InvokeClaudeCodeCommand,
+    RefreshWorkspaceAuthCommand,
     StaleClaimError,
     WorkspaceEvent,
+    WriteFilesCommand,
 )
 from app.core.tasks import enqueue
 
@@ -55,83 +55,94 @@ log = structlog.get_logger("core.agent_gateway")
 # until then all agents share this global default.
 DEFAULT_MAX_WORKSPACES: int = 4
 
+# Lease window in seconds: if a claimed command has no `received` event within
+# this window it is requeued to `pending`.
+LEASE_SECONDS: int = 30
 
-# ── In-memory dispatch queues ───────────────────────────────────────────
+# Maximum requeue attempts before a command is retired to `done` as a terminal
+# failure. Prevents infinite retry of a structurally bad command.
+MAX_ATTEMPT: int = 5
+
+# Discriminated-union adapter that deserializes a persisted command payload back
+# to a typed AgentCommand. Built once at import time — `claim_next` is a hot path.
+_COMMAND_ADAPTER: TypeAdapter[AgentCommand] = TypeAdapter(
+    Annotated[
+        CreateWorkspaceCommand
+        | WriteFilesCommand
+        | RefreshWorkspaceAuthCommand
+        | InvokeClaudeCodeCommand
+        | CleanupWorkspaceCommand
+        | ConfigUpdateCommand,
+        Field(discriminator="kind"),
+    ]
+)
 
 
-@dataclass
-class AgentQueues:
-    """Per-process in-memory FIFO registry for agent dispatch.
+# ── Durable command queue ───────────────────────────────────────────────
 
-    Holds one queue and one asyncio.Condition per agent_id. ContextVar-bound
-    so each test context gets a fresh, isolated instance.
+
+async def enqueue_command(
+    org_id: UUID,
+    command: AgentCommand,
+    *,
+    session: AsyncSession,
+) -> None:
+    """Insert an AgentCommand row in `pending` status.
+
+    Called by `RemoteAgentWorkspaceProvider` inside the workflow engine's
+    start_step transaction — the insert is atomic with `try_claim`.
+
+    The DB-minted UUIDv7 PK serves as the idempotency key and FIFO sort key.
+    `agent_id` is left NULL at enqueue time; it is stamped by `claim_next`.
     """
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
 
-    queues: dict[UUID, deque[AgentCommand]] = field(default_factory=lambda: defaultdict(deque))
-    conditions: dict[UUID, asyncio.Condition] = field(default_factory=dict)
-    conditions_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # workspace_id is NULL for org-scoped commands (ConfigUpdate,
+    # CreateWorkspace before an agent is assigned).
+    workspace_id: UUID | None = getattr(command, "workspace_id", None)
+    if workspace_id is not None and str(workspace_id) == "00000000-0000-0000-0000-000000000000":
+        workspace_id = None
+
+    # Override the command_id with the DB-minted UUIDv7 after flush so that
+    # producers stop generating their own UUID4 ids. For now we honour the
+    # caller-supplied id and treat it as the primary key.
+    row = AgentCommandRow(
+        id=command.command_id,
+        org_id=org_id,
+        workspace_id=workspace_id,
+        command_kind=str(command.kind),
+        payload=command.model_dump(mode="json"),
+        status="pending",
+    )
+    session.add(row)
+    await session.flush()
 
 
-_agent_queues_var: ContextVar[AgentQueues | None] = ContextVar("_agent_queues_var", default=None)
+async def pin_command_to_agent(
+    command_id: UUID,
+    agent_id: UUID,
+    *,
+    session: AsyncSession,
+) -> None:
+    """Pre-assign a command row to `agent_id` before it is claimed.
 
-
-def bind_agent_queues(instance: AgentQueues) -> None:
-    """Bind `instance` as the active agent-queues registry for the current Context.
-
-    Called once at process startup (composition root) and once per test
-    (isolation fixture). Subsequent calls in the same Context replace the
-    prior binding.
+    Used by `dispatch_cleanup_workspace` to route post-create commands to
+    the workspace's owning agent, so `claim_next`'s `workspace_ids` sweep
+    can find them by `(agent_id, workspace_id, status=pending)`.
+    Caller flushes/commits.
     """
-    _agent_queues_var.set(instance)
+    from sqlalchemy import update  # noqa: PLC0415
 
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
 
-def get_agent_queues() -> AgentQueues:
-    """Return the active agent-queues registry. Raises `RuntimeError` if
-    `bind_agent_queues` has not been called — fail-fast so forgotten startup
-    binds surface immediately rather than silently producing wrong state."""
-    instance = _agent_queues_var.get()
-    if instance is None:
-        raise RuntimeError(
-            "agent queues not bound: call bind_agent_queues(AgentQueues()) at "
-            "process startup or use the agent_queues_isolation fixture in tests."
-        )
-    return instance
-
-
-async def _get_condition(agent_id: UUID) -> asyncio.Condition:
-    registry = get_agent_queues()
-    async with registry.conditions_lock:
-        cond = registry.conditions.get(agent_id)
-        if cond is None:
-            cond = asyncio.Condition()
-            registry.conditions[agent_id] = cond
-        return cond
-
-
-def queue_depth(agent_id: UUID) -> int:
-    """Number of commands pending for `agent_id`."""
-    return len(get_agent_queues().queues.get(agent_id, ()))
-
-
-# ── Dispatch ────────────────────────────────────────────────────────────
-
-
-async def enqueue_command(agent_id: UUID, command: AgentCommand) -> None:
-    """Push an AgentCommand onto the agent's FIFO and wake any blocked
-    long-poller. Called by `RemoteAgentWorkspaceProvider` from inside the
-    workflow engine's start_step transaction."""
-    get_agent_queues().queues[agent_id].append(command)
-    cond = await _get_condition(agent_id)
-    async with cond:
-        cond.notify()
+    await session.execute(
+        update(AgentCommandRow).where(AgentCommandRow.id == command_id).values(agent_id=agent_id)
+    )
+    await session.flush()
 
 
 def _build_config_update() -> ConfigUpdateCommand:
-    """Build a ConfigUpdateCommand from the global defaults.
-
-    max_workspaces uses DEFAULT_MAX_WORKSPACES — there is no per-agent
-    column or per-org override at this time.
-    """
+    """Build a ConfigUpdateCommand from the global defaults."""
     from uuid import uuid4  # noqa: PLC0415
 
     return ConfigUpdateCommand(
@@ -143,77 +154,254 @@ def _build_config_update() -> ConfigUpdateCommand:
     )
 
 
-def _is_eligible(cmd: AgentCommand, active_workspace_ids: frozenset[UUID]) -> bool:
-    """Return True if `cmd` should be returned on a configured claim.
+def _row_to_command(row: object) -> AgentCommand:
+    """Deserialize an AgentCommandRow payload back to a typed AgentCommand.
 
-    Eligibility rules:
-    - ConfigUpdateCommand: always eligible (AgentCommand family).
-    - CreateWorkspaceCommand: always eligible (creates a new workspace).
-    - Other workspace commands: eligible only when their workspace_id is
-      in active_workspace_ids (the agent has that workspace running).
+    `row` must be an `AgentCommandRow` instance; callers are responsible for
+    ensuring this — the `object` annotation avoids a forward-reference at
+    module level when the models import is deferred.
     """
-    if isinstance(cmd, ConfigUpdateCommand):
-        return True
-    if isinstance(cmd, CreateWorkspaceCommand):
-        return True
-    # Workspace command for a specific workspace.
-    ws_id: UUID | None = getattr(cmd, "workspace_id", None)
-    if ws_id is None:
-        return True  # Unknown shape — pass through.
-    return ws_id in active_workspace_ids
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
+
+    assert isinstance(row, AgentCommandRow)
+    return _COMMAND_ADAPTER.validate_python(row.payload)
 
 
 async def claim_next(
     agent_id: UUID,
     *,
+    lifecycle: str,
+    new_workspaces: int,
+    workspace_ids: list[UUID],
     wait_seconds: int,
-    lifecycle: str = "unconfigured",
-    active_workspace_ids: list[UUID] | tuple[UUID, ...] | None = None,
+    session: AsyncSession,
 ) -> AgentCommand | None:
-    """Pop the next eligible command for the agent, or wait up to `wait_seconds`.
+    """Claim exactly one command for the agent — the highest-priority eligible row.
 
     Lifecycle gate:
-    - unconfigured → return ConfigUpdateCommand immediately (no queue pop).
-      The workspace command queue is left untouched so commands accumulate
-      while the agent bootstraps.
-    - configured → return the first eligible command from the queue.
-      Eligible: ConfigUpdateCommand, CreateWorkspaceCommand (always), or
-      any workspace command whose workspace_id ∈ active_workspace_ids.
-      Ineligible commands remain at their queue position.
+    - `unconfigured` → return a single ConfigUpdateCommand (no DB claim).
+      The pending queue is untouched so commands accumulate while the agent
+      bootstraps.
+    - `configured` → one `FOR UPDATE SKIP LOCKED LIMIT 1` pick across the
+      eligible set (FIFO by UUIDv7 id):
+        * A pending unassigned CreateWorkspace (status=pending, agent_id NULL,
+          kind=CreateWorkspace), when `new_workspaces > 0`.
+        * A pending command pinned to this agent for a workspace in
+          `workspace_ids` (status=pending, agent_id=this agent, workspace_id ∈
+          workspace_ids).
+      The two sets are evaluated with a single UNION-like approach: we query
+      each eligible set in priority order and take the first result, so the
+      caller receives exactly one command per call. Stamps `agent_id`,
+      `status=claimed`, `claimed_at=now`.
 
-    `wait_seconds=0` is a non-blocking peek — useful in tests.
+    `wait_seconds=0` → non-blocking peek (returns None immediately if nothing
+    claimable). Non-zero `wait_seconds` → short-interval re-SELECT loop.
     """
     if lifecycle == "unconfigured":
-        # Always deliver a config update — the agent is not ready for work.
         return _build_config_update()
 
-    active_set: frozenset[UUID] = frozenset(active_workspace_ids or [])
-    queue = get_agent_queues().queues[agent_id]
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
 
-    def _pop_eligible() -> AgentCommand | None:
-        """Scan the queue for the first eligible command. Ineligible commands
-        stay in the queue at their original positions."""
-        for i, cmd in enumerate(queue):
-            if _is_eligible(cmd, active_set):
-                del queue[i]
-                return cmd
-        return None
+    now = datetime.now(UTC)
+    row: AgentCommandRow | None = None
 
-    result = _pop_eligible()
-    if result is not None:
-        return result
-    if wait_seconds <= 0:
-        return None
-    cond = await _get_condition(agent_id)
-    async with cond:
-        try:
-            await asyncio.wait_for(
-                cond.wait_for(lambda: any(_is_eligible(c, active_set) for c in queue)),
-                timeout=wait_seconds,
+    # Try unassigned CreateWorkspace first (capacity for new workspaces).
+    if new_workspaces > 0:
+        row = (
+            (
+                await session.execute(
+                    select(AgentCommandRow)
+                    .where(
+                        AgentCommandRow.status == "pending",
+                        AgentCommandRow.command_kind == AgentCommandKind.CREATE_WORKSPACE,
+                        AgentCommandRow.agent_id.is_(None),
+                    )
+                    .order_by(AgentCommandRow.id)
+                    .limit(1)
+                    .with_for_update(skip_locked=True)
+                )
             )
-        except TimeoutError:
+            .scalars()
+            .one_or_none()
+        )
+
+    # If no CreateWorkspace, try the oldest pending command pinned to this agent
+    # for any of the named workspaces.
+    if row is None and workspace_ids:
+        row = (
+            (
+                await session.execute(
+                    select(AgentCommandRow)
+                    .where(
+                        AgentCommandRow.status == "pending",
+                        AgentCommandRow.agent_id == agent_id,
+                        AgentCommandRow.workspace_id.in_(workspace_ids),
+                    )
+                    .order_by(AgentCommandRow.id)
+                    .limit(1)
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+
+    if row is None:
+        if wait_seconds <= 0:
             return None
-    return _pop_eligible()
+        # Long-poll: sleep in short intervals and re-try the claim SELECTs
+        # until either a row is found or wait_seconds elapses.
+        import asyncio  # noqa: PLC0415
+
+        deadline = datetime.now(UTC) + timedelta(seconds=wait_seconds)
+        while row is None and datetime.now(UTC) < deadline:
+            remaining = (deadline - datetime.now(UTC)).total_seconds()
+            await asyncio.sleep(min(2.0, remaining))
+            if datetime.now(UTC) >= deadline:
+                break
+            # Re-run the same claim SELECTs without recursion.
+            if new_workspaces > 0:
+                row = (
+                    (
+                        await session.execute(
+                            select(AgentCommandRow)
+                            .where(
+                                AgentCommandRow.status == "pending",
+                                AgentCommandRow.command_kind == AgentCommandKind.CREATE_WORKSPACE,
+                                AgentCommandRow.agent_id.is_(None),
+                            )
+                            .order_by(AgentCommandRow.id)
+                            .limit(1)
+                            .with_for_update(skip_locked=True)
+                        )
+                    )
+                    .scalars()
+                    .one_or_none()
+                )
+            if row is None and workspace_ids:
+                row = (
+                    (
+                        await session.execute(
+                            select(AgentCommandRow)
+                            .where(
+                                AgentCommandRow.status == "pending",
+                                AgentCommandRow.agent_id == agent_id,
+                                AgentCommandRow.workspace_id.in_(workspace_ids),
+                            )
+                            .order_by(AgentCommandRow.id)
+                            .limit(1)
+                            .with_for_update(skip_locked=True)
+                        )
+                    )
+                    .scalars()
+                    .one_or_none()
+                )
+        if row is None:
+            return None
+
+    # Stamp agent_id + claimed_at on the single selected row.
+    row.agent_id = agent_id
+    row.status = "claimed"
+    row.claimed_at = now
+    await session.flush()
+
+    return _row_to_command(row)
+
+
+async def acknowledge_command_received(
+    command_id: UUID,
+    *,
+    session: AsyncSession,
+) -> None:
+    """Flip a claimed command to `delivered` on receipt of a `received` event.
+
+    Cancels the 30-second lease requeue. Idempotent: if the row is already
+    `delivered` this is a no-op.
+    """
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
+
+    await session.execute(
+        update(AgentCommandRow)
+        .where(
+            AgentCommandRow.id == command_id,
+            AgentCommandRow.status == "claimed",
+        )
+        .values(status="delivered")
+    )
+    await session.flush()
+
+
+async def retire_command(
+    command_id: UUID,
+    *,
+    session: AsyncSession,
+) -> None:
+    """Retire a command to `done` status on terminal event."""
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
+
+    await session.execute(
+        update(AgentCommandRow).where(AgentCommandRow.id == command_id).values(status="done")
+    )
+    await session.flush()
+
+
+async def requeue_stale_claimed(
+    *,
+    session: AsyncSession,
+) -> int:
+    """Requeue commands that were claimed but no `received` event arrived within
+    `LEASE_SECONDS`. Called each reaper tick from `core/workspace.cleanup_loop`.
+
+    For each stale `claimed` row:
+    - If `attempt < MAX_ATTEMPT`: flip back to `pending`, clear `agent_id` +
+      `claimed_at`, increment `attempt`.
+    - If `attempt >= MAX_ATTEMPT`: retire to `done` (loud terminal failure).
+
+    Returns the count of rows requeued (not counting `done` retirements).
+    """
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=LEASE_SECONDS)
+    stale = (
+        (
+            await session.execute(
+                select(AgentCommandRow).where(
+                    AgentCommandRow.status == "claimed",
+                    AgentCommandRow.claimed_at < cutoff,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    requeued = 0
+    for row in stale:
+        if row.attempt >= MAX_ATTEMPT - 1:
+            # Hit the cap — retire permanently.
+            row.status = "done"
+            row.attempt = MAX_ATTEMPT
+            log.error(
+                "agent_gateway.command_attempt_cap",
+                command_id=str(row.id),
+                org_id=str(row.org_id),
+                attempt=row.attempt,
+            )
+        else:
+            row.status = "pending"
+            row.agent_id = None
+            row.claimed_at = None
+            row.attempt = row.attempt + 1
+            requeued += 1
+            log.info(
+                "agent_gateway.command_requeued",
+                command_id=str(row.id),
+                org_id=str(row.org_id),
+                attempt=row.attempt,
+            )
+    if stale:
+        await session.flush()
+    return requeued
 
 
 # ── Heartbeat / reconciliation ─────────────────────────────────────────
@@ -225,7 +413,7 @@ async def record_heartbeat(
     *,
     session: AsyncSession,
 ) -> HeartbeatResponse:
-    """Bump `workspace_agents.last_heartbeat_at` for the pod identified
+    """Bump `workspace_agents.last_heartbeat_at` for the agent instance identified
     by `agent_id` and ingest workspace inventory. Returns reconciliation
     hints — workspaces the agent reports but the control plane no longer
     tracks should be torn down by the agent.
@@ -241,8 +429,12 @@ async def record_heartbeat(
     if row is not None:
         row.last_heartbeat_at = now
         row.state = "reachable"
+        # Persist the count from the heartbeat payload as the single source of truth.
+        # The column is populated here (not at identity exchange) because the agent
+        # only knows its active workspace set at heartbeat time.
+        row.claimed_workspace_count = len(request.workspaces)
     else:
-        # Heartbeat arrived for a pod the control plane doesn't know about —
+        # Heartbeat arrived for an agent the control plane doesn't know about —
         # this happens transiently after a restart before identity exchange
         # writes its row, so we just log.
         log.info(
@@ -280,11 +472,26 @@ async def record_agent_event(
     event is terminal — enqueue `workflow.handle_agent_event` via the
     outbox in the same transaction.
 
+    A `received` non-terminal event flips the command row from
+    `claimed` to `delivered`, cancelling the lease requeue.
+
     Raises `StaleClaimError` when the workspace's `current_command_id`
     no longer matches; the endpoint maps this to `410 Gone`.
 
     Required `session`; caller commits.
     """
+    from app.core.agent_gateway.types import AgentEventKind  # noqa: PLC0415
+
+    # Handle `received` before the stale-claim guard — the guard looks at
+    # the workspace, but `received` only updates the command row lease.
+    if event.kind == AgentEventKind.RECEIVED:
+        await acknowledge_command_received(event.command_id, session=session)
+        log.info(
+            "agent.event.received",
+            command_id=str(event.command_id),
+        )
+        return
+
     # Look up the workspace holding this command. The single-flight claim
     # writes `current_command_id` + `current_holder_workflow_id` on the
     # workspace; delegates to the registered sink so workspace-state access
@@ -298,9 +505,7 @@ async def record_agent_event(
         # Non-terminal events (progress) skip workflow-engine resumption —
         # only `completed_*` events resume the workflow state machine.
         # Republish to the org-scoped workspace-activity channel so the SPA's
-        # SSE live-tail picks them up. The WebSocket batch handler and this
-        # HTTP path both write to the same `publish_workspace_activity` surface
-        # so the SPA subscriber sees events regardless of the transport.
+        # SSE live-tail picks them up.
         log.info(
             "agent.event.progress",
             command_id=str(event.command_id),
@@ -315,9 +520,9 @@ async def record_agent_event(
         )
         return
 
-    # Terminal — enqueue the workflow handler. The outbox row goes in the
-    # caller's session so the workflow advance is atomic with whatever the
-    # endpoint commits.
+    # Terminal — retire the command row and enqueue the workflow handler.
+    await retire_command(event.command_id, session=session)
+
     from app.core.workflow import HANDLE_AGENT_EVENT  # noqa: PLC0415
 
     await enqueue(
@@ -370,22 +575,31 @@ async def record_workspace_event(
 async def ensure_agent_row(
     *,
     org_id: UUID,
-    agent_pod_id: UUID,
+    instance_id: str,
     iam_arn: str,
     version: str | None,
     session: AsyncSession,
+    os: str | None = None,
+    cpu_count: int | None = None,
+    memory_bytes: int | None = None,
 ) -> UUID:
-    """Insert or update the `workspace_agents` row for `(org_id, agent_pod_id)`
+    """Insert or update the `workspace_agents` row for `(org_id, instance_id)`
     on a successful identity exchange. Returns the row's `id` — this is
     the `agent_id` the bearer is scoped to and that subsequent endpoints
-    use to address the pod. Caller commits."""
+    use to address the agent instance.
+
+    `instance_id` is the role-session-name derived from the STS assumed-role ARN.
+    Stable across agent restarts when the ECS task reuses the same session name.
+
+    Caller commits.
+    """
     from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
 
     row = (
         await session.execute(
             select(WorkspaceAgentRow).where(
                 WorkspaceAgentRow.org_id == org_id,
-                WorkspaceAgentRow.agent_pod_id == agent_pod_id,
+                WorkspaceAgentRow.instance_id == instance_id,
             )
         )
     ).scalar_one_or_none()
@@ -393,9 +607,12 @@ async def ensure_agent_row(
     if row is None:
         row = WorkspaceAgentRow(
             org_id=org_id,
-            agent_pod_id=agent_pod_id,
+            instance_id=instance_id,
             iam_arn=iam_arn,
             version=version,
+            os=os,
+            cpu_count=cpu_count,
+            memory_bytes=memory_bytes,
             last_heartbeat_at=now,
             state="reachable",
         )
@@ -404,9 +621,38 @@ async def ensure_agent_row(
     else:
         row.iam_arn = iam_arn
         row.version = version
+        # Update static metadata on re-exchange (agent restart may report fresh values).
+        if os is not None:
+            row.os = os
+        if cpu_count is not None:
+            row.cpu_count = cpu_count
+        if memory_bytes is not None:
+            row.memory_bytes = memory_bytes
         row.last_heartbeat_at = now
         row.state = "reachable"
     return row.id
+
+
+async def mark_agent_shutdown(
+    agent_id: UUID,
+    *,
+    session: AsyncSession,
+) -> None:
+    """Set `state=offline` + `last_shutdown_at=now` on the agent row.
+
+    Called by the graceful-shutdown DELETE handler immediately before revoking
+    bearers + triggering workspace cleanup. Caller commits.
+    """
+    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
+
+    now = datetime.now(UTC)
+    row = (
+        await session.execute(select(WorkspaceAgentRow).where(WorkspaceAgentRow.id == agent_id))
+    ).scalar_one_or_none()
+    if row is not None:
+        row.state = "offline"
+        row.last_shutdown_at = now
+        await session.flush()
 
 
 async def get_agent_info(
@@ -416,7 +662,7 @@ async def get_agent_info(
 ) -> dict | None:
     """Return a plain dict snapshot of the agent row, or None if absent.
 
-    Keys: `id`, `org_id`, `agent_pod_id`, `iam_arn`, `version`, `state`,
+    Keys: `id`, `org_id`, `instance_id`, `iam_arn`, `version`, `state`,
     `last_heartbeat_at`. Exists so cross-module tests can verify agent state
     without importing the Row class.
     """
@@ -428,7 +674,7 @@ async def get_agent_info(
     return {
         "id": row.id,
         "org_id": row.org_id,
-        "agent_pod_id": row.agent_pod_id,
+        "instance_id": row.instance_id,
         "iam_arn": row.iam_arn,
         "version": row.version,
         "state": row.state,
@@ -436,54 +682,13 @@ async def get_agent_info(
     }
 
 
-async def pick_agent_for_org(
-    org_id: UUID,
-    *,
-    session: AsyncSession,
-) -> AgentRef | None:
-    """Pick the least-loaded reachable agent for `org_id`.
-
-    Selects reachable pods (heartbeat within 90 s) and returns the one with the
-    smallest in-process queue depth; ties break on most-recent heartbeat so a
-    fresh pod beats a stale one when both are idle.
-
-    Returns `None` when no reachable pod exists for the org.
-    """
-    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
-
-    cutoff = datetime.now(UTC) - timedelta(seconds=90)
-    rows = (
-        (
-            await session.execute(
-                select(WorkspaceAgentRow)
-                .where(
-                    WorkspaceAgentRow.org_id == org_id,
-                    WorkspaceAgentRow.state == "reachable",
-                    WorkspaceAgentRow.last_heartbeat_at.is_not(None),
-                    WorkspaceAgentRow.last_heartbeat_at >= cutoff,
-                )
-                .order_by(WorkspaceAgentRow.last_heartbeat_at.desc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-    if not rows:
-        return None
-    best = min(
-        rows,
-        key=lambda r: (queue_depth(r.id), -(r.last_heartbeat_at.timestamp() if r.last_heartbeat_at else 0)),
-    )
-    return AgentRef(agent_id=best.id, agent_pod_id=best.agent_pod_id)
-
-
 async def has_any_reachable_agent(
     *,
     session: AsyncSession,
 ) -> bool:
-    """Return `True` when at least one workspace-agent pod heartbeated within
-    the last 90 s — used by health-check callers to avoid cross-module Row
-    access.
+    """Return `True` when at least one workspace agent instance heartbeated
+    within the last 90 s — used by health-check callers to avoid cross-module
+    Row access.
     """
     from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
 
@@ -514,9 +719,12 @@ async def connection_status_for_org(
     """Aggregate `workspace_agents` for `org_id`. Returns:
     `{state, pod_count, latest_heartbeat_at}` where `state` is one of:
 
-    - `connected` — at least one pod heartbeated within the last 90s
+    - `connected` — at least one agent instance heartbeated within the last 90s
     - `lost` — at least one row exists but none recent enough
     - `not_configured` — no rows at all for this org
+
+    `pod_count` is the number of known agent instances; the key name is
+    preserved for wire compatibility.
     """
     from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
 
@@ -547,8 +755,8 @@ async def stale_agent_ids(
     `last_heartbeat_at` at or after *cutoff* (or never heartbeated, or no row).
 
     Used by `core/workspace` failsafe-6 to expire only the workspaces whose
-    owning pod is lost, leaving healthy sibling pods' workspaces untouched —
-    without importing `workspace_agents` directly.
+    owning agent is lost, leaving healthy sibling agent instances' workspaces
+    untouched — without importing `workspace_agents` directly.
     """
     from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
 
@@ -568,3 +776,138 @@ async def stale_agent_ids(
         .all()
     )
     return agent_ids - set(fresh)
+
+
+# Liveness thresholds (seconds since last heartbeat).
+_STALE_THRESHOLD_SECONDS: int = 60  # reachable → stale
+_OFFLINE_THRESHOLD_SECONDS: int = 5 * 60  # reachable/stale → offline
+_UI_RETENTION_SECONDS: int = 60 * 60  # agents older than this are hidden from the dashboard
+
+
+async def compute_agent_liveness_transitions(
+    now: datetime,
+    *,
+    session: AsyncSession,
+) -> list[UUID]:
+    """Compute and apply liveness-state transitions for all workspace-agent rows.
+
+    State machine (based on seconds since `last_heartbeat_at`):
+    - ``< 60 s`` → reachable (online)
+    - ``60 s - 5 min`` → stale
+    - ``> 5 min`` or explicit shutdown (last_shutdown_at is set and agent is not
+      reachable) → offline
+
+    Writes `state` only when a transition occurs — idempotent on the same tick.
+    Returns the list of agent UUIDs that newly became offline on this sweep.
+    Emits one ``agent_liveness_changed`` SSE event per transitioned agent via
+    ``publish_general_after_commit`` so the dashboard invalidates live.
+
+    Lives in ``core/agent_gateway`` because it owns the ``workspace_agents``
+    table; called each reaper tick from ``core/workspace`` (which can import
+    ``core/agent_gateway`` per the tach boundary).
+    """
+    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
+    from app.core.sse import GeneralEventKind, publish_general_after_commit  # noqa: PLC0415
+
+    # Exclude agents already offline (shutdowns are permanent until re-exchange).
+    rows = (
+        (
+            await session.execute(
+                select(WorkspaceAgentRow).where(
+                    WorkspaceAgentRow.last_heartbeat_at.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    newly_offline: list[UUID] = []
+
+    for row in rows:
+        if row.last_heartbeat_at is None:
+            continue
+        age_seconds = (now - row.last_heartbeat_at).total_seconds()
+
+        if age_seconds > _OFFLINE_THRESHOLD_SECONDS:
+            target_state = "offline"
+        elif age_seconds > _STALE_THRESHOLD_SECONDS:
+            target_state = "stale"
+        else:
+            target_state = "reachable"
+
+        if row.state == target_state:
+            continue  # No transition — skip write and SSE.
+
+        prev_state = row.state
+        row.state = target_state
+        await session.flush()
+
+        if target_state == "offline":
+            newly_offline.append(row.id)
+
+        log.info(
+            "agent_gateway.liveness_transition",
+            agent_id=str(row.id),
+            org_id=str(row.org_id),
+            from_state=prev_state,
+            to_state=target_state,
+        )
+
+        publish_general_after_commit(
+            session,
+            org_id=row.org_id,
+            kind=GeneralEventKind.AGENT_LIVENESS_CHANGED,
+            payload={},
+        )
+
+    return newly_offline
+
+
+async def list_agents_for_org(
+    org_id: UUID,
+    *,
+    now: datetime,
+    session: AsyncSession,
+) -> list[dict]:
+    """Return agent rows for `org_id` within the 1-hour UI-retention window.
+
+    Each dict contains the fields the dashboard ``AgentCard`` displays:
+    ``id``, ``instance_id``, ``state``, ``last_heartbeat_at``, ``os``,
+    ``cpu_count``, ``memory_bytes``, ``claimed_workspace_count``, ``version``.
+
+    Agents whose last heartbeat (or last shutdown) is older than 1 hour are
+    excluded — the row stays in the DB but the dashboard stops showing it.
+    DB rows are never deleted by this path.
+    """
+    from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
+
+    retention_cutoff = now - timedelta(seconds=_UI_RETENTION_SECONDS)
+    rows = (
+        (
+            await session.execute(
+                select(WorkspaceAgentRow).where(
+                    WorkspaceAgentRow.org_id == org_id,
+                    WorkspaceAgentRow.last_heartbeat_at.is_not(None),
+                    WorkspaceAgentRow.last_heartbeat_at >= retention_cutoff,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        {
+            "id": row.id,
+            "instance_id": row.instance_id,
+            "state": row.state,
+            "last_heartbeat_at": row.last_heartbeat_at.isoformat() if row.last_heartbeat_at else None,
+            "os": row.os,
+            "cpu_count": row.cpu_count,
+            "memory_bytes": row.memory_bytes,
+            "claimed_workspace_count": row.claimed_workspace_count,
+            "version": row.version,
+        }
+        for row in rows
+    ]

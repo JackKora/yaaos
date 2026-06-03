@@ -30,11 +30,12 @@ Full env-var reference: [`apps/backend/docs/core_config.md`](../apps/backend/doc
 | `YAAOS_GITHUB_APP_ID` / `_SLUG` / `_PRIVATE_KEY` / `_WEBHOOK_SECRET` | Platform GitHub App — per-org installs + webhook receiver. |
 | `YAAOS_GITHUB_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` | Platform GitHub OAuth App — "Sign in with GitHub" only. |
 | `YAAOS_APP_BASE_URL` | Public origin. Used in invitation + SAML ACS URLs. |
+| `YAAOS_PUBLIC_HOSTNAME` | **Required.** Canonical hostname (e.g. `app.yaaos.cloud`) validated against `X-Yaaos-Audience` in agent identity exchange. Boot fails if unset. Must match `hostFromURL(YAAOS_BACKEND_URL)` on the agent side. |
 | `SMTP_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_FROM` / `_USE_TLS` | Outbound mail. Dev → Mailpit (`localhost:1025`). |
 | `YAAOS_SESSION_LIFETIME_SECONDS` | Session cookie lifetime; default 14 days. |
 | `YAAOS_AUTH_CLEANUP_INTERVAL_SECONDS` | Cleanup loop tick; default 1h. Purges expired sessions + invitations + audit rows older than `AUDIT_LOG_RETENTION` (30d). |
 
-The backend refuses to start in `prod` with any required secret unset; dev/test boot with stub defaults.
+The backend refuses to start when any required field (`DATABASE_URL`, `YAAOS_ENCRYPTION_KEY`, `REDIS_URL`, `YAAOS_PUBLIC_HOSTNAME`) is unset. Optional secrets default to stub values in dev/test.
 
 ### Linear + Notion OAuth (optional)
 
@@ -75,10 +76,18 @@ Visit `http://localhost:8080`. Dashboard renders the onboarding stepper until Gi
 
 ### Running the WorkspaceAgent locally
 
-The dev compose overlay includes an `agent` service (placeholder identity-exchange verifier accepts any non-empty `YAAOS_SIGNED_STS_REQUEST`):
+The dev compose includes a `mock-aws` sidecar that emulates AWS IMDS + STS `GetCallerIdentity`. The agent reads credentials from `mock-aws` and signs a `GetCallerIdentity` request against it; the backend replays against the same `mock-aws` to verify. Two env vars wire the identity loop end-to-end:
+
+| Var | Purpose |
+|---|---|
+| `YAAOS_DEV_SEED_ARN` | IAM role ARN registered in the first org. Default: `arn:aws:iam::000000000000:role/yaaos-dev`. |
+| `YAAOS_DEV_SEED_REGION` | AWS region for the org. Default: `us-east-1`. |
+| `YAAOS_DEV_SEED_INSTANCE_ID` | Role-session-name mock-aws returns. Default: `dev-task-00000000`. |
+
+Set these in `.env` before running `bin/dev-rebuild` or pass on the command line. `bin/bootstrap` seeds the first org's `registered_iam_arn` + `aws_region` from these vars automatically in non-prod.
 
 ```bash
-docker compose -f docker/docker-compose.dev.yml --env-file .env up -d --build agent
+docker compose -f docker/docker-compose.dev.yml --env-file .env up -d --build agent mock-aws
 ```
 
 ### WebSocket activity stream

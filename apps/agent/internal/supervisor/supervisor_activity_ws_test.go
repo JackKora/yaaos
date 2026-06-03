@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/yaaos/agent/internal/identity"
 	"github.com/yaaos/agent/internal/protocol"
 )
 
@@ -20,8 +20,10 @@ import (
 // and never call Run.
 type noopProvider struct{}
 
-func (noopProvider) Exchange(_ context.Context) (identity.Credentials, error) {
-	return identity.Credentials{}, nil
+func (noopProvider) Kind() string { return "aws-sts" }
+
+func (noopProvider) SignClaim(_ context.Context, _ string) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
 }
 
 // fakeActivityServer accepts one WS upgrade, captures the bearer header,
@@ -104,8 +106,8 @@ func TestSupervisor_ActivityWS_ProgressEventsRouteThroughConductor(t *testing.T)
 	// backend for identity / claim / heartbeat). Instead, exercise
 	// setupActivityWS directly + invoke the routing logic by hand.
 	s := New(Config{
-		BaseURL:               "http://unused",
-		AgentPodID:            "pod-1",
+		BaseURL: "http://unused",
+
 		Version:               "test",
 		ActivityWSURL:         fs.URL,
 		ActivityBatchInterval: 20 * time.Millisecond,
@@ -170,8 +172,8 @@ func TestSupervisor_ActivityWS_DialFailureDoesNotPopulateConductor(t *testing.T)
 	// should log and leave conductor/wsConn nil so progressForwarder
 	// falls back to the HTTP path.
 	s := New(Config{
-		BaseURL:       "http://unused",
-		AgentPodID:    "pod-1",
+		BaseURL: "http://unused",
+
 		Version:       "test",
 		ActivityWSURL: "ws://127.0.0.1:1/never-listens",
 	}, protocol.NewClient("http://unused", nil), nil, noopProvider{})

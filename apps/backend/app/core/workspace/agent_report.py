@@ -134,10 +134,11 @@ class WorkspaceAgentReportSinkImpl:
         workspace_id: UUID,
         session: AsyncSession,
     ) -> UUID | None:
-        """Return the owning `agent_id` for `workspace_id`, or None when the
-        row is missing or its `agent_id` is NULL. Pure read — no writes."""
+        """Return the owning agent id (`workspace_agents.id`) for `workspace_id`,
+        or None when the row is missing or its `owning_agent_id` is NULL. Pure
+        read — no writes."""
         row = (
-            await session.execute(select(WorkspaceRow.agent_id).where(WorkspaceRow.id == workspace_id))
+            await session.execute(select(WorkspaceRow.owning_agent_id).where(WorkspaceRow.id == workspace_id))
         ).one_or_none()
         if row is None:
             return None
@@ -148,14 +149,28 @@ class WorkspaceAgentReportSinkImpl:
         command_id: UUID,
         session: AsyncSession,
     ) -> UUID | None:
-        """Return the owning `agent_id` for the workspace holding `command_id`,
-        or None when no workspace holds it or its `agent_id` is NULL. Pure
+        """Return the owning agent id for the workspace holding `command_id`,
+        or None when no workspace holds it or its `owning_agent_id` is NULL. Pure
         read — no writes."""
         row = (
             await session.execute(
-                select(WorkspaceRow.agent_id).where(WorkspaceRow.current_command_id == command_id)
+                select(WorkspaceRow.owning_agent_id).where(WorkspaceRow.current_command_id == command_id)
             )
         ).one_or_none()
         if row is None:
             return None
         return row[0]
+
+    async def handle_agent_loss(
+        self,
+        agent_ids: set[UUID],
+        session: AsyncSession,
+    ) -> None:
+        """Delegate to `failsafe_agent_loss` in service.py.
+
+        Bridges the IoC seam so agent_gateway can trigger agent-loss cleanup
+        without importing core/workspace directly.
+        """
+        from app.core.workspace.service import failsafe_agent_loss  # noqa: PLC0415
+
+        await failsafe_agent_loss(session, agent_ids)

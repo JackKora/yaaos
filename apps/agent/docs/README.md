@@ -23,9 +23,9 @@ Environment variables consumed by `agent supervisor`:
 | Var | Default | Purpose |
 |---|---|---|
 | `YAAOS_BACKEND_URL` | `https://app.yaaos.cloud` | Control-plane base URL. |
-| `YAAOS_AGENT_POD_ID` | random 32-hex | Stable id presented during identity exchange. |
 | `YAAOS_AGENT_VERSION` | `0.0.0-dev` | Reported during identity exchange. |
-| `YAAOS_SIGNED_STS_REQUEST` | `placeholder-unsigned-sts` | Signed STS payload for identity exchange. Any non-empty value satisfies the current placeholder verifier. |
+| `AWS_EC2_METADATA_SERVICE_ENDPOINT` | auto (IMDS v2) | Override IMDS endpoint. Set to `http://mock-aws:4566` in dev/test compose to use mock-aws. |
+| `YAAOS_STS_HOST_OVERRIDE` | (none) | Allow an additional STS host (e.g. `mock-aws:4566`). Non-prod only; the backend refuses to boot if set with `YAAOS_ENV=prod`. |
 
 ## Wire protocol
 
@@ -39,7 +39,7 @@ See [`apps/backend/openapi/agent-api.yaml`](../../backend/openapi/agent-api.yaml
 docker build -f apps/agent/Dockerfile -t yaaos-agent:dev apps/agent
 ```
 
-Two-stage `golang:1.22-alpine` → `gcr.io/distroless/static-debian12:nonroot`. ~25 MB, UID 65532, no shell. Agent is PID 1 — `SIGTERM` reaches it directly. `CGO_ENABLED=0` + `-trimpath` + `-ldflags='-s -w'`.
+Two-stage `golang:1.26-alpine` builder → `debian:bookworm-slim` runtime. ~80 MB. UID 65532. Agent is PID 1 — `SIGTERM` reaches it directly. `CGO_ENABLED=0` + `-trimpath` + `-ldflags='-s -w'`.
 
 ### Registry + tagging
 
@@ -169,9 +169,9 @@ Each failure logs `WARN` with `surface`, `class` (`auth`/`network`), and `next_s
 ### Health + scaling
 
 - Backend tracks liveness via `workspace_agents.last_heartbeat_at`.
-- `GET /api/workspaces/connection_status` returns `{state, pod_count, latest_heartbeat_at}` per org.
-- Pod silent > 90 s → backend marks `state='unreachable'`; in-flight AgentCommands fail with `agent_lost`.
+- `GET /api/workspaces/connection_status` returns `{state, pod_count, latest_heartbeat_at}` per org (`pod_count` = number of agent instances).
+- Agent instance silent > 90 s → backend marks `state='unreachable'`; in-flight AgentCommands fail with `agent_lost`.
 
 ## Local dev
 
-`docker compose up` brings up the backend + a dev-mode agent. Any non-empty `YAAOS_SIGNED_STS_REQUEST` satisfies the placeholder verifier. See [`docs/setup.md`](../../../docs/setup.md).
+`docker compose up` brings up the backend + a mock-aws sidecar + a dev-mode agent. The agent reads IMDS credentials from mock-aws and sigv4-signs a `GetCallerIdentity` request; the backend replays against the same mock-aws. Set `YAAOS_DEV_SEED_ARN` in `.env` to configure the registered IAM ARN. See [`docs/setup.md`](../../../docs/setup.md).

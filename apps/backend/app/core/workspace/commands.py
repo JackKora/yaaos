@@ -1,19 +1,18 @@
 """Workspace-lifecycle WorkflowCommands — `ProvisionWorkspace`,
 `CleanupWorkspace`, `RefreshWorkspaceAuth`.
 
-Categorized as **Workspace** since each one issues at least one
-AgentCommand under the hood for the remote_agent provider. For the
-in_memory provider, the engine's `start_step` Workspace branch runs
-them inline (see [core_workflow.md § Workspace dispatch](core_workflow.md))
-and these bodies own the workspace lifecycle calls directly.
+Each command is **Workspace** category — the engine always parks the
+execution in `awaiting_agent` and dispatches an AgentCommand over the wire
+to the single registered WorkspaceAgent. The `execute()` body is never
+called by the engine in production; it is callable directly in unit tests
+that want to exercise the body in isolation.
 
-`CleanupWorkspace` has a real in-memory body — it only needs the
-`workspace_id` from inputs, no cross-layer reads required.
-`ProvisionWorkspace` is a stub: a real body needs to read ticket
-fields (org_id, repo, sha) but `core/workspace` can't import
-`domain/tickets` (layer rule). It reads ticket context through a
-dependency-inversion callback registered by domain/reviewer at boot.
-`RefreshWorkspaceAuth` is a stub pending the auth-refresh substrate.
+`ProvisionWorkspace` is the workspace-create step; the engine dispatches a
+`CreateWorkspace` AgentCommand and the agent returns the `workspace_id`.
+`CleanupWorkspace` closes the workspace by id (from prior step outputs).
+`RefreshWorkspaceAuth` is the recovery command bound to `auth_expired`
+failures; it issues a `RefreshWorkspaceAuth` AgentCommand so the Go agent
+can rotate its checkout's auth header before the retry.
 """
 
 from __future__ import annotations
@@ -24,19 +23,11 @@ from uuid import UUID
 import structlog
 
 from app.core.workflow import CommandCategory, CommandContext, Outcome
-from app.core.workspace.service import close_workspace, create_workspace
-from app.core.workspace.types import (
-    NetworkPolicy,
-    RepoRefForSpec,
-    ResourceCaps,
-    WorkspaceSpec,
-)
+from app.core.workspace.service import close_workspace, create_workspace, list_workspace_providers
+from app.core.workspace.types import NetworkPolicy, RepoRefForSpec, ResourceCaps, WorkspaceSpec
 from app.core.workspace.workflow_context import get_workflow_context_provider
 
 log = structlog.get_logger("core.workspace.commands")
-
-# Provider id used for the in-memory workspace plugin.
-_IN_MEMORY_PROVIDER_ID = "in_process"
 
 
 class _LifecycleCommand:
@@ -53,26 +44,33 @@ class _LifecycleCommand:
 
 
 class ProvisionWorkspace(_LifecycleCommand):
-    """Provision a workspace for a ticket's repo + head sha. For the
-    in_memory provider, fetches the ticket context via the registered
-    `WorkflowContextProvider`, builds a `WorkspaceSpec`, and calls
-    `create_workspace()` directly. Returns the new `workspace_id` in
-    outputs so downstream steps can claim against it via the `$provision`
-    input expression. For the remote_agent provider this issues
-    `CreateWorkspace` over the wire to the Go workspace subcommand.
+    """Provision a workspace for a ticket.
+
+    The workflow engine's Workspace branch always parks the execution in
+    `awaiting_agent` and dispatches a `CreateWorkspace` AgentCommand over
+    the wire; `execute()` is not called by the engine. It is callable
+    directly in unit tests that exercise the body in isolation — it finds
+    the single registered provider, fetches ticket context via the
+    `WorkflowContextProvider`, and calls `create_workspace()`.
 
     Falls back to `Outcome.failure` when:
-    - the provider returns None (ticket not found)
-    - `create_workspace()` raises (provider-level provisioning failure)
+    - no provider is registered
+    - the ticket context is not found
+    - `create_workspace()` raises
     """
 
     kind = "ProvisionWorkspace"
 
     async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
         del inputs
-        provider = get_workflow_context_provider()
+        providers = list_workspace_providers()
+        if not providers:
+            return Outcome.failure(reason="no workspace provider registered")
+        provider_id = providers[0].meta.id
+
+        workflow_ctx_provider = get_workflow_context_provider()
         try:
-            ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
+            ticket_ctx = await workflow_ctx_provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
         except Exception as exc:
             log.exception(
                 "provision_workspace.context_fetch_failed",
@@ -86,7 +84,6 @@ class ProvisionWorkspace(_LifecycleCommand):
 
         head_sha = str(ticket_ctx.payload.get("head_sha") or "HEAD")
         base_sha = ticket_ctx.payload.get("base_sha")
-
         spec = WorkspaceSpec(
             repo=RepoRefForSpec(plugin_id=ticket_ctx.plugin_id, external_id=ticket_ctx.repo_external_id),
             sha=head_sha,
@@ -94,9 +91,8 @@ class ProvisionWorkspace(_LifecycleCommand):
             resource_caps=ResourceCaps(),
             network_policy=NetworkPolicy.GITHUB_ONLY,
         )
-
         try:
-            ws = await create_workspace(_IN_MEMORY_PROVIDER_ID, spec, org_id=ticket_ctx.org_id)
+            ws = await create_workspace(provider_id, spec, org_id=ticket_ctx.org_id)
         except Exception as exc:
             log.exception(
                 "provision_workspace.create_failed",
@@ -153,15 +149,10 @@ class RefreshWorkspaceAuth(_LifecycleCommand):
     `core/workspace.register_recovery_policy`. The engine inserts this
     command before re-dispatching the originally-failing AgentCommand.
 
-    For the **in_memory** provider this is a no-op: the in-process
-    provider fetches a fresh installation token on each `git fetch`/clone
-    (see `plugins/in_memory_workspace/service.py`), so there's no stored
-    credential to refresh. Returning success lets the engine append the
-    re-dispatch step cleanly.
-
-    For the **remote_agent** provider this issues a `RefreshWorkspaceAuth`
-    AgentCommand over the wire so the Go agent can rotate its checkout's
-    auth header before the retry.
+    The engine dispatches a `RefreshWorkspaceAuth` AgentCommand over the
+    wire so the Go agent can rotate its checkout's auth header before the
+    retry. `execute()` is callable directly in unit tests; it returns
+    success so the step advances cleanly.
     """
 
     kind = "RefreshWorkspaceAuth"
@@ -169,7 +160,7 @@ class RefreshWorkspaceAuth(_LifecycleCommand):
     async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
         del inputs
         log.info(
-            "refresh_workspace_auth.no_op_in_memory",
+            "refresh_workspace_auth.inline",
             workflow_execution_id=ctx.workflow_execution_id,
             ticket_id=ctx.ticket_id,
         )

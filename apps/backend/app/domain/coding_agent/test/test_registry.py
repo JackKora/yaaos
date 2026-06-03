@@ -9,6 +9,7 @@ import pytest
 
 from app.core.plugin_kit import PluginMeta
 from app.domain.coding_agent import (
+    CodingAgentRegistry,
     HealthStatus,
     InvocationStatus,
     InvocationTelemetry,
@@ -17,6 +18,7 @@ from app.domain.coding_agent import (
     ReviewContext,
     ReviewResult,
     ValidationResult,
+    bind_coding_agent_registry,
     get_plugin,
     health_check_all,
     list_registered_plugins,
@@ -25,7 +27,6 @@ from app.domain.coding_agent import (
     review,
     validate_config,
 )
-from app.domain.coding_agent.service import clear_plugins
 
 
 class _StubPlugin:
@@ -54,10 +55,11 @@ class _StubPlugin:
 
 
 @pytest.fixture(autouse=True)
-def _reset() -> None:
-    clear_plugins()
+def _fresh_registry():
+    """Bind a clean CodingAgentRegistry before each test so registrations don't
+    bleed across tests."""
+    bind_coding_agent_registry(CodingAgentRegistry())
     yield
-    clear_plugins()
 
 
 def test_register_and_get_plugin() -> None:
@@ -161,9 +163,28 @@ def test_list_registered_plugins_returns_insertion_order() -> None:
     assert [p.meta.id for p in result] == ["aaa", "bbb"]
 
 
-def test_clear_plugins_empties_registry() -> None:
+def test_registry_items_returns_tuple_of_pairs() -> None:
+    """items() returns a tuple of (plugin_id, plugin) pairs matching registered entries."""
+    from app.domain.coding_agent.service import current_coding_agent_registry  # noqa: PLC0415
+
+    plugin = _StubPlugin()
+    register_plugin(plugin)
+    result = current_coding_agent_registry().items()
+    assert isinstance(result, tuple)
+    assert len(result) == 1
+    pid, p = result[0]
+    assert pid == "stub"
+    assert p is plugin
+
+
+def test_registry_items_is_immutable_snapshot() -> None:
+    """Mutating the tuple returned by items() does not affect the registry."""
+    from app.domain.coding_agent.service import current_coding_agent_registry  # noqa: PLC0415
+
     register_plugin(_StubPlugin())
-    assert len(list_registered_plugins()) == 1
-    clear_plugins()
-    assert list_registered_plugins() == []
-    assert registered_plugin_ids() == []
+    reg = current_coding_agent_registry()
+    snapshot = reg.items()
+    # Replace the entry in a local copy — registry must be unchanged.
+    modified = list(snapshot)
+    modified[0] = ("stub", None)  # type: ignore[assignment]
+    assert reg.items()[0][1] is not None  # original plugin still there

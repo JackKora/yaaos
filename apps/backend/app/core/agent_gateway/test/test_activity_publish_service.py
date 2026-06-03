@@ -49,7 +49,7 @@ async def _fixture_org_and_agent(db_session) -> tuple[UUID, UUID, str]:
     agent = WorkspaceAgentRow(
         id=uuid4(),
         org_id=org.org_id,
-        agent_pod_id=uuid4(),
+        instance_id=f"test-task-{uuid4().hex[:8]}",
         iam_arn=org.registered_iam_arn,
         version="0.0.1",
         state="reachable",
@@ -105,7 +105,7 @@ async def test_ws_batch_publishes_workspace_activity_with_org_id(db_session) -> 
     def _send_batch() -> None:
         with TestClient(_app()) as client:
             with client.websocket_connect(
-                f"/api/v1/agents/{agent_id}/activity",
+                "/api/v1/agent/activity",
                 headers={"Authorization": f"Bearer {token}"},
             ) as ws:
                 ws.send_json(
