@@ -20,8 +20,7 @@ from dataclasses import dataclass
 
 from app.core.redis import sliding_window_hit
 
-# Redis key prefix owned by this module for all identity-exchange rate-limit
-# windows. Cross-module test machinery consumes it (never re-typing the literal).
+# Redis key prefix for all identity-exchange rate-limit windows.
 KEY_PREFIX = "rl:identity_exchange:"
 
 PER_IP_LIMIT = 10
@@ -58,7 +57,6 @@ async def check_identity_exchange(*, source_ip: str | None) -> None:
 
 
 __all__ = [
-    "KEY_PREFIX",
     "PER_IP_LIMIT",
     "PER_IP_WINDOW_SECONDS",
     "RateLimitedError",

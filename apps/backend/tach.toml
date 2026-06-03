@@ -443,7 +443,6 @@ from = ["app.core.plugin_kit"]
 expose = [
   "RedisPubsub",
   "bind_pubsub",
-  "delete_keys_matching",
   "ping",
   "publish",
   "shutdown",

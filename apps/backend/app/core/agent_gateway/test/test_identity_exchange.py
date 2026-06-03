@@ -7,10 +7,14 @@ error mapping.
 
 Tests use `set_verify_identity_override` to swap the production verifier
 for a synchronous stub so no httpx machinery is needed.
+
+Each test supplies a unique source IP via `_client(ip)` so per-IP rate-limit
+windows never collide across tests. No Redis key resets are needed.
 """
 
 from __future__ import annotations
 
+import itertools
 from uuid import uuid4
 
 import httpx
@@ -31,6 +35,15 @@ from app.domain.orgs import repository as orgs_repo
 
 _ENDPOINT = "/api/v1/agent/identity"
 
+# Per-test unique IP counter — each _unique_ip() call allocates one address
+# from the 10.0.0.0/8 range so no test shares a rate-limit window with another.
+_ip_counter = itertools.count(1)
+
+
+def _unique_ip() -> str:
+    n = next(_ip_counter)
+    return f"10.{(n >> 16) & 0xFF}.{(n >> 8) & 0xFF}.{n & 0xFF}"
+
 
 def _verified(canonical_arn: str, region: str = "us-east-1", raw_arn: str | None = None) -> VerifiedIdentity:
     return VerifiedIdentity(
@@ -49,8 +62,17 @@ def _app() -> FastAPI:
     return app
 
 
-def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=_app()), base_url="http://test")
+def _client(ip: str | None = None) -> httpx.AsyncClient:
+    """Return an async client with a unique source IP.
+
+    Each call allocates a fresh IP from the counter so the per-IP
+    rate-limit window is guaranteed to be empty regardless of test order
+    or parallel execution. Pass an explicit `ip` when a test needs two
+    requests to share the same window (e.g. rotation tests).
+    """
+    host = ip or _unique_ip()
+    transport = httpx.ASGITransport(app=_app(), client=(host, 12345))
+    return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
 @pytest.fixture(autouse=True)
@@ -59,16 +81,6 @@ def _reset_verifier():
     yield
     set_verify_identity_override(None)
     reset_nonce_cache_for_tests()
-
-
-@pytest.fixture(autouse=True)
-async def _reset_rate_limit():
-    """Clear the identity-exchange rate-limit Redis keys before each test so tests
-    don't bleed into each other via the per-IP sliding window."""
-    from app.testing.rate_limit_reset import reset_rate_limit_for_tests  # noqa: PLC0415
-
-    await reset_rate_limit_for_tests()
-    yield
 
 
 async def test_identity_exchange_happy_path_persists_agent_row(db_session) -> None:

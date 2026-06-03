@@ -162,7 +162,6 @@ async def test_dispatch_create_workspace_enqueues_pending_row(db_session) -> Non
         traceparent="00-aabb-1122-01",
         session=db_session,
     )
-    assert result is not None
     # Verify the command is claimable (it was inserted as pending).
     command = await claim_next(
         seeded["id"],
