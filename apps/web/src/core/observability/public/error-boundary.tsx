@@ -11,7 +11,7 @@ import type React from "react";
 import { type FallbackProps, ErrorBoundary as ReactErrorBoundary } from "react-error-boundary";
 import { recordException } from "./sdk";
 
-function FallbackRender({ error }: FallbackProps): React.ReactElement {
+function DefaultFallback({ error }: FallbackProps): React.ReactElement {
   const message = error instanceof Error ? error.message : String(error);
   return (
     <div className="p-8 text-foreground">
@@ -25,11 +25,29 @@ function handleError(error: unknown): void {
   recordException(error);
 }
 
-type Props = { children: React.ReactNode };
+type Props = {
+  children: React.ReactNode;
+  /**
+   * Optional custom fallback renderer. Receives `{ error, resetErrorBoundary }`.
+   * When supplied, replaces the default "Something went wrong" fallback.
+   * `recordException` (OTel) is still called regardless.
+   */
+  fallbackRender?: (props: FallbackProps) => React.ReactElement;
+};
 
-export function ErrorBoundary({ children }: Props): React.ReactElement {
+export function ErrorBoundary({ children, fallbackRender }: Props): React.ReactElement {
+  // react-error-boundary allows only ONE of FallbackComponent / fallbackRender / fallback.
+  // Use fallbackRender when the caller provides a custom renderer; otherwise use the
+  // default FallbackComponent so existing callers are unaffected.
+  if (fallbackRender) {
+    return (
+      <ReactErrorBoundary fallbackRender={fallbackRender} onError={handleError}>
+        {children}
+      </ReactErrorBoundary>
+    );
+  }
   return (
-    <ReactErrorBoundary FallbackComponent={FallbackRender} onError={handleError}>
+    <ReactErrorBoundary FallbackComponent={DefaultFallback} onError={handleError}>
       {children}
     </ReactErrorBoundary>
   );

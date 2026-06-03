@@ -23,7 +23,7 @@ Owns all browser-side OpenTelemetry concerns: SDK boot, span-processor identity 
 Files under `core/observability/public/`, imported directly via `@core/observability/public/<file>`:
 
 - `public/sdk.ts` — `configure(config)`, `recordException(err)`, `setIdentity`, `YaaosSpanProcessor`, `_resetObservabilityForTests()`.
-- `public/error-boundary.tsx` — `<ErrorBoundary>` wraps the app tree; render errors → `recordException` → span exception event.
+- `public/error-boundary.tsx` — `<ErrorBoundary>` wraps the app tree; render errors → `recordException` → span exception event. Accepts an optional `fallbackRender` prop (receives `{ error, resetErrorBoundary }`) for callers that need a custom fallback (e.g. a retry button); `recordException` is still called regardless.
 - `public/use-otel-identity-sync.ts` — `useOtelIdentitySync()` hook; called in `AppShell`; fetches `/api/auth/me` via `apiFetch<CurrentUser>` and calls `setIdentity`; clears identity only on 401.
 
 Private (non-`public/`): `identity.ts`, `span-processor.ts`.
@@ -33,7 +33,7 @@ Private (non-`public/`): `identity.ts`, `span-processor.ts`.
 - `public/sdk.ts` — `configure(config)` initializes the provider; `recordException(err)` records on the active span (or opens a short-lived fallback span); `_resetObservabilityForTests()` for test teardown.
 - `identity.ts` — module-scope identity holder (`setIdentity`, `getIdentity`). Read by `YaaosSpanProcessor.onStart`.
 - `span-processor.ts` — `YaaosSpanProcessor` stamps `yaaos.org_id`/`yaaos.user_id` from the identity holder on every span start.
-- `public/error-boundary.tsx` — `<ErrorBoundary>` wraps the app tree; render errors → `recordException` → span exception event.
+- `public/error-boundary.tsx` — `<ErrorBoundary>` wraps the app tree; render errors → `recordException` → span exception event. Optional `fallbackRender` prop for custom fallbacks; `recordException` fires regardless.
 - `public/use-otel-identity-sync.ts` — `useOtelIdentitySync()` hook; called in `AppShell`; fetches `/api/auth/me` via `apiFetch<CurrentUser>`; clears identity only on `AuthError` (401); records error via `recordException` on non-401 failures without blanking identity; dep array is `[orgSlug]` so the effect re-fires on org-slug change.
 
 ## Gotchas

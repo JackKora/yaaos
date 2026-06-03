@@ -14,6 +14,7 @@
 
 import type { AuthFailureReason } from "@core/api/public/auth-failure";
 import { useSsoDiscover } from "@core/api/public/queries";
+import { ErrorBoundary } from "@core/observability/public/error-boundary";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ErrorBanner } from "@shared/components/public/layout/error-banner";
 import { Button } from "@shared/components/ui/button";
@@ -22,7 +23,6 @@ import { Input } from "@shared/components/ui/input";
 import { Skeleton } from "@shared/components/ui/skeleton";
 import { Mail } from "lucide-react";
 import { Suspense } from "react";
-import { ErrorBoundary } from "react-error-boundary";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useProviders } from "./queries";
