@@ -40,7 +40,7 @@ See [`apps/backend/openapi/agent-api.yaml`](../../backend/openapi/agent-api.yaml
 docker build -f apps/agent/Dockerfile -t yaaos-agent:dev apps/agent
 ```
 
-Two-stage `golang:1.22-alpine` → `gcr.io/distroless/static-debian12:nonroot`. ~25 MB, UID 65532, no shell. Agent is PID 1 — `SIGTERM` reaches it directly. `CGO_ENABLED=0` + `-trimpath` + `-ldflags='-s -w'`.
+Two-stage `golang:1.26-alpine` builder → `debian:bookworm-slim` runtime. ~80 MB. UID 65532. Agent is PID 1 — `SIGTERM` reaches it directly. `CGO_ENABLED=0` + `-trimpath` + `-ldflags='-s -w'`.
 
 ### Registry + tagging
 
