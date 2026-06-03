@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { server } from "../../../test/msw/server";
-import { TicketDetailPage } from "../TicketDetailPage";
+import { TicketDetailPage } from "../public/TicketDetailPage";
 
 /**
  * Smoke tests for TicketDetailPage. Uses MSW to intercept all ticket/reviewer

@@ -7,26 +7,26 @@
  * constants); this file owns the page bindings.
  */
 
-import { AppShell } from "@core/layout";
-import { lessonsSearchSchema, ticketsSearchSchema } from "@core/routing";
-import { LoginPage } from "@domain/auth";
-import { DashboardPage } from "@domain/dashboard";
-import { LessonsPage } from "@domain/lessons";
-import { NotificationsPage } from "@domain/notifications";
-import {
-  AuditSettingsPage,
-  AuthSettingsPage,
-  BYOKSettingsPage,
-  CodingAgentSettingsPage,
-  CodingAgentsSettingsPage,
-  IntegrationsSettingsPage,
-  MembersSettingsPage,
-  VcsSettingsPage,
-  WorkspacesSettingsPage,
-} from "@domain/org_settings";
-import { OrgPickerPage } from "@domain/orgs";
-import { TicketDetailPage, TicketsPage } from "@domain/tickets";
-import { DetailsPage, SecurityPage } from "@domain/user";
+import { AppShell } from "@core/layout/public/app-shell";
+import { lessonsSearchSchema, ticketsSearchSchema } from "@core/routing/public/schemas";
+import { LoginPage } from "@domain/auth/public/LoginPage";
+import { DashboardPage } from "@domain/dashboard/public/index";
+import { LessonsPage } from "@domain/lessons/public/index";
+import { NotificationsPage } from "@domain/notifications/public/index";
+import { AuditSettingsPage } from "@domain/org_settings/public/AuditSettingsPage";
+import { AuthSettingsPage } from "@domain/org_settings/public/AuthSettingsPage";
+import { MembersSettingsPage } from "@domain/org_settings/public/MembersSettingsPage";
+import { WorkspacesSettingsPage } from "@domain/org_settings/public/WorkspacesSettingsPage";
+import { BYOKSettingsPage } from "@domain/org_settings/public/byok/BYOKSettingsPage";
+import { CodingAgentSettingsPage } from "@domain/org_settings/public/coding_agents/CodingAgentSettingsPage";
+import { CodingAgentsSettingsPage } from "@domain/org_settings/public/coding_agents/CodingAgentsSettingsPage";
+import { IntegrationsSettingsPage } from "@domain/org_settings/public/integrations/IntegrationsSettingsPage";
+import { VcsSettingsPage } from "@domain/org_settings/public/vcs/VcsSettingsPage";
+import { OrgPickerPage } from "@domain/orgs/public/OrgPickerPage";
+import { TicketDetailPage } from "@domain/tickets/public/TicketDetailPage";
+import { TicketsListPage as TicketsPage } from "@domain/tickets/public/TicketsListPage";
+import { DetailsPage } from "@domain/user/public/DetailsPage";
+import { SecurityPage } from "@domain/user/public/SecurityPage";
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 
 const rootRoute = createRootRoute({ component: AppShell });

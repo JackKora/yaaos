@@ -5,7 +5,7 @@ import type React from "react";
 import { Suspense } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../test/msw/server";
-import { Sidebar } from "../sidebar";
+import { Sidebar } from "../public/sidebar";
 
 // useRouterState and Link must be vi.mock'd — they are not HTTP hooks.
 const pathnameMock = vi.fn(() => "/orgs/acme/dashboard");

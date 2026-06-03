@@ -13,7 +13,12 @@ import { type SpanContext, context, propagation, trace } from "@opentelemetry/ap
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // Module reset helpers — each test reimports to get a clean module state.
-import { _resetObservabilityForTests, configure, recordException, setIdentity } from "../sdk";
+import {
+  _resetObservabilityForTests,
+  configure,
+  recordException,
+  setIdentity,
+} from "../public/sdk";
 import { YaaosSpanProcessor } from "../span-processor";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -19,8 +19,9 @@
  * spec; the wrapper `<details>` element drives expansion.
  */
 
-import type { ReviewJobActivityEvent } from "@core/api";
-import { ago, cn } from "@shared/utils";
+import type { ReviewJobActivityEvent } from "@core/api/public/client";
+import { ago } from "@shared/utils/public/ago";
+import { cn } from "@shared/utils/public/cn";
 import {
   CheckCircle2,
   Circle,

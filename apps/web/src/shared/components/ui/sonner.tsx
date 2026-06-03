@@ -1,6 +1,6 @@
 "use client";
 
-import { useThemeContext } from "@core/layout";
+import { useThemeContext } from "@core/layout/public/theme-context";
 import { CircleCheck, Info, LoaderCircle, OctagonX, TriangleAlert } from "lucide-react";
 import { Toaster as Sonner } from "sonner";
 

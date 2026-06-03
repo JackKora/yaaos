@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { CodingAgentSettingsPage } from "../CodingAgentSettingsPage";
+import { CodingAgentSettingsPage } from "../../public/coding_agents/CodingAgentSettingsPage";
 import { _resetRegistryForTests, registerPluginSettingsComponent } from "../plugin_registry";
 
 afterEach(() => _resetRegistryForTests());

@@ -2,13 +2,15 @@
 /**
  * Dependency-cruiser enforcement gate.
  *
- * Runs the full boundary/barrel rule set from .dependency-cruiser.cjs and
- * exits non-zero if any violation is found. Uses the programmatic API
- * directly so the Node version check in the depcruise CLI does not block
- * Node 23.x (supported by the runtime; just not yet in depcruise's engine
- * semver range).
+ * Runs the full boundary rule set from .dependency-cruiser.cjs and exits
+ * non-zero if any violation is found. Uses the programmatic API directly
+ * (rather than the depcruise CLI) so it runs from the pnpm workspace without
+ * a global install.
+ *
+ * `validate: true` is REQUIRED — without it cruise() builds the dependency
+ * graph but never applies the ruleSet, so every run reports 0 violations.
  */
-import { cruise, format } from "dependency-cruiser";
+import { cruise } from "dependency-cruiser";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -19,15 +21,12 @@ const require = createRequire(import.meta.url);
 const config = require(join(__dirname, "../.dependency-cruiser.cjs"));
 
 const result = await cruise(["src"], {
+  validate: true,
   ruleSet: { forbidden: config.forbidden },
   ...config.options,
 });
 
-const violations = result.output.modules.flatMap((m) =>
-  m.dependencies
-    .filter((d) => d.rules && d.rules.length > 0)
-    .map((d) => ({ from: m.source, to: d.resolved, rules: d.rules })),
-);
+const violations = result.output.summary.violations;
 
 if (violations.length === 0) {
   console.log("  dependency-cruiser: 0 violations ✓");
@@ -36,8 +35,6 @@ if (violations.length === 0) {
 
 console.error(`  dependency-cruiser: ${violations.length} violation(s) found:`);
 for (const v of violations) {
-  for (const r of v.rules) {
-    console.error(`    [${r.name}] ${v.from} → ${v.to}`);
-  }
+  console.error(`    [${v.rule.name}] ${v.from} → ${v.to}`);
 }
 process.exit(1);

@@ -1,4 +1,4 @@
-import type { Ticket } from "@core/api";
+import type { Ticket } from "@core/api/public/client";
 import { http, HttpResponse } from "msw";
 
 export const TICKET_FIXTURE: Ticket = {

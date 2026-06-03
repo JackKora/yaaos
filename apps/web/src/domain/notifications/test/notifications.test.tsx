@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../test/msw/server";
-import { NotificationsPage } from "../index";
+import { NotificationsPage } from "../public/index";
 
 const FIXED_NOW = new Date("2026-05-15T12:00:00Z");
 const today = FIXED_NOW;

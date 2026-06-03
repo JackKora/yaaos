@@ -34,8 +34,8 @@ const s = fs.statSync(f).size;
 console.log('  bundle-stats.html written (' + (s / 1024).toFixed(1) + ' KB). Open for interactive treemap.');
 " || true
 
-echo "==> dependency-cruiser (layer/domain direction + barrel-only)"
-# Uses the programmatic API directly to support Node 23.x.
+echo "==> dependency-cruiser (layer/domain direction + public-only)"
+# Uses the programmatic API directly so it runs from the pnpm workspace.
 # Rules live in .dependency-cruiser.cjs; see apps/web/docs/patterns.md.
 node bin/check-deps.mjs
 

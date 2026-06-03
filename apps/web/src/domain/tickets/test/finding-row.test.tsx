@@ -1,4 +1,4 @@
-import type { FindingRow as FindingRowData } from "@core/api";
+import type { FindingRow as FindingRowData } from "@core/api/public/queries";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 

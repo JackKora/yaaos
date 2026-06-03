@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { _resetSSESubscriberForTests, attachQueryClient, setOrgSlug } from "../subscriber";
+import { _resetSSESubscriberForTests, attachQueryClient, setOrgSlug } from "../public/subscriber";
 
 /** Captured per-test so we can verify dispatch counts + connection lifecycle. */
 class FakeEventSource {

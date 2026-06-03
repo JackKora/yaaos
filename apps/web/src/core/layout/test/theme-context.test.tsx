@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ThemeProvider, useThemeContext } from "../theme-context";
+import { ThemeProvider, useThemeContext } from "../public/theme-context";
 
 // Minimal localStorage mock
 const store: Record<string, string> = {};

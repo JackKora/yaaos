@@ -1,4 +1,4 @@
-import { apiFetch } from "@core/api";
+import { apiFetch } from "@core/api/public/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export interface OrgSettings {

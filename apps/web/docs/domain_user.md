@@ -23,6 +23,9 @@ The `$slug` in the path is a frontend routing concern only. Backend routes (`/ap
 - `test/details.test.tsx` — component/MSW: display name, handles, emails, GitHub username states.
 - `test/security.test.tsx` — smoke: TOTP setup button and logout-all action render.
 
-## Code
+## Public interface
 
-`apps/web/src/domain/user/{DetailsPage,SecurityPage,MessagingPage}.tsx`.
+- `apps/web/src/domain/user/public/DetailsPage.tsx` — `DetailsPage`
+- `apps/web/src/domain/user/public/SecurityPage.tsx` — `SecurityPage`
+- `apps/web/src/domain/user/public/MessagingPage.tsx` — `MessagingPage`
+- `apps/web/src/domain/user/public/queries.ts` — `useUserMe`, `useClearGithubUsername`, `useUpdateDisplayName`, `useUpdateOrgHandle`, `UserEmail`, `UserMe`, `UserMembership`

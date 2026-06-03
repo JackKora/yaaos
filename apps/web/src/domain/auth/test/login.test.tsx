@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { describe, expect, it } from "vitest";
 import { server } from "../../../test/msw/server";
-import { LoginPage } from "../LoginPage";
+import { LoginPage } from "../public/LoginPage";
 
 /**
  * Smoke tests for the Login page. Uses MSW to intercept:

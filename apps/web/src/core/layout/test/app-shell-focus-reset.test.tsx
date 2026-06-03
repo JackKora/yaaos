@@ -18,11 +18,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 const routeState = { pathname: "/orgs/acme/dashboard", status: "idle" as const };
 
-vi.mock("@core/sse", () => ({ useServerEvents: () => {} }));
-vi.mock("@core/observability/use-otel-identity-sync", () => ({
+vi.mock("@core/sse/public/subscriber", () => ({ useServerEvents: () => {} }));
+vi.mock("@core/observability/public/use-otel-identity-sync", () => ({
   useOtelIdentitySync: () => {},
 }));
-vi.mock("@core/sidebar", () => ({
+vi.mock("@core/sidebar/public/sidebar", () => ({
   Sidebar: () => <nav aria-label="primary navigation" />,
 }));
 vi.mock("../broken-integrations-banner", () => ({
@@ -40,7 +40,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
   };
 });
 
-import { AppShell } from "../app-shell";
+import { AppShell } from "../public/app-shell";
 
 afterEach(() => {
   cleanup();

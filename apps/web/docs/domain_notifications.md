@@ -5,14 +5,14 @@
 ## Scope
 
 - `NotificationsPage` (`index.tsx`) — full list at `/notifications`. Filter chips (all/unread/read); row click marks read; "Mark all read" bulk action.
-- `NotificationsBell` — chrome composite at `apps/web/src/shared/components/chrome/notifications-bell.tsx`. Unread badge (99+ cap) + popover of up to 10 unread items + "Mark all read".
+- `NotificationsBell` — private to `core/sidebar` at `apps/web/src/core/sidebar/notifications-bell.tsx`. Unread badge (99+ cap) + popover of up to 10 unread items + "Mark all read".
 
 Does not own data — `QueryClient` lives in `main.tsx`.
 
 ## Public interface
 
-- `NotificationsPage` — default export from `index.tsx`.
-- `useNotificationsFilter` — logic hook in `use-notifications-filter.ts`. Returns `{ filter, setFilter }`. No JSX.
+- `apps/web/src/domain/notifications/public/index.tsx` — `NotificationsPage`
+- `apps/web/src/domain/notifications/use-notifications-filter.ts` — `useNotificationsFilter` (module-private logic hook). Returns `{ filter, setFilter }`. No JSX.
 
 ## Module architecture
 
@@ -30,4 +30,4 @@ Does not own data — `QueryClient` lives in `main.tsx`.
 
 ## How it's tested
 
-Component/integration tests in `test/notifications.test.tsx` use Vitest + RTL + MSW. Tests assert rendered output against mocked HTTP responses — no `vi.mock` on `@core/api`. See [patterns.md § MSW testing strategy](patterns.md#msw-testing-strategy).
+Component/integration tests in `test/notifications.test.tsx` use Vitest + RTL + MSW. Tests assert rendered output against mocked HTTP responses — no `vi.mock` on `core/api`. See [patterns.md § MSW testing strategy](patterns.md#msw-testing-strategy).

@@ -35,7 +35,14 @@ Detail queries carry `refetchInterval` as SSE-gap fallback.
 
 `StageIndicator`, `HitlPanel`, `FindingRow`, `ActivityEventRow` — each has its own Vitest file under `test/`.
 
-`ActivityEventRow` accepts `ReviewJobActivityEvent` from `@core/api` — no local duplicate interface. The same type is used for both persisted `activity_log` events and live SSE events merged in `ActivityTab`.
+`ActivityEventRow` accepts `ReviewJobActivityEvent` from `core/api` — no local duplicate interface. The same type is used for both persisted `activity_log` events and live SSE events merged in `ActivityTab`.
+
+## Public interface
+
+- `apps/web/src/domain/tickets/public/TicketsListPage.tsx` — `TicketsListPage`
+- `apps/web/src/domain/tickets/public/TicketDetailPage.tsx` — `TicketDetailPage`
+
+Router imports each directly by path; no barrel.
 
 ## Tests
 

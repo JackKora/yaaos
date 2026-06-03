@@ -8,14 +8,18 @@ Wraps every signed-in page in the sidebar-only shell mandated by [design.md § L
 
 ## Public interface
 
-- `AppShell` — root-route component (see [core_routing.md](core_routing.md)).
-- `ThemeProvider` — React context provider; mount once at app root (inside `<React.StrictMode>`).
-- `useThemeContext()` — `{ theme: "light"|"dark", setTheme }`. Throws if called outside the provider.
-- `applyStoredTheme`, `toggleTheme`, `getStoredTheme`, `setStoredTheme` — imperative helpers from `theme.ts`; mostly used by `ThemeProvider` and the user-card theme toggle.
+Files under `core/layout/public/`, imported directly via `@core/layout/public/<file>`:
+
+- `public/app-shell.tsx` — `AppShell`, root-route component (see [core_routing.md](core_routing.md)).
+- `public/theme-context.tsx` — `ThemeProvider`, `useThemeContext()` (`{ theme: "light"|"dark", setTheme }`). Throws if called outside the provider.
+- `public/theme.ts` — `applyStoredTheme`, `toggleTheme`, `getStoredTheme`, `setStoredTheme` — imperative helpers; used by `ThemeProvider` and the user-card theme toggle.
+- `public/not-configured-banner.tsx` — `NotConfiguredBanner` — org-gate banner; reads `useConfigStatus()` + `useCurrentUser()`; imported by domain pages that surface it above their content.
+
+Private (non-`public/`): `broken-integrations-banner.tsx` (internal to `AppShell`).
 
 ## Module architecture
 
-Files: `app-shell.tsx`, `theme.ts`, `theme-context.tsx`, `broken-integrations-banner.tsx`, `index.ts`. Sidebar is its own module at `src/core/sidebar/`.
+Files: `public/app-shell.tsx`, `public/theme.ts`, `public/theme-context.tsx`, `broken-integrations-banner.tsx`. Sidebar is its own module at `src/core/sidebar/`.
 
 ### `AppShell`
 

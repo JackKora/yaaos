@@ -15,6 +15,10 @@
 - No `refetchInterval` — lessons only change on operator action.
 - The `/lessons` route validates search params (`q`, `repo`, `sort`) via Zod in `core/routing/schemas.ts`.
 
+## Public interface
+
+- `apps/web/src/domain/lessons/public/index.tsx` — `LessonsPage`
+
 ## Tests
 
 - `apps/e2e/tests/teach-yaaos-from-finding.spec.ts` — finding → modal → lesson appears.

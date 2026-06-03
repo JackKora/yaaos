@@ -1,6 +1,8 @@
-import { useBrokenSummary, useCurrentOrgSlug, useCurrentUser } from "@core/api";
+import { useCurrentOrgSlug } from "@core/api/public/org-context";
+import { useBrokenSummary, useCurrentUser } from "@core/api/public/queries";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ConfirmModal, ErrorBanner } from "@shared/components/layout";
+import { ConfirmModal } from "@shared/components/public/layout/confirm-modal";
+import { ErrorBanner } from "@shared/components/public/layout/error-banner";
 import { Badge } from "@shared/components/ui/badge";
 import { Button } from "@shared/components/ui/button";
 import {

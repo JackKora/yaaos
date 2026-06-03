@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { server } from "../../../test/msw/server";
-import { DashboardPage } from "../index";
+import { DashboardPage } from "../public/index";
 
 /**
  * Smoke tests for DashboardPage. Uses MSW to intercept the dashboard and

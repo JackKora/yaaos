@@ -10,8 +10,9 @@ Route construction (page bindings) lives in `src/router.tsx` — the app composi
 
 ## Public interface
 
-- `ticketsSearchSchema` — Zod schema for the `/tickets` list search params.
-- `lessonsSearchSchema` — Zod schema for the `/lessons` list search params.
+Files under `core/routing/public/`, imported directly via `@core/routing/public/<file>`:
+
+- `public/schemas.ts` — `ticketsSearchSchema`, `lessonsSearchSchema` — Zod schemas for route search params.
 
 The `router` instance and `Register` augmentation live in `src/router.tsx`, consumed by `main.tsx`'s `<RouterProvider>`.
 

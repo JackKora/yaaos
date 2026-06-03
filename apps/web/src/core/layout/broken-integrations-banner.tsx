@@ -1,4 +1,5 @@
-import { useBrokenSummary, useCurrentOrgSlug, useCurrentUser } from "@core/api";
+import { useCurrentOrgSlug } from "@core/api/public/org-context";
+import { useBrokenSummary, useCurrentUser } from "@core/api/public/queries";
 import { Link } from "@tanstack/react-router";
 
 /** Red banner shown when the current org has one or more broken MCP integrations.

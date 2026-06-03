@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { describe, expect, it } from "vitest";
 import { server } from "../../../../test/msw/server";
-import { BYOKSettingsPage } from "../BYOKSettingsPage";
+import { BYOKSettingsPage } from "../../public/byok/BYOKSettingsPage";
 
 /**
  * Tests for BYOKSettingsPage via MSW — exercises the not_set / configured

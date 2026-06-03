@@ -5,7 +5,8 @@
  * repo options and filters the rows so the component is view-only.
  */
 
-import type { GithubRepositoriesResponse, Ticket } from "@core/api";
+import type { Ticket } from "@core/api/public/client";
+import type { GithubRepositoriesResponse } from "@core/api/public/queries";
 import { useMemo, useState } from "react";
 
 export type TicketStatus = "running" | "hitl" | "done" | "failed" | "cancelled";

@@ -7,14 +7,14 @@
 | Layer | Location | What lives here |
 |---|---|---|
 | **Vendor / primitive** | `src/shared/components/ui/` | Vendored shadcn/Radix primitives. No domain logic, no restyling inside a primitive — wrap in a composite instead. |
-| **Composite** | `src/shared/components/{layout,chrome}/` | Presentational, cross-feature composites (`PageHeader`, `EmptyState`, `ErrorBanner`, `OrgSwitcher`, …). No feature-specific data fetching. |
+| **Composite** | `src/shared/components/public/{layout,chrome}/` | Presentational, cross-feature composites (`PageHeader`, `EmptyState`, `ErrorBanner`, `OrgSwitcher`, …). No feature-specific data fetching. |
 | **Feature** | `src/domain/<module>/` | Domain-specific components that colocate with their module. Graduate to composite on the 2nd/3rd consumer (rule-of-three). |
 
 **Rule-of-three graduation:** a feature component moves to `shared/components/` once it has real consumers in two or more unrelated domain modules. Don't pre-graduate — leave it in `domain/<m>/` until it earns its place.
 
 **Vendor-layer carve-out:** shadcn/Radix primitives in `ui/` may hand-roll ARIA patterns and focus management internally — that's the vendor's job, not ours. Don't add domain logic or hardcoded copy inside those files.
 
-`src/shared/components/`: `ui/` (shadcn/Radix primitives), `chrome/` (sidebar, org switcher, notifications), `layout/` (page header, empty state, error banner). All live in-repo — modify freely.
+`src/shared/components/`: `ui/` (shadcn/Radix primitives), `public/layout/` (page header, empty state, error banner). All live in-repo — modify freely. The chrome components (`OrgSwitcher`, `NotificationsBell`) and the org-gate banner (`NotConfiguredBanner`) moved to `core/sidebar/` and `core/layout/public/` respectively — they use `@core/api` hooks and so cannot live in `shared/`.
 
 ## Primitives (`src/shared/components/ui/`)
 
@@ -66,29 +66,25 @@
 |---|---|
 | `sonner.tsx` | Wraps `sonner` for theme-aware toasts. Rendered once in `main.tsx`. |
 
-## Chrome composites (`src/shared/components/chrome/`)
+## Layout composites (`src/shared/components/public/layout/`)
 
-| File | Purpose |
-|---|---|
-| `org-switcher.tsx` | `OrgSwitcher` — sidebar chip showing the current org with a dropdown of the user's other orgs + a "View all organizations" link to `/orgs`. Data via `useMyOrgs()`. |
-| `notifications-bell.tsx` | `NotificationsBell` — Bell icon row with unread-count badge + popover of up to 10 unread items. Backed by `useNotificationsPopover()`. Row click marks individual read; footer link marks all read. |
+Public surface of the `shared/components` module. Import directly via `@shared/components/public/layout/<file>`.
 
-## Layout composites (`src/shared/components/layout/`)
+| File | Export | Purpose |
+|---|---|---|
+| `page-header.tsx` | `PageHeader` | Title + optional subtitle + right-aligned actions slot. The first composite on every surface. |
+| `empty-state.tsx` | `EmptyState` | Icon + headline + body + optional action; the C2 empty-list pattern. |
+| `error-banner.tsx` | `ErrorBanner` | In-page error with optional Retry. Voice rule (D3): blames the system, not the user. |
+| `confirm-modal.tsx` | `ConfirmModal`, `ConfirmTone` | Destructive + cost-protective variants share the shell; copy differs (D3). |
+| `picker-modal.tsx` | `PickerModal`, `PickerOption` | "Add X" flows (plugin type, integration provider). Lists `PickerOption[]`; caller wires the post-pick route push. |
 
-| File | Purpose |
-|---|---|
-| `page-header.tsx` | `PageHeader` — title + optional subtitle + right-aligned actions slot. The first composite on every surface. |
-| `empty-state.tsx` | `EmptyState` — icon + headline + body + optional action; the C2 empty-list pattern. |
-| `error-banner.tsx` | `ErrorBanner` — in-page error with optional Retry. Voice rule (D3): blames the system, not the user. |
-| `confirm-modal.tsx` | `ConfirmModal` — destructive + cost-protective variants share the shell; copy differs (D3). |
-| `picker-modal.tsx` | `PickerModal` — "Add X" flows (plugin type, integration provider). Lists `PickerOption[]`; caller wires the post-pick route push. |
-| `not-configured-banner.tsx` | `NotConfiguredBanner` — non-intrusive setup-required banner. Reads `useConfigStatus()`; shows the missing-piece list to Admins and "ask your admin" to Builders. Auto-hides when `configured: true`. |
+## Hooks (`src/shared/hooks/public/`)
 
-## Hooks (`src/shared/hooks/`)
+Public surface of the `shared/hooks` module. Import directly via `@shared/hooks/public/<file>`.
 
-| File | Purpose |
-|---|---|
-| `use-mobile.ts` | Returns `true` when the viewport is below the mobile breakpoint. Used by shadcn `sidebar`. |
+| File | Export | Purpose |
+|---|---|---|
+| `use-mobile.ts` | `useIsMobile` | Returns `true` when the viewport is below the mobile breakpoint. Used by shadcn `sidebar`. |
 
 ## Adding a primitive
 

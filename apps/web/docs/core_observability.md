@@ -17,13 +17,23 @@ Owns all browser-side OpenTelemetry concerns: SDK boot, span-processor identity 
 - **Backend stamps its own spans.** The client's identity attributes on web spans are a convenience for UI traces. The backend's `require(action)` and session middleware are the authoritative source on the backend side.
 - **`traceparent` is the only cross-wire context.** W3C trace context header propagated by `FetchInstrumentation`; no other propagation format.
 
+## Public interface
+
+Files under `core/observability/public/`, imported directly via `@core/observability/public/<file>`:
+
+- `public/sdk.ts` — `configure(config)`, `recordException(err)`, `setIdentity`, `YaaosSpanProcessor`, `_resetObservabilityForTests()`.
+- `public/error-boundary.tsx` — `<ErrorBoundary>` wraps the app tree; render errors → `recordException` → span exception event.
+- `public/use-otel-identity-sync.ts` — `useOtelIdentitySync()` hook; called in `AppShell`; fetches `/api/auth/me` and calls `setIdentity`.
+
+Private (non-`public/`): `identity.ts`, `span-processor.ts`.
+
 ## Modules
 
-- `sdk.ts` — `configure(config)` initializes the provider; `recordException(err)` records on the active span (or opens a short-lived fallback span); `_resetObservabilityForTests()` for test teardown.
+- `public/sdk.ts` — `configure(config)` initializes the provider; `recordException(err)` records on the active span (or opens a short-lived fallback span); `_resetObservabilityForTests()` for test teardown.
 - `identity.ts` — module-scope identity holder (`setIdentity`, `getIdentity`). Read by `YaaosSpanProcessor.onStart`.
 - `span-processor.ts` — `YaaosSpanProcessor` stamps `yaaos.org_id`/`yaaos.user_id` from the identity holder on every span start.
-- `error-boundary.tsx` — `<ErrorBoundary>` wraps the app tree; render errors → `recordException` → span exception event.
-- `use-otel-identity-sync.ts` — `useOtelIdentitySync()` hook; called in `AppShell`; fetches `/api/auth/me` and calls `setIdentity`.
+- `public/error-boundary.tsx` — `<ErrorBoundary>` wraps the app tree; render errors → `recordException` → span exception event.
+- `public/use-otel-identity-sync.ts` — `useOtelIdentitySync()` hook; called in `AppShell`; fetches `/api/auth/me` and calls `setIdentity`.
 
 ## Gotchas
 
@@ -39,6 +49,7 @@ Owns all browser-side OpenTelemetry concerns: SDK boot, span-processor identity 
 
 ## Entry points
 
-- `apps/web/src/core/observability/sdk.ts` — `configure`, `recordException`, `_resetObservabilityForTests`.
-- `apps/web/src/core/observability/index.ts` — public re-exports (`configure`, `recordException`, `setIdentity`, `ErrorBoundary`, `useOtelIdentitySync`).
+- `apps/web/src/core/observability/public/sdk.ts` — `configure`, `recordException`, `_resetObservabilityForTests`.
+- `apps/web/src/core/observability/public/error-boundary.tsx` — `ErrorBoundary`.
+- `apps/web/src/core/observability/public/use-otel-identity-sync.ts` — `useOtelIdentitySync`.
 - `apps/web/src/core/observability/test/observability.test.ts` — unit tests.

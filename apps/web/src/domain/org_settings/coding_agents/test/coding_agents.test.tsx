@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../../test/msw/server";
-import { CodingAgentsSettingsPage } from "../CodingAgentsSettingsPage";
+import { CodingAgentsSettingsPage } from "../../public/coding_agents/CodingAgentsSettingsPage";
 
 /**
  * Tests for CodingAgentsSettingsPage via MSW.

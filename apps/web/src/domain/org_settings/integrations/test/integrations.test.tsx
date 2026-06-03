@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { describe, expect, it } from "vitest";
 import { server } from "../../../../test/msw/server";
-import { IntegrationsSettingsPage } from "../IntegrationsSettingsPage";
+import { IntegrationsSettingsPage } from "../../public/integrations/IntegrationsSettingsPage";
 
 /**
  * Tests for IntegrationsSettingsPage via MSW.

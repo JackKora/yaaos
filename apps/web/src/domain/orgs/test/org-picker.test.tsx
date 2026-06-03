@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "../../../test/msw/server";
-import { OrgPickerPage } from "../OrgPickerPage";
+import { OrgPickerPage } from "../public/OrgPickerPage";
 
 /**
  * Smoke tests for the Org Picker. Uses MSW to intercept:

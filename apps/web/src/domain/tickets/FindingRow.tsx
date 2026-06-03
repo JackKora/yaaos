@@ -10,10 +10,10 @@
  * `/api/reviewer/findings/by-ticket/:ticket_id`.
  */
 
-import type { FindingRow as FindingRowData } from "@core/api";
+import type { FindingRow as FindingRowData } from "@core/api/public/queries";
 import { Button } from "@shared/components/ui/button";
 import { Textarea } from "@shared/components/ui/textarea";
-import { cn } from "@shared/utils";
+import { cn } from "@shared/utils/public/cn";
 import { useState } from "react";
 
 interface SeverityMeta {

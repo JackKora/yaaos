@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "../../../../test/msw/server";
-import { VcsSettingsPage } from "../VcsSettingsPage";
+import { VcsSettingsPage } from "../../public/vcs/VcsSettingsPage";
 
 /**
  * Tests for VcsSettingsPage via MSW.

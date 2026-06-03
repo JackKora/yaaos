@@ -44,13 +44,12 @@ module.exports = {
       to: { path: "^src/core/api/generated" },
       comment: "only core/api may import generated types",
     },
-    // ── Barrel-only encapsulation ───────────────────────────────────────────
-    // Cross-module imports must resolve to the target module's index.ts(x).
-    // Deep imports into another module's internals are forbidden.
-    // Intra-module deep imports are always legal (^$1/ exclusion).
-    // shared/components/ui/ is excluded (managed vendor layer).
+    // ── Module encapsulation (public-only) ──────────────────────────────────
+    // A module's public surface is its public/ directory; cross-module imports
+    // must target another module's public/ files. Intra-module deep imports are
+    // always legal (^$2/ exclusion). shared/components/ui/ is excluded (vendor).
     {
-      name: "barrel-only",
+      name: "public-only",
       severity: "error",
       from: {
         path: "^src/(core|domain|shared)/([^/]+)",
@@ -61,14 +60,45 @@ module.exports = {
         pathNot: [
           // The target is the importer's own module — intra-module deep imports are legal.
           "^src/(core|domain|shared)/$2/",
-          // The target is an index barrel — barrel import is legal.
-          "/index\\.tsx?$",
+          // The target is in a module's public/ surface — public import is legal.
+          "^src/(core|domain|shared)/[^/]+/public/",
           // Excluded vendor layer.
           "^src/shared/components/ui/",
         ],
       },
       comment:
-        "cross-module imports must resolve to index.ts(x) barrels; deep imports into another module's internals are forbidden",
+        "cross-module imports must target the module's public/ surface; a module's non-public/ files are private",
+    },
+    // ── Hygiene / safety ─────────────────────────────────────────────────────
+    // No circular dependencies anywhere.
+    {
+      name: "no-circular",
+      severity: "error",
+      from: {},
+      to: { circular: true },
+      comment: "circular dependencies are forbidden",
+    },
+    // Shipped code must not import test infrastructure (MSW server/handlers,
+    // test-setup). Test files themselves may import it.
+    {
+      name: "prod-no-test-infra",
+      severity: "error",
+      from: {
+        path: "^src/",
+        pathNot: ["^src/test/", "\\.(test|spec)\\.[jt]sx?$", "src/test-setup"],
+      },
+      to: { path: "^src/test/" },
+      comment: "production code must not import test infrastructure (src/test/)",
+    },
+    // Fully-disconnected files (no incoming AND no outgoing edges) are dead.
+    // NB: only catches truly orphaned files — a dead module that still imports
+    // something is NOT flagged; use a dedicated unused-export tool for that.
+    {
+      name: "no-orphans",
+      severity: "error",
+      from: { orphan: true, pathNot: ["\\.d\\.ts$"] },
+      to: {},
+      comment: "disconnected (dead) files are forbidden",
     },
   ],
 

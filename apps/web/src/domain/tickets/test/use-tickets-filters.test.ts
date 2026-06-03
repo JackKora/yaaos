@@ -2,7 +2,7 @@
  * Unit tests for useTicketsFilters. Pure logic: no network, no React render.
  */
 
-import type { Ticket } from "@core/api";
+import type { Ticket } from "@core/api/public/client";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ALL_STATUSES, useTicketsFilters } from "../use-tickets-filters";

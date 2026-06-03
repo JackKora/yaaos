@@ -10,13 +10,15 @@ Owns the single browser-wide `EventSource` connecting to `/api/sse/general` and 
 
 ## Public interface
 
-- `useServerEvents()` — React hook called once from the root `AppShell`. Attaches the current `QueryClient` and keeps the general stream pointed at the active org (read from the URL via `useCurrentOrgSlug`).
-- `useConnectionStatus()` — hook returning `ConnectionStatus` (`"idle" | "connecting" | "connected" | "disconnected"`). Backed by `useSyncExternalStore`; safe under concurrent React.
-- `useSSESnapshot()` — hook returning the full `SSESnapshot` (`{ status, lastEvent }`). Same store backing; use when both fields are needed.
-- `useWorkflowActivityStream(workflowExecutionId)` — React hook that opens a second `EventSource` to the per-workflow activity channel (with `?org=`) and yields `WorkflowActivityEvent` objects.
-- `ServerEvent` — envelope type: `{ kind, source_module, ts, ticket_id, [extra]: unknown }`.
-- `ConnectionStatus` — `"idle" | "connecting" | "connected" | "disconnected"`.
-- `SSESnapshot` — `{ status: ConnectionStatus, lastEvent: ServerEvent | null }`.
+Files under `core/sse/public/`, imported directly via `@core/sse/public/<file>`:
+
+- `public/subscriber.tsx` — `useServerEvents()`, `subscribe`, `getSnapshot`, `attachQueryClient`, `setOrgSlug`, `ConnectionStatus`, `SSESnapshot`, `_resetSSESubscriberForTests`.
+- `public/use-connection-status.ts` — `useConnectionStatus()` — hook returning `ConnectionStatus`; backed by `useSyncExternalStore`.
+- `public/use-server-events.ts` — `useSSESnapshot()` — hook returning the full `SSESnapshot` (`{ status, lastEvent }`).
+- `public/workflow_activity.ts` — `useWorkflowActivityStream(workflowExecutionId)` — opens per-workflow `EventSource`, yields `WorkflowActivityEvent` objects.
+- `public/types.ts` — `ServerEvent` — envelope type: `{ kind, source_module, ts, ticket_id, [extra]: unknown }`.
+
+Types also exported from `public/subscriber.tsx`: `ConnectionStatus` (`"idle" | "connecting" | "connected" | "disconnected"`), `SSESnapshot` (`{ status, lastEvent: ServerEvent | null }`).
 
 ## Module architecture
 

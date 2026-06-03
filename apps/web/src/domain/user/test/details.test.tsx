@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import type React from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { server } from "../../../test/msw/server";
-import { DetailsPage } from "../DetailsPage";
+import { DetailsPage } from "../public/DetailsPage";
 
 function wrap(node: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

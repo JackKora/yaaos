@@ -1,4 +1,4 @@
-import type { Notification, NotificationsPopover } from "@core/api";
+import type { Notification, NotificationsPopover } from "@core/api/public/queries";
 import { http, HttpResponse } from "msw";
 
 /** Default fixture — all four date-bucket entries. Override per-test via server.use(). */

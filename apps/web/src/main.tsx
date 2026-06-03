@@ -1,5 +1,7 @@
-import { ThemeProvider, applyStoredTheme } from "@core/layout";
-import { ErrorBoundary, configure } from "@core/observability";
+import { applyStoredTheme } from "@core/layout/public/theme";
+import { ThemeProvider } from "@core/layout/public/theme-context";
+import { ErrorBoundary } from "@core/observability/public/error-boundary";
+import { configure } from "@core/observability/public/sdk";
 import { Toaster } from "@shared/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";

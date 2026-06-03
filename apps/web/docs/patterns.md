@@ -4,12 +4,14 @@ Cross-app conventions (UTC on the wire, audit-log shape) live in [`docs/system-a
 
 ## Module shape
 
-- **Domain module** — collapses page + local subcomponents into one `index.tsx`. Split into `list/` + `detail/` (plus `_shared.tsx`) only when a file exceeds ~1500 lines. Optional `api.ts` for module-local TanStack hooks.
-- **Core module** — `index.ts` (re-exports), implementation file(s), optional `types.ts`.
+A module's **public surface is its `public/` directory**. Everything else in the module is private and unreachable across module boundaries (enforced — see Imports). Privacy is by location: there is no `internal/` folder or naming marker — a file is private unless it sits in `public/`. To expose something, move it into `public/` (a deliberate, reviewable act).
+
+- **Domain module** — the route entry and anything other modules consume live in `public/` (`public/index.tsx`, or `public/<Page>.tsx`). Private subcomponents/hooks stay at the module root. Split into `list/` + `detail/` (plus `_shared.tsx`) only when a file exceeds ~1500 lines. Optional `api.ts` for module-local TanStack hooks (private unless re-exported from `public/`).
+- **Core module** — public files under `public/`, private implementation file(s) at the module root, optional `types.ts`.
 
 ## Imports
 
-Absolute only via path aliases (`@core/...`, `@domain/...`, `@shared/...`). Only what's exported from `index.ts(x)` — no deep imports across module boundaries (barrel-only). The architectural rules are enforced in `bin/ci` via `apps/web/.dependency-cruiser.cjs` at `error` severity — violations fail the build.
+Absolute only via path aliases (`@core/...`, `@domain/...`, `@shared/...`). Cross-module imports must target the module's `public/` surface directly (e.g. `@core/api/public/client`); a module's non-`public/` files are private and cannot be imported from another module. No re-export barrels. The architectural rules are enforced in `bin/ci` via `apps/web/.dependency-cruiser.cjs` at `error` severity — violations fail the build.
 
 ## Hook placement and naming
 
@@ -17,7 +19,7 @@ Absolute only via path aliases (`@core/...`, `@domain/...`, `@shared/...`). Only
 |---|---|---|
 | Server-state (TanStack Query) | `core/api/queries.ts` | `use<Resource>` |
 | Module logic (derived state, callbacks, local state) | `domain/<module>/use-<thing>.ts` | `use-<thing>.ts` (kebab file, camel export) |
-| Shared cross-module | `shared/hooks/` | `use<Thing>` |
+| Shared cross-module | `shared/hooks/public/` | `use<Thing>` |
 
 - Logic hooks (`use-*.ts`) return data, state, and callbacks — **never JSX**. File extension is `.ts`, not `.tsx`. A `find src -name "use-*.tsx"` glob in `bin/ci` enforces this.
 - Server hooks use `useSuspenseQuery` — callers never see `isLoading`. Loading handled by `<Suspense>` fallbacks.
@@ -27,7 +29,7 @@ Absolute only via path aliases (`@core/...`, `@domain/...`, `@shared/...`). Only
 Every data-fetching domain component renders under `<Suspense>` + `<ErrorBoundary>` from `react-error-boundary`:
 
 - `<Suspense>` fallback: `<Skeleton>` skeletons sized to the eventual content.
-- `<ErrorBoundary>` fallback: `<ErrorBanner message="Couldn't load …" onRetry={resetErrorBoundary} />` from `@shared/components/layout`.
+- `<ErrorBoundary>` fallback: `<ErrorBanner message="Couldn't load …" onRetry={resetErrorBoundary} />` from `@shared/components/public/layout/error-banner`.
 - Both components live in the same `index.tsx`. `<ErrorBoundary>` wraps `<Suspense>`.
 - Mutations (writes) are not wrapped — they expose `isPending`/`isError` to the caller.
 
@@ -45,7 +47,7 @@ Tests that cross `core/api` use MSW (`msw/node`) rather than `vi.mock`. Three-ti
 
 MSW infra lives in `src/test/msw/`:
 - `server.ts` — `setupServer()` export; global start/reset/stop in `src/test-setup.ts`.
-- `handlers/<domain>.ts` — per-domain handlers typed against `@core/api` types; drift = compile error.
+- `handlers/<domain>.ts` — per-domain handlers typed against `core/api` types; drift = compile error.
 
 Use `vi.useFakeTimers({ toFake: ["Date"] })` (not full fake timers) when tests need fixed `Date` — full fake timers block MSW/Promise resolution.
 
@@ -98,7 +100,7 @@ Target: WCAG 2.2 AA on all shipped pages.
 Every shipped module has one `apps/web/docs/<layer>_<module>.md` with this fixed structure:
 
 1. **Purpose** — what the module owns; what it doesn't.
-2. **Public interface** — exports from `index.ts(x)`. No internals.
+2. **Public interface** — the files in `public/`. No internals.
 3. **Module architecture** — Entities · Key value objects · Core user flows · State machines (omit if none; `from → to` notation).
 4. **Data owned** — query keys, notable local state.
 5. **How it's tested** — e2e coverage.
@@ -122,7 +124,7 @@ Terse, bullets, no code snippets, no `Decisions` section, link don't repeat.
 
 - `OrgSettingsLayout` is a passthrough `<div>` — no top chrome, no tab bar. Per-page role gating in each settings page.
 - Coding-agent plugin settings dispatch through `apps/web/src/domain/org_settings/coding_agents/plugin_registry.ts`. First-party plugins register at module load via side-effect import (`claude_code`); unregistered plugins get the built-in placeholder.
-- `PluginPicker` (`shared/plugin_picker/`) is shared between the VCS empty-state and Coding Agents Add flow. Backed by `useAvailablePlugins(type)` → `GET /api/plugins/available?type=...`.
+- `PluginPicker` (`shared/plugin_picker/public/`) is shared between the VCS empty-state and Coding Agents Add flow. Backed by `useAvailablePlugins(type)` → `GET /api/plugins/available?type=...`.
 
 ## Dumb frontend
 
@@ -150,7 +152,7 @@ Mutations and the SSE subscriber ([core_sse.md](core_sse.md)) invalidate exactly
 
 ## Time and dates
 
-Backend emits ISO-8601 UTC (`Z`). FE renders in browser local timezone via `apps/web/src/shared/utils/ago.ts`:
+Backend emits ISO-8601 UTC (`Z`). FE renders in browser local timezone via `apps/web/src/shared/utils/public/ago.ts`:
 
 - `ago(ts)` — relative duration (`"12s ago"`).
 - `formatTime(ts)` — local `HH:MM:SS` (audit-log rows).

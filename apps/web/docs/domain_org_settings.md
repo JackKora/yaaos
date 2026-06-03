@@ -50,6 +50,24 @@ All input forms across the settings pages use `react-hook-form` + Zod (`zodResol
   - **ARN-change confirmation** — when the saved ARN differs from the current value and one or more online/stale agents exist, a `ConfirmModal` appears before saving: "This will disconnect N running WorkspaceAgents and fail their in-flight Workspaces. Continue?" N comes from `GET /api/orgs/{slug}/agents` (online + stale count). Cancel aborts the save; confirm proceeds. The modal uses the `destructive` tone.
 - **Agent deployment card** — deploy snippet + backend URL + min version info.
 
+## Public interface
+
+Router imports each page directly by path; no barrel.
+
+- `public/AuditSettingsPage.tsx` — `AuditSettingsPage`
+- `public/AuthSettingsPage.tsx` — `AuthSettingsPage`
+- `public/MembersSettingsPage.tsx` — `MembersSettingsPage`
+- `public/WorkspacesSettingsPage.tsx` — `WorkspacesSettingsPage`
+- `public/byok/BYOKSettingsPage.tsx` — `BYOKSettingsPage`
+- `public/coding_agents/CodingAgentSettingsPage.tsx` — `CodingAgentSettingsPage` (per-plugin dispatch)
+- `public/coding_agents/CodingAgentsSettingsPage.tsx` — `CodingAgentsSettingsPage` (list)
+- `public/integrations/IntegrationsSettingsPage.tsx` — `IntegrationsSettingsPage`
+- `public/vcs/VcsSettingsPage.tsx` — `VcsSettingsPage`
+
+Private (not in `public/`): `OrgSettingsLayout`, `queries.ts` (root + each sub-folder), `AuditPage.tsx`, `MembersPage.tsx`, `SsoConfigPage.tsx`, `coding_agents/plugin_registry.ts`, `coding_agents/plugins/**`.
+
+`CodingAgentSettingsPage` carries the `import "../../coding_agents/plugins/claude_code"` side-effect that registers the plugin before the first `getPluginSettingsComponent` call.
+
 ## Tests
 
 All settings tests use MSW to intercept HTTP rather than `vi.mock("../queries")`.
@@ -60,4 +78,4 @@ All settings tests use MSW to intercept HTTP rather than `vi.mock("../queries")`
 - `integrations/test/integrations.test.tsx` — component/MSW: connect flow, allowlist, enabled toggle, disconnect.
 - `vcs/test/vcs.test.tsx` — component/MSW: picker, connected, needs-setup, unprovisioned states; remove confirmation.
 - `test/layout.test.tsx` — tab visibility per role.
-- `shared/plugin_picker/test/picker.test.tsx` — unit: card rendering, Add click, installed predicate, empty state.
+- `shared/plugin_picker/public/test/picker.test.tsx` — unit: card rendering, Add click, installed predicate, empty state.

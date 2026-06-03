@@ -19,7 +19,7 @@ import {
   getSnapshot,
   setOrgSlug,
   subscribe,
-} from "../subscriber";
+} from "../public/subscriber";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];

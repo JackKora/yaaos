@@ -8,7 +8,14 @@ A thin layer between the FastAPI backend and the UI. Owns the typed `openapi-fet
 
 ## Public interface
 
-Re-exports from `@core/api`: client helpers (`apiClient`, `apiFetch`, `getCurrentOrgSlug`, `setCurrentOrgSlug`), one TypeScript type per backend resource, one TanStack Query hook per endpoint, and one mutation hook per write operation. See `apps/web/src/core/api/index.ts` for the full list.
+Files under `core/api/public/`, imported directly via `@core/api/public/<file>`:
+
+- `public/client.ts` — client helpers (`apiClient`, `apiFetch`) and one TypeScript type per backend resource.
+- `public/queries.ts` — one TanStack Query hook per endpoint, one mutation hook per write operation.
+- `public/org-context.ts` — `getCurrentOrgSlug`, `useCurrentOrgSlug`.
+- `public/auth-failure.ts` — `AuthFailureReason` and the central 401 handler.
+
+Private (non-`public/`): `generated/` (only `core/api` may import it).
 
 ## Module architecture
 
@@ -53,7 +60,7 @@ Hand-typed (no generated equivalent — backend endpoints return `unknown`):
 
 ### Query hooks
 
-`queries.ts` — one hook per endpoint. All data-display hooks use `useSuspenseQuery`; callers never see `isLoading` — loading is handled by `<Suspense>` fallbacks. This covers every hook that powers a page or section: `useCurrentUser`, `useTickets`, `useTicket`, `useLessons`, `useNotifications`, `useDashboard`, `useAgents`, `useFindingsForTicket`, `useReviewJobsForTicket`, `useHitlHistory`, `useMyOrgs`, `useGithubInstallation`, `useGithubRepositories`. `useLessons` accepts a `LessonsFilter` object only (no string shorthand). Polling-based utility hooks (`useHealth`, `useConfigStatus`) stay as regular `useQuery` — they power ambient chrome (connection banner, onboarding gate), not data pages. See [core_sse.md](core_sse.md) for the full invalidation map.
+`queries.ts` — one hook per endpoint. All data-display hooks use `useSuspenseQuery`; callers never see `isLoading` — loading is handled by `<Suspense>` fallbacks. This covers every hook that powers a page or section: `useCurrentUser`, `useTickets`, `useTicket`, `useLessons`, `useNotifications`, `useDashboard`, `useAgents`, `useFindingsForTicket`, `useReviewJobsForTicket`, `useHitlHistory`, `useMyOrgs`, `useGithubInstallation`, `useGithubRepositories`, `useAvailablePlugins`. `useLessons` accepts a `LessonsFilter` object only (no string shorthand). `useAvailablePlugins(type)` fetches `GET /api/plugins/available?type=...` and returns `PluginMeta[]`; consumed by the VCS and Coding Agents settings pages. Polling-based utility hooks (`useHealth`, `useConfigStatus`) stay as regular `useQuery` — they power ambient chrome (connection banner, onboarding gate), not data pages. See [core_sse.md](core_sse.md) for the full invalidation map.
 
 Auth hooks live in `queries.ts` so all layers can call them without importing from `domain/auth`:
 - `useCurrentUser()` — `GET /api/auth/me`; returns `CurrentUser | null`.

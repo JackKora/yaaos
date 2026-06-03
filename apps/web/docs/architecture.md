@@ -14,7 +14,7 @@ Three groupings under `apps/web/src/`:
 
 - Cross-domain imports are forbidden; any primitive two domains share moves to `shared/`.
 - `core` cannot import from `domain` (mirrors the backend's one-way dependency direction).
-- Boundaries are enforced by `apps/web/.dependency-cruiser.cjs` at `severity: "error"` as a dedicated `bin/ci` step. Only `core/api` may import from `core/api/generated/`. `shared/components/ui/` is excluded (managed vendor layer).
+- Boundaries are enforced by `apps/web/.dependency-cruiser.cjs` at `severity: "error"` as a dedicated `bin/ci` step. A module's public surface is its `public/` directory — cross-module imports must target `<module>/public/**`; non-`public/` files are private. Only `core/api` may import from `core/api/generated/`. `shared/components/ui/` is excluded (managed vendor layer).
 
 ## Cross-cutting wiring
 
