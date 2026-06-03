@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 // Mocks for AppShell's real-component tests
 // ---------------------------------------------------------------------------
-const routeState = { pathname: "/orgs/acme/dashboard" };
+const routeState = { pathname: "/orgs/acme/dashboard", status: "idle" as const };
 
 vi.mock("@core/sse", () => ({ useServerEvents: () => {} }));
 vi.mock("@core/observability/use-otel-identity-sync", () => ({
@@ -34,7 +34,9 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     ...actual,
     // Outlet renders nothing — tests that need content inject it differently.
     Outlet: () => null,
-    useRouterState: () => ({ location: { pathname: routeState.pathname } }),
+    // Honor the `select` projection AppShell uses (pathname + router status).
+    useRouterState: ({ select }: { select: (s: unknown) => unknown }) =>
+      select({ location: { pathname: routeState.pathname }, status: routeState.status }),
   };
 });
 

@@ -10,6 +10,17 @@
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 import { YAAOS_URL, resetStack, seedGithubInstall } from "./_helpers";
 
+// Runs in the browser: classifies where focus currently sits relative to
+// <main>. Returns "main", "h1" (a heading inside main), or "other:<tag>".
+function focusPlacement(): string {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return "none";
+  const main = document.querySelector("main");
+  if (el === main) return "main";
+  if (el.tagName.toLowerCase() === "h1" && main?.contains(el)) return "h1";
+  return `other:${el.tagName.toLowerCase()}`;
+}
+
 async function loginAsOwner(page: Page, request: APIRequestContext) {
   await resetStack();
   await request.post(`${YAAOS_URL}/api/testing/seed/bootstrap_owner`, {
@@ -41,32 +52,24 @@ test.describe("focus-reset on route navigation", () => {
     request,
   }) => {
     await loginAsOwner(page, request);
-    // Dashboard: confirm initial focus landed somewhere inside main.
-    const initialFocus = await page.evaluate(() => {
-      const el = document.activeElement;
-      const main = document.querySelector("main");
-      return main ? main.contains(el) || el === main : false;
-    });
-    expect(initialFocus, "focus should be inside <main> on initial page").toBe(true);
+    // Dashboard: focus settles inside <main> once the route is idle. Poll —
+    // focus-reset is deferred a frame past navigation, so it is inherently async.
+    await expect
+      .poll(() => page.evaluate(focusPlacement), {
+        message: "focus should land on <main> or <h1> on initial page",
+      })
+      .toMatch(/^(main|h1)$/);
 
     // Navigate to Tickets.
     await page.getByRole("link", { name: /tickets/i }).first().click();
     await page.waitForURL(/\/orgs\/acme\/tickets/);
 
-    // After navigation: focus must be on the <main> or on the <h1> inside it.
-    const focusedAfterNav = await page.evaluate(() => {
-      const el = document.activeElement as HTMLElement | null;
-      if (!el) return "none";
-      const tagName = el.tagName.toLowerCase();
-      const main = document.querySelector("main");
-      if (el === main) return "main";
-      if (tagName === "h1" && main?.contains(el)) return "h1";
-      return `other:${tagName}`;
-    });
-    expect(
-      ["main", "h1"],
-      `expected focus on main or h1 after nav, got "${focusedAfterNav}"`,
-    ).toContain(focusedAfterNav);
+    // After navigation: focus must be on <main> or the <h1> inside it.
+    await expect
+      .poll(() => page.evaluate(focusPlacement), {
+        message: "expected focus on main or h1 after nav",
+      })
+      .toMatch(/^(main|h1)$/);
   });
 
   test("navigating from Tickets to Lessons moves focus to <main> or <h1>", async ({
@@ -83,18 +86,10 @@ test.describe("focus-reset on route navigation", () => {
     await page.getByRole("link", { name: /lessons/i }).click();
     await page.waitForURL(/\/orgs\/acme\/lessons/);
 
-    const focusedAfterNav = await page.evaluate(() => {
-      const el = document.activeElement as HTMLElement | null;
-      if (!el) return "none";
-      const tagName = el.tagName.toLowerCase();
-      const main = document.querySelector("main");
-      if (el === main) return "main";
-      if (tagName === "h1" && main?.contains(el)) return "h1";
-      return `other:${tagName}`;
-    });
-    expect(
-      ["main", "h1"],
-      `expected focus on main or h1 after nav, got "${focusedAfterNav}"`,
-    ).toContain(focusedAfterNav);
+    await expect
+      .poll(() => page.evaluate(focusPlacement), {
+        message: "expected focus on main or h1 after nav",
+      })
+      .toMatch(/^(main|h1)$/);
   });
 });
