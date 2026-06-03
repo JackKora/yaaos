@@ -53,6 +53,10 @@ Use `<Link>` from `@tanstack/react-router` for all SPA navigation. Native `<a hr
 
 `router.tsx` augments `Register` so typed `<Link to="...">` works everywhere. Prefer `params={{ slug }}` over interpolated strings for full type safety.
 
+### Focus reset on navigation
+
+`AppShell` (`core/layout/app-shell.tsx`) holds a `useEffect` keyed on the current `pathname`. On every route change it moves keyboard focus to the first `<h1>` inside `<main>` (when one exists) or to `<main>` itself. `<main>` carries `tabIndex={-1}` so programmatic focus works without inserting it into the natural tab order; `outline-none` suppresses the browser's default focus ring on the container (the `h1` or inner focusable still shows its ring). This satisfies WCAG 2.4.3 (focus order) and ensures screen-reader users hear the new page's title immediately after navigation.
+
 ## Data owned
 
 None. The slug is derived from the URL on every read.

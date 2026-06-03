@@ -10,6 +10,14 @@ import "./styles.css";
 
 applyStoredTheme();
 
+// Runtime axe-core accessibility scan — dev only. Reports violations to the
+// browser console as they occur. Never bundled in production builds.
+if (import.meta.env.DEV) {
+  import("@axe-core/react").then(({ default: axe }) => {
+    axe(React, ReactDOM, 1000);
+  });
+}
+
 // Initialize OTel SDK. Export is gated on the collector endpoint:
 // endpoint set → export via OTLP/HTTP; endpoint absent → no export.
 configure({

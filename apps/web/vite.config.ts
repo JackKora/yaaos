@@ -2,10 +2,23 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import babel from "@rolldown/plugin-babel";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [tailwindcss(), react(), babel({ presets: [reactCompilerPreset()] })],
+  plugins: [
+    tailwindcss(),
+    react(),
+    babel({ presets: [reactCompilerPreset()] }),
+    // Bundle-size report: writes tmp/bundle-stats.html after every build.
+    // Non-gating — informational only, CI does not fail on chunk size.
+    visualizer({
+      filename: "tmp/bundle-stats.html",
+      open: false,
+      gzipSize: true,
+      brotliSize: true,
+    }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

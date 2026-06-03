@@ -97,15 +97,16 @@ Direct, terse, engineering-honest. Operators, not consumers.
 
 ## Accessibility (a11y)
 
-Target: WCAG 2.1 AA on critical flows.
+Target: WCAG 2.2 AA on all shipped pages. Full rule set and enforcement details: [patterns.md § Accessibility](patterns.md#accessibility-wcag-22-aa).
 
-- Radix/shadcn primitives cover focus management, ARIA roles, escape-to-close, focus-trap, keyboard nav — don't reimplement.
+- Radix/shadcn primitives cover focus management, ARIA roles, escape-to-close, focus-trap, keyboard nav — don't reimplement (vendor carve-out).
 - Icon-only buttons get `aria-label` or `title`. Sidebar nav uses `title` for rail tooltips.
 - Color is never the sole meaning carrier — pair with icon, label, or position.
-- Focus ring: global `*:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px }`. Don't suppress.
+- Focus ring: global `*:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px }`. Never suppress.
+- Focus-reset on navigation: `AppShell` focuses `<h1>` or `<main>` on every route change. See [core_layout.md](core_layout.md).
 - `prefers-reduced-motion` via Tailwind `motion-reduce:` variants.
 - SSE-driven live regions use `aria-live="polite"`. Long lists use `<ul>/<li>` or `<table>`.
-- `apps/e2e/` wires `axe-core` smoke checks.
+- Biome a11y rules at `error` + runtime `@axe-core/react` (dev) + `@axe-core/playwright` (e2e) form the three-tier enforcement stack.
 
 ## Design tokens
 

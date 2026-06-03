@@ -23,6 +23,8 @@ Two-column flex: fixed-width sidebar + flex-grow `<main>`. Only `<main>` scrolls
 
 `STANDALONE_PATHS` (`/login`, `/user`, `/orgs`) render `<Outlet>` without the shell.
 
+**Focus reset:** a `useEffect` keyed on `pathname` (from `useRouterState`) moves keyboard focus to the first `<h1>` inside `<main>` (or to `<main>` itself when none exists) on every route change. `<main>` carries `tabIndex={-1}` + `outline-none` so programmatic focus works without entering the natural tab order. Screen-reader users hear the new page's title immediately; keyboard users land at the content start. See [core_routing.md § Focus reset](core_routing.md#focus-reset-on-navigation).
+
 ### Theme system
 
 Two layers, same source of truth:
@@ -42,4 +44,4 @@ None — `BrokenIntegrationsBanner` reads from a query hook; `theme.ts` reads/wr
 
 ## How it's tested
 
-Rendered on every e2e test — shell breakage shows up as page-navigation failures. Sidebar unit tests in `core/sidebar/test/`.
+Rendered on every e2e test — shell breakage shows up as page-navigation failures. Sidebar unit tests in `core/sidebar/test/`. Focus-reset behavior has unit/integration tests in `core/layout/test/app-shell-focus-reset.test.tsx` and e2e coverage in `apps/e2e/tests/focus-reset.spec.ts`.

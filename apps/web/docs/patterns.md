@@ -59,6 +59,27 @@ Use `vi.useFakeTimers({ toFake: ["Date"] })` (not full fake timers) when tests n
 - Form fields: `<form>-<field>` (`gh-app-id`, `anthropic-key`, `teach-title`).
 - Review cards carry `data-state="<status>"` — query via `[data-testid^="agent-card-"][data-state="posted"]`.
 
+## Accessibility (WCAG 2.2 AA)
+
+Target: WCAG 2.2 AA on all shipped pages.
+
+- **Native-first markup.** Prefer `<button>`, `<dialog>` (`showModal()`), `<details>`, and `<nav>` in our code. Radix/shadcn primitives may hand-roll ARIA (vendor carve-out — don't override).
+- **One `<h1>` per page.** Heading levels must be ordered (`h1 → h2 → h3`) — never skip a level.
+- **Landmarks.** Every page has `<main>`, `<nav>` (sidebar), and `<header>`/`<footer>` where appropriate.
+- **Focus-visible.** Global `*:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px }` in `src/styles.css`. Never suppress with `outline: none` unless immediately replaced by a visible custom style.
+- **Focus-reset on navigation.** `AppShell` moves focus to the first `<h1>` inside `<main>` (or to `<main>` itself when no `<h1>` is present) on every route change. `<main>` carries `tabIndex={-1}` and `outline-none` so programmatic focus works without adding to the tab order. See [core_layout.md](core_layout.md).
+- **Color is never the sole meaning carrier.** Status chips pair color with icon + label.
+- **Icons.** Decorative: `aria-hidden="true"`. Meaningful (icon-only buttons): `aria-label` or `title`.
+- **`aria-pressed` on toggle buttons.** Status filter chips carry `aria-pressed={active}`.
+- **`aria-label` on unlabeled inputs.** Search inputs without a visible `<label>` carry `aria-label`.
+
+**Enforcement:**
+- Biome `a11y` group: all rules at `error` severity (`apps/web/biome.json`). Fails `bin/ci`.
+- Runtime axe-core (`@axe-core/react`): loaded in dev builds only; logs violations to the browser console.
+- `@axe-core/playwright` in `apps/e2e/tests/accessibility.spec.ts`: WCAG 2.1 AA sweep on anchor pages.
+
+**Biome a11y coverage note:** Biome 1.9.4 ports the majority of `eslint-plugin-jsx-a11y` rules. Known gaps (not in Biome): `aria-required-children`, `aria-required-parent`, `no-access-key` (covered by `noAccessKey`). Runtime axe-core is the backstop for anything Biome doesn't catch statically.
+
 ## Tooling
 
 | Concern | Tool |
@@ -68,8 +89,9 @@ Use `vi.useFakeTimers({ toFake: ["Date"] })` (not full fake timers) when tests n
 | Unit/integration tests | Vitest + RTL + MSW |
 | Boundary lint | dependency-cruiser (`apps/web/.dependency-cruiser.cjs`, non-failing) |
 | Build | Vite |
+| Bundle report | rollup-plugin-visualizer → `tmp/bundle-stats.html` after every build (non-gating) |
 
-`apps/web/bin/ci` runs all except dependency-cruiser (advisory only).
+`apps/web/bin/ci` runs all except dependency-cruiser (advisory only). Bundle report is informational — CI does not fail on chunk size.
 
 ## Module documentation
 

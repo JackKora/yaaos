@@ -1,0 +1,100 @@
+/**
+ * Focus-reset on route navigation — WCAG 2.4.3 (focus order) and 2.4.1
+ * (bypass blocks).
+ *
+ * On every client-side navigation the SPA must move keyboard focus to the
+ * first <h1> in <main> (if present) or to <main> itself, so screen-reader
+ * and keyboard users land at the top of the new page.
+ */
+
+import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
+import { YAAOS_URL, resetStack, seedGithubInstall } from "./_helpers";
+
+async function loginAsOwner(page: Page, request: APIRequestContext) {
+  await resetStack();
+  await request.post(`${YAAOS_URL}/api/testing/seed/bootstrap_owner`, {
+    data: {
+      email: "owner@yaaos.test",
+      github_id: "1001",
+      org_slug: "acme",
+      display_name: "Owner",
+      provider: "test",
+    },
+  });
+  await request.post(`${YAAOS_URL}/api/testing/oauth_test/stage_profile`, {
+    data: {
+      external_subject: "1001",
+      primary_email: "owner@yaaos.test",
+      email_verified: true,
+      display_name: "Owner",
+    },
+  });
+  await seedGithubInstall({ targetOrgSlug: "acme" });
+  await page.goto(`${YAAOS_URL}/login`);
+  await page.getByTestId("login-test").click();
+  await page.waitForURL(/\/orgs\/acme\/dashboard$/);
+}
+
+test.describe("focus-reset on route navigation", () => {
+  test("navigating from Dashboard to Tickets moves focus to <main> or <h1>", async ({
+    page,
+    request,
+  }) => {
+    await loginAsOwner(page, request);
+    // Dashboard: confirm initial focus landed somewhere inside main.
+    const initialFocus = await page.evaluate(() => {
+      const el = document.activeElement;
+      const main = document.querySelector("main");
+      return main ? main.contains(el) || el === main : false;
+    });
+    expect(initialFocus, "focus should be inside <main> on initial page").toBe(true);
+
+    // Navigate to Tickets.
+    await page.getByRole("link", { name: /tickets/i }).first().click();
+    await page.waitForURL(/\/orgs\/acme\/tickets/);
+
+    // After navigation: focus must be on the <main> or on the <h1> inside it.
+    const focusedAfterNav = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return "none";
+      const tagName = el.tagName.toLowerCase();
+      const main = document.querySelector("main");
+      if (el === main) return "main";
+      if (tagName === "h1" && main?.contains(el)) return "h1";
+      return `other:${tagName}`;
+    });
+    expect(
+      ["main", "h1"],
+      `expected focus on main or h1 after nav, got "${focusedAfterNav}"`,
+    ).toContain(focusedAfterNav);
+  });
+
+  test("navigating from Tickets to Lessons moves focus to <main> or <h1>", async ({
+    page,
+    request,
+  }) => {
+    await loginAsOwner(page, request);
+    await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+    await page.waitForURL(/\/orgs\/acme\/tickets/);
+
+    // Move focus to the sidebar so we can assert it moves after navigation.
+    await page.getByRole("link", { name: /lessons/i }).focus();
+
+    await page.getByRole("link", { name: /lessons/i }).click();
+    await page.waitForURL(/\/orgs\/acme\/lessons/);
+
+    const focusedAfterNav = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return "none";
+      const tagName = el.tagName.toLowerCase();
+      const main = document.querySelector("main");
+      if (el === main) return "main";
+      if (tagName === "h1" && main?.contains(el)) return "h1";
+      return `other:${tagName}`;
+    });
+    expect(
+      ["main", "h1"],
+      `expected focus on main or h1 after nav, got "${focusedAfterNav}"`,
+    ).toContain(focusedAfterNav);
+  });
+});

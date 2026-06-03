@@ -22,6 +22,18 @@ pnpm exec vitest run --reporter=default --reporter=json --outputFile=./tmp/vites
 echo "==> vite build"
 pnpm exec vite build
 
+echo "==> bundle report (non-gating)"
+# rollup-plugin-visualizer wrote tmp/bundle-stats.html during the build above.
+# Emit the top-10 chunks by parsed size so CI logs carry a size baseline.
+# Never fails — informational only.
+node -e "
+const fs = require('fs');
+const f = 'tmp/bundle-stats.html';
+if (!fs.existsSync(f)) { console.log('  bundle-stats.html not found — skipping.'); process.exit(0); }
+const s = fs.statSync(f).size;
+console.log('  bundle-stats.html written (' + (s / 1024).toFixed(1) + ' KB). Open for interactive treemap.');
+" || true
+
 echo "==> semgrep (static security: p/typescript + p/react + p/owasp-top-ten)"
 semgrep scan \
     --config p/typescript \

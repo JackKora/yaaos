@@ -2,7 +2,17 @@
 
 > Index of the React primitives + composites available in the SPA. Domain-specific composites live in their feature module and aren't listed here.
 
-## Layers
+## Three-layer model
+
+| Layer | Location | What lives here |
+|---|---|---|
+| **Vendor / primitive** | `src/shared/components/ui/` | Vendored shadcn/Radix primitives. No domain logic, no restyling inside a primitive — wrap in a composite instead. |
+| **Composite** | `src/shared/components/{layout,chrome}/` | Presentational, cross-feature composites (`PageHeader`, `EmptyState`, `ErrorBanner`, `OrgSwitcher`, …). No feature-specific data fetching. |
+| **Feature** | `src/domain/<module>/` | Domain-specific components that colocate with their module. Graduate to composite on the 2nd/3rd consumer (rule-of-three). |
+
+**Rule-of-three graduation:** a feature component moves to `shared/components/` once it has real consumers in two or more unrelated domain modules. Don't pre-graduate — leave it in `domain/<m>/` until it earns its place.
+
+**Vendor-layer carve-out:** shadcn/Radix primitives in `ui/` may hand-roll ARIA patterns and focus management internally — that's the vendor's job, not ours. Don't add domain logic or hardcoded copy inside those files.
 
 `src/shared/components/`: `ui/` (shadcn/Radix primitives), `chrome/` (sidebar, org switcher, notifications), `layout/` (page header, empty state, error banner). All live in-repo — modify freely.
 
