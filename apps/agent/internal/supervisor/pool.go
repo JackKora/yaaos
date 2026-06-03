@@ -531,8 +531,7 @@ func failureEvent(header protocol.CommandHeader, reason string) protocol.AgentEv
 }
 
 // readResult carries one event (or error) from a background read goroutine
-// back to Send's select loop. Used by both execRunner.Send and
-// inProcessRunner.Send (in supervisortest).
+// back to execRunner.Send's select loop.
 type readResult struct {
 	ev  protocol.AgentEvent
 	err error

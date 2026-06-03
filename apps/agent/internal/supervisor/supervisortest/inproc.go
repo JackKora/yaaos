@@ -31,6 +31,9 @@ type WorkspaceRunner interface {
 // supervisor.SpawnFunc and can be assigned to it directly. Callers must supply
 // a non-nil ops; use workspacetest.StubHandler{} for a no-op implementation.
 func InProcessSpawn(ops command.WorkspaceOps) func(ctx context.Context, workspaceID string) (WorkspaceRunner, error) {
+	if ops == nil {
+		panic("supervisortest.InProcessSpawn: ops must not be nil; use workspacetest.StubHandler{} for a no-op")
+	}
 	return func(ctx context.Context, _ string) (WorkspaceRunner, error) {
 		cmdR, cmdW := io.Pipe()
 		evR, evW := io.Pipe()

@@ -231,7 +231,6 @@ linters:
             - github.com/yaaos/agent/internal/command
             - github.com/yaaos/agent/internal/ipc
             - github.com/yaaos/agent/internal/protocol
-            - github.com/yaaos/agent/internal/supervisor
             - github.com/yaaos/agent/internal/workspace
             - github.com/yaaos/agent/internal/workspace/workspacetest
 
