@@ -7,8 +7,9 @@
  * No feature flag needed — the gating condition is the endpoint itself.
  *
  * Instrumentations registered:
- * - FetchInstrumentation: injects traceparent on /api/* fetches so browser
- *   spans continue as children of the backend's trace automatically.
+ * - FetchInstrumentation: injects traceparent ONLY on same-origin /api/
+ *   requests (propagateTraceHeaderCorsUrls anchored to window.location.origin).
+ *   Cross-origin fetches (collector, CDN, third-party) never receive traceparent.
  * - DocumentLoadInstrumentation: captures page-load performance entries.
  * - UserInteractionInstrumentation: wraps click/submit handlers with spans.
  *
@@ -75,12 +76,18 @@ export function configure(config: ObservabilityConfig): void {
   _provider.register();
 
   // Register auto-instrumentations after provider is registered.
+  // propagateTraceHeaderCorsUrls restricts traceparent to same-origin /api/
+  // requests. FetchInstrumentation matches against the resolved request URL
+  // (absolute), so we anchor to window.location.origin to correctly exclude
+  // cross-origin fetches where the path alone could match coincidentally.
+  const apiOriginPattern = new RegExp(`^${window.location.origin}/api/`);
   registerInstrumentations({
     instrumentations: [
       new DocumentLoadInstrumentation(),
-      // FetchInstrumentation propagates traceparent automatically on all fetches.
-      // clearTimingResources: true avoids accumulating performance entries.
-      new FetchInstrumentation({ clearTimingResources: true }),
+      new FetchInstrumentation({
+        clearTimingResources: true,
+        propagateTraceHeaderCorsUrls: [apiOriginPattern],
+      }),
       new UserInteractionInstrumentation(),
     ],
   });
@@ -113,30 +120,23 @@ export function recordException(err: unknown): void {
   });
 }
 
-function _installGlobalErrorHandlers(): void {
-  const prevOnError = window.onerror;
-  window.onerror = (
-    message: Event | string,
-    source?: string,
-    lineno?: number,
-    colno?: number,
-    error?: Error,
-  ): boolean | undefined => {
-    recordException(error ?? new Error(String(message)));
-    // Chain to any pre-existing handler.
-    if (typeof prevOnError === "function") {
-      return prevOnError(message, source, lineno, colno, error);
-    }
-    return undefined;
-  };
+// Stable handler references kept in module scope so _resetObservabilityForTests
+// can removeEventListener the exact same function objects.
+let _onErrorHandler: ((event: ErrorEvent) => void) | null = null;
+let _onUnhandledHandler: ((event: PromiseRejectionEvent) => void) | null = null;
 
-  const prevOnUnhandled = window.onunhandledrejection;
-  window.onunhandledrejection = (event: PromiseRejectionEvent): void => {
-    recordException(event.reason instanceof Error ? event.reason : new Error(String(event.reason)));
-    if (typeof prevOnUnhandled === "function") {
-      prevOnUnhandled.call(window, event);
-    }
+function _installGlobalErrorHandlers(): void {
+  // Use addEventListener so we compose with pre-existing handlers rather than
+  // replacing them. removeEventListener in _resetObservabilityForTests restores
+  // the prior state exactly — no prev* capture needed.
+  _onErrorHandler = (event: ErrorEvent): void => {
+    recordException(event.error ?? new Error(event.message));
   };
+  _onUnhandledHandler = (event: PromiseRejectionEvent): void => {
+    recordException(event.reason instanceof Error ? event.reason : new Error(String(event.reason)));
+  };
+  window.addEventListener("error", _onErrorHandler);
+  window.addEventListener("unhandledrejection", _onUnhandledHandler);
 }
 
 /**
@@ -150,8 +150,14 @@ export function _resetObservabilityForTests(): void {
     });
     _provider = null;
   }
-  // Reset global error handlers.
-  window.onerror = null;
-  window.onunhandledrejection = null;
+  // Remove only the handlers we installed — prior handlers are untouched.
+  if (_onErrorHandler) {
+    window.removeEventListener("error", _onErrorHandler);
+    _onErrorHandler = null;
+  }
+  if (_onUnhandledHandler) {
+    window.removeEventListener("unhandledrejection", _onUnhandledHandler);
+    _onUnhandledHandler = null;
+  }
   _resetIdentityForTests();
 }

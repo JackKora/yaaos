@@ -190,9 +190,9 @@ describe("no baggage on wire", () => {
   });
 });
 
-// ── window.onerror / onunhandledrejection ──────────────────────────────────────
+// ── global error capture via addEventListener ─────────────────────────────────
 
-describe("global error capture — window.onerror + onunhandledrejection", () => {
+describe("global error capture — addEventListener error + unhandledrejection", () => {
   beforeEach(() => {
     configure({ collectorEndpoint: undefined });
   });
@@ -202,28 +202,26 @@ describe("global error capture — window.onerror + onunhandledrejection", () =>
   });
 
   it("installing global error listeners does not throw", () => {
-    // configure installs window.onerror / window.onunhandledrejection.
-    // If window.onerror is set as a property it must accept assignment.
-    // This test asserts configure completed without error (already checked by
-    // configure tests above) and that the handlers are present.
-    expect(typeof window.onerror).toBe("function");
-    expect(typeof window.onunhandledrejection).toBe("function");
+    // configure registers error handlers via addEventListener, not window.onerror.
+    // No assertion on window.onerror — it stays null. Just verify no throw.
+    expect(() => configure({ collectorEndpoint: undefined })).not.toThrow();
   });
 
-  it("window.onerror handler does not throw when called", () => {
+  it("dispatching an error event does not throw", () => {
     expect(() => {
-      const err = new Error("global error");
-      window.onerror?.("msg", "source.js", 1, 1, err);
+      const evt = new ErrorEvent("error", {
+        message: "global error",
+        error: new Error("global error"),
+      });
+      window.dispatchEvent(evt);
     }).not.toThrow();
   });
 
-  it("window.onunhandledrejection handler does not throw when called", () => {
+  it("dispatching an unhandledrejection event does not throw", () => {
     expect(() => {
-      const fakeEvent = {
-        reason: new Error("unhandled promise"),
-        promise: Promise.resolve(),
-      } as PromiseRejectionEvent;
-      window.onunhandledrejection?.(fakeEvent);
+      const evt = new Event("unhandledrejection") as unknown as PromiseRejectionEvent;
+      Object.defineProperty(evt, "reason", { value: new Error("unhandled promise") });
+      window.dispatchEvent(evt);
     }).not.toThrow();
   });
 });
