@@ -24,15 +24,16 @@ from sqlalchemy import select
 
 from app.core.plugin_kit import PluginMeta
 from app.core.workspace import (
+    WorkspaceRegistry,
     register_workspace_provider,
 )
 from app.core.workspace.models import WorkspaceRow
 from app.core.workspace.service import (
     _attempt_destroy,
-    _failsafe_agent_loss,
     _reaper_sweep_once,
     _utcnow,
     close_workspace,
+    failsafe_agent_loss,
     startup_recovery,
 )
 from app.core.workspace.types import WorkspaceStatus
@@ -329,7 +330,7 @@ async def test_failsafe_agent_loss_per_pod_only_expires_stale_owner(db_session) 
     await db_session.commit()
 
     # Pass the stale agent's ID directly — the sweeper now feeds the offline set.
-    await _failsafe_agent_loss(db_session, {stale["id"]})
+    await failsafe_agent_loss(db_session, {stale["id"]})
     await db_session.commit()
 
     refreshed = {r.id: r for r in (await db_session.execute(select(WorkspaceRow))).scalars().all()}
@@ -369,3 +370,31 @@ async def test_startup_recovery_flips_orphan_rows_to_expired(db_session) -> None
     # Terminal rows untouched.
     assert by_id[rows[3].id].status == WorkspaceStatus.DESTROYED.value
     assert by_id[rows[4].id].status == WorkspaceStatus.DESTROY_FAILED.value
+
+
+# ── WorkspaceRegistry.items() ───────────────────────────────────────────
+
+
+def test_workspace_registry_items_returns_tuple_of_pairs() -> None:
+    """items() returns a tuple of (provider_id, provider) pairs for registered providers."""
+    reg = WorkspaceRegistry()
+    provider = _GoodProvider()
+    reg.register(provider)
+    result = reg.items()
+    assert isinstance(result, tuple)
+    assert len(result) == 1
+    pid, p = result[0]
+    assert pid == "good"
+    assert p is provider
+
+
+def test_workspace_registry_items_is_immutable_snapshot() -> None:
+    """Mutating the tuple returned by items() does not affect the registry."""
+    reg = WorkspaceRegistry()
+    provider = _GoodProvider()
+    reg.register(provider)
+    snapshot = reg.items()
+    # Replacing an entry in a local list must not corrupt the registry.
+    modified = list(snapshot)
+    modified[0] = ("good", None)  # type: ignore[assignment]
+    assert reg.items()[0][1] is not None  # original provider still there

@@ -29,7 +29,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.26 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.25 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.1.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.1.1 // indirect; pulled by aws-sdk-go-v2/config via internal/identity
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.36.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.3 // indirect

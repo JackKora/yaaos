@@ -58,6 +58,14 @@ class CodingAgentRegistry:
     def list(self) -> list[CodingAgentPlugin]:
         return list(self._plugins.values())
 
+    def items(self) -> tuple[tuple[str, CodingAgentPlugin], ...]:
+        """Return a snapshot of (plugin_id, plugin) pairs.
+
+        Returns a tuple so callers cannot mutate registry state through the
+        returned collection.
+        """
+        return tuple(self._plugins.items())
+
     def ids(self) -> list[str]:
         return list(self._plugins.keys())
 
@@ -203,7 +211,7 @@ async def validate_config(plugin_id: str, agent_config: dict[str, Any]) -> Valid
 
 async def health_check_all() -> dict[str, HealthStatus]:
     out: dict[str, HealthStatus] = {}
-    for plugin_id, plugin in current_coding_agent_registry()._plugins.items():
+    for plugin_id, plugin in current_coding_agent_registry().items():
         try:
             out[plugin_id] = await plugin.health_check()
         except Exception as e:
@@ -218,4 +226,4 @@ def registered_plugin_ids() -> list[str]:
 def list_plugin_metas() -> list[PluginMeta]:
     """Return `PluginMeta` for every registered coding-agent plugin, sorted by id."""
     reg = current_coding_agent_registry()
-    return [reg._plugins[pid].meta for pid in sorted(reg._plugins)]
+    return [plugin.meta for pid, plugin in sorted(reg.items())]

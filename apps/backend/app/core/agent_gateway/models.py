@@ -74,7 +74,6 @@ class WorkspaceAgentRow(Base):
 
     __table_args__ = (
         UniqueConstraint("org_id", "instance_id", name="uq_workspace_agents_org_instance"),
-        Index("ix_workspace_agents_instance_id", "instance_id", unique=True),
         Index("ix_workspace_agents_org_heartbeat", "org_id", "last_heartbeat_at"),
     )
 

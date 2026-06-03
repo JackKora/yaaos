@@ -115,6 +115,14 @@ class WorkspaceRegistry:
     def list(self) -> list[WorkspaceProvider]:
         return list(self._providers.values())
 
+    def items(self) -> tuple[tuple[str, WorkspaceProvider], ...]:
+        """Return a snapshot of (provider_id, provider) pairs.
+
+        Returns a tuple so callers cannot mutate registry state through the
+        returned collection.
+        """
+        return tuple(self._providers.items())
+
     def copy(self) -> WorkspaceRegistry:
         clone = WorkspaceRegistry()
         clone._providers = dict(self._providers)
@@ -561,7 +569,7 @@ async def _reaper_sweep_once() -> None:
         # agent just went offline is expired and that pod's bearers revoked,
         # even when sibling pods in the same org are healthy.
         if newly_offline:
-            await _failsafe_agent_loss(s, set(newly_offline))
+            await failsafe_agent_loss(s, set(newly_offline))
 
         # 1d. Command-lease reaper — requeue claimed commands whose 30-second
         # receipt deadline has passed without a `received` event from the agent.
@@ -592,7 +600,7 @@ async def _reaper_sweep_once() -> None:
         await _attempt_destroy(row)
 
 
-async def _failsafe_agent_loss(s: Any, offline_agent_ids: set[UUID]) -> None:
+async def failsafe_agent_loss(s: Any, offline_agent_ids: set[UUID]) -> None:
     """Mark workspaces EXPIRED + revoke their owning pod's bearers for each
     newly-offline agent (failsafe 6).
 
@@ -809,7 +817,7 @@ def start_reaper(interval_seconds: int) -> None:
 async def health_check_all() -> dict[str, HealthStatus]:
     """Aggregate health across registered providers (used by settings)."""
     out: dict[str, HealthStatus] = {}
-    for plugin_id, provider in current_workspace_registry()._providers.items():
+    for plugin_id, provider in current_workspace_registry().items():
         try:
             out[plugin_id] = await provider.health_check()
         except Exception as e:

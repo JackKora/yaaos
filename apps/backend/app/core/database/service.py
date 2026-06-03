@@ -635,8 +635,8 @@ async def _apply_agent_identity_exchange_schema(conn) -> None:  # type: ignore[n
         "ALTER TABLE workspace_agents ALTER COLUMN instance_id SET NOT NULL",
         # Drop old constraint before adding new one.
         "ALTER TABLE workspace_agents DROP CONSTRAINT IF EXISTS uq_workspace_agents_org_pod",
+        # Drop the standalone unique index (superseded by the composite unique constraint below).
         "DROP INDEX IF EXISTS ix_workspace_agents_instance_id",
-        "CREATE UNIQUE INDEX IF NOT EXISTS ix_workspace_agents_instance_id ON workspace_agents (instance_id)",
         "ALTER TABLE workspace_agents DROP CONSTRAINT IF EXISTS uq_workspace_agents_org_instance",
         "ALTER TABLE workspace_agents ADD CONSTRAINT uq_workspace_agents_org_instance "
         "UNIQUE (org_id, instance_id)",
