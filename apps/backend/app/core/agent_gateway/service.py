@@ -155,8 +155,16 @@ def _build_config_update() -> ConfigUpdateCommand:
 
 
 def _row_to_command(row: object) -> AgentCommand:
-    """Deserialize an AgentCommandRow payload back to a typed AgentCommand."""
-    return _COMMAND_ADAPTER.validate_python(row.payload)  # type: ignore[attr-defined]
+    """Deserialize an AgentCommandRow payload back to a typed AgentCommand.
+
+    `row` must be an `AgentCommandRow` instance; callers are responsible for
+    ensuring this — the `object` annotation avoids a forward-reference at
+    module level when the models import is deferred.
+    """
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
+
+    assert isinstance(row, AgentCommandRow)
+    return _COMMAND_ADAPTER.validate_python(row.payload)
 
 
 async def claim_next(
@@ -195,7 +203,7 @@ async def claim_next(
     from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
 
     now = datetime.now(UTC)
-    row: object | None = None
+    row: AgentCommandRow | None = None
 
     # Try unassigned CreateWorkspace first (capacity for new workspaces).
     if new_workspaces > 0:
@@ -241,23 +249,60 @@ async def claim_next(
     if row is None:
         if wait_seconds <= 0:
             return None
-        # Short-interval poll — re-check once after a short sleep.
+        # Long-poll: sleep in short intervals and re-try the claim SELECTs
+        # until either a row is found or wait_seconds elapses.
         import asyncio  # noqa: PLC0415
 
-        await asyncio.sleep(min(wait_seconds, 2))
-        return await claim_next(
-            agent_id=agent_id,
-            lifecycle=lifecycle,
-            new_workspaces=new_workspaces,
-            workspace_ids=workspace_ids,
-            wait_seconds=0,
-            session=session,
-        )
+        deadline = datetime.now(UTC) + timedelta(seconds=wait_seconds)
+        while row is None and datetime.now(UTC) < deadline:
+            remaining = (deadline - datetime.now(UTC)).total_seconds()
+            await asyncio.sleep(min(2.0, remaining))
+            if datetime.now(UTC) >= deadline:
+                break
+            # Re-run the same claim SELECTs without recursion.
+            if new_workspaces > 0:
+                row = (
+                    (
+                        await session.execute(
+                            select(AgentCommandRow)
+                            .where(
+                                AgentCommandRow.status == "pending",
+                                AgentCommandRow.command_kind == AgentCommandKind.CREATE_WORKSPACE,
+                                AgentCommandRow.agent_id.is_(None),
+                            )
+                            .order_by(AgentCommandRow.id)
+                            .limit(1)
+                            .with_for_update(skip_locked=True)
+                        )
+                    )
+                    .scalars()
+                    .one_or_none()
+                )
+            if row is None and workspace_ids:
+                row = (
+                    (
+                        await session.execute(
+                            select(AgentCommandRow)
+                            .where(
+                                AgentCommandRow.status == "pending",
+                                AgentCommandRow.agent_id == agent_id,
+                                AgentCommandRow.workspace_id.in_(workspace_ids),
+                            )
+                            .order_by(AgentCommandRow.id)
+                            .limit(1)
+                            .with_for_update(skip_locked=True)
+                        )
+                    )
+                    .scalars()
+                    .one_or_none()
+                )
+        if row is None:
+            return None
 
     # Stamp agent_id + claimed_at on the single selected row.
-    row.agent_id = agent_id  # type: ignore[attr-defined]
-    row.status = "claimed"  # type: ignore[attr-defined]
-    row.claimed_at = now  # type: ignore[attr-defined]
+    row.agent_id = agent_id
+    row.status = "claimed"
+    row.claimed_at = now
     await session.flush()
 
     return _row_to_command(row)
@@ -368,7 +413,7 @@ async def record_heartbeat(
     *,
     session: AsyncSession,
 ) -> HeartbeatResponse:
-    """Bump `workspace_agents.last_heartbeat_at` for the pod identified
+    """Bump `workspace_agents.last_heartbeat_at` for the agent instance identified
     by `agent_id` and ingest workspace inventory. Returns reconciliation
     hints — workspaces the agent reports but the control plane no longer
     tracks should be torn down by the agent.
@@ -389,7 +434,7 @@ async def record_heartbeat(
         # only knows its active workspace set at heartbeat time.
         row.claimed_workspace_count = len(request.workspaces)
     else:
-        # Heartbeat arrived for a pod the control plane doesn't know about —
+        # Heartbeat arrived for an agent the control plane doesn't know about —
         # this happens transiently after a restart before identity exchange
         # writes its row, so we just log.
         log.info(
@@ -541,10 +586,10 @@ async def ensure_agent_row(
     """Insert or update the `workspace_agents` row for `(org_id, instance_id)`
     on a successful identity exchange. Returns the row's `id` — this is
     the `agent_id` the bearer is scoped to and that subsequent endpoints
-    use to address the pod.
+    use to address the agent instance.
 
     `instance_id` is the role-session-name derived from the STS assumed-role ARN.
-    Stable across pod restarts when the ECS task reuses the same session name.
+    Stable across agent restarts when the ECS task reuses the same session name.
 
     Caller commits.
     """
@@ -641,9 +686,9 @@ async def has_any_reachable_agent(
     *,
     session: AsyncSession,
 ) -> bool:
-    """Return `True` when at least one workspace-agent pod heartbeated within
-    the last 90 s — used by health-check callers to avoid cross-module Row
-    access.
+    """Return `True` when at least one workspace agent instance heartbeated
+    within the last 90 s — used by health-check callers to avoid cross-module
+    Row access.
     """
     from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
 
@@ -674,9 +719,12 @@ async def connection_status_for_org(
     """Aggregate `workspace_agents` for `org_id`. Returns:
     `{state, pod_count, latest_heartbeat_at}` where `state` is one of:
 
-    - `connected` — at least one pod heartbeated within the last 90s
+    - `connected` — at least one agent instance heartbeated within the last 90s
     - `lost` — at least one row exists but none recent enough
     - `not_configured` — no rows at all for this org
+
+    `pod_count` is the number of known agent instances; the key name is
+    preserved for wire compatibility.
     """
     from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
 
@@ -707,8 +755,8 @@ async def stale_agent_ids(
     `last_heartbeat_at` at or after *cutoff* (or never heartbeated, or no row).
 
     Used by `core/workspace` failsafe-6 to expire only the workspaces whose
-    owning pod is lost, leaving healthy sibling pods' workspaces untouched —
-    without importing `workspace_agents` directly.
+    owning agent is lost, leaving healthy sibling agent instances' workspaces
+    untouched — without importing `workspace_agents` directly.
     """
     from app.core.agent_gateway.models import WorkspaceAgentRow  # noqa: PLC0415
 

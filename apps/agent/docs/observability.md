@@ -4,28 +4,39 @@
 
 ## Scope
 
-- **Owns:** `Init` (SDK bootstrap from env vars — traces, metrics, logs), `BindExporter` (late-binds the OTLP exporter from a ConfigUpdate endpoint), `Instruments` (metric instruments), `SetStandardDimensions`/`StandardAttrs` (org_id + agent_id on metrics), `bindMetrics` (instrument resolution).
+- **Owns:** `Init` (SDK bootstrap from env vars — traces, metrics, logs), `BindExporter` (late-binds the OTLP exporter from a ConfigUpdate endpoint), `SetInstanceID` (stores the backend-assigned instance_id before `BindExporter` runs), `Instruments` (metric instruments), `SetStandardDimensions`/`StandardAttrs` (org_id + agent_id on metrics), `bindMetrics` (instrument resolution).
 - **Does not own:** the base slog logger (owned by `internal/logging`), span creation (owned by `internal/tracing`), or identity exchange (owned by `internal/identity` + `internal/supervisor`).
-- **Receives:** `Config{ServiceVersion, AgentPodID}` at startup; `(orgID, agentID)` pair after identity exchange.
+- **Receives:** `Config{ServiceVersion}` at startup; `instance_id` after identity exchange via `SetInstanceID`; `(orgID, agentID)` pair after identity exchange via `SetStandardDimensions`.
 - **Emits:** OTel resource + SDK providers wired into the global `otel.*` registries; `Result.SlogHandler` for the logging fan-out.
 
 ## Standard dimensions
 
 Every signal carries two kinds of attributes:
 
-- **Resource attributes** (pod-level, static for the process lifetime):
+- **Resource attributes** (static for the process lifetime, set before BindExporter):
   - `service.name` = `yaaos-workspace-agent`
   - `service.version` = binary version
-  - `service.instance.id` = `AgentPodID` — a random hex id generated at startup, used as the OTel resource instance identifier. Not sent on the identity-exchange wire.
+  - `service.instance.id` = `instance_id` — the backend-assigned role-session-name from the STS ARN (`workspace_agents.instance_id`). Correlates OTel signals to a specific `workspace_agents` row. Empty until set via `SetInstanceID` after identity exchange; populated before `BindExporter` runs in the normal ConfigUpdate path.
 - **Span / metric attributes** (set after identity exchange):
-  - `org_id` — the org this pod belongs to; pinned on first identity exchange.
+  - `org_id` — the org this agent instance belongs to; pinned on first identity exchange.
   - `agent_id` — the `workspace_agents` row PK; pinned on first identity exchange.
 
-`AgentPodID` is resource-only because it's known before identity exchange and belongs to the OTel resource model. `org_id` and `agent_id` are span/metric attributes because they're assigned by the backend; they appear after `SetStandardDimensions` is called from the supervisor.
+`instance_id` is resource-only because it belongs to the OTel resource model and is stable for the process lifetime. `org_id` and `agent_id` are span/metric attributes because they're assigned by the backend; they appear after `SetStandardDimensions` is called from the supervisor.
 
 ## Resource vs attribute split — why
 
-OTel resources describe the emitting entity (the pod). Span/metric attributes describe the event. Putting `org_id`/`agent_id` on the resource would require rebuilding the SDK before those values are known; attaching them as attributes avoids that. Cardinality is safe: orgs and agents are few.
+OTel resources describe the emitting entity (the agent instance). Span/metric attributes describe the event. Putting `org_id`/`agent_id` on the resource would require rebuilding the SDK before those values are known; attaching them as attributes avoids that. Cardinality is safe: orgs and agents are few.
+
+## Ordering: SetInstanceID before BindExporter
+
+The normal production flow:
+
+1. `Init` runs at startup — no OTLP endpoint yet, no-op SDK.
+2. Identity exchange completes → supervisor calls `SetInstanceID(resp.InstanceID)`.
+3. ConfigUpdate arrives → supervisor calls `BindExporter(endpoint, ...)`.
+4. `BindExporter` calls `buildResource(startupCfg)` which includes the stored `instance_id`.
+
+The env-var path (OTLP endpoint set at startup via `OTEL_EXPORTER_OTLP_ENDPOINT`) installs the providers from `Init`. In that case `instance_id` is empty in the OTel resource; `SetInstanceID` stores it in `startupCfg` but `BindExporter` is a no-op (already installed). The env-var path is not the production path — the ConfigUpdate path is.
 
 ## Local vs OTLP output
 
@@ -64,5 +75,5 @@ Key counters emitted by the supervisor (all carry `org_id` + `agent_id`):
 
 ## Entry points
 
-- `apps/agent/internal/observability/otel.go` — `Init`, `Config`, `Result`.
+- `apps/agent/internal/observability/otel.go` — `Init`, `Config`, `Result`, `SetInstanceID`.
 - `apps/agent/internal/observability/metrics.go` — `Instruments`, `Metrics()`, `SetStandardDimensions`, `StandardAttrs`.

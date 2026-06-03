@@ -29,7 +29,7 @@ func resetInstallState(t *testing.T) {
 func TestInit_NoEndpoint_NoOp(t *testing.T) {
 	resetInstallState(t)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	res, err := Init(context.Background(), Config{ServiceVersion: "test", AgentPodID: "p1"})
+	res, err := Init(context.Background(), Config{ServiceVersion: "test"})
 	if err != nil {
 		t.Fatalf("Init no-op should not error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestBindExporter_InstallsExporter_TracesAndMetricsExport(t *testing.T) {
 
 	// Startup ran with no env endpoint → no-op Init. Capture identity cfg.
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	res, err := Init(ctx, Config{ServiceVersion: "test", AgentPodID: "pod-bind-1"})
+	res, err := Init(ctx, Config{ServiceVersion: "test"})
 	if err != nil {
 		t.Fatalf("Init no-op: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestInit_WithMockReceiver_TracesAndMetricsAndLogs(t *testing.T) {
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "100") // 100 ms, not the 30 s default
 
 	ctx := context.Background()
-	res, err := Init(ctx, Config{ServiceVersion: "test", AgentPodID: "pod-test-42"})
+	res, err := Init(ctx, Config{ServiceVersion: "test", InstanceID: "task-test-42"})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}

@@ -106,8 +106,8 @@ func TestSupervisor_ActivityWS_ProgressEventsRouteThroughConductor(t *testing.T)
 	// backend for identity / claim / heartbeat). Instead, exercise
 	// setupActivityWS directly + invoke the routing logic by hand.
 	s := New(Config{
-		BaseURL:               "http://unused",
-		AgentPodID:            "pod-1",
+		BaseURL: "http://unused",
+
 		Version:               "test",
 		ActivityWSURL:         fs.URL,
 		ActivityBatchInterval: 20 * time.Millisecond,
@@ -172,8 +172,8 @@ func TestSupervisor_ActivityWS_DialFailureDoesNotPopulateConductor(t *testing.T)
 	// should log and leave conductor/wsConn nil so progressForwarder
 	// falls back to the HTTP path.
 	s := New(Config{
-		BaseURL:       "http://unused",
-		AgentPodID:    "pod-1",
+		BaseURL: "http://unused",
+
 		Version:       "test",
 		ActivityWSURL: "ws://127.0.0.1:1/never-listens",
 	}, protocol.NewClient("http://unused", nil), nil, noopProvider{})

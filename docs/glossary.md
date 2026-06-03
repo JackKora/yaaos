@@ -43,7 +43,7 @@
 | **Broken-creds** | Integration state when `last_refresh_status == "failed"`. Surfaces in six places (banner, email, audit, settings badge, Claude Code warning, review-output prefix). |
 | **Upstream identity** | Display string the OAuth flow returned for the connected account. Stored on `mcp_credentials.upstream_identity` for UI; never used as auth principal. |
 | **Intake** | Inbound surface turning an external signal into a ticket. `domain/intake` ships a typed registry keyed by name; `POST /api/intake/{type}` dispatches via the registry. `github_pr` is the only type today. |
-| **WorkspaceAgent** | Customer-deployed Go binary in `apps/agent/` that holds source code locally and spawns workspace processes. Zero biz logic — all policy comes from control plane via AgentCommand payload. |
+| **WorkspaceAgent** | Customer-deployed Go binary in `apps/agent/` that holds source code locally and spawns workspace processes. Zero biz logic — all policy comes from control plane via AgentCommand payload. Each running instance is an agent instance tracked by a `workspace_agents` row keyed on `(org_id, instance_id)`. |
 | **Workflow** | Typed Pydantic data structure: `name`, `version`, ordered `steps`, `entry_step_id`. Five ship. Owned by `core/workflow`. |
 | **WorkflowCommand** | One unit of work within a workflow. Three categories: **Workspace** (parks in `awaiting_agent`), **Local** (inline), **HITL** (parks in `awaiting_human`). |
 | **AgentCommand** | Wire message backend → WorkspaceAgent. Five kinds: `CreateWorkspace`, `WriteFiles`, `RefreshWorkspaceAuth`, `InvokeClaudeCode`, `CleanupWorkspace`. Defined in `apps/backend/openapi/agent-api.yaml`. Persisted in `agent_commands` (durable queue). |

@@ -66,9 +66,9 @@ func TestBearerRefresh_MatchingCredentials_RotatesBearer(t *testing.T) {
 	prov := &stubProvider{}
 
 	cfg := Config{
-		BaseURL:    srv.URL,
-		AgentPodID: "pod-1",
-		Version:    "0.0.1",
+		BaseURL: srv.URL,
+
+		Version: "0.0.1",
 	}
 	s := buildSupervisorForIdentityTest(cfg, prov, "agent-abc", "org-xyz")
 
@@ -94,9 +94,9 @@ func TestBearerRefresh_MismatchedAgentID_IsFatal(t *testing.T) {
 	prov := &stubProvider{}
 
 	cfg := Config{
-		BaseURL:    srv.URL,
-		AgentPodID: "pod-1",
-		Version:    "0.0.1",
+		BaseURL: srv.URL,
+
+		Version: "0.0.1",
 	}
 	s := buildSupervisorForIdentityTest(cfg, prov, "agent-abc", "org-xyz")
 
@@ -118,9 +118,9 @@ func TestBearerRefresh_MismatchedOrgID_IsFatal(t *testing.T) {
 	prov := &stubProvider{}
 
 	cfg := Config{
-		BaseURL:    srv.URL,
-		AgentPodID: "pod-1",
-		Version:    "0.0.1",
+		BaseURL: srv.URL,
+
+		Version: "0.0.1",
 	}
 	s := buildSupervisorForIdentityTest(cfg, prov, "agent-abc", "org-xyz")
 

@@ -19,7 +19,7 @@ Agent identity on all operational channels is derived solely from the bearer —
 
 ## `unconfigured → configured` state machine
 
-A fresh agent (or any restarted pod) enters the `unconfigured` lifecycle.
+A fresh agent (or any restarted agent instance) enters the `unconfigured` lifecycle.
 
 **Unconfigured:**
 - Claim requests carry `lifecycle="unconfigured"`.
@@ -60,9 +60,9 @@ After the claim succeeds and the command is decoded, the agent posts `kind=recei
 
 ## Bootstrap-retry asymmetry
 
-**Unbootstrapped pod** (identity exchange never succeeded): `stsBackoff` has a 1-hour max-elapsed deadline. After 1 hour of continuous failure the agent calls `os.Exit(1)` so the container orchestrator restarts it. A misconfigured ARN that won't fix itself in 1h becomes a loud crash rather than a silent retry loop.
+**Unbootstrapped agent** (identity exchange never succeeded): `stsBackoff` has a 1-hour max-elapsed deadline. After 1 hour of continuous failure the agent calls `os.Exit(1)` so the container orchestrator restarts it. A misconfigured ARN that won't fix itself in 1h becomes a loud crash rather than a silent retry loop.
 
-**Bootstrapped pod** (at least one successful exchange): bearer renewal failures use the indefinite `heartbeatBackoff`/`claimBackoff` ramp. A transient STS blip must not kill a running pod that holds active workspaces.
+**Bootstrapped agent** (at least one successful exchange): bearer renewal failures use the indefinite `heartbeatBackoff`/`claimBackoff` ramp. A transient STS blip must not kill a running agent that holds active workspaces.
 
 ## Heartbeat body
 
@@ -76,7 +76,7 @@ The backend derives `workspace_agents.claimed_workspace_count` from `len(workspa
 
 Response: `bearer`, `expires_at`, `renewal_after`, `agent_id`, `instance_id` (backend-derived from role-session-name), `org_id`.
 
-The `X-Yaaos-Audience` header inside the signed `payload` must match the backend's `Host`. See [`apps/backend/docs/core_agent_gateway.md`](../apps/backend/docs/core_agent_gateway.md) for the full identity exchange contract.
+The `X-Yaaos-Audience` header inside the signed `payload` must be present and match `YAAOS_PUBLIC_HOSTNAME` (the backend's configured canonical hostname). See [`apps/backend/docs/core_agent_gateway.md`](../apps/backend/docs/core_agent_gateway.md) for the full identity exchange contract.
 
 ## Ordering + idempotency
 
@@ -95,7 +95,7 @@ The `X-Yaaos-Audience` header inside the signed `payload` must match the backend
 
 **Progress events** are best-effort single-shot; only terminal events use the retry loop.
 
-**Crash loss:** the dedup cache is in-memory only. A pod restart clears it; re-delivered commands after a restart are re-executed (at-least-once guarantee, not exactly-once).
+**Crash loss:** the dedup cache is in-memory only. An agent restart clears it; re-delivered commands after a restart are re-executed (at-least-once guarantee, not exactly-once).
 
 ## ISO-UTC wire convention
 

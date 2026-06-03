@@ -1,14 +1,17 @@
 """Rate limiting for `/identity/exchange`.
 
-Sliding-window counters per source IP and per `agent_pod_id`, backed by
-Redis. Burst guards against credential-stuffing and STS-replay flooding.
+Sliding-window counter per source IP, backed by Redis. Burst guard against
+credential-stuffing and STS-replay flooding.
 
-POC limits:
-- 10 attempts / minute per source IP
-- 100 attempts / hour per agent_pod_id
+Limit: 10 attempts / minute per source IP.
 
-On limit hit, raise `RateLimitedError` with the limiting axis; the
-endpoint maps it to HTTP 429 with `identity_exchange.rate_limited` audit.
+On limit hit, raise `RateLimitedError` with axis="ip"; the endpoint maps it
+to HTTP 429 with `identity_exchange.rate_limited` audit.
+
+Note: the limit is intentionally kept at 10/min per IP. Multiple agent
+instances behind the same NAT/ALB share this window. If ops observe false
+throttles on high-scale deployments, raise `PER_IP_LIMIT` (or add a
+per-org signed-token allowance) before deployment.
 """
 
 from __future__ import annotations
@@ -23,15 +26,13 @@ KEY_PREFIX = "rl:identity_exchange:"
 
 PER_IP_LIMIT = 10
 PER_IP_WINDOW_SECONDS = 60
-PER_POD_LIMIT = 100
-PER_POD_WINDOW_SECONDS = 60 * 60
 
 
 @dataclass(frozen=True)
 class RateLimitedError(Exception):
     """Raised when an identity-exchange attempt exceeds a window."""
 
-    axis: str  # "ip" or "pod"
+    axis: str  # "ip"
     limit: int
     window_seconds: int
 
@@ -41,33 +42,25 @@ class RateLimitedError(Exception):
 
 async def _hit(key: str, limit: int, window_seconds: int) -> None:
     """Record a rate-limit hit via `core/redis.sliding_window_hit`; raise
-    `RateLimitedError` (with the axis derived from the key prefix) when the
-    window is already at its limit."""
+    `RateLimitedError` (axis="ip") when the window is already at its limit."""
     if not await sliding_window_hit(key, limit=limit, window_seconds=window_seconds):
-        axis = "ip" if ":ip:" in key else "pod"
-        raise RateLimitedError(axis=axis, limit=limit, window_seconds=window_seconds)
+        raise RateLimitedError(axis="ip", limit=limit, window_seconds=window_seconds)
 
 
-async def check_identity_exchange(*, source_ip: str | None, agent_pod_id: str | None) -> None:
-    """Apply both per-IP and per-pod limits. Raises `RateLimitedError`
-    on first violation; checks IP before pod so a flood from one IP
-    can't mask a single legitimate pod's rate.
+async def check_identity_exchange(*, source_ip: str | None) -> None:
+    """Apply the per-IP rate limit. Raises `RateLimitedError` on violation.
 
-    `source_ip` may be None if the request has no client (test harness);
-    in that case the IP axis is skipped. Same for `agent_pod_id`.
+    `source_ip` may be None when the request has no client (test harness);
+    in that case the IP axis is skipped.
     """
     if source_ip:
         await _hit(f"{KEY_PREFIX}ip:{source_ip}", PER_IP_LIMIT, PER_IP_WINDOW_SECONDS)
-    if agent_pod_id:
-        await _hit(f"{KEY_PREFIX}pod:{agent_pod_id}", PER_POD_LIMIT, PER_POD_WINDOW_SECONDS)
 
 
 __all__ = [
     "KEY_PREFIX",
     "PER_IP_LIMIT",
     "PER_IP_WINDOW_SECONDS",
-    "PER_POD_LIMIT",
-    "PER_POD_WINDOW_SECONDS",
     "RateLimitedError",
     "check_identity_exchange",
 ]

@@ -374,16 +374,24 @@ async def test_identity_exchange_response_includes_org_id(db_session) -> None:
     assert body["instance_id"] == "task-orgid"
 
 
-async def test_identity_exchange_audience_mismatch_returns_401(db_session) -> None:
-    """Audience header in the payload does not match the Host header → 401."""
+async def test_identity_exchange_audience_mismatch_returns_401(db_session, monkeypatch) -> None:
+    """Audience header in the payload does not match YAAOS_PUBLIC_HOSTNAME → 401."""
     del db_session
+
+    import json as _json  # noqa: PLC0415
+
+    from app.core.config import Settings  # noqa: PLC0415
+
+    # Override the settings so YAAOS_PUBLIC_HOSTNAME is set to a known value.
+    monkeypatch.setattr(
+        "app.core.agent_gateway.web.get_settings",
+        lambda: Settings.model_construct(yaaos_public_hostname="app.yaaos.cloud"),
+    )
 
     async def _stub(_payload: str) -> VerifiedIdentity:  # unreachable after audience check
         return _verified("arn:aws:iam::123456789012:role/yaaos-agent")
 
     set_verify_identity_override(_stub)
-
-    import json as _json  # noqa: PLC0415
 
     payload_with_wrong_audience = _json.dumps(
         {
@@ -402,7 +410,46 @@ async def test_identity_exchange_audience_mismatch_returns_401(db_session) -> No
         resp = await c.post(
             _ENDPOINT,
             json={"kind": "aws-sts", "agent_version": "0.0.1", "payload": payload_with_wrong_audience},
-            headers={"Host": "app.yaaos.cloud"},
+        )
+    assert resp.status_code == 401
+    assert "audience_mismatch" in resp.json()["detail"]["detail"]
+
+
+async def test_identity_exchange_missing_audience_returns_401(db_session, monkeypatch) -> None:
+    """Empty/absent X-Yaaos-Audience when YAAOS_PUBLIC_HOSTNAME is set → 401."""
+    del db_session
+
+    import json as _json  # noqa: PLC0415
+
+    from app.core.config import Settings  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        "app.core.agent_gateway.web.get_settings",
+        lambda: Settings.model_construct(yaaos_public_hostname="app.yaaos.cloud"),
+    )
+
+    async def _stub(_payload: str) -> VerifiedIdentity:  # unreachable after audience check
+        return _verified("arn:aws:iam::123456789012:role/yaaos-agent")
+
+    set_verify_identity_override(_stub)
+
+    # Payload with no x-yaaos-audience header at all.
+    payload_no_audience = _json.dumps(
+        {
+            "url": "https://sts.amazonaws.com/",
+            "headers": {
+                "Authorization": "AWS4-HMAC-SHA256 ...",
+                "X-Amz-Date": "20240101T000000Z",
+                "Host": "sts.amazonaws.com",
+            },
+            "body": "Action=GetCallerIdentity&Version=2011-06-15",
+        }
+    )
+
+    async with _client() as c:
+        resp = await c.post(
+            _ENDPOINT,
+            json={"kind": "aws-sts", "agent_version": "0.0.1", "payload": payload_no_audience},
         )
     assert resp.status_code == 401
     assert "audience_mismatch" in resp.json()["detail"]["detail"]

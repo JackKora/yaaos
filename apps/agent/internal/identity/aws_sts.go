@@ -79,9 +79,9 @@ func (p *awsSTSProvider) SignClaim(ctx context.Context, audience string) (json.R
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	// Embed the audience header before signing so it's covered by the signature.
-	if audience != "" {
-		req.Header.Set(audienceHeader, audience)
-	}
+	// Always set — the backend requires a non-empty audience when YAAOS_PUBLIC_HOSTNAME
+	// is configured, and callers must not pass an empty audience in production.
+	req.Header.Set(audienceHeader, audience)
 
 	// SigV4 sign the request. Region "us-east-1" for the global endpoint.
 	signer := awssigner.NewSigner()

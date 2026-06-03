@@ -13,8 +13,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -68,7 +66,8 @@ func run() int {
 
 	otelRes, err := observability.Init(context.Background(), observability.Config{
 		ServiceVersion: envOr("YAAOS_AGENT_VERSION", agentVersion),
-		AgentPodID:     envOr("YAAOS_AGENT_POD_ID", ""), // empty resource attr if unset; randomPodID() fills it later
+		// InstanceID is empty at boot; populated via observability.SetInstanceID
+		// after identity exchange (before BindExporter runs on ConfigUpdate).
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "observability.init failed: %v\n", err)
@@ -109,7 +108,6 @@ func run() int {
 func runSupervisor() error {
 	cfg := supervisor.Config{
 		BaseURL:       envOr("YAAOS_BACKEND_URL", defaultBackendURL),
-		AgentPodID:    envOr("YAAOS_AGENT_POD_ID", randomPodID()),
 		Version:       envOr("YAAOS_AGENT_VERSION", "0.0.0-dev"),
 		WorkspaceRoot: envOr("YAAOS_WORKSPACE_ROOT", ""),
 	}
@@ -135,7 +133,7 @@ func runSupervisor() error {
 	// *slog.Logger satisfies supervisor.Logger directly — Info/Warn/Error
 	// signatures match. No adapter needed.
 	sup := supervisor.New(cfg, cli, slog.Default(), prov)
-	slog.Info("supervisor.starting", "backend", cfg.BaseURL, "pod", cfg.AgentPodID)
+	slog.Info("supervisor.starting", "backend", cfg.BaseURL)
 	if err := sup.Run(ctx); err != nil {
 		return err
 	}
@@ -169,13 +167,4 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
-}
-
-// randomPodID returns a 32-hex-char string — sufficient for the per-pod
-// identifier the backend uses to dedup heartbeats. The backend treats it
-// as opaque; full UUID-v4 conformance isn't required.
-func randomPodID() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }

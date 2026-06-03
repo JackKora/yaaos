@@ -1,6 +1,6 @@
 # internal/identity
 
-> Seam that signs the agent pod's identity claim for the control plane.
+> Seam that signs the agent instance's identity claim for the control plane.
 
 ## Scope
 
@@ -13,7 +13,7 @@
 ## Why / invariants
 
 - **Supervisor owns the HTTP exchange.** `Provider` only signs; it never contacts the backend. This keeps retry/backoff logic, `AgentMetadata` collection, and bearer stamping in one place (supervisor).
-- **`NewProvider` dispatches on `YAAOS_IDENTITY_PROVIDER`** (default `aws-sts`). Only `aws-sts` is defined; any other value panics at startup so a misconfigured pod fails fast instead of silently falling back.
+- **`NewProvider` dispatches on `YAAOS_IDENTITY_PROVIDER`** (default `aws-sts`). Only `aws-sts` is defined; any other value panics at startup so a misconfigured agent instance fails fast instead of silently falling back.
 - **`awsSTSProvider` reads IMDS v2 at sign time.** Credentials are not cached by the provider — `aws.NewCredentialsCache` inside `config.LoadDefaultConfig` handles caching/refresh. The env var `AWS_EC2_METADATA_SERVICE_ENDPOINT` redirects IMDS to mock-aws in dev/test.
 - **Audience binding.** `X-Yaaos-Audience` is embedded inside the signed envelope before signing, so it's covered by the SigV4 signature and cannot be stripped by an attacker without invalidating the signature.
 - **`Credentials` is stamped by the supervisor from the backend response**, not by the provider. `Provider` never fills `Bearer`, `AgentID`, `OrgID`, or `InstanceID`.

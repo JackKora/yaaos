@@ -14,9 +14,9 @@ the raw ARN, a `workspace_agents` row is found-or-created keyed on
 `core.agent_gateway.bearers`. Every other gateway endpoint and the WebSocket
 upgrade authenticate by looking that bearer up in the ledger.
 
-The `X-Yaaos-Audience` header inside the sigv4 envelope must match the
-backend's canonical hostname (`HOST` request header); mismatched audience
-causes a 401.
+The `X-Yaaos-Audience` header inside the sigv4 envelope must be present and
+match the backend's `YAAOS_PUBLIC_HOSTNAME` setting; a missing or mismatched
+audience causes a 401 `audience_mismatch`.
 
 Per-endpoint authorization beyond bearer validity:
 - All agent operational channels — `heartbeat`, `claim`, `command-events`,
@@ -28,11 +28,12 @@ Per-endpoint authorization beyond bearer validity:
   (`WorkspaceRow.agent_id`, set at create-dispatch). When the resolved
   workspace has an owner that isn't the bearer's agent → 403 `forbidden`
   (see `_require_workspace_owner`). This closes the within-org IDOR where
-  one pod's bearer reports state for another pod's workspace. A command that
-  resolves to no workspace (e.g. an agent-scoped `ConfigUpdate`, which has
-  no `workspace_id`) or a workspace with a NULL `agent_id` (in-memory/legacy)
-  carries no ownership edge to check: authorization falls back to the org
-  scope (`org_context`) plus the stale-claim guard in the sink.
+  one agent instance's bearer reports state for another agent instance's
+  workspace. A command that resolves to no workspace (e.g. an agent-scoped
+  `ConfigUpdate`, which has no `workspace_id`) or a workspace with a NULL
+  `agent_id` (in-memory/legacy) carries no ownership edge to check:
+  authorization falls back to the org scope (`org_context`) plus the
+  stale-claim guard in the sink.
 """
 
 from __future__ import annotations
@@ -71,6 +72,7 @@ from app.core.agent_gateway.types import (
 )
 from app.core.audit_log import Actor, ActorKind, audit
 from app.core.auth import org_context, public_route, require_org_context
+from app.core.config import get_settings
 from app.core.database import session as db_session
 from app.core.sse import GeneralEventKind, publish_general_after_commit, publish_workspace_activity
 from app.core.webserver import RouteSpec, register_routes
@@ -155,8 +157,8 @@ async def exchange_identity(
     `workspace_agents` row keyed on `(org_id, instance_id)`, and issues a
     1-hour bearer via `core.agent_gateway.bearers`.
 
-    The `X-Yaaos-Audience` header embedded in the sigv4 envelope must match
-    the `Host` header of the incoming HTTP request. This binds the signed
+    The `X-Yaaos-Audience` header embedded in the sigv4 envelope must be
+    present and match `YAAOS_PUBLIC_HOSTNAME`. This binds the signed
     request to a specific backend deployment and prevents replay against a
     different yaaos instance.
 
@@ -191,9 +193,9 @@ async def exchange_identity(
 
     source_ip = http_request.client.host if http_request.client is not None else None
 
-    # Rate-limit keyed on source IP (no pod-id in the new wire format).
+    # Rate-limit keyed on source IP only.
     try:
-        await check_identity_exchange(source_ip=source_ip, agent_pod_id=source_ip or "unknown")
+        await check_identity_exchange(source_ip=source_ip)
     except RateLimitedError as exc:
         log.warning(
             "identity_exchange.rate_limited",
@@ -212,11 +214,10 @@ async def exchange_identity(
         verify_identity,
     )
 
-    # Audience binding: the sigv4 envelope must carry an `X-Yaaos-Audience`
-    # header matching this backend's canonical hostname. Checked by parsing
-    # the raw payload before replay — avoids a live STS call for a mismatched
-    # request. We extract it here from the JSON to surface it as a distinct
-    # error category.
+    # Audience binding: the sigv4 envelope must carry a non-empty
+    # `X-Yaaos-Audience` header matching this backend's canonical hostname
+    # (`YAAOS_PUBLIC_HOSTNAME`). Checked by parsing the raw payload before
+    # replay — avoids a live STS call for a mismatched request.
     try:
         import json as _json  # noqa: PLC0415
 
@@ -228,8 +229,24 @@ async def exchange_identity(
     except Exception:
         audience_in_payload = ""
 
-    # Derive the expected audience from the request's Host header.
-    expected_audience = http_request.headers.get("host", "")
+    # The expected audience is the server-side YAAOS_PUBLIC_HOSTNAME setting
+    # (not the client-supplied Host header). When the setting is unset the
+    # check is a dev/test bypass — prod must set this.
+    expected_audience = get_settings().yaaos_public_hostname
+
+    # Require a non-empty audience in the payload regardless of whether the
+    # setting is configured, UNLESS the setting itself is empty (dev/test bypass).
+    if expected_audience and not audience_in_payload:
+        log.warning(
+            "identity_exchange.audience_missing",
+            expected=expected_audience,
+            source_ip=source_ip,
+        )
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "unauthorized", "detail": "audience_mismatch"},
+        )
+
     if audience_in_payload and expected_audience and audience_in_payload != expected_audience:
         log.warning(
             "identity_exchange.audience_mismatch",

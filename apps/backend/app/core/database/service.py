@@ -596,7 +596,7 @@ async def _apply_workspaces_agent_id(conn) -> None:  # type: ignore[no-untyped-d
     Records the owning agent (`workspace_agents.id`) chosen at create-dispatch.
     Soft FK; no backfill — existing rows stay NULL (in-memory / legacy
     workspaces that never went through a remote agent). Post-create commands
-    route to this agent so a workspace lives and dies with its owning pod.
+    route to this agent so a workspace lives and dies with its owning agent instance.
     """
     await conn.execute(text("ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS agent_id UUID"))
 
@@ -886,11 +886,11 @@ async def _apply_sso_email_domains(conn) -> None:  # type: ignore[no-untyped-def
 
 
 async def _apply_create_workspace_agents(conn) -> None:  # type: ignore[no-untyped-def]
-    """`workspace_agents` table: per-pod identity rows.
+    """`workspace_agents` table: per-agent-instance identity rows.
 
-    Each agent pod that successfully exchanges identity gets a row. The
-    `(org_id, agent_pod_id)` uniqueness constraint dedups across re-exchange
-    after a pod restart. Idempotent."""
+    Each agent instance that successfully exchanges identity gets a row. The
+    `(org_id, instance_id)` uniqueness constraint dedups across re-exchange
+    after an agent restart. Idempotent."""
     import importlib  # noqa: PLC0415
 
     importlib.import_module("app.core.agent_gateway.models")

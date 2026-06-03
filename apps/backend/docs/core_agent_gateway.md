@@ -51,7 +51,7 @@ Returns agents for the current org within the 1-hour UI-retention window. Fields
 
 Vault AWS-auth pattern. The agent submits a sigv4-signed STS `GetCallerIdentity` as `payload`; the backend replays it, derives `instance_id` from the role-session-name, and issues a 1-hour bearer.
 
-- **Audience binding** — `X-Yaaos-Audience` in the signed envelope must match the backend's `Host`. Mismatch → 401 `audience_mismatch`. Binds the signed request to the specific backend deployment.
+- **Audience binding** — `X-Yaaos-Audience` in the signed envelope must be present and match `YAAOS_PUBLIC_HOSTNAME`. Missing or mismatched → 401 `audience_mismatch`. Binds the signed request to the specific backend deployment. The backend's canonical hostname must match `hostFromURL(YAAOS_BACKEND_URL)` on the agent side.
 - **`instance_id` derivation** — extracted from the role-session-name of the assumed-role ARN (`arn:aws:sts::ACCT:assumed-role/ROLE/SESSION` → `SESSION`). The agent never supplies `instance_id`.
 - **Find-or-create keyed on `(org_id, instance_id)`.** The same ECS task restarting keeps the same row; each exchange updates `iam_arn`, `version`, and static OS metadata.
 - **1-hour TTL.** Response includes `renewal_after` (5 min before `expires_at`) as the suggested re-exchange time.
@@ -87,7 +87,7 @@ The `received` EventKind is non-terminal: it cancels the lease requeue on the ro
 - **ARN canonicalization** — `assumed-role/ROLE/SESSION` → `iam::ACCT:role/ROLE`, lowercased. IAM role names are case-insensitive in AWS; lowering both sides avoids mismatches without losing uniqueness.
 - **`SubscriberRegistry` is ContextVar-bound.** `bind_subscriber_registry` is the production DI seam; `subscriber_registry_isolation` autouse fixture resets per test. On WebSocket reconnect it replays `subscribe` for every active route so the agent's rebuilt SubscriptionSet picks up where the old connection left off.
 - **No activity flows from agent → SPA when nobody's watching** — the `SubscriberRegistry` only sends `subscribe` on `0 → 1` subscriber-count transitions.
-- **`seed_agent` lives in `app/testing/seed`.** The production `ensure_agent_row` API is what callers use; `seed_agent` is a test convenience wrapper that adds a random pod_id and optional heartbeat back-dating. Cross-module tests import it from `app.testing.seed`.
+- **`seed_agent` lives in `app/testing/seed`.** The production `ensure_agent_row` API is what callers use; `seed_agent` is a test convenience wrapper that adds a random instance_id and optional heartbeat back-dating. Cross-module tests import it from `app.testing.seed`.
 
 ## Gotchas
 
@@ -103,8 +103,8 @@ The `received` EventKind is non-terminal: it cancels the lease requeue on the ro
 
 ## Data owned
 
-- `workspace_agents` — per-pod identity rows; one per `(org_id, instance_id)`. Columns: `instance_id` (role-session-name from STS ARN), `iam_arn`, `version`, `os`, `cpu_count`, `memory_bytes`, `claimed_workspace_count` (populated by `record_heartbeat` as `len(workspaces)`; not set by identity exchange), `last_heartbeat_at`, `last_shutdown_at`, `state`.
-- `bearer_tokens` — `(token_hash, issued_at, expires_at, revoked_at, revoked_reason, last_seen_at, source_ip, issued_iam_arn)`. Revocation reasons: `arn_change` (ARN rotation via settings), `mode_switch`, `disconnect`, `manual_rotate`, `agent_loss` (per-pod), `graceful_shutdown` (DELETE handler). `revoke_all_for_arn` revokes by `issued_iam_arn`; `revoke_all_for_agent` by `agent_id`; `revoke_all_for_org` by `org_id`.
+- `workspace_agents` — per-agent-instance identity rows; one per `(org_id, instance_id)`. Columns: `instance_id` (role-session-name from STS ARN), `iam_arn`, `version`, `os`, `cpu_count`, `memory_bytes`, `claimed_workspace_count` (populated by `record_heartbeat` as `len(workspaces)`; not set by identity exchange), `last_heartbeat_at`, `last_shutdown_at`, `state`.
+- `bearer_tokens` — `(token_hash, issued_at, expires_at, revoked_at, revoked_reason, last_seen_at, source_ip, issued_iam_arn)`. Revocation reasons: `arn_change` (ARN rotation via settings), `mode_switch`, `disconnect`, `manual_rotate`, `agent_loss` (per-agent), `graceful_shutdown` (DELETE handler). `revoke_all_for_arn` revokes by `issued_iam_arn`; `revoke_all_for_agent` by `agent_id`; `revoke_all_for_org` by `org_id`.
 - `agent_commands` — durable command queue. Columns: `id` (UUIDv7 PK = FIFO key), `org_id`, `workspace_id` (NULL for org-scoped commands), `command_kind`, `payload` (JSONB), `status` (`pending|claimed|delivered|done`), `agent_id` (NULL until claimed), `claimed_at`, `attempt`, `created_at`. Indexes: `(agent_id, status, id)` + `(status, command_kind, id)`.
 
 ## How it's tested

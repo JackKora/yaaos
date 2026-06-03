@@ -29,8 +29,8 @@ import (
 func buildUnconfiguredSupervisor(t *testing.T) *Supervisor {
 	t.Helper()
 	cfg := Config{
-		BaseURL:               "http://localhost:9999",
-		AgentPodID:            "pod-test",
+		BaseURL: "http://localhost:9999",
+
 		Concurrency:           1,
 		HeartbeatInterval:     30 * time.Second,
 		ClaimWaitSeconds:      30,

@@ -230,7 +230,6 @@ function SetupChecklistCard({ region }: { region: string }) {
           className="bg-muted p-3 rounded text-xs overflow-x-auto"
           data-testid="deploy-snippet"
         >{`docker run --rm \\
-  -e YAAOS_AGENT_POD_ID=<your-pod-uuid> \\
   -e AWS_REGION=${region} \\
   --user $(id -u) \\
   ghcr.io/yaaos/agent:latest supervisor`}</pre>

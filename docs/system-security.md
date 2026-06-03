@@ -41,7 +41,7 @@
 
 Each customer registers an IAM-role ARN at `PATCH /api/orgs` (`registered_iam_arn`). The agent in their ECS task assumes that role; `POST /api/v1/agent/identity` replays the agent's sigv4-signed `GetCallerIdentity` against AWS STS, canonicalizes the assumed-role ARN, and matches it against the registered ARN. The trust chain is AWS STS signature verification — yaaos never trusts the agent's own ARN claim.
 
-**Audience binding** — the `X-Yaaos-Audience` header in the signed payload must match the backend's canonical hostname. This prevents a valid signature produced for one yaaos instance from being replayed against another.
+**Audience binding** — the `X-Yaaos-Audience` header in the signed payload must be present and match `YAAOS_PUBLIC_HOSTNAME` (the backend's configured canonical hostname). This prevents a valid signature produced for one yaaos instance from being replayed against another.
 
 **Host allowlist** — the STS endpoint URL in the signed request is validated against a regex allowlist of known AWS STS hostnames. In non-prod, `YAAOS_STS_HOST_OVERRIDE` extends the allowlist to admit a mock STS host; the process refuses to boot if `YAAOS_ENV=prod` and the override are set simultaneously.
 
@@ -66,7 +66,7 @@ Always. The agent only opens outbound TLS connections to the control plane; no i
 
 ### Bearer scope
 
-The bearer issued at identity-exchange is scoped to the per-pod `agent_id` (`workspace_agents.id`). It travels in `Authorization: Bearer <token>` on every HTTPS endpoint + the WebSocket upgrade.
+The bearer issued at identity-exchange is scoped to the per-agent-instance `agent_id` (`workspace_agents.id`). It travels in `Authorization: Bearer <token>` on every HTTPS endpoint + the WebSocket upgrade.
 
 ### Single-flight + stale-claim guard
 
@@ -102,13 +102,13 @@ W3C trace context is a required field on every AgentCommand, AgentEvent, Workspa
 | Duplicate webhook delivery | `X-Github-Delivery` is the `idempotency_key` on `domain/tickets.create()`; second submission returns the same ticket without starting a new workflow. |
 | Stale event redelivery from a workspace whose claim has rotated | Stale-claim guard returns 410; agent abandons. |
 | Two workflows racing the same workspace | Single-flight `try_claim` atomic CAS. |
-| Agent pod identity spoofing | STS replay verification: backend replays the agent's sigv4-signed `GetCallerIdentity` against AWS STS; trust anchored to AWS signature verification + audience binding. |
+| Agent identity spoofing | STS replay verification: backend replays the agent's sigv4-signed `GetCallerIdentity` against AWS STS; trust anchored to AWS signature verification + audience binding. |
 | Activity events leaking source content | Not yet defended — WebSocket plumbing exists but no pre-renderer audit on `domain/coding_agent` ActivityEvents. |
 | Worker exhaustion under long-running AgentCommands | Async event-driven engine — workers exit after dispatch and resume on terminal event. Verified by workflow state-machine tests. |
 
 ## Not defended against (yet)
 
-- Compromised agent pod (customer's IAM role + workspace state on disk). Out of scope — workspace-process sandbox hardening is deferred.
+- Compromised agent instance (customer's IAM role + workspace state on disk). Out of scope — workspace-process sandbox hardening is deferred.
 - Activity event payload tampering. WebSocket is TLS-protected but events are not signed. Architectural assumption: customer's network is trusted to ECS.
 - Side-channel via prompt content. Out of scope.
 

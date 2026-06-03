@@ -23,7 +23,6 @@ Environment variables consumed by `agent supervisor`:
 | Var | Default | Purpose |
 |---|---|---|
 | `YAAOS_BACKEND_URL` | `https://app.yaaos.cloud` | Control-plane base URL. |
-| `YAAOS_AGENT_POD_ID` | random 32-hex | Local pod identifier used as an OTel resource attribute. Not sent on the wire. |
 | `YAAOS_AGENT_VERSION` | `0.0.0-dev` | Reported during identity exchange. |
 | `AWS_EC2_METADATA_SERVICE_ENDPOINT` | auto (IMDS v2) | Override IMDS endpoint. Set to `http://mock-aws:4566` in dev/test compose to use mock-aws. |
 | `YAAOS_STS_HOST_OVERRIDE` | (none) | Allow an additional STS host (e.g. `mock-aws:4566`). Non-prod only; the backend refuses to boot if set with `YAAOS_ENV=prod`. |
@@ -170,8 +169,8 @@ Each failure logs `WARN` with `surface`, `class` (`auth`/`network`), and `next_s
 ### Health + scaling
 
 - Backend tracks liveness via `workspace_agents.last_heartbeat_at`.
-- `GET /api/workspaces/connection_status` returns `{state, pod_count, latest_heartbeat_at}` per org.
-- Pod silent > 90 s → backend marks `state='unreachable'`; in-flight AgentCommands fail with `agent_lost`.
+- `GET /api/workspaces/connection_status` returns `{state, pod_count, latest_heartbeat_at}` per org (`pod_count` = number of agent instances).
+- Agent instance silent > 90 s → backend marks `state='unreachable'`; in-flight AgentCommands fail with `agent_lost`.
 
 ## Local dev
 

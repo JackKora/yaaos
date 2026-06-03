@@ -72,7 +72,6 @@ func buildSupervisorForRetryTest(t *testing.T, srv *fakeEventServer, spawnFn Spa
 	}
 	cfg := Config{
 		BaseURL:               srv.server.URL,
-		AgentPodID:            "pod-test",
 		Concurrency:           1,
 		HeartbeatInterval:     30 * time.Second,
 		ClaimWaitSeconds:      30,

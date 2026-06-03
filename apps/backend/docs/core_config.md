@@ -17,6 +17,8 @@
 
 **Cached singleton** — `Settings()` parses env on every call; `@cache` on `get_settings()` makes subsequent calls free. Tests monkeypatching env must call `get_settings.cache_clear()` afterward.
 
+**`YAAOS_PUBLIC_HOSTNAME`** — canonical public hostname of this backend deployment (e.g. `app.yaaos.cloud`; no scheme, no path). Used by `core/agent_gateway` to validate the `X-Yaaos-Audience` header in agent identity-exchange requests. Unset → audience check bypassed (dev/test). Production must set this to match what `hostFromURL(YAAOS_BACKEND_URL)` produces on the agent side.
+
 ## Gotchas
 
 - Callers never instantiate `Settings` directly — always via `get_settings()`.
