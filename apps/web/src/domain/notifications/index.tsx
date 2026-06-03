@@ -1,47 +1,25 @@
-/**
- * Notifications — full page (E2a.6).
- *
- * Cross-org chronological list. Backed by `useNotifications()` →
- * GET /api/notifications. Row click marks-as-read via the per-row
- * mutation; "Mark all read" hits POST /api/notifications/mark-read.
- *
- * SSE wiring (`notification_created` / `notification_read` invalidations)
- * lands once the workflow engine emits those kinds.
- */
-
 import {
   type Notification as NotificationItem,
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotifications,
 } from "@core/api";
-import { EmptyState, PageHeader } from "@shared/components/layout";
+import { EmptyState, ErrorBanner, PageHeader } from "@shared/components/layout";
 import { Button } from "@shared/components/ui/button";
 import { Skeleton } from "@shared/components/ui/skeleton";
 import { ago } from "@shared/utils/ago";
 import { cn } from "@shared/utils/cn";
 import { Bell } from "lucide-react";
-import { useState } from "react";
-
-type ReadFilter = "all" | "unread" | "read";
+import { Suspense } from "react";
+import { ErrorBoundary } from "react-error-boundary";
+import { type ReadFilter, useNotificationsFilter } from "./use-notifications-filter";
 
 export function NotificationsPage() {
-  const [filter, setFilter] = useState<ReadFilter>("all");
-  const { data: items, isLoading } = useNotifications(filter);
-  const markOne = useMarkNotificationRead();
-  const markAll = useMarkAllNotificationsRead();
+  const { filter, setFilter } = useNotificationsFilter();
 
   return (
     <div className="mx-auto max-w-[900px] px-6 py-8">
-      <PageHeader
-        title="Notifications"
-        subtitle="Cross-org inbox."
-        actions={
-          <Button variant="outline" onClick={() => markAll.mutate()} disabled={markAll.isPending}>
-            Mark all read
-          </Button>
-        }
-      />
+      <PageHeader title="Notifications" subtitle="Cross-org inbox." actions={<MarkAllButton />} />
 
       <div className="flex gap-1 mb-4">
         {(["all", "unread", "read"] as const).map((k) => (
@@ -63,35 +41,65 @@ export function NotificationsPage() {
         ))}
       </div>
 
-      {isLoading ? (
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: skeletons
-            <Skeleton key={i} className="h-14" />
-          ))}
-        </div>
-      ) : !items || items.length === 0 ? (
-        <EmptyState
-          icon={Bell}
-          headline="No notifications."
-          body="When yaaos needs a decision on one of your tickets, or finishes a review, it shows up here."
-        />
-      ) : (
-        <div className="flex flex-col gap-4" data-testid="notifications-list">
-          {groupByDate(items).map((group) => (
-            <section key={group.label}>
-              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                {group.label}
-              </h2>
-              <ul className="rounded-md border border-border overflow-hidden">
-                {group.items.map((n) => (
-                  <Row key={n.id} item={n} onClick={() => markOne.mutate(n.id)} />
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      )}
+      <ErrorBoundary
+        fallbackRender={({ resetErrorBoundary }) => (
+          <ErrorBanner message="Couldn't load notifications." onRetry={resetErrorBoundary} />
+        )}
+      >
+        <Suspense
+          fallback={
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: skeletons
+                <Skeleton key={i} className="h-14" />
+              ))}
+            </div>
+          }
+        >
+          <NotificationsList filter={filter} />
+        </Suspense>
+      </ErrorBoundary>
+    </div>
+  );
+}
+
+function MarkAllButton() {
+  const markAll = useMarkAllNotificationsRead();
+  return (
+    <Button variant="outline" onClick={() => markAll.mutate()} disabled={markAll.isPending}>
+      Mark all read
+    </Button>
+  );
+}
+
+function NotificationsList({ filter }: { filter: ReadFilter }) {
+  const { data: items } = useNotifications(filter);
+  const markOne = useMarkNotificationRead();
+
+  if (!items || items.length === 0) {
+    return (
+      <EmptyState
+        icon={Bell}
+        headline="No notifications."
+        body="When yaaos needs a decision on one of your tickets, or finishes a review, it shows up here."
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4" data-testid="notifications-list">
+      {groupByDate(items).map((group) => (
+        <section key={group.label}>
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+            {group.label}
+          </h2>
+          <ul className="rounded-md border border-border overflow-hidden">
+            {group.items.map((n) => (
+              <Row key={n.id} item={n} onClick={() => markOne.mutate(n.id)} />
+            ))}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }
@@ -102,9 +110,8 @@ interface DateGroup {
 }
 
 /**
- * Bucket notifications into the four date groups from E2a.6: Today,
- * Yesterday, This week, Older. Preserves the server's ordering inside
- * each bucket (the API returns newest first).
+ * Bucket notifications into four date groups: Today, Yesterday, This week,
+ * Older. Preserves server ordering inside each bucket (newest first).
  */
 function groupByDate(items: NotificationItem[]): DateGroup[] {
   const groups: DateGroup[] = [

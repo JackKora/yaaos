@@ -61,7 +61,7 @@
 | File | Purpose |
 |---|---|
 | `org-switcher.tsx` | `OrgSwitcher` — sidebar chip showing the current org with a dropdown of the user's other orgs + a "View all organizations" link to `/orgs`. Data via `useMyOrgs()`. |
-| `notifications-bell.tsx` | `NotificationsBell` — Bell icon row with unread-count badge + popover. Renders a placeholder empty-state today; no live data wired. |
+| `notifications-bell.tsx` | `NotificationsBell` — Bell icon row with unread-count badge + popover of up to 10 unread items. Backed by `useNotificationsPopover()`. Row click marks individual read; footer link marks all read. |
 
 ## Layout composites (`src/shared/components/layout/`)
 

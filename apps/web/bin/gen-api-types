@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Generate TypeScript types from the backend's OpenAPI spec.
+#
+# Usage:
+#   bin/gen-api-types            — regenerate (backend must be running on :8080)
+#   bin/gen-api-types --check    — drift check: regenerate then fail if git diff
+#
+# The generated file is committed. Callers import types via
+# `apps/web/src/core/api/generated/schema.d.ts`; never import it
+# directly from the generated dir in production code — go through
+# `@core/api`.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+SPEC_URL="${OPENAPI_URL:-http://localhost:8080/openapi.json}"
+OUT="src/core/api/generated/schema.d.ts"
+CHECK_MODE=false
+
+for arg in "$@"; do
+  if [[ "$arg" == "--check" ]]; then
+    CHECK_MODE=true
+  fi
+done
+
+echo "==> Fetching OpenAPI spec from $SPEC_URL"
+TMP=$(mktemp /tmp/openapi.XXXXXX.json)
+trap 'rm -f "$TMP"' EXIT
+curl -sf "$SPEC_URL" -o "$TMP"
+
+echo "==> Generating $OUT"
+mkdir -p "$(dirname "$OUT")"
+pnpm exec openapi-typescript "$TMP" --output "$OUT"
+
+if $CHECK_MODE; then
+  echo "==> Checking for drift"
+  if ! git diff --exit-code -- "$OUT" > /dev/null 2>&1; then
+    echo "ERROR: Generated types are out of date. Run bin/gen-api-types and commit the result."
+    git diff -- "$OUT"
+    exit 1
+  fi
+  echo "OK: no drift"
+fi

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import {
   type AuditEntry,
   type HealthResponse,
@@ -187,7 +187,7 @@ export interface NotificationsPopover {
 }
 
 export function useNotifications(readState: "all" | "unread" | "read" = "all") {
-  return useQuery<Notification[]>({
+  return useSuspenseQuery<Notification[]>({
     queryKey: ["notifications", readState],
     queryFn: () => apiFetch<Notification[]>(`/api/notifications?read_state=${readState}`),
     refetchInterval: 30_000,

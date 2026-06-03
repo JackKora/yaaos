@@ -9,7 +9,45 @@ Cross-app conventions (UTC on the wire, audit-log shape) live in [`docs/system-a
 
 ## Imports
 
-Absolute only via path aliases (`@core/...`, `@domain/...`, `@shared/...`). Only what's exported from `index.ts(x)` — no deep imports across module boundaries.
+Absolute only via path aliases (`@core/...`, `@domain/...`, `@shared/...`). Only what's exported from `index.ts(x)` — no deep imports across module boundaries (barrel-only). The architectural rules are authored in `apps/web/.dependency-cruiser.cjs` (non-failing; violations appear as `info`-level output).
+
+## Hook placement and naming
+
+| Hook type | Location | Suffix rule |
+|---|---|---|
+| Server-state (TanStack Query) | `core/api/queries.ts` | `use<Resource>` |
+| Module logic (derived state, callbacks, local state) | `domain/<module>/use-<thing>.ts` | `use-<thing>.ts` (kebab file, camel export) |
+| Shared cross-module | `shared/hooks/` | `use<Thing>` |
+
+- Logic hooks (`use-*.ts`) return data, state, and callbacks — **never JSX**. File extension is `.ts`, not `.tsx`.
+- Server hooks use `useSuspenseQuery` — callers never see `isLoading`. Loading handled by `<Suspense>` fallbacks.
+
+## Suspense and error boundaries
+
+Every data-fetching domain component renders under `<Suspense>` + `<ErrorBoundary>` from `react-error-boundary`:
+
+- `<Suspense>` fallback: `<Skeleton>` skeletons sized to the eventual content.
+- `<ErrorBoundary>` fallback: `<ErrorBanner message="Couldn't load …" onRetry={resetErrorBoundary} />` from `@shared/components/layout`.
+- Both components live in the same `index.tsx`. `<ErrorBoundary>` wraps `<Suspense>`.
+- Mutations (writes) are not wrapped — they expose `isPending`/`isError` to the caller.
+
+See `domain/notifications/` for the reference implementation.
+
+## MSW testing strategy
+
+Tests that cross `core/api` use MSW (`msw/node`) rather than `vi.mock`. Three-tier mapping:
+
+| Tier | When to use |
+|---|---|
+| Unit (Vitest, no network) | Pure logic in one module — no React, no hooks |
+| Component/integration (Vitest + RTL + MSW) | React component trees with real `QueryClient`; MSW intercepts HTTP |
+| E2e (Playwright) | Full browser flow — SSE, OAuth, cookies, navigation |
+
+MSW infra lives in `src/test/msw/`:
+- `server.ts` — `setupServer()` export; global start/reset/stop in `src/test-setup.ts`.
+- `handlers/<domain>.ts` — per-domain handlers typed against `@core/api` types; drift = compile error.
+
+Use `vi.useFakeTimers({ toFake: ["Date"] })` (not full fake timers) when tests need fixed `Date` — full fake timers block MSW/Promise resolution.
 
 ## testid conventions
 
@@ -27,10 +65,11 @@ Absolute only via path aliases (`@core/...`, `@domain/...`, `@shared/...`). Only
 |---|---|
 | Lint + format | Biome (`apps/web/biome.json`) |
 | Type check | `tsc --noEmit` |
-| Unit tests | Vitest |
+| Unit/integration tests | Vitest + RTL + MSW |
+| Boundary lint | dependency-cruiser (`apps/web/.dependency-cruiser.cjs`, non-failing) |
 | Build | Vite |
 
-`apps/web/bin/ci` runs all four.
+`apps/web/bin/ci` runs all except dependency-cruiser (advisory only).
 
 ## Module documentation
 
@@ -83,6 +122,7 @@ Module-scoped arrays. Canonical keys:
 - `["github", "installation"]`, `["github", "repositories"]`
 - `["plugin-health", pluginId]`
 - `["onboarding"]`, `["health"]`
+- `["notifications", readState]`, `["notifications", "popover"]`
 
 Mutations and the SSE subscriber ([core_sse.md](core_sse.md)) invalidate exactly the keys they affect.
 
@@ -103,7 +143,7 @@ Two surfaces in `core/api/client.ts`: `apiClient` (typed `openapi-fetch`) and `a
 ## Error handling at the API boundary
 
 - **Mutations** — expose `isPending`/`isSuccess`/`isError`; forms show inline "Saving…" / "Saved." / red error text.
-- **Queries** — components handle loading + error inline; `data-testid` slots on primitives let e2e assert state.
+- **Queries** — `useSuspenseQuery`; `<ErrorBoundary>` catches thrown errors; `<Suspense>` shows skeletons while pending.
 - **Validation errors** — 4xx field-keyed map surfaces under the relevant input.
 
 ## Code style
@@ -119,4 +159,4 @@ Two surfaces in `core/api/client.ts`: `apiClient` (typed `openapi-fetch`) and `a
   primitives. Container-query variants (`@container`, `@sm:`, `@lg:`) are available natively
   in Tailwind v4 — prefer them over media queries for component-level breakpoints.
 - `tsc` strict — warnings are CI errors.
-- Forms: React state + manual validation. No `react-hook-form` / `zod`.
+- Forms: `react-hook-form` + `zod` for validated forms. Plain React state for simple filters/toggles.

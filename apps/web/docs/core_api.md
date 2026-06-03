@@ -15,8 +15,16 @@ Re-exports from `@core/api`: client helpers (`apiClient`, `apiFetch`, `getCurren
 ### Two clients, one helper
 
 `client.ts` exposes two surfaces:
-- `apiClient` — `openapi-fetch` typed client. `Paths` hand-declared (currently covers `/api/health`); codegen deferred.
+- `apiClient` — `openapi-fetch` typed client. `Paths` hand-declared (covers `/api/health`); remaining endpoints typed via `useSuspenseQuery<T>` or `apiFetch<T>` with the hand-declared resource types.
 - `apiFetch<T>(path, init?)` — generic fetch wrapper. On 401, lazy-imports `handleAuthFailure` (breaks load-path cycle) which hard-navigates to `/login?reason=...&next=<current-path>`. Non-2xx throws `${status} ${path}: ${body}`. 204 → `undefined`.
+
+### Generated types
+
+`src/core/api/generated/schema.d.ts` is auto-generated from the backend's `/openapi.json` by `apps/web/bin/gen-api-types`. It is committed; the generation script also supports a `--check` flag for drift detection (regenerates and runs `git diff --exit-code`).
+
+- Only `core/api` may import from `generated/` — the boundary is enforced by `.dependency-cruiser.cjs`.
+- The generated dir is excluded from Biome lint/format (`biome.json`).
+- The backend spec returns `unknown` for some notification and popover endpoints; those stay hand-typed in `queries.ts` until the spec is annotated.
 
 ### Central 401 handler
 
@@ -35,10 +43,11 @@ Type aliases in `client.ts` mirror backend Pydantic models. Non-obvious fields:
 - `ReviewJob` — one row per (PR × review run); includes `activity_log` (persisted coding-agent stream events).
 - `ReviewJobActivityEvent` — `{ts, kind, message, detail?}`; used in `ReviewJob.activity_log` and as the SSE payload for `/api/sse/workspace_activity/{id}`.
 - `PluginMeta` — from `/api/settings/plugins`; drives the Settings UI plugin list.
+- `Notification` / `NotificationsPopover` — hand-typed in `queries.ts`; backend spec returns `unknown` for these endpoints.
 
 ### Query hooks
 
-`queries.ts` — one hook per endpoint. Polling intervals are used only for `useHealth`, `useConfigStatus`, `useNotifications`, and similar non-SSE queries. `useDashboard` and `useAgents` are pure-SSE — no polling. See [core_sse.md](core_sse.md) for the full invalidation map.
+`queries.ts` — one hook per endpoint. Server-state hooks use `useSuspenseQuery`; callers never see `isLoading` — loading is handled by `<Suspense>` fallbacks. Polling intervals are used only for `useHealth`, `useConfigStatus`, `useNotifications`, and similar non-SSE queries. `useDashboard` and `useAgents` are pure-SSE — no polling. See [core_sse.md](core_sse.md) for the full invalidation map.
 
 `useAgents(orgSlug)` — fetches `GET /api/orgs/{slug}/agents`. Returns `AgentRow[]` within the 1-hour retention window. Invalidated live via `agent_liveness_changed` SSE. Enabled only when `orgSlug` is non-empty.
 
@@ -52,4 +61,4 @@ None. The `QueryClient` lives in `main.tsx`; hooks here just read/write it.
 
 ## How it's tested
 
-E2e specs in `apps/e2e/tests/*.spec.ts` cover full hook + backend round-trips. Non-trivial cache logic (custom `select`, optimistic updates) gets Vitest tests in `apps/web/src/core/api/test/`.
+E2e specs in `apps/e2e/tests/*.spec.ts` cover full hook + backend round-trips. Non-trivial cache logic (custom `select`, optimistic updates) gets Vitest tests in `apps/web/src/core/api/test/`. Domain-level integration tests use MSW (see [patterns.md § MSW testing strategy](patterns.md#msw-testing-strategy)).

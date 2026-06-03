@@ -1,24 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import type React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const notificationsMock = vi.fn();
-const markOneMock = vi.fn();
-const markAllMock = vi.fn();
-
-vi.mock("@core/api", () => ({
-  useNotifications: (filter: string) => notificationsMock(filter),
-  useMarkNotificationRead: () => ({ mutate: markOneMock, isPending: false }),
-  useMarkAllNotificationsRead: () => ({ mutate: markAllMock, isPending: false }),
-}));
-
+import { server } from "../../../test/msw/server";
 import { NotificationsPage } from "../index";
-
-function wrap(node: React.ReactNode) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return <QueryClientProvider client={qc}>{node}</QueryClientProvider>;
-}
 
 const FIXED_NOW = new Date("2026-05-15T12:00:00Z");
 const today = FIXED_NOW;
@@ -26,7 +12,7 @@ const yesterday = new Date(FIXED_NOW.getTime() - 26 * 3_600_000);
 const lastWeek = new Date(FIXED_NOW.getTime() - 3 * 86_400_000);
 const older = new Date(FIXED_NOW.getTime() - 60 * 86_400_000);
 
-const fixture = [
+const FIXTURE = [
   {
     id: "n1",
     user_id: "u1",
@@ -73,61 +59,130 @@ const fixture = [
   },
 ];
 
-describe("NotificationsPage", () => {
+function wrap(node: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={qc}>{node}</QueryClientProvider>;
+}
+
+describe("NotificationsPage (MSW)", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    // Only fake Date — real timers keep MSW/Promise resolution working.
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(FIXED_NOW);
+    server.use(
+      http.get("/api/notifications", () => {
+        return HttpResponse.json(FIXTURE);
+      }),
+      http.post("/api/notifications/mark-read", () => {
+        return HttpResponse.json({ marked: FIXTURE.length });
+      }),
+    );
   });
+
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("loading state renders skeletons", () => {
-    notificationsMock.mockReturnValue({ data: undefined, isLoading: true });
+  it("renders skeleton while loading then shows notifications", async () => {
     render(wrap(<NotificationsPage />));
-    expect(screen.getByText(/Notifications/)).toBeInTheDocument();
-  });
-
-  it("empty state when zero notifications", () => {
-    notificationsMock.mockReturnValue({ data: [], isLoading: false });
-    render(wrap(<NotificationsPage />));
-    expect(screen.getByText(/No notifications/)).toBeInTheDocument();
-  });
-
-  it("groups items into Today / Yesterday / This week / Older", () => {
-    notificationsMock.mockReturnValue({ data: fixture, isLoading: false });
-    render(wrap(<NotificationsPage />));
-    // Every notification renders.
-    expect(screen.getByText("Today event")).toBeInTheDocument();
+    // After data resolves, all four items render.
+    await waitFor(() => {
+      expect(screen.getByText("Today event")).toBeInTheDocument();
+    });
     expect(screen.getByText("Yesterday event")).toBeInTheDocument();
     expect(screen.getByText("Last week event")).toBeInTheDocument();
     expect(screen.getByText("Old event")).toBeInTheDocument();
-    // Every header renders (date grouping is the feature under test).
-    expect(screen.getByText("Today")).toBeInTheDocument();
+  });
+
+  it("groups items into Today / Yesterday / This week / Older", async () => {
+    render(wrap(<NotificationsPage />));
+    await waitFor(() => expect(screen.getByText("Today")).toBeInTheDocument());
     expect(screen.getByText("Yesterday")).toBeInTheDocument();
     expect(screen.getByText("This week")).toBeInTheDocument();
     expect(screen.getByText("Older")).toBeInTheDocument();
   });
 
-  it("filter chips switch the read_state on click", () => {
-    notificationsMock.mockReturnValue({ data: fixture, isLoading: false });
+  it("empty state when server returns empty list", async () => {
+    server.use(
+      http.get("/api/notifications", () => {
+        return HttpResponse.json([]);
+      }),
+    );
     render(wrap(<NotificationsPage />));
-    fireEvent.click(screen.getByTestId("notifications-filter-unread"));
-    // The query hook is called with the new filter on the next render.
-    expect(notificationsMock).toHaveBeenLastCalledWith("unread");
+    await waitFor(() => {
+      expect(screen.getByText(/No notifications/)).toBeInTheDocument();
+    });
   });
 
-  it("row click fires mark-as-read mutation", () => {
-    notificationsMock.mockReturnValue({ data: fixture, isLoading: false });
+  it("filter chips send the read_state param on click", async () => {
+    const requests: string[] = [];
+    server.use(
+      http.get("/api/notifications", ({ request }) => {
+        requests.push(new URL(request.url).searchParams.get("read_state") ?? "");
+        return HttpResponse.json(FIXTURE);
+      }),
+    );
     render(wrap(<NotificationsPage />));
-    fireEvent.click(screen.getByTestId("notification-row-n1"));
-    expect(markOneMock).toHaveBeenCalledWith("n1");
+    await waitFor(() => expect(screen.getByText("Today event")).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("notifications-filter-unread"));
+    });
+
+    await waitFor(() => {
+      expect(requests).toContain("unread");
+    });
   });
 
-  it("Mark all read button fires the bulk mutation", () => {
-    notificationsMock.mockReturnValue({ data: fixture, isLoading: false });
+  it("row click fires mark-as-read POST", async () => {
+    let markedId: string | null = null;
+    server.use(
+      http.post<{ id: string }>("/api/notifications/:id/read", ({ params }) => {
+        markedId = params.id ?? null;
+        return HttpResponse.json({ ...FIXTURE[0], read_at: new Date().toISOString() });
+      }),
+    );
     render(wrap(<NotificationsPage />));
-    fireEvent.click(screen.getByText(/Mark all read/));
-    expect(markAllMock).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId("notification-row-n1")).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("notification-row-n1"));
+    });
+
+    await waitFor(() => {
+      expect(markedId).toBe("n1");
+    });
+  });
+
+  it("Mark all read button fires POST /api/notifications/mark-read", async () => {
+    let called = false;
+    server.use(
+      http.post("/api/notifications/mark-read", () => {
+        called = true;
+        return HttpResponse.json({ marked: FIXTURE.length });
+      }),
+    );
+    render(wrap(<NotificationsPage />));
+    await waitFor(() => expect(screen.getByText("Today event")).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Mark all read/));
+    });
+
+    await waitFor(() => {
+      expect(called).toBe(true);
+    });
+  });
+
+  it("shows error banner when server errors", async () => {
+    server.use(
+      http.get("/api/notifications", () => {
+        return HttpResponse.json({ error: "internal" }, { status: 500 });
+      }),
+    );
+    render(wrap(<NotificationsPage />));
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't load notifications/)).toBeInTheDocument();
+    });
   });
 });
