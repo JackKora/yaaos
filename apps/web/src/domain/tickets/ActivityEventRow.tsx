@@ -1,9 +1,9 @@
 /**
- * Activity event row — one event in the Activity tab live stream (E2a.4).
+ * Activity event row — one event in the Activity tab live stream.
  *
- * Pure-render: takes a `ReviewJobActivityEvent`-shaped object + an
+ * Pure-render: takes a `ReviewJobActivityEvent` from `@core/api` + an
  * optional `expanded` flag. Maps the freeform `kind` string to a lucide
- * icon per the baseline taxonomy from requirements.md § E2a.4:
+ * icon per the baseline taxonomy:
  *
  *   session_start         → Play
  *   subagent_dispatched   → GitBranch
@@ -19,8 +19,9 @@
  * spec; the wrapper `<details>` element drives expansion.
  */
 
-import { ago } from "@shared/utils/ago";
-import { cn } from "@shared/utils/cn";
+import type { ReviewJobActivityEvent } from "@core/api/public/client";
+import { ago } from "@shared/utils/public/ago";
+import { cn } from "@shared/utils/public/cn";
 import {
   CheckCircle2,
   Circle,
@@ -32,13 +33,6 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-
-export interface ActivityEvent {
-  ts: string;
-  kind: string;
-  message: string;
-  detail?: Record<string, unknown> | null;
-}
 
 interface IconMeta {
   Icon: LucideIcon;
@@ -53,7 +47,7 @@ const KIND_META: Record<string, IconMeta> = {
   result: { Icon: Flag, tone: "text-success" },
 };
 
-function metaFor(event: ActivityEvent): IconMeta {
+function metaFor(event: ReviewJobActivityEvent): IconMeta {
   if (event.kind === "tool_call_finished") {
     const exit = event.detail?.exit_code;
     return exit === 0
@@ -64,7 +58,7 @@ function metaFor(event: ActivityEvent): IconMeta {
 }
 
 interface ActivityEventRowProps {
-  event: ActivityEvent;
+  event: ReviewJobActivityEvent;
   className?: string;
 }
 

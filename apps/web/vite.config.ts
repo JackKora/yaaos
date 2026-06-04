@@ -1,9 +1,24 @@
 import path from "node:path";
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
+import babel from "@rolldown/plugin-babel";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    tailwindcss(),
+    react(),
+    babel({ presets: [reactCompilerPreset()] }),
+    // Bundle-size report: writes tmp/bundle-stats.html after every build.
+    // Non-gating — informational only, CI does not fail on chunk size.
+    visualizer({
+      filename: "tmp/bundle-stats.html",
+      open: false,
+      gzipSize: true,
+      brotliSize: true,
+    }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -11,6 +26,13 @@ export default defineConfig({
       "@domain": path.resolve(__dirname, "./src/domain"),
       "@shared": path.resolve(__dirname, "./src/shared"),
     },
+  },
+  build: {
+    // Hidden source maps: emitted to the build output dir alongside the
+    // minified bundle but not referenced from the bundle. Uploaded to Dash0
+    // on deploy (keyed by release hash) for server-side symbolication of
+    // minified client error stacks. Never served to the browser.
+    sourcemap: "hidden",
   },
   server: {
     port: 5173,

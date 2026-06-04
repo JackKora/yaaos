@@ -15,10 +15,11 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 
 | Module | Responsibility |
 |---|---|
-| [core_api](core_api.md) | `openapi-fetch` client + `apiFetch` + every TanStack Query/mutation hook. |
+| [core_api](core_api.md) | `apiFetch` + every TanStack Query/mutation hook. |
 | [core_sse](core_sse.md) | Single `EventSource` at app root; events → query-cache invalidations. |
 | [core_routing](core_routing.md) | TanStack Router config + route tree. |
 | [core_layout](core_layout.md) | App shell — sidebar mount, theme tokens, route outlet, broken-integrations banner. No topbar (see [design.md](design.md)). |
+| [core_observability](core_observability.md) | OTel Web SDK — `configure`, identity stamping, error-as-span capture, `traceparent` propagation on `/api/*` fetches. |
 
 ### Domain
 
@@ -30,7 +31,7 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 | [domain_notifications](domain_notifications.md) | cross-org inbox page + sidebar bell popover. |
 | [domain_org_settings](domain_org_settings.md) | Tabbed org-settings shell (Auth, Members, VCS, Coding Agents, API Keys, MCP Proxy, Audit). |
 | [domain_auth](domain_auth.md) | Login page (email-first SSO-discover) + logout. |
-| [domain_user](domain_user.md) | `/user/details`, `/user/security`, `/user/messaging` — self-service profile + 2FA. |
+| [domain_user](domain_user.md) | `/user/details`, `/user/security` — self-service profile + 2FA. |
 | [domain_orgs](domain_orgs.md) | Org picker (`/orgs`) + Members + Audit + SSO config — surfaces tied to a specific org's identity layer. |
 
 ## Running locally
@@ -39,22 +40,22 @@ React SPA built with Vite. Bundled into the backend's Docker image at build time
 
 ## CI
 
-`apps/web/bin/ci` runs Biome, `tsc --noEmit`, Vitest, and the Vite build. Semgrep runs in a separate RWX task (`web-security`) via the `semgrep/semgrep` Docker image — kept out of `bin/ci` because the web-builder image is node-only. Local semgrep shortcut and full docker invocation documented inline in `apps/web/bin/ci`.
+`apps/web/bin/ci` runs, in order: Biome, `tsc --noEmit`, Vitest, Vite build, bundle report (non-gating), dependency-cruiser boundary check, knip dead-code check, `use-*.tsx` hook naming check, semgrep. All steps must pass. Semgrep requires `semgrep` on PATH (`pipx install semgrep` locally; pip-installed in RWX CI).
 
 ## Stack
 
 | Concern | Choice |
 |---|---|
-| Build / dev server | Vite |
-| UI framework | React 18 |
+| Build / dev server | Vite 8 |
+| UI framework | React 19 + React Compiler |
 | Routing | TanStack Router |
 | Server state | TanStack Query |
-| API client | `openapi-fetch` (typed) + hand-written `apiFetch` |
+| API client | hand-written `apiFetch` |
 | Real-time | Native `EventSource` (SSE) |
 | Forms | React state + manual validation |
-| Styling | Tailwind, oklch color tokens |
+| Styling | Tailwind v4, CSS-first `@theme`, oklch color tokens |
 | Component primitives | shadcn-style copies in `shared/components/ui/` (Radix-backed) + composites in `shared/components/{layout,chrome}/` |
 | Lint / format | Biome |
-| Unit tests | Vitest |
+| Unit tests | Vitest 4 |
 | Icons | lucide-react |
 | TypeScript | `strict: true`, path aliases (`@core/...`, `@domain/...`, `@shared/...`) |

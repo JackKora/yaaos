@@ -117,13 +117,15 @@ tasks:
   - key: nodejs
     call: nodejs/install 1.1.14
     with:
-      node-version: "22.11.0"
+      node-version: "24.16.0"
 
   - key: web-ci
     use: [code, nodejs, python]
     tool-cache: ci-web-pnpm
     filter:
       - apps/web/**
+      # bin/ci runs gen-api-types --check against the committed spec.
+      - apps/backend/openapi/web-api.json
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml

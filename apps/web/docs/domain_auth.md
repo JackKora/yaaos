@@ -4,15 +4,23 @@
 
 ## Surfaces
 
-- `/login` — `LoginPage`. Email field → `useSsoDiscover` (`POST /api/auth/sso/discover`) → provider button. Falls back to multi-provider panel when discover returns no preferred provider.
-- Logout — `useLogoutAll` mutation; fired from the sidebar User Card popover. Re-exported from `domain/auth/index.ts` for cross-domain callers.
+- `/login` — `LoginPage`. Email-first SSO discovery form (`react-hook-form` + Zod; schema: `email: z.string().email()`). Submit calls `useSsoDiscover`; on a SAML hit, renders the SAML button. Falls back to multi-provider panel when discover returns no preferred provider. Provider buttons load under `<ErrorBoundary>` + `<Suspense>` via `useProviders` (`useSuspenseQuery`).
+- `RequireMembership` — renders `children` only when the authenticated user has at least `role` in `orgSlug`. Declarative render-gate over the shared role primitive in `@core/api/public/membership` (`resolveMembership` + `hasRole`); for boolean checks use that module's `useHasRole`/`useMembership` directly. Suspends via `useCurrentUser`. Server `require()` is the authority — UI hinting only.
+- Logout — `useLogoutAll` mutation; fired from the sidebar User Card popover. Lives in `core/api` (`public/queries.ts`); `domain/auth/queries.ts` re-exports it for within-domain use.
 
 ## Key behavior
 
-- No client cache — mounts before any user identity is known.
 - GitHub button POSTs to `/api/sso/start` (carries CSRF) then redirects; TOTP challenge renders inline, not a separate route.
 - `data-testid="login-test"` panel is the e2e contract for "login page is rendered."
+- `useCurrentUser` lives in `core/api` (any layer can call it); `useProviders` is domain-local.
+- Both use `useSuspenseQuery`; callers must render under `<Suspense>`.
 
-## Code
+## Tests
 
-`apps/web/src/domain/auth/LoginPage.tsx`, `apps/web/src/domain/auth/index.ts`.
+`domain/auth/test/login.test.tsx` — component/MSW: GitHub button renders, SSO discovery flow, no-providers fallback.
+
+## Public interface
+
+- `apps/web/src/domain/auth/public/LoginPage.tsx` — `LoginPage`
+- `apps/web/src/domain/auth/public/RequireMembership.tsx` — `RequireMembership`
+- `apps/web/src/domain/auth/public/queries.ts` — `useCurrentUser`, `useLogout`, `useLogoutAll`, `useProviders`, `CurrentUser`, `MembershipSummary`

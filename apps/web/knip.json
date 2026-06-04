@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/router.tsx",
+    "src/test/msw/**/*.ts",
+    "bin/ci",
+    "bin/gen-api-types",
+    "bin/check-deps.mjs"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreExportsUsedInFile": true,
+  "ignore": ["src/shared/components/ui/**"],
+  "ignoreDependencies": ["tailwindcss", "openapi-typescript", "axe-core"]
+}

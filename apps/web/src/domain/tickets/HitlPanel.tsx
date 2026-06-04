@@ -14,7 +14,7 @@
 import { Button } from "@shared/components/ui/button";
 import { Input } from "@shared/components/ui/input";
 import { Textarea } from "@shared/components/ui/textarea";
-import { cn } from "@shared/utils/cn";
+import { cn } from "@shared/utils/public/cn";
 import { useState } from "react";
 
 export interface ChoicePrompt {
@@ -46,8 +46,6 @@ export interface FormPrompt {
   body: string;
   fields: FormField[];
 }
-
-export type HitlPrompt = ChoicePrompt | TextPrompt | FormPrompt;
 
 interface HitlPanelProps {
   payload: Record<string, unknown>;

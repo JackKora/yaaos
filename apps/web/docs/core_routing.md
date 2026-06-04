@@ -1,14 +1,20 @@
 # core/routing
 
-> TanStack Router config — URL → component mapping for the SPA.
+> TanStack Router search schemas — route-shape infrastructure for the SPA.
 
 ## Purpose
 
 Every authenticated page lives under `/orgs/$slug/...`. There is exactly one URL tree for authenticated work; the only routes that render outside it are `/login` and `/orgs` (the picker). User-account pages (`Details`, `Security`, `Notifications`) sit at `/orgs/$slug/user/*` — the slug is always part of the URL, which is the only source of truth for current org context.
 
+Route construction (page bindings) lives in `src/router.tsx` — the app composition root — so that file can import from both `@core/*` and `@domain/*` without violating layer/domain direction rules.
+
 ## Public interface
 
-- `router` — TanStack `Router` instance, consumed by `main.tsx`'s `<RouterProvider>`.
+Files under `core/routing/public/`, imported directly via `@core/routing/public/<file>`:
+
+- `public/schemas.ts` — `ticketsSearchSchema`, `lessonsSearchSchema` — Zod schemas for route search params.
+
+The `router` instance and `Register` augmentation live in `src/router.tsx`, consumed by `main.tsx`'s `<RouterProvider>`.
 
 The module declares the TanStack `Register` augmentation so `<Link to="/orgs/$slug/...">` gets typed autocomplete.
 
@@ -23,8 +29,8 @@ The module declares the TanStack `Register` augmentation so `<Link to="/orgs/$sl
 | `/orgs` | `OrgPickerPage` | Standalone (no sidebar). Empty state when the user has zero memberships ("ask an admin to invite you"). |
 | `/orgs/$slug` | scope-only route | Parent for all org-scoped subtrees, including user-area pages. |
 | `/orgs/$slug/dashboard` | `DashboardPage` | |
-| `/orgs/$slug/tickets`, `…/$ticketId` | `TicketsPage`, `TicketDetailPage` | |
-| `/orgs/$slug/lessons` | `LessonsPage` | |
+| `/orgs/$slug/tickets`, `…/$ticketId` | `TicketsPage`, `TicketDetailPage` | `/tickets` validates `{q?, repo?, status?[], mine?}` via Zod |
+| `/orgs/$slug/lessons` | `LessonsPage` | `/lessons` validates `{q?, repo?, sort?}` via Zod |
 | `/orgs/$slug/settings` | redirect | 303 → `/orgs/$slug/settings/auth`. |
 | `/orgs/$slug/settings/{auth,members,audit,vcs,coding-agents,coding-agents/$pluginId,api-keys,mcp-proxy,workspaces}` | per-page `…SettingsPage` | Owner/Admin gates per page. |
 | `/orgs/$slug/user` | redirect | 303 → `…/user/details`. |
@@ -52,6 +58,10 @@ Returns `{user, memberships[]}` (each entry: `slug`, `display_name`, `role`, `ha
 Use `<Link>` from `@tanstack/react-router` for all SPA navigation. Native `<a href="...">` is for external URLs or backend `/api/` redirects only. Grep guard: `grep -rn '<a\s[^>]*href="/' apps/web/src` → zero in-SPA hits.
 
 `router.tsx` augments `Register` so typed `<Link to="...">` works everywhere. Prefer `params={{ slug }}` over interpolated strings for full type safety.
+
+### Focus reset on navigation
+
+`AppShell` (`core/layout/app-shell.tsx`) holds a `useEffect` keyed on the current `pathname`. On every route change it moves keyboard focus to the first `<h1>` inside `<main>` (when one exists) or to `<main>` itself. `<main>` carries `tabIndex={-1}` so programmatic focus works without inserting it into the natural tab order; `outline-none` suppresses the browser's default focus ring on the container (the `h1` or inner focusable still shows its ring). This satisfies WCAG 2.4.3 (focus order) and ensures screen-reader users hear the new page's title immediately after navigation.
 
 ## Data owned
 

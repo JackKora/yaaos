@@ -9,8 +9,8 @@
  *   offline   → muted  (gray)
  */
 
-import type { AgentRow } from "@core/api";
-import { cn } from "@shared/utils/cn";
+import type { AgentRow } from "@core/api/public/queries";
+import { cn } from "@shared/utils/public/cn";
 import { Link } from "@tanstack/react-router";
 import { Activity, Cpu, HardDrive, Monitor } from "lucide-react";
 import { useEffect, useState } from "react";

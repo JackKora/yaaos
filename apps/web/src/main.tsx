@@ -1,14 +1,30 @@
-import { applyStoredTheme } from "@core/layout/theme";
-import { ErrorBoundary } from "@core/observability/error-boundary";
-import { router } from "@core/routing/router";
+import { applyStoredTheme } from "@core/layout/public/theme";
+import { ThemeProvider } from "@core/layout/public/theme-context";
+import { ErrorBoundary } from "@core/observability/public/error-boundary";
+import { configure } from "@core/observability/public/sdk";
+import { Toaster } from "@shared/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { Toaster } from "sonner";
+import { router } from "./router";
 import "./styles.css";
 
 applyStoredTheme();
+
+// Runtime axe-core accessibility scan — dev only. Reports violations to the
+// browser console as they occur. Never bundled in production builds.
+if (import.meta.env.DEV) {
+  import("@axe-core/react").then(({ default: axe }) => {
+    axe(React, ReactDOM, 1000);
+  });
+}
+
+// Initialize OTel SDK. Export is gated on the collector endpoint:
+// endpoint set → export via OTLP/HTTP; endpoint absent → no export.
+configure({
+  collectorEndpoint: import.meta.env.VITE_OTEL_COLLECTOR_ENDPOINT as string | undefined,
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,10 +42,12 @@ if (!rootEl) throw new Error("Could not find #root element");
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster theme="system" position="bottom-right" />
-      </QueryClientProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <Toaster position="bottom-right" />
+        </QueryClientProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );
