@@ -392,7 +392,7 @@ async def test_pr_review_v1_runs_end_to_end_remote_agent(db_session, _registered
     # provider and parks at AWAITING_AGENT. drain returns when no more outbox rows.
     await _drain_workflow_outbox(db_session)
 
-    # Simulate agent CreateWorkspace.result with a synthetic workspace_id.
+    # Simulate agent ProvisionWorkspace.result with a synthetic workspace_id.
     sim_workspace_id = str(uuid4())
     await _advance_pending_agent_event(db_session, wfx_id, outputs={"workspace_id": sim_workspace_id})
 

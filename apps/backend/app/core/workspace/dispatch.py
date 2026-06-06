@@ -37,8 +37,8 @@ async def try_claim(
     backs off.
 
     `agent_id` (the owning `WorkspaceAgentRow.id`) is written as `owning_agent_id`
-    onto the row in the same UPDATE when supplied — the create-dispatch path
-    passes it so the workspace is hard-tied to the pod that ran `CreateWorkspace`.
+    onto the row in the same UPDATE when supplied — the provision-dispatch path
+    passes it so the workspace is hard-tied to the pod that ran `ProvisionWorkspace`.
     The legacy path omits it, leaving `WorkspaceRow.owning_agent_id` NULL.
 
     Caller commits; the outbox row enqueueing the AgentCommand should go

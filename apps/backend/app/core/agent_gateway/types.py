@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentCommandKind(StrEnum):
-    CREATE_WORKSPACE = "CreateWorkspace"
+    PROVISION_WORKSPACE = "ProvisionWorkspace"
     WRITE_FILES = "WriteFiles"
     REFRESH_WORKSPACE_AUTH = "RefreshWorkspaceAuth"
     INVOKE_CLAUDE_CODE = "InvokeClaudeCode"
@@ -55,8 +55,8 @@ class AuthBlock(BaseModel):
     token: str
 
 
-class CreateWorkspaceCommand(_CommandBase):
-    kind: Literal[AgentCommandKind.CREATE_WORKSPACE] = AgentCommandKind.CREATE_WORKSPACE
+class ProvisionWorkspaceCommand(_CommandBase):
+    kind: Literal[AgentCommandKind.PROVISION_WORKSPACE] = AgentCommandKind.PROVISION_WORKSPACE
     repo: RepoRef
     history: int = Field(ge=1)
     auth: AuthBlock
@@ -128,7 +128,7 @@ class ConfigUpdateCommand(BaseModel):
 
 
 AgentCommand = Annotated[
-    CreateWorkspaceCommand
+    ProvisionWorkspaceCommand
     | WriteFilesCommand
     | RefreshWorkspaceAuthCommand
     | InvokeClaudeCodeCommand
@@ -251,7 +251,7 @@ class ClaimRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
     wait_seconds: int = Field(ge=0, le=55)
     lifecycle: Literal["unconfigured", "configured"] = "unconfigured"
-    # new_workspaces: capacity for new CreateWorkspace commands (max_workspaces - active count).
+    # new_workspaces: capacity for new ProvisionWorkspace commands (max_workspaces - active count).
     new_workspaces: int = Field(ge=0, default=0)
     # workspace_ids: idle workspaces awaiting a command (subset of Active workspaces).
     workspace_ids: tuple[UUID, ...] = ()

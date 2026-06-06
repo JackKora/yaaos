@@ -8,7 +8,7 @@ called by the engine in production; it is callable directly in unit tests
 that want to exercise the body in isolation.
 
 `ProvisionWorkspace` is the workspace-create step; the engine dispatches a
-`CreateWorkspace` AgentCommand and the agent returns the `workspace_id`.
+`ProvisionWorkspace` AgentCommand and the agent returns the `workspace_id`.
 `CleanupWorkspace` closes the workspace by id (from prior step outputs).
 `RefreshWorkspaceAuth` is the recovery command bound to `auth_expired`
 failures; it issues a `RefreshWorkspaceAuth` AgentCommand so the Go agent
@@ -47,7 +47,7 @@ class ProvisionWorkspace(_LifecycleCommand):
     """Provision a workspace for a ticket.
 
     The workflow engine's Workspace branch always parks the execution in
-    `awaiting_agent` and dispatches a `CreateWorkspace` AgentCommand over
+    `awaiting_agent` and dispatches a `ProvisionWorkspace` AgentCommand over
     the wire; `execute()` is not called by the engine. It is callable
     directly in unit tests that exercise the body in isolation — it finds
     the single registered provider, fetches ticket context via the

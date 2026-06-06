@@ -13,9 +13,9 @@ from app.core.agent_gateway import (
     AgentEvent,
     AgentEventKind,
     AuthBlock,
-    CreateWorkspaceCommand,
     HeartbeatRequest,
     HeartbeatWorkspaceEntry,
+    ProvisionWorkspaceCommand,
     RepoRef,
     StaleClaimError,
     WorkspaceEvent,
@@ -66,8 +66,8 @@ class _MinimalWorkspaceProvider:
         return None
 
 
-def _make_create_command() -> CreateWorkspaceCommand:
-    return CreateWorkspaceCommand(
+def _make_provision_command() -> ProvisionWorkspaceCommand:
+    return ProvisionWorkspaceCommand(
         command_id=uuid4(),
         workspace_id=uuid4(),
         traceparent="00-aabbccdd-1122-01",

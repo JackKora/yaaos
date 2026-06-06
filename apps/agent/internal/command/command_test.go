@@ -13,12 +13,12 @@ import (
 // TestDecodeRoundTrip verifies Decode accepts valid JSON for all 6 command
 // kinds and returns the right concrete type with correct Header/Timeout values.
 func TestDecodeRoundTrip(t *testing.T) {
-	t.Run("CreateWorkspace", func(t *testing.T) {
+	t.Run("ProvisionWorkspace", func(t *testing.T) {
 		raw := mustMarshal(t, map[string]any{
 			"command_id":   "cmd-1",
 			"workspace_id": "ws-1",
 			"traceparent":  "tp-1",
-			"kind":         "CreateWorkspace",
+			"kind":         "ProvisionWorkspace",
 			"repo": map[string]any{
 				"plugin_id":   "gh",
 				"external_id": "org/repo",
@@ -38,10 +38,10 @@ func TestDecodeRoundTrip(t *testing.T) {
 			t.Fatalf("Decode: %v", err)
 		}
 		hdr := cmd.Header()
-		assertHeader(t, hdr, "cmd-1", "ws-1", "tp-1", protocol.KindCreateWorkspace)
+		assertHeader(t, hdr, "cmd-1", "ws-1", "tp-1", protocol.KindProvisionWorkspace)
 		assertTimeout(t, cmd.Timeout(), 5*time.Minute)
-		if _, ok := cmd.(*command.CreateWorkspaceCommand); !ok {
-			t.Errorf("expected *command.CreateWorkspaceCommand, got %T", cmd)
+		if _, ok := cmd.(*command.ProvisionWorkspaceCommand); !ok {
+			t.Errorf("expected *command.ProvisionWorkspaceCommand, got %T", cmd)
 		}
 	})
 
@@ -315,7 +315,7 @@ func TestDecodeMalformedJSON(t *testing.T) {
 func TestSetTraceparent_AllKinds(t *testing.T) {
 	const newTP = "00-aabbccddeeff00112233445566778899-1122334455667788-01"
 	cmds := []command.Command{
-		&command.CreateWorkspaceCommand{},
+		&command.ProvisionWorkspaceCommand{},
 		&command.WriteFilesCommand{},
 		&command.RefreshWorkspaceAuthCommand{},
 		&command.InvokeClaudeCodeCommand{},

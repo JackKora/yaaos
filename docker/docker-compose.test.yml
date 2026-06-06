@@ -182,3 +182,45 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # Local mock of AWS IMDS + STS for agent identity exchange.
+  # The agent reads IMDS creds from this service and STS-replays to it;
+  # the backend replays the same signed request here to derive the ARN.
+  mock-aws:
+    build:
+      context: ./mock-aws
+      dockerfile: Dockerfile
+    environment:
+      YAAOS_DEV_SEED_ARN: arn:aws:iam::000000000000:role/yaaos-test
+      YAAOS_DEV_SEED_INSTANCE_ID: test-task-00000000
+      PORT: "4566"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4566/latest/meta-data/iam/security-credentials/ -T 2 || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Local WorkspaceAgent — uses real STS identity exchange against mock-aws.
+  # `fake-claude` is bind-mounted in at /usr/local/bin/claude so RunClaude
+  # invokes the canned-scenario binary instead of a real Anthropic CLI.
+  agent:
+    build:
+      context: ../apps/agent
+      dockerfile: Dockerfile
+    environment:
+      YAAOS_BACKEND_URL: http://web:8080
+      YAAOS_AGENT_VERSION: test
+      AWS_EC2_METADATA_SERVICE_ENDPOINT: http://mock-aws:4566
+      YAAOS_STS_ENDPOINT_URL: http://mock-aws:4566/
+      YAAOS_STS_HOST_OVERRIDE: mock-aws:4566
+      FAKE_CLAUDE_SCENARIOS_DIR: /opt/fake-claude/scenarios
+      FAKE_CLAUDE_SCENARIO: happy
+    volumes:
+      - ../apps/fake-claude/claude:/usr/local/bin/claude:ro
+      - ../apps/fake-claude/scenarios:/opt/fake-claude/scenarios:ro
+    depends_on:
+      web:
+        condition: service_started
+      mock-aws:
+        condition: service_healthy
+

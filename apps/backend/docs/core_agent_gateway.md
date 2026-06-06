@@ -64,7 +64,7 @@ Vault AWS-auth pattern. The agent submits a sigv4-signed STS `GetCallerIdentity`
 Commands are persisted in `agent_commands` before delivery. The queue provides:
 - **Durability** — a backend restart with unclaimed commands loses nothing; the rows remain `pending`.
 - **Lease** — a 30-second window after `claimed`: the agent must POST `received` to flip `claimed → delivered`. Rows still `claimed` after the window are requeued to `pending` (or retired to `done` at `MAX_ATTEMPT=5`) by `requeue_stale_claimed`, called each `cleanup_loop` tick from `core/workspace`.
-- **Capacity-pull** — the claim request carries `new_workspaces` (cap for new `CreateWorkspace` rows) and `workspace_ids` (idle workspaces awaiting a command). `claim_next` runs `FOR UPDATE SKIP LOCKED LIMIT 1` across the eligible set, returning exactly ONE command per call. No Redis; no in-process queues; no batch-overshoot into `claimed` limbo.
+- **Capacity-pull** — the claim request carries `new_workspaces` (cap for new `ProvisionWorkspace` rows) and `workspace_ids` (idle workspaces awaiting a command). `claim_next` runs `FOR UPDATE SKIP LOCKED LIMIT 1` across the eligible set, returning exactly ONE command per call. No Redis; no in-process queues; no batch-overshoot into `claimed` limbo.
 - **Idempotency** — `command_id` is the PK (UUIDv7 FIFO key); the single-flight claim + 410 stale-claim guard absorb re-delivery.
 
 `enqueue_command(org_id, command, *, session)` inserts a `pending` row in the caller's transaction (atomic with `try_claim`). `agent_id` is NULL at enqueue; `claim_next` stamps it at claim time. Post-create commands (cleanup etc.) are pre-stamped via `pin_command_to_agent` so `claim_next`'s `workspace_ids` sweep finds them.
@@ -96,7 +96,7 @@ The `received` EventKind is non-terminal: it cancels the lease requeue on the ro
 
 ## Vocabulary
 
-- **AgentCommand** — discriminated union: `CreateWorkspace | WriteFiles | RefreshWorkspaceAuth | InvokeClaudeCode | CleanupWorkspace`.
+- **AgentCommand** — discriminated union: `ProvisionWorkspace | WriteFiles | RefreshWorkspaceAuth | InvokeClaudeCode | CleanupWorkspace`.
 - **AgentEvent** — `progress` or `received` (non-terminal) or `completed_{success|failure|skipped}` (terminal). `received` cancels the lease requeue.
 - **WorkspaceEvent** — `created | ready | exited | destroyed | failed`.
 - **BearerContext** — resolved identity from a verified bearer: `bearer_id`, `agent_id`, `org_id`.
@@ -113,7 +113,7 @@ The `received` EventKind is non-terminal: it cancels the lease requeue on the ro
 
 `test/test_durable_command_service.py` covers: `enqueue_command` inserts a `pending` row; command survives a simulated backend restart; `claim_next` returns exactly ONE row per call leaving no others in `claimed` limbo; never returns a command for an unlisted workspace; unconfigured claim returns only `ConfigUpdate`; lease: `received` flips `claimed → delivered`; no `received` within 30s requeues to `pending`; terminal event → `done`; attempt cap → `done` (terminal failure); redelivery of `received` is idempotent.
 
-`test/test_claim_lifecycle_service.py` covers `claim_next` lifecycle gate: unconfigured leaves DB rows untouched; configured returns a single CreateWorkspace command; empty queue returns `None`.
+`test/test_claim_lifecycle_service.py` covers `claim_next` lifecycle gate: unconfigured leaves DB rows untouched; configured returns a single ProvisionWorkspace command; empty queue returns `None`.
 
 `test/test_liveness_sweeper_service.py` covers: `compute_agent_liveness_transitions` flips `reachable → stale` at 60s, `stale → offline` and `reachable → offline` beyond 5 min, writes only on transition, returns newly-offline IDs, emits SSE; `GET /api/orgs/{slug}/agents` returns within-retention agents with `claimed_workspace_count`; excludes agents beyond 1h window; excludes other-org agents; requires auth.
 

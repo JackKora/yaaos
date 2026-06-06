@@ -356,9 +356,9 @@ components:
           minimum: 0
           default: 0
           description: |
-            Capacity for new CreateWorkspace commands: max_workspaces − current
+            Capacity for new ProvisionWorkspace commands: max_workspaces − current
             active count. The backend returns up to this many unassigned
-            CreateWorkspace rows.
+            ProvisionWorkspace rows.
         workspace_ids:
           type: array
           items:
@@ -371,7 +371,7 @@ components:
 
     AgentCommand:
       oneOf:
-        - $ref: '#/components/schemas/CreateWorkspaceCommand'
+        - $ref: '#/components/schemas/ProvisionWorkspaceCommand'
         - $ref: '#/components/schemas/WriteFilesCommand'
         - $ref: '#/components/schemas/RefreshWorkspaceAuthCommand'
         - $ref: '#/components/schemas/InvokeClaudeCodeCommand'
@@ -380,7 +380,7 @@ components:
       discriminator:
         propertyName: kind
         mapping:
-          CreateWorkspace: '#/components/schemas/CreateWorkspaceCommand'
+          ProvisionWorkspace: '#/components/schemas/ProvisionWorkspaceCommand'
           WriteFiles: '#/components/schemas/WriteFilesCommand'
           RefreshWorkspaceAuth: '#/components/schemas/RefreshWorkspaceAuthCommand'
           InvokeClaudeCode: '#/components/schemas/InvokeClaudeCodeCommand'
@@ -401,7 +401,7 @@ components:
           type: string
           description: W3C trace context the agent restores when emitting child spans.
 
-    CreateWorkspaceCommand:
+    ProvisionWorkspaceCommand:
       allOf:
         - $ref: '#/components/schemas/CommandBase'
         - type: object
@@ -409,7 +409,7 @@ components:
           properties:
             kind:
               type: string
-              enum: [CreateWorkspace]
+              enum: [ProvisionWorkspace]
             repo:
               type: object
               required: [plugin_id, external_id, clone_url, head_sha]

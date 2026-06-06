@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"fake-happy-session"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Reviewing the diff."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"No blocking findings."}]}}
+{"type":"result","subtype":"success","result":"{\"findings\": []}","is_error":false}

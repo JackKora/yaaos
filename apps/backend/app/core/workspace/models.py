@@ -21,9 +21,9 @@ class WorkspaceRow(Base):
         PgUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
     org_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
-    # owning agent (`workspace_agents.id`). Set at create-dispatch to the agent
-    # that ran `CreateWorkspace` — that pod owns this workspace for its whole
-    # life, so every post-create command routes back to it. NULL for legacy rows
+    # owning agent (`workspace_agents.id`). Set at provision-dispatch to the agent
+    # that ran `ProvisionWorkspace` — that pod owns this workspace for its whole
+    # life, so every post-provision command routes back to it. NULL for legacy rows
     # that never went through a remote agent. FK enforces referential integrity;
     # ON DELETE SET NULL so dropping an agent row orphans the workspace (the
     # workspace's remaining lifecycle is still visible to operators) rather than

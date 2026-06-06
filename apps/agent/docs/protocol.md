@@ -5,7 +5,7 @@
 ## Scope
 
 **Owns:**
-- All concrete command wire structs: `CreateWorkspaceCommand`, `WriteFilesCommand`, `RefreshWorkspaceAuthCommand`, `InvokeClaudeCodeCommand`, `CleanupWorkspaceCommand`.
+- All concrete command wire structs: `ProvisionWorkspaceCommand`, `WriteFilesCommand`, `RefreshWorkspaceAuthCommand`, `InvokeClaudeCodeCommand`, `CleanupWorkspaceCommand`.
 - `CommandHeader` — embedded in every concrete command; carries `command_id`, `workspace_id`, `traceparent`, `kind`.
 - `CommandKind` constants.
 - Event types: `AgentEvent`, `EventKind` constants.
@@ -56,7 +56,7 @@
 
 `ClaimRequest` carries:
 - `lifecycle` — `"unconfigured"` (delivers only `ConfigUpdate`) or `"configured"`.
-- `new_workspaces` — `max_workspaces − active count`; the backend returns up to this many unassigned `CreateWorkspace` rows.
+- `new_workspaces` — `max_workspaces − active count`; the backend returns up to this many unassigned `ProvisionWorkspace` rows.
 - `workspace_ids` — idle Active workspaces; the backend returns one pending command per named workspace.
 
 ## `received` EventKind

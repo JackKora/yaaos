@@ -37,10 +37,10 @@ from app.core.agent_gateway.types import (
     AgentEvent,
     CleanupWorkspaceCommand,
     ConfigUpdateCommand,
-    CreateWorkspaceCommand,
     HeartbeatRequest,
     HeartbeatResponse,
     InvokeClaudeCodeCommand,
+    ProvisionWorkspaceCommand,
     RefreshWorkspaceAuthCommand,
     StaleClaimError,
     WorkspaceEvent,
@@ -67,7 +67,7 @@ MAX_ATTEMPT: int = 5
 # to a typed AgentCommand. Built once at import time — `claim_next` is a hot path.
 _COMMAND_ADAPTER: TypeAdapter[AgentCommand] = TypeAdapter(
     Annotated[
-        CreateWorkspaceCommand
+        ProvisionWorkspaceCommand
         | WriteFilesCommand
         | RefreshWorkspaceAuthCommand
         | InvokeClaudeCodeCommand
@@ -98,7 +98,7 @@ async def enqueue_command(
     from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
 
     # workspace_id is NULL for org-scoped commands (ConfigUpdate,
-    # CreateWorkspace before an agent is assigned).
+    # ProvisionWorkspace before an agent is assigned).
     workspace_id: UUID | None = getattr(command, "workspace_id", None)
     if workspace_id is not None and str(workspace_id) == "00000000-0000-0000-0000-000000000000":
         workspace_id = None
@@ -184,8 +184,8 @@ async def claim_next(
       bootstraps.
     - `configured` → one `FOR UPDATE SKIP LOCKED LIMIT 1` pick across the
       eligible set (FIFO by UUIDv7 id):
-        * A pending unassigned CreateWorkspace (status=pending, agent_id NULL,
-          kind=CreateWorkspace), when `new_workspaces > 0`.
+        * A pending unassigned ProvisionWorkspace (status=pending, agent_id NULL,
+          kind=ProvisionWorkspace), when `new_workspaces > 0`.
         * A pending command pinned to this agent for a workspace in
           `workspace_ids` (status=pending, agent_id=this agent, workspace_id ∈
           workspace_ids).
@@ -205,7 +205,7 @@ async def claim_next(
     now = datetime.now(UTC)
     row: AgentCommandRow | None = None
 
-    # Try unassigned CreateWorkspace first (capacity for new workspaces).
+    # Try unassigned ProvisionWorkspace first (capacity for new workspaces).
     if new_workspaces > 0:
         row = (
             (
@@ -213,7 +213,7 @@ async def claim_next(
                     select(AgentCommandRow)
                     .where(
                         AgentCommandRow.status == "pending",
-                        AgentCommandRow.command_kind == AgentCommandKind.CREATE_WORKSPACE,
+                        AgentCommandRow.command_kind == AgentCommandKind.PROVISION_WORKSPACE,
                         AgentCommandRow.agent_id.is_(None),
                     )
                     .order_by(AgentCommandRow.id)
@@ -225,7 +225,7 @@ async def claim_next(
             .one_or_none()
         )
 
-    # If no CreateWorkspace, try the oldest pending command pinned to this agent
+    # If no ProvisionWorkspace, try the oldest pending command pinned to this agent
     # for any of the named workspaces.
     if row is None and workspace_ids:
         row = (
@@ -267,7 +267,7 @@ async def claim_next(
                             select(AgentCommandRow)
                             .where(
                                 AgentCommandRow.status == "pending",
-                                AgentCommandRow.command_kind == AgentCommandKind.CREATE_WORKSPACE,
+                                AgentCommandRow.command_kind == AgentCommandKind.PROVISION_WORKSPACE,
                                 AgentCommandRow.agent_id.is_(None),
                             )
                             .order_by(AgentCommandRow.id)

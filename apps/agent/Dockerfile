@@ -54,7 +54,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ── Stage 2: runtime ───────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
-# `git` is required: the agent shells out to it for CreateWorkspace
+# `git` is required: the agent shells out to it for ProvisionWorkspace
 # (HTTPS clone with installation-token auth), and the Claude Code CLI
 # the agent later spawns also depends on it. `ca-certificates` lets the
 # clone reach GitHub over HTTPS. `nodejs` + `npm` are required to install

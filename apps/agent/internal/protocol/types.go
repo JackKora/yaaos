@@ -17,7 +17,7 @@ import (
 type CommandKind string
 
 const (
-	KindCreateWorkspace      CommandKind = "CreateWorkspace"
+	KindProvisionWorkspace   CommandKind = "ProvisionWorkspace"
 	KindWriteFiles           CommandKind = "WriteFiles"
 	KindRefreshWorkspaceAuth CommandKind = "RefreshWorkspaceAuth"
 	KindInvokeClaudeCode     CommandKind = "InvokeClaudeCode"
@@ -34,7 +34,7 @@ type CommandHeader struct {
 	Kind        CommandKind `json:"kind"`
 }
 
-// RepoRef matches the spec's nested `repo` object on CreateWorkspace.
+// RepoRef matches the spec's nested `repo` object on ProvisionWorkspace.
 type RepoRef struct {
 	PluginID   string `json:"plugin_id"`
 	ExternalID string `json:"external_id"`
@@ -44,14 +44,14 @@ type RepoRef struct {
 	BranchName string `json:"branch_name,omitempty"`
 }
 
-// AuthBlock matches the spec's CreateWorkspace auth + RefreshWorkspaceAuth
+// AuthBlock matches the spec's ProvisionWorkspace auth + RefreshWorkspaceAuth
 // new_token (the latter doesn't reuse this — just shape parallel).
 type AuthBlock struct {
 	Kind  string `json:"kind"` // github_installation | oauth
 	Token string `json:"token"`
 }
 
-type CreateWorkspaceCommand struct {
+type ProvisionWorkspaceCommand struct {
 	CommandHeader
 	Repo           RepoRef   `json:"repo"`
 	History        int       `json:"history"`
@@ -169,7 +169,7 @@ type HeartbeatResponse struct {
 type ClaimRequest struct {
 	WaitSeconds   int      `json:"wait_seconds"`
 	Lifecycle     string   `json:"lifecycle"`      // "unconfigured" | "configured"
-	NewWorkspaces int      `json:"new_workspaces"` // capacity for new CreateWorkspace commands
+	NewWorkspaces int      `json:"new_workspaces"` // capacity for new ProvisionWorkspace commands
 	WorkspaceIDs  []string `json:"workspace_ids"`  // idle Active workspaces awaiting a command
 }
 

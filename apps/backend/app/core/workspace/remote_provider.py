@@ -10,12 +10,12 @@ engine's `handle_agent_event` resumes the workflow.
 
 Exposes:
 - Provider registration under id `remote_agent`.
-- `dispatch_create_workspace(org_id, workspace_id, *, ..., session)` helper
-  that enqueues a CreateWorkspace command durably inside the caller's transaction.
+- `dispatch_provision_workspace(org_id, workspace_id, *, ..., session)` helper
+  that enqueues a ProvisionWorkspace command durably inside the caller's transaction.
 - `dispatch_cleanup_workspace(workspace_id, *, org_id, agent_id, traceparent, session)`
   that enqueues a CleanupWorkspace command pinned to the owning agent.
 - `provision()` / `destroy()` that hand control to the agent via
-  `CreateWorkspace` / `CleanupWorkspace` AgentCommands.
+  `ProvisionWorkspace` / `CleanupWorkspace` AgentCommands.
 
 The synchronous-shaped Workspace Protocol methods (`run_coding_agent_cli`
 returning a `CodingAgentCliResult`) don't fit the async event-driven
@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.agent_gateway import (
     AuthBlock,
     CleanupWorkspaceCommand,
-    CreateWorkspaceCommand,
+    ProvisionWorkspaceCommand,
     RepoRef,
     enqueue_command,
     has_any_reachable_agent,
@@ -78,12 +78,12 @@ class RemoteAgentWorkspaceProvider:
 
     async def provision(self, spec: WorkspaceSpec) -> dict[str, Any]:
         # Provisioning runs through the dispatch helpers, not this
-        # synchronous Protocol method: they enqueue a `CreateWorkspace`
+        # synchronous Protocol method: they enqueue a `ProvisionWorkspace`
         # AgentCommand and the workflow engine awaits the
         # `completed_success` event.
         raise WorkspaceProvisionError(
             "RemoteAgentWorkspaceProvider.provision is not a synchronous call; "
-            "use dispatch_create_workspace() to enqueue commands."
+            "use dispatch_provision_workspace() to enqueue commands."
         )
 
     async def run_coding_agent_cli(
@@ -147,8 +147,8 @@ class RemoteAgentWorkspaceProvider:
 # ── Dispatch entry points ──────────────────────────────────────────────
 
 
-class CreateWorkspaceDispatch(BaseModel):
-    """Result of `dispatch_create_workspace`.
+class ProvisionWorkspaceDispatch(BaseModel):
+    """Result of `dispatch_provision_workspace`.
 
     Carries the new `command_id` for `current_command_id`. The workspace
     is not pre-assigned to an agent — the durable queue lets any reachable
@@ -159,7 +159,7 @@ class CreateWorkspaceDispatch(BaseModel):
     command_id: UUID
 
 
-async def dispatch_create_workspace(
+async def dispatch_provision_workspace(
     org_id: UUID,
     workspace_id: UUID,
     *,
@@ -170,21 +170,21 @@ async def dispatch_create_workspace(
     ttl_seconds: int = 600,
     max_idle_seconds: int = 600,
     session: AsyncSession,
-) -> CreateWorkspaceDispatch:
-    """Enqueue a `CreateWorkspace` command durably inside the caller's transaction.
+) -> ProvisionWorkspaceDispatch:
+    """Enqueue a `ProvisionWorkspace` command durably inside the caller's transaction.
 
-    Returns a `CreateWorkspaceDispatch` (the new `command_id`) so the caller
+    Returns a `ProvisionWorkspaceDispatch` (the new `command_id`) so the caller
     can persist `current_command_id` atomically with the `try_claim` gate.
 
-    Unlike the old path there is no agent pre-assignment here — the durable
-    queue lets whichever reachable agent has capacity claim it via `claim_next`.
+    There is no agent pre-assignment here — the durable queue lets whichever
+    reachable agent has capacity claim it via `claim_next`.
 
     Caller is responsible for calling `core/workspace.try_claim` to gate
     the dispatch through the single-flight machinery; this helper does NOT
     write to the workspace row itself.
     """
     command_id = uuid4()
-    cmd = CreateWorkspaceCommand(
+    cmd = ProvisionWorkspaceCommand(
         command_id=command_id,
         workspace_id=workspace_id,
         traceparent=traceparent,
@@ -195,7 +195,7 @@ async def dispatch_create_workspace(
         max_idle_seconds=max_idle_seconds,
     )
     await enqueue_command(org_id=org_id, command=cmd, session=session)
-    return CreateWorkspaceDispatch(command_id=command_id)
+    return ProvisionWorkspaceDispatch(command_id=command_id)
 
 
 async def dispatch_cleanup_workspace(
@@ -209,8 +209,8 @@ async def dispatch_cleanup_workspace(
     """Enqueue a `CleanupWorkspace` command pinned to the owning agent.
 
     `agent_id` is the workspace's stored owning agent (`WorkspaceRow.agent_id`)
-    — the pod that ran `CreateWorkspace`. Post-create commands MUST go to that
-    same agent; re-picking would route to a pod that has no such workspace.
+    — the pod that ran `ProvisionWorkspace`. Post-provision commands MUST go to
+    that same agent; re-picking would route to a pod that has no such workspace.
     The command row is pre-stamped with `agent_id` so `claim_next` can
     find it in the workspace_ids sweep.
     Returns the new `command_id`.

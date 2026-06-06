@@ -127,7 +127,7 @@ class AgentCommandRow(Base):
     marked done with a terminal-failure outcome.
 
     `org_id` and `workspace_id` are informational indexes — `workspace_id` is
-    NULL for org-scoped commands (e.g. ConfigUpdate, CreateWorkspace before an
+    NULL for org-scoped commands (e.g. ConfigUpdate, ProvisionWorkspace before an
     agent is assigned). `agent_id` is stamped at claim time, not enqueue time.
     """
 
@@ -137,9 +137,9 @@ class AgentCommandRow(Base):
         PgUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
     org_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    # workspace_id is NULL for org-scoped commands (ConfigUpdate, CreateWorkspace).
+    # workspace_id is NULL for org-scoped commands (ConfigUpdate, ProvisionWorkspace).
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
-    # command_kind discriminates CreateWorkspace (org-scoped) from workspace-pinned commands.
+    # command_kind discriminates ProvisionWorkspace (org-scoped) from workspace-pinned commands.
     command_kind: Mapped[str] = mapped_column(String, nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     # status lifecycle: pending → claimed → delivered → done
@@ -156,6 +156,6 @@ class AgentCommandRow(Base):
     __table_args__ = (
         # Fast lookup for the agent's capacity-pull claim (FIFO via UUIDv7 id).
         Index("ix_agent_commands_agent_status_id", "agent_id", "status", "id"),
-        # Fast lookup for unassigned CreateWorkspace commands (org-scoped claim).
+        # Fast lookup for unassigned ProvisionWorkspace commands (org-scoped claim).
         Index("ix_agent_commands_status_kind_id", "status", "command_kind", "id"),
     )

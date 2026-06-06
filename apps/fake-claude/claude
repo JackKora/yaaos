@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# fake-claude — stand-in for the real `claude` binary used inside the agent
+# container during e2e tests. Replays a canned stream-json scenario to stdout
+# and exits 0 (happy) or non-zero (failure scenarios).
+#
+# Scenario selection: $FAKE_CLAUDE_SCENARIO names a file under
+# /opt/fake-claude/scenarios/<name>.jsonl. Defaults to "happy".
+#
+# The agent's RealHandler.RunClaude reads each newline-framed JSON object as a
+# stream-json progress line; the final object is the terminal review payload
+# the backend's CodeReview parser consumes. This binary never reads stdin
+# (the real claude does, but the fake ignores it) and never inspects argv.
+set -euo pipefail
+
+SCENARIO="${FAKE_CLAUDE_SCENARIO:-happy}"
+SCENARIOS_DIR="${FAKE_CLAUDE_SCENARIOS_DIR:-/opt/fake-claude/scenarios}"
+SCENARIO_FILE="${SCENARIOS_DIR}/${SCENARIO}.jsonl"
+
+if [[ ! -f "${SCENARIO_FILE}" ]]; then
+  echo "fake-claude: scenario file not found: ${SCENARIO_FILE}" >&2
+  exit 2
+fi
+
+# Drain stdin (real claude reads the prompt; fake discards it).
+cat >/dev/null || true
+
+# Stream the scenario verbatim to stdout. Each line is a complete JSON object
+# the agent will emit as a progress AgentEvent.
+cat "${SCENARIO_FILE}"
+
+# Agentfail scenario carries a sentinel first line "EXIT:<code>"; honour it.
+first_line="$(head -n1 "${SCENARIO_FILE}" 2>/dev/null || true)"
+if [[ "${first_line}" =~ ^\#EXIT:([0-9]+) ]]; then
+  exit "${BASH_REMATCH[1]}"
+fi
+exit 0
