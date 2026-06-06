@@ -7,8 +7,9 @@
 # Use bin/dev-rebuild instead when the Docker image itself needs to change
 # (Dockerfile, pyproject.toml deps, SPA bundle).
 #
-# We use `restart` (not `up -d`) because `up -d` is a no-op when nothing in
-# the compose file changed — it won't pick up new source or new env values.
+# We use `up -d --force-recreate` (not plain `up -d`, which is a no-op when the
+# compose file is unchanged, and not `restart`, which keeps the old environment).
+# --force-recreate re-reads .env and re-imports the bind-mounted source.
 
 set -euo pipefail
 
@@ -18,4 +19,4 @@ cd "$(dirname "$0")/.."
 docker compose \
   -f docker/docker-compose.dev.yml \
   --env-file .env \
-  up -d --force-recreate app worker
+  up -d --force-recreate web worker

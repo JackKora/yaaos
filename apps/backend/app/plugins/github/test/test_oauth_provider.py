@@ -2,7 +2,7 @@
 
 `pytest-httpx` mocks GitHub's token + userinfo + emails endpoints so the real
 `exchange_code` path runs end-to-end without network. The provider drives the
-platform yaaos GitHub App's user-to-server OAuth flow.
+platform yaaos classic GitHub OAuth App's web flow.
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ def test_authorization_url_contains_required_params(monkeypatch) -> None:
     assert q["client_id"] == ["test-client"]
     assert q["state"] == ["abc.def"]
     assert q["redirect_uri"] == ["http://test/api/auth/callback/github"]
-    # GitHub App user-auth scopes are configured on the App registration, not
-    # requested per-call. The provider must NOT pass a `scope` param.
-    assert "scope" not in q
+    # A classic OAuth App grants scopes only via the authorize URL. Without
+    # `user:email`, `/user/emails` 404s and the callback fails with 502.
+    assert q["scope"] == ["read:user user:email"]
 
 
 @pytest.mark.asyncio
