@@ -6,8 +6,9 @@ two are not the same thing; GitHub names them confusingly). Credentials
 live in `yaaos_github_oauth_client_id` / `_client_secret`; the install
 flow's `yaaos_github_app_*` env vars play no part here.
 
-Scopes are configured on the OAuth App registration itself, so we never
-pass a `scope` query param.
+A classic OAuth App grants scopes only at authorize time, so the
+authorize URL must request `read:user user:email` — `/user/emails`
+returns 404 for a token that lacks `user:email`.
 
 Implements `core/identity.Provider`.
 """
@@ -25,6 +26,10 @@ from app.core.identity import ProviderError, ProviderProfile, register_provider
 
 log = structlog.get_logger("plugins.github.oauth")
 
+# Classic OAuth Apps grant scopes via the authorize URL, not registration.
+# `user:email` is required for `/user/emails`; `read:user` for `/user`.
+_USERINFO_SCOPE = "read:user user:email"
+
 
 class GitHubOAuthProvider:
     """Provider implementation for the platform yaaos GitHub OAuth App.
@@ -41,6 +46,7 @@ class GitHubOAuthProvider:
             "client_id": s.yaaos_github_oauth_client_id,
             "redirect_uri": redirect_uri,
             "state": state,
+            "scope": _USERINFO_SCOPE,
             "allow_signup": "false",
         }
         return f"{s.github_web_base_url}/login/oauth/authorize?{urlencode(params)}"

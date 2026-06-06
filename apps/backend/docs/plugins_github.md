@@ -26,7 +26,7 @@ Env vars: `yaaos_github_app_id`, `yaaos_github_app_slug`, `yaaos_github_app_priv
 
 ### Login provider (GitHub OAuth App)
 
-`GitHubOAuthProvider` implements `core/identity.Provider`. `authorization_url()` builds the GitHub authorize URL. `exchange_code()` POSTs to the token URL, fetches `/user` + `/user/emails`, returns a `ProviderProfile` with `external_subject = user.id`, verified primary email, and `provider_login = user.login` (persisted to `users.github_username`). `mfa_satisfied=True` — GitHub's own 2FA runs inside the authorize handshake.
+`GitHubOAuthProvider` implements `core/identity.Provider`. `authorization_url()` builds the GitHub authorize URL, requesting `read:user user:email` — a classic OAuth App grants scopes at authorize time, and `/user/emails` 404s without `user:email`. `exchange_code()` POSTs to the token URL, fetches `/user` + `/user/emails`, returns a `ProviderProfile` with `external_subject = user.id`, verified primary email, and `provider_login = user.login` (persisted to `users.github_username`). `mfa_satisfied=True` — GitHub's own 2FA runs inside the authorize handshake.
 
 ### Webhook receiver (`POST /webhook`)
 
