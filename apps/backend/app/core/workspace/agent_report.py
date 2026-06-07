@@ -151,21 +151,16 @@ class WorkspaceAgentReportSinkImpl:
         command_id: UUID,
         session: AsyncSession,
     ) -> UUID | None:
-        """Return the `current_holder_workflow_id` for the workspace holding
-        `command_id`, or None when no workspace is currently claimed by it.
+        """Return the `workflow_execution_id` for `command_id`, or None when
+        no agent_commands row exists or has no workflow correlation.
 
+        Correlation lives on `agent_commands.workflow_execution_id` — the
+        shed `workspaces.current_holder_workflow_id` column is no longer read.
         Pure read — no writes.
         """
-        row = (
-            await session.execute(
-                select(WorkspaceRow.id, WorkspaceRow.current_holder_workflow_id).where(
-                    WorkspaceRow.current_command_id == command_id
-                )
-            )
-        ).one_or_none()
-        if row is None:
-            return None
-        return row[1]
+        from app.core.agent_gateway import get_command_workflow_execution_id  # noqa: PLC0415
+
+        return await get_command_workflow_execution_id(command_id, session=session)
 
     async def release_command_claim(
         self,

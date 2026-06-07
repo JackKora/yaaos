@@ -22,9 +22,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from app.core.agent_gateway import CleanupWorkspaceCommand, enqueue_command
 from app.core.plugin_kit import PluginMeta
 from app.core.workspace import (
     WorkspaceRegistry,
+    force_close_all,
     register_workspace_provider,
 )
 from app.core.workspace.models import WorkspaceRow
@@ -275,8 +277,8 @@ async def test_idle_sweep_leaves_recently_activated_workspace(db_session) -> Non
 
 
 async def test_close_workspace_idempotent_on_already_expired_row(db_session) -> None:  # type: ignore[no-untyped-def]
-    """close_workspace's update is filtered to ACTIVE/CREATING — re-calling
-    on an already-EXPIRED row is a no-op (status unchanged, no error). Important
+    """close_workspace's update is filtered to ACTIVE — re-calling on an
+    already-EXPIRED row is a no-op (status unchanged, no error). Important
     for the CleanupWorkspace-runs-twice case after Tier-2 step retry."""
     row = _make_row(status=WorkspaceStatus.EXPIRED, provider_id="good")
     db_session.add(row)
@@ -343,14 +345,23 @@ async def test_failsafe_agent_loss_per_pod_only_expires_stale_owner(db_session) 
 
 async def test_startup_recovery_flips_orphan_rows_to_expired(db_session) -> None:  # type: ignore[no-untyped-def]
     """A prior process crashed mid-workflow leaving rows in non-terminal
-    states (CREATING / ACTIVE / DESTROYING). `startup_recovery()` runs at
-    FastAPI lifespan start and flips them all to EXPIRED so the reaper
-    picks them up — no stuck workspaces survive a restart. This is the
-    Python side of failsafe #4 (startup reconciliation)."""
+    states (ACTIVE / DESTROYING). `startup_recovery()` runs at FastAPI
+    lifespan start and flips them to EXPIRED so the reaper picks them up.
+
+    CREATING is excluded: lean-created rows enter ACTIVE on the agent's
+    first workspace event; no row ever enters CREATING in the current
+    lifecycle.
+
+    Terminal rows (DESTROYED, DESTROY_FAILED) and CREATING rows (legacy
+    column value that no longer enters the state machine) must NOT be
+    re-flipped.
+    """
     rows = [
-        _make_row(status=WorkspaceStatus.CREATING, provider_id="good"),
         _make_row(status=WorkspaceStatus.ACTIVE, provider_id="good"),
         _make_row(status=WorkspaceStatus.DESTROYING, provider_id="good"),
+        # Legacy CREATING value still physically possible in the column;
+        # startup_recovery must not touch it.
+        _make_row(status=WorkspaceStatus.CREATING, provider_id="good"),
         # Already-terminal rows must NOT be re-flipped.
         _make_row(status=WorkspaceStatus.DESTROYED, provider_id="good"),
         _make_row(status=WorkspaceStatus.DESTROY_FAILED, provider_id="good"),
@@ -363,10 +374,11 @@ async def test_startup_recovery_flips_orphan_rows_to_expired(db_session) -> None
 
     refreshed = (await db_session.execute(select(WorkspaceRow).order_by(WorkspaceRow.id))).scalars().all()
     by_id = {r.id: r for r in refreshed}
-    # Three orphans flipped.
+    # ACTIVE and DESTROYING flipped.
     assert by_id[rows[0].id].status == WorkspaceStatus.EXPIRED.value
     assert by_id[rows[1].id].status == WorkspaceStatus.EXPIRED.value
-    assert by_id[rows[2].id].status == WorkspaceStatus.EXPIRED.value
+    # CREATING left untouched (not in the state machine; a dead legacy column value).
+    assert by_id[rows[2].id].status == WorkspaceStatus.CREATING.value
     # Terminal rows untouched.
     assert by_id[rows[3].id].status == WorkspaceStatus.DESTROYED.value
     assert by_id[rows[4].id].status == WorkspaceStatus.DESTROY_FAILED.value
@@ -398,3 +410,85 @@ def test_workspace_registry_items_is_immutable_snapshot() -> None:
     modified = list(snapshot)
     modified[0] = ("good", None)  # type: ignore[assignment]
     assert reg.items()[0][1] is not None  # original provider still there
+
+
+# ── force_close_all (ACTIVE-only, no CREATING) ─────────────────────────────
+
+
+async def test_force_close_all_skips_creating_rows(db_session) -> None:
+    """force_close_all targets ACTIVE rows only. A CREATING row (legacy column
+    value that no longer enters the state machine) must be left untouched."""
+    org_id = uuid4()
+    active_ws = WorkspaceRow(
+        id=uuid4(),
+        org_id=org_id,
+        provider_id="remote_agent",
+        spec={"sha": "a"},
+        plugin_state={},
+        status=WorkspaceStatus.ACTIVE.value,
+        expires_at=_utcnow() + timedelta(hours=1),
+    )
+    creating_ws = WorkspaceRow(
+        id=uuid4(),
+        org_id=org_id,
+        provider_id="remote_agent",
+        spec={"sha": "b"},
+        plugin_state={},
+        status=WorkspaceStatus.CREATING.value,
+        expires_at=_utcnow() + timedelta(hours=1),
+    )
+    db_session.add_all([active_ws, creating_ws])
+    await db_session.commit()
+
+    count = await force_close_all(org_id=org_id, reason="disconnect")
+
+    assert count == 1, "only the ACTIVE row should be expired"
+    refreshed = {r.id: r for r in (await db_session.execute(select(WorkspaceRow))).scalars().all()}
+    assert refreshed[active_ws.id].status == WorkspaceStatus.EXPIRED.value
+    assert refreshed[creating_ws.id].status == WorkspaceStatus.CREATING.value
+
+
+# ── failsafe_agent_loss: workflow correlation via agent_commands ────────────
+
+
+async def test_failsafe_agent_loss_uses_command_row_correlation(db_session) -> None:
+    """failsafe_agent_loss synthesizes a terminal failure for an in-flight
+    command. The workflow_execution_id must come from agent_commands, not from
+    the shed workspaces.current_holder_workflow_id column."""
+    org_id = uuid4()
+    stale = await seed_agent(org_id=org_id, session=db_session, heartbeat_age_seconds=600)
+    workspace_id = uuid4()
+    command_id = uuid4()
+
+    # Enqueue a real agent_commands row so the correlation path is exercised.
+    cmd = CleanupWorkspaceCommand(
+        command_id=command_id,
+        workspace_id=workspace_id,
+        traceparent="",
+    )
+    await enqueue_command(org_id=org_id, command=cmd, session=db_session)
+    await db_session.flush()
+
+    ws = WorkspaceRow(
+        id=workspace_id,
+        org_id=org_id,
+        provider_id="remote_agent",
+        spec={"sha": "x"},
+        plugin_state={},
+        status=WorkspaceStatus.ACTIVE.value,
+        expires_at=_utcnow() + timedelta(hours=1),
+        owning_agent_id=stale["id"],
+        current_command_id=command_id,
+        # Deliberately leave current_holder_workflow_id NULL to prove correlation
+        # no longer depends on this shed column.
+        current_holder_workflow_id=None,
+    )
+    db_session.add(ws)
+    await db_session.commit()
+
+    # Should not raise even with current_holder_workflow_id=NULL.
+    await failsafe_agent_loss(db_session, {stale["id"]})
+    await db_session.commit()
+
+    await db_session.refresh(ws)
+    assert ws.status == WorkspaceStatus.EXPIRED.value

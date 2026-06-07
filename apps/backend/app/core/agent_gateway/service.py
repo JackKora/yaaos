@@ -172,6 +172,33 @@ async def get_command_org_and_payload(
     return (row.org_id, dict(row.payload) if row.payload else {})
 
 
+async def get_command_workflow_execution_id(
+    command_id: UUID,
+    *,
+    session: AsyncSession,
+) -> UUID | None:
+    """Return `workflow_execution_id` for the given `agent_commands` row, or
+    None when the row is not found or has no workflow correlation (agent-scoped
+    commands like ConfigUpdate have NULL there).
+
+    Pure read — no writes. Used by `core/workspace` failsafe-6 to synthesize
+    a terminal failure event for in-flight commands without reading the now-shed
+    `workspaces.current_holder_workflow_id` column.
+
+    Caller owns session lifecycle.
+    """
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
+
+    row = (
+        await session.execute(
+            select(AgentCommandRow.workflow_execution_id).where(AgentCommandRow.id == command_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return row[0]
+
+
 def _build_config_update() -> ConfigUpdateCommand:
     """Build a ConfigUpdateCommand from the global defaults."""
     from uuid import uuid4  # noqa: PLC0415

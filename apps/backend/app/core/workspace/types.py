@@ -55,9 +55,7 @@ class RepoRefForSpec(BaseModel):
 
 
 class WorkspaceSpec(BaseModel):
-    """What's required to provision a workspace. `org_id` is stamped by
-    `create_workspace` before the spec reaches the plugin's `provision()`.
-    """
+    """What's required to provision a workspace."""
 
     repo: RepoRefForSpec
     sha: str
@@ -71,8 +69,7 @@ class WorkspaceSpec(BaseModel):
     base_branch: str | None = None
     resource_caps: ResourceCaps = Field(default_factory=ResourceCaps)
     network_policy: NetworkPolicy = NetworkPolicy.GITHUB_ONLY
-    # Stamped by core/workspace.create_workspace before delegating to provision().
-    # Allows the workspace plugin to request auth tokens for the right org via vcs.
+    # org_id scoping — callers populate before passing to a provider.
     org_id: UUID | None = None
 
 
@@ -110,7 +107,7 @@ class CodingAgentCliResult(BaseModel):
 
 
 class Workspace(Protocol):
-    """The view consumers get back from `create_workspace` / `with_workspace`.
+    """Capability handle for an active workspace.
 
     Exposes only operations + identity. Internal paths (in-process tempdir,
     container id, pod name) are implementation details of the provider.
@@ -176,12 +173,12 @@ class WorkspaceClaimState(BaseModel):
     """Projection returned by `get_workspace_claim_state`.
 
     Contains only what `core/agent_gateway` needs to apply the stale-claim guard
-    and enqueue workflow-engine continuations — no ORM Row crosses the module
-    boundary.
+    and identify the workspace owner — no ORM Row crosses the module boundary.
+    Workflow-execution correlation is now on `agent_commands.workflow_execution_id`;
+    `current_holder_workflow_id` is no longer part of this projection.
     """
 
     workspace_id: UUID
-    current_holder_workflow_id: UUID | None
     status: str
     # owning agent (`workspace_agents.id`); None for in-memory/legacy rows.
     # agent_gateway compares this against the bearer's agent_id to authorize
@@ -228,7 +225,7 @@ class WorkspaceProvisionError(WorkspaceError):
 
 
 class WorkspaceNotFoundError(WorkspaceError, LookupError):
-    """Raised by get_workspace() if the id is unknown."""
+    """Raised when a workspace lookup by id returns no row."""
 
 
 class WorkspaceExpiredError(WorkspaceError):

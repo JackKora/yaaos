@@ -45,7 +45,7 @@ class WorkspaceAgentReportSink(Protocol):
     Operations cover all workspace-state access agent_gateway needs:
     - `reconcile_heartbeat` — pure read; returns ids the agent should forget.
     - `apply_workspace_event` — applies kind→status map; returns outcome VO.
-    - `resolve_claim` — pure read; returns the workflow holding a command.
+    - `resolve_claim` — pure read; returns the workflow_execution_id for a command.
     - `owning_agent_for_workspace` / `owning_agent_for_command` — pure reads;
       return the workspace's owning `agent_id` for the per-agent authz check.
     - `release_command_claim` — clears `current_command_id` on the workspace
@@ -82,8 +82,11 @@ class WorkspaceAgentReportSink(Protocol):
         command_id: UUID,
         session: object,
     ) -> UUID | None:
-        """Return the `current_holder_workflow_id` for the workspace holding
-        `command_id`, or None if no workspace is claimed by that command.
+        """Return the `workflow_execution_id` for `command_id`, or None if the
+        command row is not found or has no workflow correlation.
+
+        Correlation comes from `agent_commands.workflow_execution_id`; the shed
+        `workspaces.current_holder_workflow_id` column is no longer consulted.
         """
         ...
 

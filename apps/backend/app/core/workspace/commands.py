@@ -33,8 +33,7 @@ from app.core.agent_gateway import (
 from app.core.workflow import CommandCategory, CommandContext, Outcome
 from app.core.workspace.models import WorkspaceRow
 from app.core.workspace.remote_provider import dispatch_provision_workspace
-from app.core.workspace.service import close_workspace, create_workspace, list_workspace_providers
-from app.core.workspace.types import NetworkPolicy, RepoRefForSpec, ResourceCaps, WorkspaceSpec
+from app.core.workspace.service import close_workspace, list_workspace_providers
 from app.core.workspace.workflow_context import get_workflow_context_provider
 
 if TYPE_CHECKING:
@@ -61,66 +60,19 @@ class ProvisionWorkspace(_LifecycleCommand):
 
     The workflow engine's Workspace branch always parks the execution in
     `awaiting_agent` and dispatches a `ProvisionWorkspace` AgentCommand over
-    the wire; `execute()` is not called by the engine. It is callable
-    directly in unit tests that exercise the body in isolation — it finds
-    the single registered provider, fetches ticket context via the
-    `WorkflowContextProvider`, and calls `create_workspace()`.
-
-    Falls back to `Outcome.failure` when:
-    - no provider is registered
-    - the ticket context is not found
-    - `create_workspace()` raises
+    the wire; the remote agent performs the actual provisioning. `execute()` is
+    never called by the engine. The legacy in-process provision path has been
+    removed — `execute()` returns failure unconditionally to surface
+    any mistaken direct calls.
     """
 
     kind = "ProvisionWorkspace"
 
     async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
-        del inputs
-        providers = list_workspace_providers()
-        if not providers:
-            return Outcome.failure(reason="no workspace provider registered")
-        provider_id = providers[0].meta.id
-
-        workflow_ctx_provider = get_workflow_context_provider()
-        try:
-            ticket_ctx = await workflow_ctx_provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
-        except Exception as exc:
-            log.exception(
-                "provision_workspace.context_fetch_failed",
-                workflow_execution_id=ctx.workflow_execution_id,
-                ticket_id=ctx.ticket_id,
-            )
-            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
-
-        if ticket_ctx is None:
-            return Outcome.failure(reason=f"ticket {ctx.ticket_id} not found")
-
-        head_sha = str(ticket_ctx.payload.get("head_sha") or "HEAD")
-        base_sha = ticket_ctx.payload.get("base_sha")
-        spec = WorkspaceSpec(
-            repo=RepoRefForSpec(plugin_id=ticket_ctx.plugin_id, external_id=ticket_ctx.repo_external_id),
-            sha=head_sha,
-            base_sha=str(base_sha) if base_sha else None,
-            resource_caps=ResourceCaps(),
-            network_policy=NetworkPolicy.GITHUB_ONLY,
+        del inputs, ctx
+        return Outcome.failure(
+            reason="ProvisionWorkspace.execute is not the dispatch path for remote provisioning"
         )
-        try:
-            ws = await create_workspace(provider_id, spec, org_id=ticket_ctx.org_id)
-        except Exception as exc:
-            log.exception(
-                "provision_workspace.create_failed",
-                workflow_execution_id=ctx.workflow_execution_id,
-                ticket_id=ctx.ticket_id,
-            )
-            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
-
-        log.info(
-            "provision_workspace.success",
-            workflow_execution_id=ctx.workflow_execution_id,
-            ticket_id=ctx.ticket_id,
-            workspace_id=ws.id,
-        )
-        return Outcome.success(outputs={"workspace_id": ws.id})
 
     async def dispatch(
         self,

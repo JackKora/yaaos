@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.agent_gateway import WorkspaceEventReport
+from app.core.agent_gateway import CleanupWorkspaceCommand, WorkspaceEventReport, enqueue_command
 from app.core.workspace.agent_report import WorkspaceAgentReportSinkImpl
 from app.core.workspace.models import WorkspaceRow
 
@@ -186,11 +186,26 @@ async def test_reconcile_empty_set_returns_empty(db_session) -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_claim_returns_holder(db_session) -> None:
+    """resolve_claim reads workflow_execution_id from agent_commands, not from
+    the shed workspaces.current_holder_workflow_id column."""
     sink = WorkspaceAgentReportSinkImpl()
     cmd_id = uuid4()
+    workspace_id = uuid4()
     wfx_id = uuid4()
-    ws = _make_workspace_row(command_id=cmd_id, holder_workflow_id=wfx_id)
-    db_session.add(ws)
+    org_id = uuid4()
+
+    # Enqueue an agent_commands row with the expected workflow_execution_id.
+    cmd = CleanupWorkspaceCommand(
+        command_id=cmd_id,
+        workspace_id=workspace_id,
+        traceparent="",
+    )
+    await enqueue_command(
+        org_id=org_id,
+        command=cmd,
+        session=db_session,
+        workflow_execution_id=wfx_id,
+    )
     await db_session.flush()
 
     result = await sink.resolve_claim(cmd_id, db_session)

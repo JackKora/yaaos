@@ -127,7 +127,7 @@ depends_on = ["app.core.audit_log", "app.core.database", "app.domain.vcs"]
 
 [[modules]]
 path = "app.domain.reviewer"
-depends_on = ["app.core.agent_gateway", "app.core.auth", "app.core.config", "app.core.database", "app.core.llm", "app.core.observability", "app.core.sessions", "app.core.sse", "app.core.webserver", "app.core.workflow", "app.core.workspace", "app.domain.coding_agent", "app.domain.intake", "app.domain.integrations", "app.domain.mcp_proxy", "app.domain.pull_requests", "app.domain.tickets", "app.domain.vcs"]
+depends_on = ["app.core.auth", "app.core.config", "app.core.database", "app.core.llm", "app.core.observability", "app.core.sessions", "app.core.sse", "app.core.webserver", "app.core.workflow", "app.core.workspace", "app.domain.coding_agent", "app.domain.intake", "app.domain.integrations", "app.domain.mcp_proxy", "app.domain.pull_requests", "app.domain.tickets", "app.domain.vcs"]
 
 [[modules]]
 path = "app.domain.tickets"
@@ -231,6 +231,7 @@ expose = [
   "ensure_agent_row",
   "get_agent_info",
   "get_command_org_and_payload",
+  "get_command_workflow_execution_id",
   "get_report_sink",
   "get_subscriber_registry",
   "has_any_reachable_agent",
@@ -631,13 +632,11 @@ expose = [
   "assert_workflow_context_provider",
   "bind_workspace_registry",
   "close_workspace",
-  "create_workspace",
   "current_workspace_registry",
   "dispatch_invoke_claude_code",
   "force_close_all",
   "get_provider",
   "get_workflow_context_provider",
-  "get_workspace",
   "get_workspace_claim_state",
   "get_workspace_command_state",
   "get_workspace_info",
@@ -654,7 +653,6 @@ expose = [
   "startup_recovery",
   "try_claim",
   "update_workspace_status",
-  "with_workspace",
 ]
 from = ["app.core.workspace"]
 

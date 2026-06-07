@@ -12,113 +12,25 @@ Local commands:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID
 
 import structlog
 
-from app.core.agent_gateway import CleanupWorkspaceCommand, enqueue_command, pin_command_to_agent
 from app.core.database import session as db_session
 from app.core.workflow import CommandCategory, CommandContext, Outcome
 from app.core.workspace import (
-    Workspace,
-    WorkspaceTicketContext,
     dispatch_invoke_claude_code,
     get_workflow_context_provider,
-    get_workspace,
     get_workspace_owner,
     try_claim,
 )
 from app.domain.tickets import get_payload as get_ticket_payload
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
 log = structlog.get_logger("domain.reviewer.commands")
 
 # Labels whose presence on a PR force-skips the review. Case-insensitive.
 SKIP_LABELS: frozenset[str] = frozenset({"yaaos-skip", "no-review", "wip"})
-
-
-# ── Workspace command base ──────────────────────────────────────────────────
-
-
-class _WorkspaceReviewCommand:
-    """Base for workspace-category reviewer commands."""
-
-    category = CommandCategory.WORKSPACE
-    restart_safe = True
-
-    async def execute(self, inputs: dict[str, Any], ctx: CommandContext) -> Outcome:
-        ws_id_raw = inputs.get("workspace_id")
-        if not ws_id_raw:
-            return Outcome.failure(reason="missing workspace_id input")
-        try:
-            ws_id = UUID(str(ws_id_raw))
-        except TypeError, ValueError:
-            return Outcome.failure(reason=f"invalid workspace_id: {ws_id_raw!r}")
-
-        workspace = await get_workspace(ws_id)
-        if workspace is None:
-            return Outcome.failure(reason=f"workspace {ws_id} not resolvable")
-
-        provider = get_workflow_context_provider()
-        try:
-            ticket_ctx = await provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
-        except Exception as exc:
-            log.exception(
-                "workspace_review.context_fetch_failed",
-                workflow_execution_id=ctx.workflow_execution_id,
-                ticket_id=ctx.ticket_id,
-            )
-            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
-
-        if ticket_ctx is None:
-            return Outcome.failure(reason=f"ticket {ctx.ticket_id} not found")
-
-        return await self._run_in_workspace(workspace, ticket_ctx, inputs, ctx)
-
-    async def _run_in_workspace(
-        self,
-        workspace: Workspace,
-        ticket_ctx: WorkspaceTicketContext,
-        inputs: dict[str, Any],
-        ctx: CommandContext,
-    ) -> Outcome:
-        del workspace, ticket_ctx, inputs, ctx
-        return Outcome.success()
-
-    async def dispatch(
-        self,
-        inputs: dict[str, Any],
-        ctx: CommandContext,
-        *,
-        session: AsyncSession,
-    ) -> UUID:
-        ws_id_raw = inputs.get("workspace_id")
-        if not ws_id_raw:
-            raise RuntimeError(f"{self.kind}.dispatch missing workspace_id input")
-        ws_id = UUID(str(ws_id_raw))
-
-        owner = await get_workspace_owner(ws_id, session=session)
-        if owner is None:
-            raise RuntimeError(f"workspace {ws_id} not found for {self.kind}.dispatch")
-
-        command_id = uuid4()
-        cmd = CleanupWorkspaceCommand(
-            command_id=command_id,
-            workspace_id=ws_id,
-            traceparent=ctx.traceparent or "",
-        )
-        await enqueue_command(
-            org_id=owner.org_id,
-            command=cmd,
-            session=session,
-            workflow_execution_id=UUID(ctx.workflow_execution_id),
-        )
-        if owner.owning_agent_id is not None:
-            await pin_command_to_agent(command_id, owner.owning_agent_id, session=session)
-        return command_id
 
 
 def _activity_publisher_for(ctx: CommandContext):  # type: ignore[no-untyped-def]

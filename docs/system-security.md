@@ -76,7 +76,7 @@ Event endpoints (`POST /api/v1/commands/{id}/events`, `POST /api/v1/workspaces/{
 
 ### Failure-report-precedes-disposal
 
-`release_claim` clears `current_command_id` but **preserves** `current_holder_workflow_id`. The terminal event must arrive before the workspace row is disposed — workflows can never lose their resolution path to the workspace that owned them.
+`release_claim` clears `current_command_id` before the workflow engine is resumed. Command-to-workflow correlation lives on `agent_commands.workflow_execution_id` — terminal events resolve their workflow via the command row, not the workspace row. The workspace row can be disposed after claim release without losing correlation.
 
 ### `traceparent` on every wire payload
 

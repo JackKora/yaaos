@@ -56,7 +56,7 @@ Domain functions succeed or raise. No translation unless translation is genuinel
 
 ### Filesystem + processes via `core/workspace`
 
-Never touch the filesystem (`open()`, `pathlib`) or spawn processes (`subprocess`) directly for repo/code work. Always go through `with_workspace(...)` — the workspace decides where/how the CLI runs. Consumers never see internal paths; the Protocol exposes operations, not paths.
+Never touch the filesystem (`open()`, `pathlib`) or spawn processes (`subprocess`) directly for repo/code work. Workspace operations go through the remote agent via `dispatch_invoke_claude_code` (the workspace dispatches via `core/agent_gateway`). Consumers never see internal paths; the Protocol exposes operations, not paths.
 
 Exceptions: `core/database` (Postgres connections), `core/observability` (log files).
 
@@ -256,7 +256,7 @@ The workspace state machine accepts one in-flight AgentCommand at a time. [`core
 
 ### Failure-report-precedes-disposal invariant
 
-`release_claim` clears `current_command_id` but **preserves** `current_holder_workflow_id` on the workspace row for observability. Command-to-workflow correlation does NOT depend on this — `agent_commands.workflow_execution_id` is stamped by `dispatch` at enqueue time and read directly by `record_agent_event`, so terminal events still resolve their workflow after the workspace has been torn down.
+`release_claim` clears `current_command_id`; `current_holder_workflow_id` stays written (by `try_claim`) but is no longer read by any code path — it is shed in the next migration slice. Command-to-workflow correlation lives on `agent_commands.workflow_execution_id`, which is stamped by `dispatch` at enqueue time and read directly by `record_agent_event` and `failsafe_agent_loss`, so terminal events resolve their workflow regardless of workspace row state.
 
 ### Recovery policy registry
 

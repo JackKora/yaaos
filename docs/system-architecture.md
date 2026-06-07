@@ -136,7 +136,7 @@ All at-rest secrets go through [`core/secrets`](../apps/backend/docs/core_secret
 
 ### Persistence (new tables)
 
-`workflow_executions`, `pending_human_decisions`, `outbox_entries`, `workspace_agents`, `bearer_tokens`. Existing tables extended: `tickets` (type, idempotency_key, payload, current_workflow_execution_id), `workspaces` (current_command_id, current_holder_workflow_id, max_idle_seconds, agent_id), `orgs` (registered_iam_arn, aws_region). Activity events are never persisted — they exist only in flight from WebSocket → `core/sse` → SSE → UI.
+`workflow_executions`, `pending_human_decisions`, `outbox_entries`, `workspace_agents`, `bearer_tokens`. Existing tables extended: `tickets` (type, idempotency_key, payload, current_workflow_execution_id), `workspaces` (current_command_id, max_idle_seconds, owning_agent_id), `orgs` (registered_iam_arn, aws_region). Activity events are never persisted — they exist only in flight from WebSocket → `core/sse` → SSE → UI.
 
 ### Committed OpenAPI artifacts
 

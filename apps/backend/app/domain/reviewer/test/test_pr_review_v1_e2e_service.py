@@ -41,8 +41,7 @@ from app.testing.workflow_harness import scoped_engine
 
 
 class _StubWorkspaceProvider:
-    """Doesn't clone anything — just returns a fake plugin_state so
-    create_workspace() lands a real row in the DB."""
+    """Doesn't clone anything — legacy stub; retained for test isolation."""
 
     meta = PluginMeta(id="in_process", type="workspace", display_name="stub-in-memory")
 
