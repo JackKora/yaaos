@@ -48,11 +48,20 @@ Only after explicit yes: write `plan.md` phase blocks.
 
 **Definition.** A vertical slice = end-to-end exercise of one user-observable behavior across every boundary it touches (UI → API → domain → storage where applicable). Not a horizontal layer.
 
+**Integration-first, NOT feature-complete — mock the rest.** A slice exists to prove the wiring across boundaries works *early* and shake out integration kinks — it is NOT obligated to ship a production-complete feature in one phase. This is the lever that resolves the slice-vs-size tension: a slice that spans every boundary AND is fully complete is everything-at-once, which blows the token budget and produces giant phases. **The fix when a slice is too big is almost always "what can I mock?", not "ship it all."** Standard practice: thin-slice through every layer, **stub the parts not yet built** (downstream services, adjacent components, future steps), then replace each stub with the real thing in a later slice — progressively building *up* to the complete feature.
+
+- **Mocks are the primary scope-control tool.** Before accepting a phase that bundles a feature + a migration + deletions (the oversized shape), ask which downstream pieces can be a labeled stub this phase and land for real later. A phase whose only honest shape is "do the whole feature at once" usually hasn't found its mock boundary yet — keep looking before accepting a giant phase.
+- **Every mock is labeled and has a named removal phase.** Write it into the phase block: "stub X here (returns empty / canned / degraded-but-correct); real X lands in phase N." A stub with no removal phase is debt; a stub introduced-and-never-removed is a planning error — audit that every mock is retired by some later phase.
+- **A planned mock IS part of that phase's delivered scope** — the block states it, so implementing the stub *is* completing the phase. (This is distinct from, and must not be confused with, a dev-implement subagent silently dropping block-stated work — that's a failure, not a slice technique.)
+- **Mocks live at test seams or as explicitly-labeled placeholder seams.** NEVER fabricate permanent fake production logic, and never let "mock" become "ship less than the block claims."
+
 **Slice shaping:**
 
 - Each slice retires one concrete integration risk OR delivers one demo-able behavior.
 - Prefer the thinnest viable slice through all layers over a "complete" slice in one layer.
 - Migrations + their first consumer ship in the same slice.
+- **A column/type/enum DROP ships in the same slice as the removal of its LAST reader — never schedule a shed before the code that reads it is gone.** Scheduling a shed ahead of its last consumer is the #1 cross-phase sequencing bug; for every drop, name the phase that removes the final reader and put the drop there or later.
+- **One change per phase.** A phase delivers a feature OR a schema migration OR a deletion-set — not all three bundled. "Build the new path" and "retire the old path" are separate slices when both are substantial. Oversized-phase symptoms: a `Files touched` list spanning new modules + dropped columns + deleted files + new tests + several doc rewrites; or >~15 files; or a phase a subagent would need hundreds of edits to land. When in doubt, split — a too-small phase costs a commit; a too-big phase silently fails or gets half-implemented.
 - Cross-service contract changes ship both sides in the same slice. If that's too big, the slice is wrong — split the behavior, not the layers.
 - Auth/permission boundaries get their own slice when they gate a flow.
 
