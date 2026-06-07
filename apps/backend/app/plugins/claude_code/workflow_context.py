@@ -46,10 +46,16 @@ class _ClaudeCodeWorkflowContextProvider:
         # plugins/github` is a forbidden cross-plugin edge; the canonical
         # derivation belongs in `core/vcs`. The fallback returns "" when
         # repo_full_name is empty.
+        #
+        # Built from `github_git_base_url` (the host the *agent* clones from),
+        # not `github_web_base_url` (the browser-facing host) — these diverge in
+        # the test stack where the agent container can't reach the host-mapped
+        # web URL. Falls back to the web base when the git base is unset (prod).
         from app.core.config import get_settings  # noqa: PLC0415
 
         settings = get_settings()
-        clone_url = f"{settings.github_web_base_url}/{repo_full_name}.git" if repo_full_name else ""
+        git_base = settings.github_git_base_url or settings.github_web_base_url
+        clone_url = f"{git_base}/{repo_full_name}.git" if repo_full_name else ""
 
         # Installation token — fresh per-dispatch (~1h TTL).
         raw_token = ""

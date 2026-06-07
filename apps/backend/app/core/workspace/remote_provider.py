@@ -278,3 +278,20 @@ async def dispatch_cleanup_workspace(
     # Pre-assign the agent so claim_next's workspace_ids sweep finds it.
     await pin_command_to_agent(command_id, agent_id, session=session)
     return command_id
+
+
+def register_workspace_providers() -> None:
+    """Register the shipped workspace provider into the process registry.
+
+    Called explicitly from the web + worker composition roots after the
+    workspace module is loaded — not at import time, so the process controls
+    when registration happens (mirrors `register_workspace_recovery_policies`).
+    `RemoteAgentWorkspaceProvider` is the only shipped implementation: it
+    dispatches every workspace operation to a customer-deployed WorkspaceAgent
+    via `core/agent_gateway`. `ProvisionWorkspace.dispatch` requires at least
+    one registered provider, so this call is load-bearing for the review +
+    enumerate workflows. Called exactly once per process; the registry raises
+    loudly on a duplicate, which is the intended signal for a wiring bug."""
+    from app.core.workspace.service import register_workspace_provider  # noqa: PLC0415
+
+    register_workspace_provider(RemoteAgentWorkspaceProvider())

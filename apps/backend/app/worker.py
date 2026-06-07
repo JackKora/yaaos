@@ -41,9 +41,11 @@ def main() -> int:
     # the workflow-context provider is already installed.
     from app.core.workspace import (  # noqa: PLC0415
         assert_workflow_context_provider,
+        register_workspace_providers,
         register_workspace_recovery_policies,
     )
 
+    register_workspace_providers()
     register_workspace_recovery_policies()
     assert_workflow_context_provider()
 

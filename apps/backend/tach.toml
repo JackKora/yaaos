@@ -647,6 +647,7 @@ expose = [
   "list_workspace_providers",
   "register_workflow_context_provider",
   "register_workspace_provider",
+  "register_workspace_providers",
   "register_workspace_recovery_policies",
   "release_claim",
   "start_reaper",

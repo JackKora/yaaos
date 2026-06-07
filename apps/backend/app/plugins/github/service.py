@@ -113,14 +113,17 @@ class GitHubPlugin:
         return dict(settings)
 
     def clone_url(self, repo_external_id: str) -> str:
-        """`<github_web_base_url>/<owner>/<repo>.git` — the workspace provider
+        """`<github_git_base_url>/<owner>/<repo>.git` — the workspace provider
         pairs this with an installation-token Bearer via GIT_ASKPASS.
 
-        The test stack overrides `github_web_base_url` to fake-github, but
-        in_memory_workspace's clone tests monkeypatch this method directly
-        with a `file://` URL so a real git server isn't needed.
+        Built from `github_git_base_url` (the host the agent clones from),
+        falling back to `github_web_base_url` when unset. The test stack splits
+        them: the agent reaches `fake-github:8080` for the clone while the
+        browser uses the host-mapped web URL.
         """
-        return f"{get_settings().github_web_base_url}/{repo_external_id}.git"
+        s = get_settings()
+        git_base = s.github_git_base_url or s.github_web_base_url
+        return f"{git_base}/{repo_external_id}.git"
 
     async def _installation_token(self, org_id: UUID) -> str:
         """Trade an App JWT for an installation token. RS256 JWT signed with the

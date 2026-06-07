@@ -73,7 +73,7 @@ All calls use short-lived per-method `httpx` clients against `github_api_base_ur
 
 `post_finding` posts each finding as its own comment from named primitive args rendered by `_format_finding_body`. Findings with `file` + `line_start` → `POST /pulls/{n}/comments` (inline); null-anchor findings → `POST /issues/{n}/comments` (top-level PR comment). `post_comment` always routes to `POST /issues/{n}/comments` — used by the secrets-detected warning.
 
-`clone_url(repo_external_id)` returns `<github_web_base_url>/<external_id>.git`. Workspace provider pairs this with a fresh installation token via `GIT_ASKPASS`.
+`clone_url(repo_external_id)` returns `<github_git_base_url>/<external_id>.git` (falls back to `github_web_base_url` when the git base is unset). Workspace provider pairs this with a fresh installation token via `GIT_ASKPASS`. The git base is split from the web base so the agent clones from a host its container can reach — the web base is browser-facing (OAuth redirects).
 
 ## Data owned
 

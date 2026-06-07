@@ -70,9 +70,11 @@ from app.domain import reviewer  # noqa: F401, E402
 # if the wiring is wrong, rather than surfacing as a mid-flow None.
 from app.core.workspace import (  # noqa: E402
     assert_workflow_context_provider,
+    register_workspace_providers,
     register_workspace_recovery_policies,
 )
 
+register_workspace_providers()
 register_workspace_recovery_policies()
 assert_workflow_context_provider()
 from app.domain import intake  # noqa: F401, E402
@@ -133,9 +135,16 @@ app = webserver.create_app()
 if __name__ == "__main__":
     import uvicorn
 
+    # Pass the already-built `app` OBJECT, not the "app.web:app" import string.
+    # A string makes uvicorn re-import this module — but it's already running as
+    # `__main__`, and `app.web` is a distinct sys.modules entry, so the whole
+    # composition root above would execute a SECOND time (every module-level
+    # registration double-firing). Serving the object boots the bootstrap once.
+    # Trade-off: no uvicorn reload/multi-worker (both need an import string) —
+    # the backend runs single-process per container, so neither is used.
     settings = get_settings()
     uvicorn.run(
-        "app.web:app",
+        app,
         host="0.0.0.0",
         port=settings.yaaos_port,
         ws_ping_interval=30,
