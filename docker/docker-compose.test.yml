@@ -86,6 +86,16 @@ services:
       # Install-picker URL — the BROWSER follows this redirect, so it must
       # be the host-mapped fake-github URL, not the docker service name.
       GITHUB_WEB_BASE_URL: http://localhost:58081
+      # Git clone origin — the AGENT container clones from this, so it must be
+      # the docker-internal service name (the host-mapped web URL above is
+      # unreachable from inside the agent network).
+      GITHUB_GIT_BASE_URL: http://fake-github:8080
+      # Agent identity exchange: bootstrap_owner stamps the seeded org's
+      # registered_iam_arn + aws_region from these so the real agent container's
+      # STS-derived ARN (from mock-aws, YAAOS_DEV_SEED_ARN below) matches an org
+      # and identity exchange succeeds. Must equal mock-aws's YAAOS_DEV_SEED_ARN.
+      YAAOS_DEV_SEED_ARN: arn:aws:iam::000000000000:role/yaaos-test
+      YAAOS_DEV_SEED_REGION: us-east-1
       # The platform yaaos GitHub App credentials. App ID + slug + webhook
       # secret match what fake-github exposes via `/app` and signs outbound
       # webhooks with (see apps/fake-github/app/test_secrets.py).
@@ -117,7 +127,10 @@ services:
       NOTION_API_BASE_URL: http://fake-notion:8080
       YAAOS_OAUTH_NOTION_CLIENT_ID: fake-notion-client-id
       YAAOS_OAUTH_NOTION_CLIENT_SECRET: fake-notion-client-secret
-      YAAOS_CODING_AGENT_STUB: "1"
+      # No YAAOS_CODING_AGENT_STUB: the cross-plane review e2e runs the REAL
+      # claude_code plugin (build_review_invocation + parse_review_output) end
+      # to end against the real Go agent + fake-claude. The Anthropic key is
+      # seeded fake by seed_github_install; fake-claude never validates it.
       YAAOS_REVIEWER_CLASSIFIER_STUB: "1"
       YAAOS_REVIEW_DEBOUNCE_SECONDS: "0"
       YAAOS_REAPER_INTERVAL_SECONDS: "1"
@@ -162,6 +175,8 @@ services:
       YAAOS_PUBLIC_ORIGIN: http://web:8080
       GITHUB_API_BASE_URL: http://fake-github:8080
       GITHUB_WEB_BASE_URL: http://localhost:58081
+      # Git clone origin — docker-internal so the agent container can reach it.
+      GITHUB_GIT_BASE_URL: http://fake-github:8080
       YAAOS_GITHUB_APP_ID: "12345"
       YAAOS_GITHUB_APP_SLUG: yaaos-test
       YAAOS_GITHUB_APP_PRIVATE_KEY: test-private-key
@@ -171,7 +186,8 @@ services:
       YAAOS_GITHUB_OAUTH_TOKEN_URL: http://fake-github:8080/login/oauth/access_token
       LINEAR_API_BASE_URL: http://fake-linear:8080
       NOTION_API_BASE_URL: http://fake-notion:8080
-      YAAOS_CODING_AGENT_STUB: "1"
+      # No YAAOS_CODING_AGENT_STUB — see the web service block. The worker runs
+      # the real claude_code review path against the agent + fake-claude.
       YAAOS_REVIEWER_CLASSIFIER_STUB: "1"
       YAAOS_REVIEW_DEBOUNCE_SECONDS: "0"
       YAAOS_REAPER_INTERVAL_SECONDS: "1"
