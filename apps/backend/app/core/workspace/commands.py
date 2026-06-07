@@ -129,20 +129,22 @@ class ProvisionWorkspace(_LifecycleCommand):
         *,
         session: AsyncSession,
     ) -> UUID:
-        """Enqueue a `ProvisionWorkspace` AgentCommand durably inside the
-        caller's transaction and return its command_id. Creates the workspace
-        row via `create_workspace` so the agent has a target id to provision
-        into.
+        """Mint a `workspace_id` UUID (no row yet), enqueue a `ProvisionWorkspace`
+        AgentCommand durably inside the caller's transaction, and return its
+        command_id. The `workspaces` row is created lean on the agent's first
+        workspace event (`created` or `ready`) by the sink in `agent_report.py`.
 
-        `RepoRef.clone_url` and `AuthBlock.token` are placeholders: the
-        `WorkspaceTicketContext` VO does not yet carry `clone_url`/`installation_token`,
-        so the dispatch exercises the correlation path without real auth.
+        `clone_url` and `installation_token` come from `WorkspaceTicketContext`
+        populated by the registered `WorkflowContextProvider` implementation.
+        When the context carries empty values (e.g. in unit tests that bypass the
+        real provider), the dispatch still enqueues with empty auth — the agent
+        rejects the clone and reports a failure event, which is the expected path
+        for tests that only exercise the engine correlation machinery.
         """
         del inputs
         providers = list_workspace_providers()
         if not providers:
             raise RuntimeError("no workspace provider registered")
-        provider_id = providers[0].meta.id
 
         workflow_ctx_provider = get_workflow_context_provider()
         ticket_ctx = await workflow_ctx_provider.get_workspace_ticket_context(UUID(ctx.ticket_id))
@@ -151,27 +153,23 @@ class ProvisionWorkspace(_LifecycleCommand):
 
         head_sha = str(ticket_ctx.payload.get("head_sha") or "HEAD")
         base_sha = ticket_ctx.payload.get("base_sha")
-        spec = WorkspaceSpec(
-            repo=RepoRefForSpec(plugin_id=ticket_ctx.plugin_id, external_id=ticket_ctx.repo_external_id),
-            sha=head_sha,
-            base_sha=str(base_sha) if base_sha else None,
-            resource_caps=ResourceCaps(),
-            network_policy=NetworkPolicy.GITHUB_ONLY,
-        )
-        ws = await create_workspace(provider_id, spec, org_id=ticket_ctx.org_id)
-        ws_id = UUID(ws.id)
 
-        # Placeholder clone_url/token: WorkspaceTicketContext does not yet carry
-        # clone_url+installation_token, so these exercise the correlation path
-        # end-to-end without depending on real auth.
+        # Mint the workspace_id up front — the row is created lean on the agent's
+        # first workspace event, not here. The UUID is the agent's lifecycle handle
+        # and the WorkspaceEvent key.
+        ws_id = uuid4()
+
         repo = RepoRef(
             plugin_id=ticket_ctx.plugin_id,
             external_id=ticket_ctx.repo_external_id,
-            clone_url="",
+            clone_url=ticket_ctx.clone_url,
             head_sha=head_sha,
             base_sha=str(base_sha) if base_sha else None,
         )
-        auth = AuthBlock(kind="github_installation", token="placeholder")
+        auth = AuthBlock(
+            kind="github_installation",
+            token=ticket_ctx.installation_token.get_secret_value(),
+        )
         result = await dispatch_provision_workspace(
             ticket_ctx.org_id,
             ws_id,
@@ -180,6 +178,12 @@ class ProvisionWorkspace(_LifecycleCommand):
             traceparent=ctx.traceparent or "",
             session=session,
             workflow_execution_id=UUID(ctx.workflow_execution_id),
+        )
+        log.info(
+            "provision_workspace.dispatched",
+            workflow_execution_id=ctx.workflow_execution_id,
+            workspace_id=str(ws_id),
+            command_id=str(result.command_id),
         )
         return result.command_id
 

@@ -2,16 +2,25 @@
 
 Owns all workspace-state access needed by agent_gateway event ingestion:
 - heartbeat reconciliation (id→status map)
-- workspace-event kind→status application
+- workspace-event kind→status application + lean row creation on first event
 - claim resolution (command_id → holder_workflow_id)
+- claim release on terminal agent events (failure-report-precedes-disposal)
 
 Registered into agent_gateway's single-slot registry by
 `core/workspace.__init__` at import time so the edge goes
 workspace → agent_gateway, not the reverse.
+
+Lean workspace row creation: when the agent reports a `created` or `ready`
+workspace event and no `workspaces` row exists yet, this module creates the
+row with `status='active'`, `owning_agent_id` from the reporting bearer, and
+`org_id`/`spec` resolved from the originating `agent_commands` row
+(by `command_id`). The `workspace_id` is minted up front in
+`ProvisionWorkspace.dispatch`; the row materialises only once an agent owns it.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -27,6 +36,13 @@ from app.core.workspace.types import WorkspaceStatus
 
 log = structlog.get_logger("core.workspace.agent_report")
 
+# Remote-provider id for lean-created rows.
+_REMOTE_PROVIDER_ID = "remote_agent"
+
+# Default workspace TTL in seconds for lean-created rows; matches
+# `ProvisionWorkspace` dispatch defaults.
+_DEFAULT_TTL_SECONDS = 600
+
 # Maps the agent-side workspace event kind to the control-plane status column.
 # Only kinds listed here trigger a status write; others are no-ops.
 _KIND_TO_STATUS: dict[str, str] = {
@@ -34,6 +50,9 @@ _KIND_TO_STATUS: dict[str, str] = {
     "destroyed": WorkspaceStatus.DESTROYED.value,
     "failed": WorkspaceStatus.DESTROY_FAILED.value,
 }
+
+# Workspace event kinds that trigger lean row creation when the row is absent.
+_ROW_CREATE_KINDS = frozenset({"created", "ready"})
 
 
 class WorkspaceAgentReportSinkImpl:
@@ -71,6 +90,13 @@ class WorkspaceAgentReportSinkImpl:
     ) -> WorkspaceEventOutcome:
         """Apply the agent-reported event kind to workspace status.
 
+        Lean row creation: when the event kind is `created` or `ready` and no
+        `workspaces` row exists for `report.workspace_id`, this method creates
+        the row with `status='active'`, `owning_agent_id` from the reporting
+        bearer (passed as `report.agent_id`), and `org_id`/`spec` resolved from
+        the originating `agent_commands` row via `report.command_id`. The lean
+        path never goes through `creating` — the row is inserted active.
+
         Validates the stale-claim guard: if the workspace's current_command_id
         doesn't match event.command_id (and it isn't None), the event is rejected
         with accepted=False — the caller maps this to a 410 response.
@@ -84,7 +110,19 @@ class WorkspaceAgentReportSinkImpl:
                 )
             )
         ).one_or_none()
+
         if row is None:
+            # Lean creation: insert the workspace row on first event.
+            if report.kind in _ROW_CREATE_KINDS:
+                created = await _create_lean_workspace_row(report, session)
+                if created:
+                    log.info(
+                        "workspace.lean_row_created",
+                        workspace_id=str(report.workspace_id),
+                        kind=report.kind,
+                        agent_id=str(report.agent_id) if report.agent_id else None,
+                    )
+                    return WorkspaceEventOutcome(resolved_status=WorkspaceStatus.ACTIVE.value, accepted=True)
             return WorkspaceEventOutcome(resolved_status=None, accepted=False)
 
         _ws_id, current_command_id, current_status = row
@@ -128,6 +166,42 @@ class WorkspaceAgentReportSinkImpl:
         if row is None:
             return None
         return row[1]
+
+    async def release_command_claim(
+        self,
+        command_id: UUID,
+        session: AsyncSession,
+    ) -> None:
+        """Release the single-flight claim on whichever workspace holds
+        `command_id` by clearing `current_command_id`. Called on every
+        terminal agent event before the workflow engine is resumed —
+        failure-report-precedes-disposal ordering.
+
+        No-op when no workspace holds the command (e.g. `ProvisionWorkspace`
+        before the lean row exists, or an agent-scoped command that has
+        no associated workspace row).
+        """
+        from app.core.workspace.dispatch import release_claim  # noqa: PLC0415
+
+        # Resolve workspace_id for the command from the workspace row that
+        # currently holds the claim. `release_claim` requires the workspace_id.
+        row = (
+            await session.execute(
+                select(WorkspaceRow.id).where(WorkspaceRow.current_command_id == command_id)
+            )
+        ).one_or_none()
+        if row is None:
+            # No workspace holds this command — normal for ProvisionWorkspace
+            # before the lean row exists, or for agent-scoped commands.
+            return
+        workspace_id = row[0]
+        released = await release_claim(workspace_id, command_id=command_id, session=session)
+        if released:
+            log.info(
+                "workspace.claim_released",
+                workspace_id=str(workspace_id),
+                command_id=str(command_id),
+            )
 
     async def owning_agent_for_workspace(
         self,
@@ -174,3 +248,47 @@ class WorkspaceAgentReportSinkImpl:
         from app.core.workspace.service import failsafe_agent_loss  # noqa: PLC0415
 
         await failsafe_agent_loss(session, agent_ids)
+
+
+async def _create_lean_workspace_row(
+    report: WorkspaceEventReport,
+    session: AsyncSession,
+) -> bool:
+    """Insert a lean `workspaces` row on the agent's first workspace event.
+
+    Resolves `org_id` and `spec` from the originating `agent_commands` row
+    (by `command_id`). `owning_agent_id` comes from the reporting bearer
+    (`report.agent_id`). The row is inserted with `status='active'` — no
+    `creating` intermediate state.
+
+    Returns True when the row was inserted, False when `command_id` is None
+    or the `agent_commands` row is not found (no source to derive data from).
+    """
+    if report.command_id is None:
+        return False
+
+    from app.core.agent_gateway import get_command_org_and_payload  # noqa: PLC0415
+
+    result = await get_command_org_and_payload(report.command_id, session=session)
+    if result is None:
+        return False
+
+    org_id, cmd_payload = result
+    now = datetime.now(UTC)
+    ws_row = WorkspaceRow(
+        id=report.workspace_id,
+        org_id=org_id,
+        owning_agent_id=report.agent_id,
+        provider_id=_REMOTE_PROVIDER_ID,
+        spec=cmd_payload,
+        plugin_state=None,
+        status=WorkspaceStatus.ACTIVE.value,
+        current_command_id=None,
+        current_holder_workflow_id=None,
+        activated_at=now,
+        expires_at=now + timedelta(seconds=_DEFAULT_TTL_SECONDS),
+        max_idle_seconds=_DEFAULT_TTL_SECONDS,
+    )
+    session.add(ws_row)
+    await session.flush()
+    return True

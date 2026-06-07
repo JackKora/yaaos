@@ -29,8 +29,11 @@ class OutboxEntryRow(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()"))
     kind: Mapped[str] = mapped_column(String, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # `created_at` is part of the composite primary key (id, created_at) — see
+    # migration 042. The composite PK enables future time-range partitioning
+    # by created_at without a live-table PK migration. No behavioral change.
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False, primary_key=True
     )
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

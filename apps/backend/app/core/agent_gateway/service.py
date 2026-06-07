@@ -149,6 +149,29 @@ async def pin_command_to_agent(
     await session.flush()
 
 
+async def get_command_org_and_payload(
+    command_id: UUID,
+    *,
+    session: AsyncSession,
+) -> tuple[UUID, dict] | None:
+    """Return `(org_id, payload)` for the given `agent_commands` row, or None
+    when the row is not found. Used by the workspace sink to seed the lean
+    `workspaces` row on the agent's first workspace event.
+
+    Pure read — no writes. Caller owns session lifecycle.
+    """
+    from app.core.agent_gateway.models import AgentCommandRow  # noqa: PLC0415
+
+    row = (
+        (await session.execute(select(AgentCommandRow).where(AgentCommandRow.id == command_id)))
+        .scalars()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    return (row.org_id, dict(row.payload) if row.payload else {})
+
+
 def _build_config_update() -> ConfigUpdateCommand:
     """Build a ConfigUpdateCommand from the global defaults."""
     from uuid import uuid4  # noqa: PLC0415
@@ -539,7 +562,14 @@ async def record_agent_event(
             )
         return
 
-    # Terminal — retire the command row and enqueue the workflow handler
+    # Terminal — release the single-flight workspace claim BEFORE routing to
+    # the next step or finalizer, so the next `try_claim` sees
+    # `current_command_id IS NULL` (failure-report-precedes-disposal).
+    # No-op when no workspace row holds this command (e.g. ProvisionWorkspace
+    # before the lean row exists, or agent-scoped commands).
+    await get_report_sink().release_command_claim(event.command_id, session)
+
+    # Retire the command row and enqueue the workflow handler
     # (only when there is a workflow to resume; agent-scoped commands without
     # workflow correlation simply retire).
     await retire_command(event.command_id, session=session)
@@ -565,6 +595,7 @@ async def record_agent_event(
 async def record_workspace_event(
     event: WorkspaceEvent,
     *,
+    agent_id: UUID | None = None,
     session: AsyncSession,
 ) -> None:
     """Update the workspace mirror from an agent-reported state change.
@@ -573,12 +604,17 @@ async def record_workspace_event(
     applies the stale-claim guard and the kind→status map, returning an
     outcome VO. agent_gateway maps `accepted=False` to `StaleClaimError`
     so the endpoint can return `410 Gone`.
+
+    `agent_id` is the bearer's `WorkspaceAgentRow.id`. Passed to the sink so
+    lean row creation (on the agent's first workspace event) can stamp
+    `owning_agent_id` correctly.
     """
     sink = get_report_sink()
     report = WorkspaceEventReport(
         workspace_id=event.workspace_id,
         command_id=event.command_id,
         kind=event.kind,
+        agent_id=agent_id,
     )
     outcome = await sink.apply_workspace_event(report, session)
     if not outcome.accepted:

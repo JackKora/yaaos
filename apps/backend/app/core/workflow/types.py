@@ -85,6 +85,10 @@ class Workflow(BaseModel):
     version: int = Field(ge=1)
     steps: tuple[Step, ...]
     entry_step_id: str
+    # When set, the engine runs this step on any terminal-fail before recording
+    # `failed`. One-shot: fires only on terminal-fail; on the success path the
+    # step runs as the normal terminal step and the finalizer does not re-fire.
+    finalizer_step_id: str | None = None
 
     def step_by_id(self, step_id: str) -> Step | None:
         for s in self.steps:

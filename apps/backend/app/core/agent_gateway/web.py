@@ -461,7 +461,7 @@ async def post_workspace_event(
             async with db_session() as s:
                 owning_agent_id = await get_report_sink().owning_agent_for_workspace(workspace_id, s)
                 _require_workspace_owner(agent, owning_agent_id)
-                await record_workspace_event(event, session=s)
+                await record_workspace_event(event, agent_id=agent.agent_id, session=s)
                 await s.commit()
         except StaleClaimError as exc:
             log.info("agent.workspace_event.stale", workspace_id=str(workspace_id), error=str(exc))

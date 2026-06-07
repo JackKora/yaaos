@@ -37,9 +37,10 @@ async def try_claim(
     backs off.
 
     `agent_id` (the owning `WorkspaceAgentRow.id`) is written as `owning_agent_id`
-    onto the row in the same UPDATE when supplied — the provision-dispatch path
-    passes it so the workspace is hard-tied to the pod that ran `ProvisionWorkspace`.
-    The legacy path omits it, leaving `WorkspaceRow.owning_agent_id` NULL.
+    onto the row in the same UPDATE when supplied — post-provision commands pass it
+    to hard-tie the workspace to the pod that ran `ProvisionWorkspace`.
+    Lean-created rows already carry `owning_agent_id` from the first workspace
+    event; legacy in-process rows omit it, leaving `WorkspaceRow.owning_agent_id` NULL.
 
     Caller commits; the outbox row enqueueing the AgentCommand should go
     in the same transaction so claim + dispatch land atomically.

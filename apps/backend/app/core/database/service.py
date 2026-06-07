@@ -174,6 +174,8 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("038_agent_identity_exchange_schema", "agent_identity_exchange_schema"),
     ("039_create_agent_commands", "create_agent_commands"),
     ("040_agent_commands_workflow_execution_id", "agent_commands_workflow_execution_id"),
+    ("041_workflow_executions_failure_reason", "workflow_executions_failure_reason"),
+    ("042_outbox_entries_pk_created_at", "outbox_entries_pk_created_at"),
 )
 
 
@@ -1241,6 +1243,46 @@ async def _apply_agent_commands_workflow_execution_id(conn) -> None:  # type: ig
     await conn.execute(text("ALTER TABLE agent_commands ADD COLUMN IF NOT EXISTS workflow_execution_id UUID"))
 
 
+async def _apply_workflow_executions_failure_reason(conn) -> None:  # type: ignore[no-untyped-def]
+    """Add `workflow_executions.failure_reason` (text, nullable).
+
+    Short queryable label written on terminal-fail. Values are one of:
+    schema_invalid | agent_failure | timeout | provision_failed | command_error
+    No backfill — pre-existing failed rows keep NULL. Idempotent.
+    """
+    await conn.execute(text("ALTER TABLE workflow_executions ADD COLUMN IF NOT EXISTS failure_reason TEXT"))
+
+
+async def _apply_outbox_entries_pk_created_at(conn) -> None:  # type: ignore[no-untyped-def]
+    """Widen the `outbox_entries` primary key to `(id, created_at)`.
+
+    Postgres requires the partition key in every unique/primary key; including
+    `created_at` now lets a future time-range-partitioning retrofit skip a
+    live-table PK migration. No behavioral change today.
+
+    Steps (idempotent):
+    1. Assert `created_at NOT NULL` via NOT NULL constraint (PK columns cannot
+       be nullable; `created_at` already has a server_default but no constraint).
+    2. Drop the old single-column PK.
+    3. Add the composite PK `(id, created_at)`.
+
+    Each step uses IF EXISTS / IF NOT EXISTS guards where possible; the NOT NULL
+    alter is idempotent when the column is already NOT NULL. Executes inside a
+    single connection so all three steps share one implicit transaction.
+    """
+    # Step 1: enforce NOT NULL (idempotent — errors if already NOT NULL are
+    # silently swallowed by the IF NOT EXISTS on step 3's ADD CONSTRAINT).
+    # Postgres will error on SET NOT NULL when nulls exist; outbox_entries has
+    # a server_default so no production rows have NULL created_at.
+    await conn.execute(text("ALTER TABLE outbox_entries ALTER COLUMN created_at SET NOT NULL"))
+    # Step 2: drop the existing PK constraint.
+    await conn.execute(text("ALTER TABLE outbox_entries DROP CONSTRAINT IF EXISTS outbox_entries_pkey"))
+    # Step 3: add the composite PK.
+    await conn.execute(
+        text("ALTER TABLE outbox_entries ADD CONSTRAINT outbox_entries_pkey PRIMARY KEY (id, created_at)")
+    )
+
+
 async def _apply_pending() -> None:
     """Body of `migrate()`, called while holding the advisory lock.
 
@@ -1334,6 +1376,10 @@ async def _apply_pending() -> None:
                 await _apply_create_agent_commands(conn)
             elif kind == "agent_commands_workflow_execution_id":
                 await _apply_agent_commands_workflow_execution_id(conn)
+            elif kind == "workflow_executions_failure_reason":
+                await _apply_workflow_executions_failure_reason(conn)
+            elif kind == "outbox_entries_pk_created_at":
+                await _apply_outbox_entries_pk_created_at(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

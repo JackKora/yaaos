@@ -26,6 +26,7 @@ from uuid import UUID
 
 import structlog
 from opentelemetry import trace
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,6 +57,16 @@ log = structlog.get_logger("core.workflow")
 _tracer = trace.get_tracer("core.workflow")
 
 
+class WorkflowFailedPayload(BaseModel):
+    """Audit payload for `workflow.failed` rows written by the engine on
+    terminal-fail. Generic — owned by `core/workflow`, not domain-specific."""
+
+    workflow_execution_id: str
+    ticket_id: str
+    failed_step_id: str | None
+    failure_reason: str | None
+
+
 # Key prefix in WorkflowExecutionRow.step_state used to persist append_steps
 # inserted dynamically by a Command's outcome. Anything not under this key is
 # a step-id mapping (step_id → outcome+outputs).
@@ -65,6 +76,9 @@ _AFTER_APPEND_KEY = "__after_append__"
 _ATTEMPTS_KEY = "__attempts__"
 _RECOVERED_STEPS_KEY = "__recovered_steps__"
 _TICKET_PAYLOAD_KEY = "__ticket_payload__"
+# Marks that the workflow's declared finalizer has already been dispatched once,
+# preventing double-fire on the failure path.
+_FINALIZER_FIRED_KEY = "__finalizer_fired__"
 
 
 # ── The three taskiq task bodies ────────────────────────────────────────
@@ -487,7 +501,58 @@ async def _route_workflow_impl(
             await s.commit()
             return
         if target is TerminalAction.FAIL_WORKFLOW:
+            # Run the declared finalizer (one-shot) before recording failure.
+            # The finalizer step runs cleanup (e.g. CleanupWorkspace) so it
+            # has a chance to release resources even on the failure path.
+            # Guard: fires only once per execution; if the finalizer itself
+            # fails, it arrives here again with the fired flag set → skip.
+            if wf.finalizer_step_id is not None and not _has_finalizer_fired(wfx):
+                _mark_finalizer_fired(wfx)
+                # Capture the failure context before routing to the finalizer;
+                # the failure reason comes from the *original* failing step.
+                failure_reason = _extract_failure_reason(outputs, outcome_label)
+                _store_pending_failure(wfx, completed_step_id, failure_reason)
+                wfx.state = WorkflowState.RUNNING.value
+                log.info(
+                    "workflow.route_workflow.finalizer_dispatched",
+                    workflow_execution_id=workflow_execution_id,
+                    finalizer_step_id=wf.finalizer_step_id,
+                    failed_step_id=completed_step_id,
+                )
+                await _enqueue_start_step(s, wfx, wf, wf.finalizer_step_id, traceparent, attempt=0)
+                await s.commit()
+                return
+
+            # Finalizer already fired (or not declared) — record terminal failure.
+            failure_reason = _pop_pending_failure_reason(wfx) or _extract_failure_reason(
+                outputs, outcome_label
+            )
+            failed_step_id = _pop_pending_failure_step(wfx) or completed_step_id
+            wfx.failure_reason = failure_reason
             wfx.state = WorkflowState.FAILED.value
+            # Write the durable cross-cutting audit row.
+            from app.core.audit_log import Actor, audit  # noqa: PLC0415
+
+            await audit(
+                "workflow_execution",
+                wfx.id,
+                "workflow.failed",
+                WorkflowFailedPayload(
+                    workflow_execution_id=str(wfx.id),
+                    ticket_id=str(wfx.ticket_id),
+                    failed_step_id=failed_step_id,
+                    failure_reason=failure_reason,
+                ),
+                Actor.system(),
+                org_id=_workflow_org_id(wfx),
+                session=s,
+            )
+            log.info(
+                "workflow.route_workflow.failed",
+                workflow_execution_id=workflow_execution_id,
+                failed_step_id=failed_step_id,
+                failure_reason=failure_reason,
+            )
             await s.commit()
             return
 
@@ -595,6 +660,9 @@ class WorkflowExecutionSummary:
     # that simulate agent events (tests, agent_gateway) can propagate trace
     # context into handle_agent_event without reaching into the row directly.
     otel_trace_context: str | None = None
+    # Short failure label written when the engine records terminal-fail.
+    # None while the workflow is running or when it terminates with DONE.
+    failure_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -622,6 +690,7 @@ def _project_execution(row: WorkflowExecutionRow) -> WorkflowExecutionSummary:
         pending_agent_command_id=row.pending_agent_command_id,
         cancel_requested=row.cancel_requested,
         otel_trace_context=row.otel_trace_context,
+        failure_reason=row.failure_reason,
     )
 
 
@@ -960,6 +1029,100 @@ def _outcome_payload(outcome: Outcome) -> dict[str, Any]:
     if outcome.failure_reason is not None:
         payload["__failure_reason__"] = outcome.failure_reason
     return payload
+
+
+# ── Finalizer helpers ────────────────────────────────────────────────────
+# The finalizer is a one-shot per execution: once dispatched it is never
+# re-dispatched even if it itself fails. The fired-flag + pending-failure
+# cache live in step_state under control keys so SQLAlchemy detects changes.
+
+_PENDING_FAILURE_STEP_KEY = "__pending_failure_step__"
+_PENDING_FAILURE_REASON_KEY = "__pending_failure_reason__"
+
+
+def _has_finalizer_fired(wfx: WorkflowExecutionRow) -> bool:
+    return bool(wfx.step_state.get(_FINALIZER_FIRED_KEY))
+
+
+def _mark_finalizer_fired(wfx: WorkflowExecutionRow) -> None:
+    bucket = dict(wfx.step_state)
+    bucket[_FINALIZER_FIRED_KEY] = True
+    wfx.step_state = bucket
+
+
+def _store_pending_failure(
+    wfx: WorkflowExecutionRow,
+    failed_step_id: str | None,
+    failure_reason: str | None,
+) -> None:
+    """Stash the failure context so it survives the finalizer step's round-trip
+    and can be read when the finalizer itself completes (or fails)."""
+    bucket = dict(wfx.step_state)
+    if failed_step_id is not None:
+        bucket[_PENDING_FAILURE_STEP_KEY] = failed_step_id
+    if failure_reason is not None:
+        bucket[_PENDING_FAILURE_REASON_KEY] = failure_reason
+    wfx.step_state = bucket
+
+
+def _pop_pending_failure_step(wfx: WorkflowExecutionRow) -> str | None:
+    raw = wfx.step_state.get(_PENDING_FAILURE_STEP_KEY)
+    if raw is None:
+        return None
+    bucket = dict(wfx.step_state)
+    bucket.pop(_PENDING_FAILURE_STEP_KEY, None)
+    wfx.step_state = bucket
+    return str(raw)
+
+
+def _pop_pending_failure_reason(wfx: WorkflowExecutionRow) -> str | None:
+    raw = wfx.step_state.get(_PENDING_FAILURE_REASON_KEY)
+    if raw is None:
+        return None
+    bucket = dict(wfx.step_state)
+    bucket.pop(_PENDING_FAILURE_REASON_KEY, None)
+    wfx.step_state = bucket
+    return str(raw)
+
+
+def _extract_failure_reason(outputs: dict[str, Any], outcome_label: str | None) -> str | None:
+    """Best-effort failure-reason extraction. Prefers the structured
+    `__failure_reason__` output key set by `Outcome.failure(reason=...)`;
+    falls back to the outcome label string."""
+    reason = outputs.get("__failure_reason__")
+    if reason:
+        return str(reason)
+    if outcome_label and outcome_label != "success":
+        return outcome_label
+    return None
+
+
+def _workflow_org_id(wfx: WorkflowExecutionRow) -> UUID:
+    """Return the org_id for the audit call.
+
+    Route-workflow task bodies run inside `OrgContextMiddleware` which sets
+    the `org_id` contextvar from the task metadata. Use that when available;
+    fall back to the ticket_payload stash for test cases that bypass the
+    middleware.
+    """
+    from app.core.auth import current_org_id  # noqa: PLC0415
+
+    org_id = current_org_id()
+    if org_id is not None:
+        return org_id
+    # Fallback: ticket_payload may carry org_id for tests that bypass middleware.
+    payload = wfx.step_state.get(_TICKET_PAYLOAD_KEY)
+    if isinstance(payload, dict):
+        raw = payload.get("org_id")
+        if raw is not None:
+            return UUID(str(raw))
+    # Last resort — mint a nil UUID so the audit row still lands rather than
+    # crashing the failure path; the engine logs the issue.
+    log.warning(
+        "workflow.route_workflow.no_org_id_for_audit",
+        workflow_execution_id=str(wfx.id),
+    )
+    return UUID(int=0)
 
 
 async def _safe_execute(

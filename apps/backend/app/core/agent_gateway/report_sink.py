@@ -14,11 +14,17 @@ from pydantic import BaseModel
 
 
 class WorkspaceEventReport(BaseModel):
-    """Wire payload agent_gateway passes into the sink for a WorkspaceEvent."""
+    """Wire payload agent_gateway passes into the sink for a WorkspaceEvent.
+
+    `agent_id` is the `WorkspaceAgentRow.id` of the bearer that posted the
+    event. Passed by `record_workspace_event` so the sink can set
+    `owning_agent_id` when creating a lean workspace row on the first event.
+    """
 
     workspace_id: UUID
     command_id: UUID | None
     kind: str
+    agent_id: UUID | None = None
 
 
 class WorkspaceEventOutcome(BaseModel):
@@ -42,6 +48,10 @@ class WorkspaceAgentReportSink(Protocol):
     - `resolve_claim` — pure read; returns the workflow holding a command.
     - `owning_agent_for_workspace` / `owning_agent_for_command` — pure reads;
       return the workspace's owning `agent_id` for the per-agent authz check.
+    - `release_command_claim` — clears `current_command_id` on the workspace
+      row that currently holds `command_id`. Called on every terminal agent
+      event before the workflow engine is resumed so the next `try_claim`
+      sees `current_command_id IS NULL` (failure-report-precedes-disposal).
     """
 
     async def reconcile_heartbeat(
@@ -110,6 +120,22 @@ class WorkspaceAgentReportSink(Protocol):
         Called by the graceful-shutdown DELETE handler with a single-element set
         (the shutting-down agent's ID). Also called by the reaper with the
         newly-offline set from `compute_agent_liveness_transitions`.
+        `session` is an `AsyncSession`; caller commits.
+        """
+        ...
+
+    async def release_command_claim(
+        self,
+        command_id: UUID,
+        session: object,
+    ) -> None:
+        """Release the single-flight claim on whichever workspace holds
+        `command_id`. Must be called on every terminal agent event (success
+        or failure) BEFORE the workflow engine is resumed so the next
+        `try_claim` sees `current_command_id IS NULL`.
+
+        No-op when no workspace holds the command (e.g. `ProvisionWorkspace`
+        before the lean row exists, or an agent-scoped command).
         `session` is an `AsyncSession`; caller commits.
         """
         ...

@@ -27,7 +27,7 @@
 
 ## Data owned
 
-- `outbox_entries` — `(id uuid pk, kind text, payload jsonb, created_at, dispatched_at nullable, attempt int, last_error text nullable)`. Only kind today: `taskiq_enqueue`. Migration 014.
+- `outbox_entries` — `(id uuid, created_at timestamptz NOT NULL, kind text, payload jsonb, dispatched_at nullable, attempt int, last_error text nullable)`. Composite PK `(id, created_at)` — partition-ready hedge (migration 042). `created_at` has a server default; the NOT NULL + composite PK are idempotent DDL applied on top of migration 014. Only kind today: `taskiq_enqueue`.
 
 ## How it's tested
 
