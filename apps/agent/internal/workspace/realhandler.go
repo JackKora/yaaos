@@ -378,12 +378,21 @@ func (h *RealHandler) RunClaude(ctx context.Context, cmd *protocol.InvokeClaudeC
 	}, nil
 }
 
-// EnumerateSkills scans the cloned workspace for repo-local skills at
-// .claude/skills/*/SKILL.md. The skill handle is the directory name; the
-// description field in SKILL.md frontmatter is display-only and not parsed here.
-// Plugin/marketplace skills return empty — a degraded-but-correct path; a
-// finished enumeration with zero plugin skills is a success.
-func (h *RealHandler) EnumerateSkills(_ context.Context, cmd *protocol.EnumerateSkillsCommand) (command.EnumerateSkillsResult, error) {
+// EnumerateSkills scans the cloned workspace for all discoverable skills:
+//
+//  1. Repo-local: .claude/skills/*/SKILL.md — handle is the directory name;
+//     source="repo"; plugin_name=nil.
+//  2. Plugin/marketplace: parse .claude/settings.json → run `claude plugin
+//     marketplace add` + `claude plugin install` per declaration → scan
+//     ~/.claude/plugins/cache/<marketplace>/<plugin>/skills/<skill>/SKILL.md;
+//     handle is "<plugin>:<skill>"; source="plugin"; plugin_name="<plugin>".
+//
+// Plugin discovery is best-effort: each failing marketplace or plugin is
+// logged and skipped. Zero plugin skills is a success.
+// The GitHub installation token is threaded into the subprocess environment
+// via GIT_ASKPASS so private same-host marketplaces can authenticate; public
+// marketplaces and repo-local skills need no extra auth.
+func (h *RealHandler) EnumerateSkills(ctx context.Context, cmd *protocol.EnumerateSkillsCommand) (command.EnumerateSkillsResult, error) {
 	h.mu.Lock()
 	slot, ok := h.slots[cmd.WorkspaceID]
 	h.mu.Unlock()
@@ -391,14 +400,80 @@ func (h *RealHandler) EnumerateSkills(_ context.Context, cmd *protocol.Enumerate
 		return command.EnumerateSkillsResult{}, ErrUnknownWorkspace
 	}
 
-	skills, err := scanRepoLocalSkills(slot.path)
+	// Step 1: repo-local skills (pure filesystem scan, no subprocess).
+	repoSkills, err := scanRepoLocalSkills(slot.path)
 	if err != nil {
 		return command.EnumerateSkillsResult{}, fmt.Errorf("scan repo skills: %w", err)
 	}
+
+	// Step 2-3: plugin/marketplace skills via `claude plugin` subprocesses.
+	// Build a GIT_ASKPASS helper so private same-host marketplaces can reuse
+	// the repository's GitHub installation token. Only github_installation auth
+	// is handled; other auth kinds fall back to unauthenticated (public) access.
+	askpassEnv := gitAskpassEnvForSlot(slot)
+	pluginSkills, _ := InstallPluginSkills(ctx, slot.path, askpassEnv)
+	// Errors from InstallPluginSkills are already logged internally; we treat
+	// them as graceful degrade (empty plugin list) rather than a command failure.
+
+	skills := make([]command.SkillManifestEntry, 0, len(repoSkills)+len(pluginSkills))
+	skills = append(skills, repoSkills...)
+	skills = append(skills, pluginSkills...)
 	return command.EnumerateSkillsResult{
 		WorkspaceID: cmd.WorkspaceID,
 		Skills:      skills,
 	}, nil
+}
+
+// gitAskpassEnvForSlot builds the GIT_ASKPASS environment variable entry for a
+// workspace slot. When the slot carries a GitHub installation token, we write a
+// tiny shell script into a temp file that echoes the token to git's credential
+// helper so private marketplace fetches on the same host can authenticate
+// without leaking the token into the process environment directly.
+//
+// Returns an empty string when the slot has no token (public access) or when
+// the temp file cannot be created (degrade gracefully).
+func gitAskpassEnvForSlot(slot *realSlot) string {
+	tok := slot.authTok.Value()
+	if tok == "" {
+		return ""
+	}
+	// Write a minimal POSIX shell askpass script that prints the token.
+	// git calls GIT_ASKPASS with the prompt string as argv[1]; we ignore it and
+	// always echo the token. The file is 0700 so only the agent user can exec it.
+	content := "#!/bin/sh\nexec echo " + shellQuote(tok) + "\n"
+	f, err := os.CreateTemp("", "yaaos-askpass-*")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(content); err != nil {
+		_ = os.Remove(f.Name())
+		return ""
+	}
+	if err := os.Chmod(f.Name(), 0o700); err != nil {
+		_ = os.Remove(f.Name())
+		return ""
+	}
+	return "GIT_ASKPASS=" + f.Name()
+}
+
+// shellQuote wraps s in single quotes, escaping any embedded single quotes
+// using the POSIX `'...'` → `'"'"'` pattern. Used when writing the askpass
+// script so tokens containing special characters don't break the shell.
+func shellQuote(s string) string {
+	// Single-quote the whole string; handle embedded single quotes via the
+	// POSIX idiom: end the single-quoted section, output a literal single
+	// quote in double-quotes, resume single-quoting.
+	result := "'"
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\'' {
+			result += `'"'"'`
+		} else {
+			result += string(s[i])
+		}
+	}
+	result += "'"
+	return result
 }
 
 // scanRepoLocalSkills walks <clone>/.claude/skills/*/SKILL.md and returns one
