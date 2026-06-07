@@ -27,19 +27,23 @@ RUN pnpm --filter ./apps/web build
 FROM python:3.14-slim-bookworm AS backend
 
 # Runtime tools:
-#   - git: plugins/in_process_workspace runs `git clone` during workspace
-#     provision (the reviewer needs the repo checked out for the agent's
-#     Read/Glob/Grep tools).
-#   - node + the Claude Code CLI: plugins/claude_code shells out to `claude`
-#     to do the actual review. The CLI runs in-process here; moving agents into
-#     Docker workspaces carries the CLI with them and drops this layer.
+#   - tini: PID-1 init — forwards SIGTERM and reaps orphaned children.
+#   - ca-certificates: TLS for outbound calls (GitHub, Neon, Upstash, SMTP, …).
+#   - libxmlsec1 + libxml2/libxslt + pkg-config: build/runtime deps for
+#     python-xmlsec (SAML).
+#
+# NOT installed: Node.js, the Claude Code CLI, and git. These supported the old
+# in-process review model (plugins/claude_code shelled out to `claude`; the
+# in-process workspace ran `git clone`). Reviews now run on the remote
+# WorkspaceAgent (apps/agent), which carries the CLI and does the clone; the
+# control plane makes zero direct LLM calls. NOTE: the in-process code path
+# (apps/backend/app/plugins/claude_code/service.py) is still live and is being
+# removed on a separate branch — until that lands, in-process reviews fail in
+# this image. Accepted intentionally.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates curl gnupg tini \
-    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code \
-    && apt-get install -y --no-install-recommends libxmlsec1-dev xmlsec1 pkg-config libxml2-dev libxslt1-dev \
-    && apt-get purge -y --auto-remove curl gnupg \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates tini \
+       libxmlsec1-dev xmlsec1 pkg-config libxml2-dev libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # uv for fast Python installs
@@ -66,8 +70,8 @@ COPY --from=web-builder /build/apps/web/dist ./apps/web/dist
 # Install the backend project itself
 RUN uv sync --frozen --package yaaos-backend 2>/dev/null || uv sync --package yaaos-backend
 
-# Drop root: the Claude Code CLI refuses --dangerously-skip-permissions when
-# uid is 0, and the reviewer needs that flag to run unattended.
+# Run as a non-root user — standard least-privilege hardening for the
+# production web/worker processes.
 RUN useradd --create-home --uid 1000 --shell /bin/bash yaaos \
  && chown -R yaaos:yaaos /app
 USER yaaos
@@ -79,8 +83,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 8080
 
-# tini as PID 1: forwards SIGTERM to the Python child and reaps orphaned
-# sub-processes (Claude Code CLI, git clone). Both role stages inherit this.
+# tini as PID 1: forwards SIGTERM to the Python child and reaps any orphaned
+# sub-processes. Both role stages inherit this.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Default CMD lives on the per-role stages below (`web`, `worker`).
