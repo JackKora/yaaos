@@ -279,7 +279,7 @@ async def test_list_tickets_reads_findings_columns(db_session) -> None:  # type:
     await update_findings_summary(
         ticket_id,
         findings_count=3,
-        max_severity="high",
+        max_severity="blocker",
         session=db_session,
     )
     await db_session.commit()
@@ -288,7 +288,7 @@ async def test_list_tickets_reads_findings_columns(db_session) -> None:  # type:
     tickets2 = await list_tickets(TicketFilter(), org_id=org_id)
     target2 = next(t for t in tickets2 if t.id == ticket_id)
     assert target2.findings_count == 3
-    assert target2.max_severity == "high"
+    assert target2.max_severity == "blocker"
 
     # findings_count sort is done at DB level — verify the ordering holds.
     # Create a second ticket with zero findings.

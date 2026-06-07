@@ -230,31 +230,38 @@ def assemble_answer_question_prompt(ctx: AnswerQuestionContext) -> str:
 # ── Structured-output schema appendix + DTOs ────────────────────────────
 
 
-class _FindingDraftDto(BaseModel):
-    """The agent's per-finding output shape. Mirrors
-    `FindingDraft` field names without depending on the typed import (the
-    agent emits JSON; we validate against this then convert). `severity`
-    is a closed enum and `confidence` is the 0-100 integer the agent
-    emits — the aggregate widens it to a float at admission time."""
+class _ReportedFindingDto(BaseModel):
+    """The agent's per-finding output shape. Matches `ReportedFinding` field
+    names. `severity` and `confidence` are enum strings validated downstream
+    by `domain/reviewer`; `file` and `line` are optional for general findings."""
 
-    severity: Literal["blocker", "major", "minor", "nit"]
-    rule_id: str
-    title: str
-    body: str
-    concrete_failure_scenario: str
-    confidence: int
+    file: str | None = None
+    line: int | None = None
+    category: str
+    severity: Literal["blocker", "should_fix", "nit"]
+    confidence: Literal["verified", "plausible", "speculative"]
     rationale: str
-    file_path: str
-    line_start: int
-    line_end: int
-    duplicate_of_rule_ids: list[str] = []
+    rule_violated: str
+    rule_source: str
+    suggested_fix: str
 
 
 class FindingDraftList(BaseModel):
-    """Full-review + incremental-review response: a flat list of finding
-    drafts. The agent is told to respond with `{"findings": [...]}`."""
+    """Full-review + incremental-review response: a flat list of findings.
+    The agent is told to respond with `{"findings": [...]}`."""
 
-    findings: list[_FindingDraftDto]
+    findings: list[_ReportedFindingDto]
+
+
+def finding_output_schema() -> dict:  # type: ignore[type-arg]
+    """The canonical finding output contract as a JSON schema dict.
+
+    Single source of truth: generated from `FindingDraftList.model_json_schema()`.
+    Consumers: the skill-invocation prompt (schema appendix) and the skills
+    popover endpoint. `ReportedFinding` in `domain/coding_agent/types.py` is
+    the lenient raw-string parse twin; a unit test pins its field set to this.
+    """
+    return FindingDraftList.model_json_schema()
 
 
 class VerifyFixDto(BaseModel):
@@ -304,5 +311,6 @@ __all__ = [
     "assemble_review_prompt",
     "assemble_stale_check_prompt",
     "assemble_verify_fix_prompt",
+    "finding_output_schema",
     "schema_appendix",
 ]

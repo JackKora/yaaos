@@ -23,14 +23,13 @@ from app.domain.coding_agent import (
     ActivityEvent,
     AnswerQuestionContext,
     AnswerQuestionResult,
-    FindingAnchor,
-    FindingDraft,
     HealthStatus,
     IncrementalReviewContext,
     IncrementalReviewResult,
     InvocationStatus,
     InvocationTelemetry,
     OnActivity,
+    ReportedFinding,
     ReviewContext,
     ReviewResult,
     StaleCheckContext,
@@ -107,19 +106,18 @@ class StubCodingAgentPlugin:
                     await on_activity(event)
                 except Exception:
                     log.exception("stub_coding_agent.on_activity_failed")
-        # Emit one synthetic FindingDraft so e2e flows
+        # Emit one synthetic ReportedFinding so e2e flows
         # that depend on findings have something to act against.
-        finding = FindingDraft(
-            severity="minor",
-            rule_id="stub/sample-suggestion",
-            title="[stub] sample suggestion",
-            body="Stub finding. Used by e2e specs that exercise the finding-expansion + Teach-yaaos flow.",
-            concrete_failure_scenario=(
-                "Stub plugin always emits this finding so e2e specs can exercise the durable-findings flow."
-            ),
-            confidence=90,
+        finding = ReportedFinding(
+            file="src/example.ts",
+            line=1,
+            category="correctness",
+            severity="nit",
+            confidence="speculative",
             rationale="Stub plugin: emitted for e2e coverage.",
-            anchor=FindingAnchor(file_path="src/example.ts", line_start=1, line_end=1),
+            rule_violated="stub/sample-suggestion",
+            rule_source="stub",
+            suggested_fix="No action needed — this is a stub finding.",
         )
         return ReviewResult(
             status=InvocationStatus.SUCCESS,
@@ -137,20 +135,19 @@ class StubCodingAgentPlugin:
         on_activity: OnActivity | None = None,
     ) -> IncrementalReviewResult:
         del workspace, context, on_activity
-        # One synthetic FindingDraft with `concrete_failure_scenario` populated
-        # so it survives the reviewer aggregate's schema check.
         return IncrementalReviewResult(
             status=InvocationStatus.SUCCESS,
             findings=[
-                FindingDraft(
-                    severity="minor",
-                    rule_id="stub/incremental",
-                    title="[stub] incremental finding",
-                    body="Stub incremental finding for e2e flows.",
-                    concrete_failure_scenario="N/A — stub plugin output.",
-                    confidence=90,
+                ReportedFinding(
+                    file="src/example.ts",
+                    line=1,
+                    category="correctness",
+                    severity="nit",
+                    confidence="speculative",
                     rationale="Stub plugin: emitted for e2e coverage.",
-                    anchor=FindingAnchor(file_path="src/example.ts", line_start=1, line_end=1),
+                    rule_violated="stub/incremental",
+                    rule_source="stub",
+                    suggested_fix="No action needed — this is a stub finding.",
                 )
             ],
             telemetry=_STUB_TELEMETRY,

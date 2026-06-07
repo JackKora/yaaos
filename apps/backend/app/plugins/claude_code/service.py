@@ -34,14 +34,13 @@ from app.domain.coding_agent import (
     ActivityEvent,
     AnswerQuestionContext,
     AnswerQuestionResult,
-    FindingAnchor,
-    FindingDraft,
     HealthStatus,
     IncrementalReviewContext,
     IncrementalReviewResult,
     InvocationStatus,
     InvocationTelemetry,
     OnActivity,
+    ReportedFinding,
     ReviewContext,
     ReviewResult,
     StaleCheckContext,
@@ -389,11 +388,11 @@ def _summarize_tool_input(tool: str, inp: dict[str, Any]) -> str:
 # ── Verdict ───────────────────────────────────────────────────────────────────
 
 
-def _compute_state_v2(findings: list[FindingDraft]) -> Literal["APPROVED", "CHANGES_REQUESTED", "COMMENT"]:
-    """Severity tiers — `blocker`/`major` request changes."""
+def _compute_state_v2(findings: list[ReportedFinding]) -> Literal["APPROVED", "CHANGES_REQUESTED", "COMMENT"]:
+    """Severity tiers — only `blocker` requests changes."""
     if not findings:
         return "APPROVED"
-    if any(f.severity in {"blocker", "major"} for f in findings):
+    if any(f.severity == "blocker" for f in findings):
         return "CHANGES_REQUESTED"
     return "COMMENT"
 
@@ -460,9 +459,8 @@ class ClaudeCodePlugin:
             return prep
         argv, env, timeout = prep
 
-        # Full review emits the FindingDraft schema — same shape as
-        # incremental review. The reviewer module handles admission +
-        # posting in one place.
+        # Full review uses the canonical finding schema (FindingDraftList DTO).
+        # The reviewer module validates severity/confidence and persists findings.
         full_prompt = _assemble_review_prompt(context) + _schema_appendix(_FindingDraftList)
 
         envelope = await self._run_and_parse_envelope(workspace, argv, env, full_prompt, timeout, on_activity)
@@ -480,24 +478,24 @@ class ClaudeCodePlugin:
                 error_message=f"agent response didn't match _FindingDraftList: {e}",
             )
 
-        drafts = [
-            FindingDraft(
+        findings = [
+            ReportedFinding(
+                file=d.file,
+                line=d.line,
+                category=d.category,
                 severity=d.severity,
-                rule_id=d.rule_id,
-                title=d.title,
-                body=d.body,
-                concrete_failure_scenario=d.concrete_failure_scenario,
                 confidence=d.confidence,
                 rationale=d.rationale,
-                anchor=FindingAnchor(file_path=d.file_path, line_start=d.line_start, line_end=d.line_end),
-                duplicate_of_rule_ids=d.duplicate_of_rule_ids,
+                rule_violated=d.rule_violated,
+                rule_source=d.rule_source,
+                suggested_fix=d.suggested_fix,
             )
             for d in parsed.findings
         ]
         return ReviewResult(
             status=InvocationStatus.SUCCESS,
-            findings=drafts,
-            state=_compute_state_v2(drafts),
+            findings=findings,
+            state=_compute_state_v2(findings),
             summary_body=None,
             lesson_ids_consulted=[lesson.id for lesson in context.lessons],
             telemetry=telemetry.model_copy(update={"raw_output": agent_text}),
@@ -711,23 +709,23 @@ class ClaudeCodePlugin:
                 error_message=f"agent response didn't match _FindingDraftList: {e}",
             )
 
-        drafts = [
-            FindingDraft(
+        findings = [
+            ReportedFinding(
+                file=d.file,
+                line=d.line,
+                category=d.category,
                 severity=d.severity,
-                rule_id=d.rule_id,
-                title=d.title,
-                body=d.body,
-                concrete_failure_scenario=d.concrete_failure_scenario,
                 confidence=d.confidence,
                 rationale=d.rationale,
-                anchor=FindingAnchor(file_path=d.file_path, line_start=d.line_start, line_end=d.line_end),
-                duplicate_of_rule_ids=d.duplicate_of_rule_ids,
+                rule_violated=d.rule_violated,
+                rule_source=d.rule_source,
+                suggested_fix=d.suggested_fix,
             )
             for d in parsed.findings
         ]
         return IncrementalReviewResult(
             status=InvocationStatus.SUCCESS,
-            findings=drafts,
+            findings=findings,
             telemetry=telemetry.model_copy(update={"raw_output": agent_text}),
         )
 

@@ -177,6 +177,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("041_workflow_executions_failure_reason", "workflow_executions_failure_reason"),
     ("042_outbox_entries_pk_created_at", "outbox_entries_pk_created_at"),
     ("043_create_claude_code_repos", "create_claude_code_repos"),
+    ("044_canonical_findings_schema", "canonical_findings_schema"),
 )
 
 
@@ -373,28 +374,26 @@ async def _apply_drop_reviewer_agents(conn) -> None:  # type: ignore[no-untyped-
 
 
 async def _apply_create_durable_findings_tables(conn) -> None:  # type: ignore[no-untyped-def]
-    """Create the durable-findings tables (plan §4.1).
+    """Create the generation-2 findings tables that existed at this migration point.
 
-    `findings`, `finding_observations`, `comment_threads`, `comment_messages`,
-    `acknowledgment_decisions`. `create_all` is idempotent (CREATE TABLE IF NOT
-    EXISTS) so fresh DBs that already ran 001 with these models in metadata
-    no-op here, and DBs created before this migration's models existed get the
-    tables added.
+    On fresh DBs these tables are created here and then replaced by migration 044
+    (`canonical_findings_schema`). On upgraded DBs the tables already exist — no-op.
+    Tables that no longer appear in `Base.metadata` (removed in later migration)
+    are skipped so re-running on clean models does not error.
     """
     import importlib  # noqa: PLC0415
 
     importlib.import_module("app.domain.reviewer.models")
-    new_tables = [
-        Base.metadata.tables[name]
-        for name in (
-            "findings",
-            "finding_observations",
-            "comment_threads",
-            "comment_messages",
-            "acknowledgment_decisions",
-        )
-    ]
-    await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
+    wanted = (
+        "findings",
+        "finding_observations",
+        "comment_threads",
+        "comment_messages",
+        "acknowledgment_decisions",
+    )
+    new_tables = [Base.metadata.tables[name] for name in wanted if name in Base.metadata.tables]
+    if new_tables:
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
 
 
 async def _apply_reviews_cutover(conn) -> None:  # type: ignore[no-untyped-def]
@@ -403,7 +402,7 @@ async def _apply_reviews_cutover(conn) -> None:  # type: ignore[no-untyped-def]
     Per plan/notes/full-pr-flow.md §4.3 + §13 step 7 — drop-and-recreate. Existing
     POC data is throwaway. The new `reviews` table is created from the
     `ReviewRow` model via `Base.metadata.create_all`. After this runs, FindingRow
-    + FindingObservationRow have a real FK target for review_id columns.
+    + FindingRow have a real FK target for review_id columns.
     """
     import importlib  # noqa: PLC0415
 
@@ -425,19 +424,20 @@ async def _apply_reviews_cutover(conn) -> None:  # type: ignore[no-untyped-def]
         await conn.execute(text(stmt))
 
     # Re-register the reviewer module's models, then create the new tables.
+    # Only create tables that still exist in Base.metadata (older ancillary
+    # tables are dropped by a later migration and no longer appear in models.py).
     importlib.import_module("app.domain.reviewer.models")
-    new_tables = [
-        Base.metadata.tables[name]
-        for name in (
-            "reviews",
-            "findings",
-            "finding_observations",
-            "comment_threads",
-            "comment_messages",
-            "acknowledgment_decisions",
-        )
-    ]
-    await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
+    wanted_cutover = (
+        "reviews",
+        "findings",
+        "finding_observations",
+        "comment_threads",
+        "comment_messages",
+        "acknowledgment_decisions",
+    )
+    new_tables = [Base.metadata.tables[name] for name in wanted_cutover if name in Base.metadata.tables]
+    if new_tables:
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
 
 
 async def _apply_create_all_identity(conn) -> None:  # type: ignore[no-untyped-def]
@@ -500,20 +500,23 @@ async def _apply_drop_classification_confidence(conn) -> None:  # type: ignore[n
     """Drop `comment_messages.classification_confidence` and renormalize the
     legacy `acknowledgment` intent to `acknowledgment_clear`.
 
-    Reasoning lives in `domain/reviewer/llm/classifier.py`: the LLM picks one
-    of five categorical intents that encode the action directly, no separate
-    probability axis. The old `acknowledgment` label always collapses to
-    `acknowledgment_clear` (the act-immediately branch) — sub-threshold
-    `acknowledgment` rows from the float-confidence era are vanishingly
-    few at POC scale and don't justify a CASE WHEN reconstruction.
+    Guards with IF EXISTS on the table — on fresh DBs `comment_messages` is
+    never created (it was removed in a later migration) so the ALTER/UPDATE
+    are no-ops. On upgraded DBs the table exists and the statements run.
     """
-    statements = [
-        "ALTER TABLE comment_messages DROP COLUMN IF EXISTS classification_confidence",
-        "UPDATE comment_messages SET classified_intent = 'acknowledgment_clear'"
-        " WHERE classified_intent = 'acknowledgment'",
-    ]
-    for stmt in statements:
-        await conn.execute(text(stmt))
+    await conn.execute(
+        text(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='comment_messages') "
+            "THEN ALTER TABLE comment_messages DROP COLUMN IF EXISTS classification_confidence; END IF; END $$"
+        )
+    )
+    await conn.execute(
+        text(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='comment_messages') "
+            "THEN UPDATE comment_messages SET classified_intent = 'acknowledgment_clear' "
+            "WHERE classified_intent = 'acknowledgment'; END IF; END $$"
+        )
+    )
 
 
 async def _apply_create_all_mcp(conn) -> None:  # type: ignore[no-untyped-def]
@@ -1130,10 +1133,32 @@ async def _apply_uuid_pk_uuidv7_defaults(conn) -> None:  # type: ignore[no-untyp
     await conn.execute(text("ALTER TABLE lessons ALTER COLUMN id SET DEFAULT uuidv7()"))
     await conn.execute(text("ALTER TABLE reviews ALTER COLUMN id SET DEFAULT uuidv7()"))
     await conn.execute(text("ALTER TABLE findings ALTER COLUMN id SET DEFAULT uuidv7()"))
-    await conn.execute(text("ALTER TABLE finding_observations ALTER COLUMN id SET DEFAULT uuidv7()"))
-    await conn.execute(text("ALTER TABLE comment_threads ALTER COLUMN id SET DEFAULT uuidv7()"))
-    await conn.execute(text("ALTER TABLE comment_messages ALTER COLUMN id SET DEFAULT uuidv7()"))
-    await conn.execute(text("ALTER TABLE acknowledgment_decisions ALTER COLUMN id SET DEFAULT uuidv7()"))
+    # These tables are dropped by a later migration. Guard with IF EXISTS so
+    # fresh DBs (where the tables were never created) do not fail here.
+    await conn.execute(
+        text(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='finding_observations') "
+            "THEN ALTER TABLE finding_observations ALTER COLUMN id SET DEFAULT uuidv7(); END IF; END $$"
+        )
+    )
+    await conn.execute(
+        text(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='comment_threads') "
+            "THEN ALTER TABLE comment_threads ALTER COLUMN id SET DEFAULT uuidv7(); END IF; END $$"
+        )
+    )
+    await conn.execute(
+        text(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='comment_messages') "
+            "THEN ALTER TABLE comment_messages ALTER COLUMN id SET DEFAULT uuidv7(); END IF; END $$"
+        )
+    )
+    await conn.execute(
+        text(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='acknowledgment_decisions') "
+            "THEN ALTER TABLE acknowledgment_decisions ALTER COLUMN id SET DEFAULT uuidv7(); END IF; END $$"
+        )
+    )
 
 
 async def _apply_orgs_sso_authz_columns(conn) -> None:  # type: ignore[no-untyped-def]
@@ -1279,6 +1304,36 @@ async def _apply_create_claude_code_repos(conn) -> None:  # type: ignore[no-unty
     )
 
 
+async def _apply_canonical_findings_schema(conn) -> None:  # type: ignore[no-untyped-def]
+    """Replace the generation-2 findings schema with the canonical schema.
+
+    Drops the ancillary tables that no longer exist in the domain model
+    (`finding_observations`, `comment_threads`, `comment_messages`,
+    `acknowledgment_decisions`), then drops and recreates `reviews` and
+    `findings` from the current lean `ReviewRow` / `FindingRow` models.
+
+    Data loss is intentional — review history from the old schema is not
+    compatible and is discarded. Idempotent: each DROP uses IF EXISTS.
+    """
+    import importlib  # noqa: PLC0415
+
+    # Drop ancillary tables (if they still exist from migration 008).
+    await conn.execute(text("DROP TABLE IF EXISTS acknowledgment_decisions CASCADE"))
+    await conn.execute(text("DROP TABLE IF EXISTS comment_messages CASCADE"))
+    await conn.execute(text("DROP TABLE IF EXISTS comment_threads CASCADE"))
+    await conn.execute(text("DROP TABLE IF EXISTS finding_observations CASCADE"))
+    await conn.execute(text("DROP TABLE IF EXISTS findings CASCADE"))
+    await conn.execute(text("DROP TABLE IF EXISTS reviews CASCADE"))
+
+    # Import reviewer models + pull_requests model so FK targets are in metadata.
+    importlib.import_module("app.domain.reviewer.models")
+    importlib.import_module("app.domain.pull_requests.models")
+    new_tables = [
+        Base.metadata.tables[name] for name in ("reviews", "findings") if name in Base.metadata.tables
+    ]
+    await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
+
+
 async def _apply_outbox_entries_pk_created_at(conn) -> None:  # type: ignore[no-untyped-def]
     """Widen the `outbox_entries` primary key to `(id, created_at)`.
 
@@ -1408,6 +1463,8 @@ async def _apply_pending() -> None:
                 await _apply_outbox_entries_pk_created_at(conn)
             elif kind == "create_claude_code_repos":
                 await _apply_create_claude_code_repos(conn)
+            elif kind == "canonical_findings_schema":
+                await _apply_canonical_findings_schema(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

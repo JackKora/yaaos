@@ -42,10 +42,7 @@ Each plugin exposes `meta: PluginMeta` (`id`, `type`, `display_name`, `descripti
 Each flow is a labeled hop-list. Module docs have the detail.
 
 **Review lifecycle** (PR ready → findings posted):
-`plugins/github` webhook → [`domain/intake`](domain_intake.md) filter → [`domain/reviewer`](domain_reviewer.md) `start_pr_review` → `core/workflow` dispatch → [`domain/coding_agent`](domain_coding_agent.md) → admission → [`domain/vcs`](domain_vcs.md) `post_review`
-
-**Push → incremental review**:
-`plugins/github` push event → `domain/intake` → `domain/reviewer` incremental path → `core/workflow` → `domain/coding_agent` `incremental_review` → admission → `domain/vcs` `post_review`
+`plugins/github` webhook → [`domain/intake`](domain_intake.md) filter → ticket created → `engine.start("pr_review_v1", ticket_id=…)` → [`core/workflow`](core_workflow.md) drives `CheckShouldReview → SecretsScan → ProvisionWorkspace → CodeReview → PostFindings → CleanupWorkspace` → [`domain/reviewer.publish_findings`](domain_reviewer.md) validates the canonical schema and posts via [`domain/vcs`](domain_vcs.md). The skill owns all filtering — there is no admission pipeline.
 
 **Session / auth chain** (inbound request):
 [`core/auth`](core_auth.md) middleware classify → [`core/sessions`](core_sessions.md) `require(Action.X)` → [`core/tenancy`](core_tenancy.md) `resolve_auth_org` → handler

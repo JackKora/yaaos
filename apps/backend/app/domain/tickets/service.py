@@ -52,7 +52,7 @@ class Ticket(BaseModel):
     # fields (nullable until the projections that populate them ship).
     current_stage: str | None = None
     findings_count: int = 0
-    max_severity: Literal["low", "medium", "high"] | None = None
+    max_severity: Literal["blocker", "should_fix", "nit"] | None = None
     builder_kind: Literal["user", "system"] = "user"
     builder_display_name: str | None = None
 

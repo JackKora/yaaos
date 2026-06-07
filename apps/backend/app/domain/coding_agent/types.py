@@ -1,17 +1,13 @@
 """Types + Protocol for the coding-agent abstraction.
 
-The Protocol exposes one operation — `review(context)` — not a generic
-`invoke(prompt, response_model)`. Consumers hand over domain inputs (a PR,
-a diff, lessons) and receive vendor-neutral results. Prompt assembly,
-output-schema definition, and JSON parsing are the plugin's job.
+The Protocol exposes five task modes — `review`, `incremental_review`,
+`verify_fix`, `stale_check`, `answer_question`. Plugins own prompt assembly
++ parsing for each mode; consumers hand over domain context and receive
+domain results.
 
-The plugin is expected to spawn a single parent reviewer that dispatches
-subagent definitions (shipped under `app/domain/coding_agent/reviewers/`)
-and synthesizes their findings — the plugin owns the orchestration shape,
-not the contract.
-
-Lives in `domain/` (not `core/`) because its types reference `vcs.Finding` and
-related domain models. The plugin contract resolves through a registry.
+`ReportedFinding` is the raw-string output twin for findings returned by
+the agent. It carries no enum constraints (those live in `domain/reviewer`)
+so `core/coding_agent` stays free of domain imports.
 """
 
 from __future__ import annotations
@@ -28,6 +24,10 @@ from app.core.plugin_kit import PluginMeta
 from app.core.workspace import HealthStatus, Workspace
 from app.domain.lessons import Lesson
 from app.domain.vcs import Diff, VCSPullRequest
+
+# Re-exported for the canonical schema so reviewers can compare field sets.
+# `Severity` stays here as the raw-string alias used by the Protocol.
+Severity = Literal["blocker", "should_fix", "nit"]
 
 
 class InvocationStatus(StrEnum):
@@ -66,6 +66,19 @@ class ActivityEvent(BaseModel):
 OnActivity = Callable[[ActivityEvent], Awaitable[None]]
 
 
+class FindingAnchor(BaseModel):
+    """Source-code anchor for a finding — file path + line range.
+
+    Used by `VerifyFixContext` and `AnswerQuestionContext` to identify where
+    in the repo the finding was originally raised.
+    `line_start` and `line_end` are 1-indexed, inclusive.
+    """
+
+    file_path: str
+    line_start: int
+    line_end: int
+
+
 class ReviewContext(BaseModel):
     """Everything a plugin needs to produce a review of a PR.
 
@@ -82,14 +95,12 @@ class ReviewContext(BaseModel):
 
 
 class ReviewResult(BaseModel):
-    """The parent reviewer emits `FindingDraft`; `vcs.Finding` is only used
-    at the VCS-posting boundary. Translation from FindingDraft → vcs.Finding
-    happens in the reviewer after admission, so rejected findings never
-    reach GitHub.
+    """The plugin's review returns `ReportedFinding`s; posting is handled
+    by `domain/reviewer.publish_findings`.
     """
 
     status: InvocationStatus
-    findings: list[FindingDraft] = []
+    findings: list[ReportedFinding] = []
     state: Literal["APPROVED", "CHANGES_REQUESTED", "COMMENT"] | None = None
     summary_body: str | None = None
     lesson_ids_consulted: list[UUID] = []
@@ -102,47 +113,30 @@ class ValidationResult(BaseModel):
     errors: list[str] = []
 
 
-Severity = Literal["blocker", "major", "minor", "nit"]
-
-
-class FindingAnchor(BaseModel):
-    """Where in the code the finding applies. Plugin-side anchor shape.
-
-    `domain/reviewer` maps this onto its own `CodeAnchor` value object
-    (which adds the surrounding-content + commit-sha bits needed to
-    re-resolve under line drift).
-    """
-
-    file_path: str
-    line_start: int
-    line_end: int
-
-
-class FindingDraft(BaseModel):
+class ReportedFinding(BaseModel):
     """One raw finding produced by an agent task.
 
-    The reviewer aggregate rejects any draft missing `concrete_failure_scenario`
-    or below the per-severity confidence threshold before storing it. Severity
-    is sticky once stored; the per-PR nit cap and per-review top-10 cap are
-    applied by the aggregate, not here.
+    Raw strings only — no enum validation. `domain/reviewer` validates
+    `severity` and `confidence` into typed values when converting to `Finding`.
+    `file` and `line` are optional — general (PR-wide) findings carry no anchor.
     """
 
-    severity: Severity
-    rule_id: str
-    title: str
-    body: str
-    concrete_failure_scenario: str
-    confidence: int = Field(ge=0, le=100)
+    file: str | None = None
+    line: int | None = None
+    category: str
+    severity: str
+    confidence: str
     rationale: str
-    anchor: FindingAnchor
-    duplicate_of_rule_ids: list[str] = []
+    rule_violated: str
+    rule_source: str
+    suggested_fix: str
 
 
 class IncrementalReviewContext(BaseModel):
     """Inputs for a `incremental_review` task — review `prev_sha..head` only.
 
-    Prior findings + acknowledgments are passed so the agent can avoid
-    re-raising issues the developer already accepted.
+    Prior findings passed so the agent can avoid re-raising issues already
+    known.
     """
 
     pr: VCSPullRequest
@@ -158,7 +152,7 @@ class IncrementalReviewContext(BaseModel):
 
 class IncrementalReviewResult(BaseModel):
     status: InvocationStatus
-    findings: list[FindingDraft] = []
+    findings: list[ReportedFinding] = []
     telemetry: InvocationTelemetry = InvocationTelemetry()
     error_message: str | None = None
 

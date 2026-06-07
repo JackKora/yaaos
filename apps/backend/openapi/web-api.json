@@ -1204,29 +1204,9 @@
         "type": "object"
       },
       "ReviewJob": {
-        "description": "Read-side projection of a `review_jobs` row.\n\nThe SPA reads this via the `jobs_by_ticket` endpoint in\n`reviewer/web.py`. The workflow-engine path doesn't emit this\nshape — `workflow_executions` rows are the canonical job record.",
+        "description": "Read-side projection of a `reviews` row for the ticket history API.",
         "properties": {
-          "activity_log": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Activity Log",
-            "type": "array"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          },
-          "current_step": {
+          "commit_sha_at_start": {
             "anyOf": [
               {
                 "type": "string"
@@ -1235,102 +1215,21 @@
                 "type": "null"
               }
             ],
-            "title": "Current Step"
+            "title": "Commit Sha At Start"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
           },
           "destination": {
             "title": "Destination",
             "type": "string"
           },
-          "duration_s": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration S"
-          },
-          "effort": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Effort"
-          },
-          "error_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error Message"
-          },
-          "findings": {
-            "anyOf": [
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Findings"
-          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
-          },
-          "last_heartbeat_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Heartbeat At"
-          },
-          "lessons_applied": {
-            "anyOf": [
-              {
-                "items": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lessons Applied"
-          },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model"
           },
           "org_id": {
             "format": "uuid",
@@ -1342,45 +1241,7 @@
             "title": "Pr Id",
             "type": "string"
           },
-          "prompt_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prompt Hash"
-          },
-          "review_external_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Review External Id"
-          },
           "scheduled_at": {
-            "format": "date-time",
-            "title": "Scheduled At",
-            "type": "string"
-          },
-          "skip_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Skip Reason"
-          },
-          "started_at": {
             "anyOf": [
               {
                 "format": "date-time",
@@ -1390,36 +1251,27 @@
                 "type": "null"
               }
             ],
-            "title": "Started At"
+            "title": "Scheduled At"
+          },
+          "scope_kind": {
+            "title": "Scope Kind",
+            "type": "string"
+          },
+          "sequence_number": {
+            "title": "Sequence Number",
+            "type": "integer"
           },
           "status": {
             "title": "Status",
             "type": "string"
           },
-          "tokens_in": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tokens In"
-          },
-          "tokens_out": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tokens Out"
-          },
           "trigger_reason": {
             "title": "Trigger Reason",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
             "type": "string"
           }
         },
@@ -1430,23 +1282,11 @@
           "status",
           "trigger_reason",
           "destination",
-          "skip_reason",
-          "scheduled_at",
-          "started_at",
-          "completed_at",
-          "last_heartbeat_at",
-          "current_step",
-          "prompt_hash",
-          "lessons_applied",
-          "tokens_in",
-          "tokens_out",
-          "duration_s",
-          "error_message",
-          "review_external_id",
-          "findings",
-          "activity_log",
-          "model",
-          "effort"
+          "scope_kind",
+          "commit_sha_at_start",
+          "sequence_number",
+          "created_at",
+          "updated_at"
         ],
         "title": "ReviewJob",
         "type": "object"
@@ -2016,19 +1856,6 @@
           }
         },
         "title": "_PatchUserRequest",
-        "type": "object"
-      },
-      "_PushBackRequest": {
-        "properties": {
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          }
-        },
-        "required": [
-          "reason"
-        ],
-        "title": "_PushBackRequest",
         "type": "object"
       },
       "_SamlSignRequest": {
@@ -6307,90 +6134,9 @@
         ]
       }
     },
-    "/api/reviewer/conversations/by-ticket/{ticket_id}": {
-      "get": {
-        "description": "All-Conversations cross-cut for the ticket's PR.",
-        "operationId": "conversations_by_ticket_api_reviewer_conversations_by_ticket__ticket_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "ticket_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Ticket Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Org-Slug",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Org-Slug"
-            }
-          },
-          {
-            "in": "cookie",
-            "name": "yaaos_session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Yaaos Session"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "additionalProperties": true,
-                    "type": "object"
-                  },
-                  "title": "Response Conversations By Ticket Api Reviewer Conversations By Ticket  Ticket Id  Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Conversations By Ticket",
-        "tags": [
-          "reviewer"
-        ]
-      }
-    },
     "/api/reviewer/findings/by-ticket/{ticket_id}": {
       "get": {
-        "description": "List open + acknowledged findings for the ticket's PR.",
+        "description": "List findings for the ticket's PR in the canonical schema.",
         "operationId": "findings_by_ticket_api_reviewer_findings_by_ticket__ticket_id__get",
         "parameters": [
           {
@@ -6474,250 +6220,6 @@
           }
         },
         "summary": "Findings By Ticket",
-        "tags": [
-          "reviewer"
-        ]
-      }
-    },
-    "/api/reviewer/findings/{finding_id}/ack": {
-      "post": {
-        "description": ": SPA \"Ack\" button. Marks the finding as `intentional` —\nBuilder sees this and accepts it for future reviews.",
-        "operationId": "ack_finding_api_reviewer_findings__finding_id__ack_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "finding_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Finding Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Org-Slug",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Org-Slug"
-            }
-          },
-          {
-            "in": "cookie",
-            "name": "yaaos_session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Yaaos Session"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Ack Finding Api Reviewer Findings  Finding Id  Ack Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Ack Finding",
-        "tags": [
-          "reviewer"
-        ]
-      }
-    },
-    "/api/reviewer/findings/{finding_id}/push-back": {
-      "post": {
-        "description": ": SPA \"Push back\" button. Marks the finding as `wontfix` and\nrecords the Builder's reason in the audit trail.",
-        "operationId": "push_back_finding_api_reviewer_findings__finding_id__push_back_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "finding_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Finding Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Org-Slug",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Org-Slug"
-            }
-          },
-          {
-            "in": "cookie",
-            "name": "yaaos_session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Yaaos Session"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/_PushBackRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Push Back Finding Api Reviewer Findings  Finding Id  Push Back Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Push Back Finding",
-        "tags": [
-          "reviewer"
-        ]
-      }
-    },
-    "/api/reviewer/findings/{finding_id}/thread": {
-      "get": {
-        "description": "Thread messages + ack banner for one finding.",
-        "operationId": "thread_by_finding_api_reviewer_findings__finding_id__thread_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "finding_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Finding Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Org-Slug",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Org-Slug"
-            }
-          },
-          {
-            "in": "cookie",
-            "name": "yaaos_session",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Yaaos Session"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Thread By Finding Api Reviewer Findings  Finding Id  Thread Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Thread By Finding",
         "tags": [
           "reviewer"
         ]
@@ -6873,7 +6375,7 @@
     },
     "/api/reviewer/rereview": {
       "post": {
-        "description": "Re-review a ticket — drives `pr_review_v1` via the workflow engine.\n\nThe SPA's only contract with this endpoint is the `scheduled_count`\nfield; the response carries `workflow_execution_id` so the caller can\npoll workflow state if desired.",
+        "description": "Re-review a ticket — drives `pr_review_v1` via the workflow engine.",
         "operationId": "rereview_ticket_api_reviewer_rereview_post",
         "parameters": [
           {

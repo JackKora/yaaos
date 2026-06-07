@@ -69,7 +69,7 @@ async def dashboard() -> dict[str, Any]:
     needs_attention: list[Ticket] = [
         t
         for t in items
-        if t.findings_count > 0 and t.status == "done" and t.max_severity in ("medium", "high")
+        if t.findings_count > 0 and t.status == "done" and t.max_severity in ("should_fix", "blocker")
     ]
 
     today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)

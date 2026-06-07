@@ -75,7 +75,7 @@ Flow: `reviewer.queue` mints a per-review token (raw `secrets.token_urlsafe(32)`
 
 Three concepts span all apps:
 
-- **Workflow engine** (`core/workflow`) — typed `Workflow` definitions driven by three taskiq task bodies over `core/tasks` + `core/outbox`. Workspace commands park in `awaiting_agent` and resume on terminal AgentEvent. Five workflows: `pr_review_v1`, `incremental_review_v1`, `verify_fix_v1`, `stale_check_v1`, `answer_question_v1`. See [`core_workflow.md`](../apps/backend/docs/core_workflow.md).
+- **Workflow engine** (`core/workflow`) — typed `Workflow` definitions driven by three taskiq task bodies over `core/tasks` + `core/outbox`. Workspace commands park in `awaiting_agent` and resume on terminal AgentEvent. Two workflows: `pr_review_v1` (the PR review path, [`domain/reviewer`](../apps/backend/docs/domain_reviewer.md)) and `enumerate_skills_v1` (per-repo skill discovery, [`plugins/claude_code`](../apps/backend/docs/plugins_claude_code.md)). See [`core_workflow.md`](../apps/backend/docs/core_workflow.md).
 - **Workspace provider abstraction** (`core/workspace`) — `RemoteAgentWorkspaceProvider` dispatches via wire protocol to the customer-deployed Go agent. Single-flight claim via `try_claim`/`release_claim`. See [`core_workspace.md`](../apps/backend/docs/core_workspace.md).
 - **WorkspaceAgent** (`apps/agent/`) — customer-deployed Go binary; holds source code locally. Five HTTPS endpoints + one bidirectional WebSocket under `/api/v1/`. Agent identity on operational channels is bearer-derived — no `{agent_id}` path segment. Full protocol contract: [`docs/workspace-agent-protocol.md`](../docs/workspace-agent-protocol.md).
   - `POST /api/v1/agent/identity` — SigV4-signed STS → 1-hour bearer. Replays the customer's `GetCallerIdentity` against AWS STS (or mock-aws in dev/test); audience-checks `X-Yaaos-Audience`; canonicalizes ARN; derives `instance_id` from role-session-name; matches against `orgs.registered_iam_arn`; issues bearer via `bearer_tokens` ledger (sha256 stored, plaintext returned once). Region mismatch (verified ARN matched org, wrong region) writes an `identity_exchange_failed` audit row on the org.
@@ -90,7 +90,7 @@ Three concepts span all apps:
 
 1. GitHub webhook → `POST /api/intake/github_pr` verifies HMAC, dedups via `X-Github-Delivery`, creates ticket, starts `pr_review_v1`. Records `traceparent` so downstream tasks share the trace.
 2. `route_workflow` picks up; `CheckShouldReview` (Local). `ProvisionWorkspace` (Workspace) parks workflow in `awaiting_agent`, dispatches via `core/agent_gateway.enqueue_command`.
-3. Agent long-polls, runs operation, reports via `POST /api/v1/commands/{id}/events`. Backend's `record_agent_event` validates stale-claim guard, resolves `command_id → workspaces → current_holder_workflow_id`, enqueues `handle_agent_event`.
+3. Agent long-polls, runs operation, reports via `POST /api/v1/commands/{id}/events`. Backend's `record_agent_event` validates stale-claim guard, resolves `command_id → agent_commands.workflow_execution_id`, enqueues `handle_agent_event`.
 4. `handle_agent_event` clears claim, enqueues `route_workflow` → `CodeReview → PostFindings → CleanupWorkspace`.
 5. Activity events from workspace flow over WebSocket only when a UI tab is subscribed.
 

@@ -18,13 +18,13 @@ from app.core.workspace import Workspace
 from app.domain.coding_agent import (
     AnswerQuestionContext,
     AnswerQuestionResult,
-    FindingDraft,
     HealthStatus,
     IncrementalReviewContext,
     IncrementalReviewResult,
     InvocationStatus,
     InvocationTelemetry,
     OnActivity,
+    ReportedFinding,
     ReviewContext,
     ReviewResult,
     StaleCheckContext,
@@ -45,8 +45,8 @@ class FakeCodingAgentPlugin:
     def __init__(self, plugin_id: str = "claude_code") -> None:
         self.meta = PluginMeta(id=plugin_id, type="coding_agent", display_name=f"fake-{plugin_id}")
         # Overridable per-instance return values.
-        self.review_findings: list[FindingDraft] = []
-        self.incremental_findings: list[FindingDraft] = []
+        self.review_findings: list[ReportedFinding] = []
+        self.incremental_findings: list[ReportedFinding] = []
         self.verify_fix_still_present: bool = False
         self.verify_fix_confidence: float = 0.95
         self.stale_still_applies: bool = True

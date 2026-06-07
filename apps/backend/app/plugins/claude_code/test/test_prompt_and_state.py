@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from app.domain.coding_agent import FindingAnchor, FindingDraft, ReviewContext
+from app.domain.coding_agent import ReportedFinding, ReviewContext
 from app.domain.lessons import Lesson
 from app.domain.vcs import Diff, VCSPullRequest
 from app.plugins.claude_code.service import (
@@ -106,16 +106,17 @@ def test_prompt_omits_prior_yaaos_comments() -> None:
     assert "- x" not in out
 
 
-def _draft(severity: str) -> FindingDraft:
-    return FindingDraft(
-        severity=severity,  # type: ignore[arg-type]
-        rule_id="r/x",
-        title="t",
-        body="b",
-        concrete_failure_scenario="caller invokes f() without arg; raises TypeError.",
-        confidence=90,
-        rationale="r",
-        anchor=FindingAnchor(file_path="src/foo.py", line_start=1, line_end=1),
+def _finding(severity: str) -> ReportedFinding:
+    return ReportedFinding(
+        file="src/foo.py",
+        line=1,
+        category="correctness",
+        severity=severity,
+        confidence="plausible",
+        rationale="some rationale",
+        rule_violated="rule/x",
+        rule_source="yaaos",
+        suggested_fix="fix it",
     )
 
 
@@ -124,15 +125,10 @@ def test_compute_state_v2_approved_when_no_findings() -> None:
 
 
 def test_compute_state_v2_changes_requested_on_blocker() -> None:
-    findings = [_draft("nit"), _draft("blocker")]
+    findings = [_finding("nit"), _finding("blocker")]
     assert _compute_state_v2(findings) == "CHANGES_REQUESTED"
 
 
-def test_compute_state_v2_changes_requested_on_major() -> None:
-    findings = [_draft("major")]
-    assert _compute_state_v2(findings) == "CHANGES_REQUESTED"
-
-
-def test_compute_state_v2_comment_for_minor_and_nit() -> None:
-    findings = [_draft("minor"), _draft("nit")]
+def test_compute_state_v2_comment_for_should_fix_and_nit() -> None:
+    findings = [_finding("should_fix"), _finding("nit")]
     assert _compute_state_v2(findings) == "COMMENT"

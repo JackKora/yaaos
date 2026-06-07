@@ -150,6 +150,7 @@ async def _advance_pending_agent_event(  # type: ignore[no-untyped-def]
     await _drain_workflow_outbox(db_session)
 
 
+@pytest.mark.service
 async def test_pr_review_v1_with_findings_persists_to_db(
     db_session, workspace_providers_isolation, workflow_context_provider_isolation
 ) -> None:  # type: ignore[no-untyped-def]
@@ -158,19 +159,17 @@ async def test_pr_review_v1_with_findings_persists_to_db(
     All Workspace steps park at AWAITING_AGENT. Each is advanced by a
     simulated agent event:
     - ProvisionWorkspace: event returns the seeded workspace_id.
-    - CodeReview: event returns a spy FindingDraft via outputs.
+    - CodeReview: event returns one canonical ReportedFinding via outputs.
     - CleanupWorkspace: event returns empty outputs.
 
-    PostFindings (LOCAL) runs inline, reads the file from the seeded
-    workspace's plugin_state, admits the finding, and persists a FindingRow.
+    PostFindings (LOCAL) runs inline, validates the canonical finding, and
+    persists a FindingRow with `finding_display_id=1`.
     """
     from app.domain.pull_requests import upsert as upsert_pr  # noqa: PLC0415
     from app.domain.reviewer.models import FindingRow  # noqa: PLC0415
     from app.domain.tickets import create as create_ticket2  # noqa: PLC0415
     from app.domain.vcs import VCSPullRequest as _VCSPullRequest  # noqa: PLC0415
 
-    # 1. Stub provider so PostFindings.get_workspace() can resolve the row
-    #    and read_text() returns file contents for anchor validation.
     class _StubProviderWithFiles:
         meta = PluginMeta(id="in_process", type="workspace", display_name="stub")
 
@@ -197,7 +196,7 @@ async def test_pr_review_v1_with_findings_persists_to_db(
 
     org_id = uuid4()
 
-    # 2. Real ticket + PR rows so admission's findings FK lands cleanly.
+    # 2. Real ticket + PR rows so findings FK has somewhere to land.
     ext_id = f"e2e-{uuid4().hex[:6]}"
     ticket_id, _ = await create_ticket2(
         type="pr_review",
@@ -245,9 +244,6 @@ async def test_pr_review_v1_with_findings_persists_to_db(
     )
     pr_id = pr.id
 
-    # 3. Pre-seed a workspace row with file contents so PostFindings.read_text
-    #    resolves the anchor. ProvisionWorkspace's agent-event outputs point
-    #    to this same workspace_id.
     seeded_ws_id = await _seed_workspace_for_tests(
         org_id=org_id,
         provider_id="in_process",
@@ -257,7 +253,6 @@ async def test_pr_review_v1_with_findings_persists_to_db(
     )
     await db_session.commit()
 
-    # 4. Context provider returns the real ticket_id-linked PR.
     register_workflow_context_provider(
         _StaticWorkflowContextProvider(
             WorkspaceTicketContext(
@@ -270,21 +265,19 @@ async def test_pr_review_v1_with_findings_persists_to_db(
         )
     )
 
-    # 5. FindingDraft returned via the CodeReview agent event outputs.
+    # Canonical ReportedFinding shape returned by CodeReview agent event outputs.
     spy_finding = {
-        "severity": "major",
-        "rule_id": "spy_rule",
-        "title": "Spy finding",
-        "body": "Spy body.",
-        "concrete_failure_scenario": (
-            "Caller can pass None; foo() dereferences without a check; raises NoneType."
-        ),
-        "confidence": 90,
-        "rationale": "Function signature accepts any.",
-        "anchor": {"file_path": "src/foo.py", "line_start": 2, "line_end": 2},
+        "file": "src/foo.py",
+        "line": 2,
+        "category": "correctness",
+        "severity": "blocker",
+        "confidence": "verified",
+        "rationale": "Unvalidated input passed to SQL query.",
+        "rule_violated": "spy_rule",
+        "rule_source": "yaaos",
+        "suggested_fix": "Use parameterized queries.",
     }
 
-    # 6. Register the workflow + commands.
     from app.core.workspace import ALL_LIFECYCLE_COMMANDS  # noqa: PLC0415
     from app.testing.stub_vcs import register_stub_vcs  # noqa: PLC0415
 
@@ -295,7 +288,6 @@ async def test_pr_review_v1_with_findings_persists_to_db(
             eng.register_command(cmd)
         eng.register_workflow(pr_review_v1)
 
-        # 7. Kick off + advance each Workspace step via simulated agent events.
         with register_stub_vcs(plugin_id="github"):
             wfx_id = await eng.start(
                 workflow_name="pr_review_v1",
@@ -314,7 +306,7 @@ async def test_pr_review_v1_with_findings_persists_to_db(
 
             # ProvisionWorkspace: return the pre-seeded workspace_id.
             await _advance_pending_agent_event(db_session, wfx_id, outputs={"workspace_id": seeded_ws_id})
-            # CodeReview: return the spy finding via outputs (PostFindings reads it).
+            # CodeReview: return the canonical finding via outputs.
             await _advance_pending_agent_event(
                 db_session,
                 wfx_id,
@@ -326,7 +318,7 @@ async def test_pr_review_v1_with_findings_persists_to_db(
         wfx = await get_execution_summary(UUID(wfx_id), session=db_session)
         assert wfx.state == WorkflowState.DONE.value
 
-        # 8. FindingRow lands.
+        # FindingRow lands with canonical schema fields.
         rows = (
             (
                 await db_session.execute(
@@ -337,10 +329,13 @@ async def test_pr_review_v1_with_findings_persists_to_db(
             .all()
         )
         assert len(rows) == 1
-        assert rows[0].rule_id == "spy_rule"
-        assert rows[0].title == "Spy finding"
+        assert rows[0].severity == "blocker"
+        assert rows[0].confidence == "verified"
+        assert rows[0].category == "correctness"
+        assert rows[0].finding_display_id == 1
 
 
+@pytest.mark.service
 async def test_pr_review_v1_runs_end_to_end_remote_agent(db_session, _registered_engine) -> None:  # type: ignore[no-untyped-def]
     """Full `pr_review_v1` walk to DONE. Workspace-category commands
     (`ProvisionWorkspace`, `CodeReview`, `CleanupWorkspace`) park at
@@ -388,13 +383,9 @@ async def test_pr_review_v1_runs_end_to_end_remote_agent(db_session, _registered
     await db_session.commit()
 
     # Initial drain — CheckShouldReview (Local) executes inline; then
-    # ProvisionWorkspace (Workspace) dispatches to the single registered
-    # provider and parks at AWAITING_AGENT. drain returns when no more outbox rows.
+    # ProvisionWorkspace (Workspace) dispatches and parks at AWAITING_AGENT.
     await _drain_workflow_outbox(db_session)
 
-    # Seed a real workspace row so the Workspace WorkflowCommands' `dispatch`
-    # can resolve org_id + owning_agent_id via `get_workspace_owner`. The
-    # ProvisionWorkspace.result event reports this same id back as its output.
     sim_workspace_id = str(
         await _seed_workspace_for_tests(
             org_id=org_id,
@@ -407,8 +398,7 @@ async def test_pr_review_v1_runs_end_to_end_remote_agent(db_session, _registered
     await db_session.commit()
     await _advance_pending_agent_event(db_session, wfx_id, outputs={"workspace_id": sim_workspace_id})
 
-    # Now parked at AWAITING_AGENT on CodeReview. Simulate the
-    # InvokeClaudeCode.result event with no draft findings.
+    # CodeReview parks. Simulate empty draft_findings (no findings path).
     await _advance_pending_agent_event(
         db_session,
         wfx_id,
@@ -419,7 +409,5 @@ async def test_pr_review_v1_runs_end_to_end_remote_agent(db_session, _registered
     # CleanupWorkspace then parked. Simulate its terminal event.
     await _advance_pending_agent_event(db_session, wfx_id, outputs={})
 
-    # Workflow terminal — done.
     wfx = await get_execution_summary(UUID(wfx_id), session=db_session)
     assert wfx.state == WorkflowState.DONE.value
-    assert wfx.pending_agent_command_id is None

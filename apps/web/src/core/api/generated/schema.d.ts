@@ -1034,26 +1034,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/reviewer/conversations/by-ticket/{ticket_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Conversations By Ticket
-         * @description All-Conversations cross-cut for the ticket's PR.
-         */
-        get: operations["conversations_by_ticket_api_reviewer_conversations_by_ticket__ticket_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/reviewer/findings/by-ticket/{ticket_id}": {
         parameters: {
             query?: never;
@@ -1063,71 +1043,9 @@ export interface paths {
         };
         /**
          * Findings By Ticket
-         * @description List open + acknowledged findings for the ticket's PR.
+         * @description List findings for the ticket's PR in the canonical schema.
          */
         get: operations["findings_by_ticket_api_reviewer_findings_by_ticket__ticket_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reviewer/findings/{finding_id}/ack": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ack Finding
-         * @description : SPA "Ack" button. Marks the finding as `intentional` —
-         *     Builder sees this and accepts it for future reviews.
-         */
-        post: operations["ack_finding_api_reviewer_findings__finding_id__ack_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reviewer/findings/{finding_id}/push-back": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Push Back Finding
-         * @description : SPA "Push back" button. Marks the finding as `wontfix` and
-         *     records the Builder's reason in the audit trail.
-         */
-        post: operations["push_back_finding_api_reviewer_findings__finding_id__push_back_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reviewer/findings/{finding_id}/thread": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Thread By Finding
-         * @description Thread messages + ack banner for one finding.
-         */
-        get: operations["thread_by_finding_api_reviewer_findings__finding_id__thread_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1188,10 +1106,6 @@ export interface paths {
         /**
          * Rereview Ticket
          * @description Re-review a ticket — drives `pr_review_v1` via the workflow engine.
-         *
-         *     The SPA's only contract with this endpoint is the `scheduled_count`
-         *     field; the response carries `workflow_execution_id` so the caller can
-         *     poll workflow state if desired.
          */
         post: operations["rereview_ticket_api_reviewer_rereview_post"];
         delete?: never;
@@ -2264,44 +2178,23 @@ export interface components {
         };
         /**
          * ReviewJob
-         * @description Read-side projection of a `review_jobs` row.
-         *
-         *     The SPA reads this via the `jobs_by_ticket` endpoint in
-         *     `reviewer/web.py`. The workflow-engine path doesn't emit this
-         *     shape — `workflow_executions` rows are the canonical job record.
+         * @description Read-side projection of a `reviews` row for the ticket history API.
          */
         ReviewJob: {
-            /** Activity Log */
-            activity_log: {
-                [key: string]: unknown;
-            }[];
-            /** Completed At */
-            completed_at: string | null;
-            /** Current Step */
-            current_step: string | null;
+            /** Commit Sha At Start */
+            commit_sha_at_start: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Destination */
             destination: string;
-            /** Duration S */
-            duration_s: number | null;
-            /** Effort */
-            effort: string | null;
-            /** Error Message */
-            error_message: string | null;
-            /** Findings */
-            findings: {
-                [key: string]: unknown;
-            }[] | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Last Heartbeat At */
-            last_heartbeat_at: string | null;
-            /** Lessons Applied */
-            lessons_applied: string[] | null;
-            /** Model */
-            model: string | null;
             /**
              * Org Id
              * Format: uuid
@@ -2312,27 +2205,21 @@ export interface components {
              * Format: uuid
              */
             pr_id: string;
-            /** Prompt Hash */
-            prompt_hash: string | null;
-            /** Review External Id */
-            review_external_id: string | null;
-            /**
-             * Scheduled At
-             * Format: date-time
-             */
-            scheduled_at: string;
-            /** Skip Reason */
-            skip_reason: string | null;
-            /** Started At */
-            started_at: string | null;
+            /** Scheduled At */
+            scheduled_at?: string | null;
+            /** Scope Kind */
+            scope_kind: string;
+            /** Sequence Number */
+            sequence_number: number;
             /** Status */
             status: string;
-            /** Tokens In */
-            tokens_in: number | null;
-            /** Tokens Out */
-            tokens_out: number | null;
             /** Trigger Reason */
             trigger_reason: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * Role
@@ -2557,11 +2444,6 @@ export interface components {
             clear_github_username: boolean;
             /** Display Name */
             display_name?: string | null;
-        };
-        /** _PushBackRequest */
-        _PushBackRequest: {
-            /** Reason */
-            reason: string;
         };
         /** _SamlSignRequest */
         _SamlSignRequest: {
@@ -4710,43 +4592,6 @@ export interface operations {
             };
         };
     };
-    conversations_by_ticket_api_reviewer_conversations_by_ticket__ticket_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Org-Slug"?: string | null;
-            };
-            path: {
-                ticket_id: string;
-            };
-            cookie?: {
-                yaaos_session?: string | null;
-            };
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     findings_by_ticket_api_reviewer_findings_by_ticket__ticket_id__get: {
         parameters: {
             query?: {
@@ -4773,121 +4618,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    ack_finding_api_reviewer_findings__finding_id__ack_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Org-Slug"?: string | null;
-            };
-            path: {
-                finding_id: string;
-            };
-            cookie?: {
-                yaaos_session?: string | null;
-            };
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    push_back_finding_api_reviewer_findings__finding_id__push_back_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Org-Slug"?: string | null;
-            };
-            path: {
-                finding_id: string;
-            };
-            cookie?: {
-                yaaos_session?: string | null;
-            };
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["_PushBackRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    thread_by_finding_api_reviewer_findings__finding_id__thread_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-Org-Slug"?: string | null;
-            };
-            path: {
-                finding_id: string;
-            };
-            cookie?: {
-                yaaos_session?: string | null;
-            };
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */
