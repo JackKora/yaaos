@@ -6,7 +6,7 @@
 
 **Owns:**
 - `Command` interface — the polymorphic root every command kind implements.
-- Two command families: `WorkspaceCommand` (6 kinds, executed in workspace children) and `AgentCommand` (1 kind today, executed in the supervisor).
+- Two command families: `WorkspaceCommand` (5 kinds, executed in workspace children) and `AgentCommand` (1 kind today, executed in the supervisor).
 - `WorkspaceOps` and `AgentOps` capability seams — caller-owned interfaces the command types call at execution time.
 - Typed result structs (`ProvisionResult`, `WriteFilesResult`, `RefreshResult`, `InvokeResult`, `CleanupResult`, `ConfigUpdateResult`) + `ExecResult` for subprocess outcomes.
 - `AgentConfig` — the typed config struct `ConfigUpdateCommand` carries.
@@ -54,7 +54,7 @@
 ## Entry points
 
 - `command.go` — `Command`/`WorkspaceCommand`/`AgentCommand` interfaces + `Decode` factory.
-- `workspace_commands.go` — the 6 `WorkspaceCommand` types + `Execute` bodies.
+- `workspace_commands.go` — the 5 `WorkspaceCommand` types + `Execute` bodies.
 - `agent_commands.go` — `ConfigUpdateCommand` + `AgentConfig`.
 - `results.go` — result structs + `ToWire()` + `ExecResult`.
 - `ops.go` — `WorkspaceOps` + `AgentOps` interfaces.
@@ -70,16 +70,3 @@
 7. The compiler lists any unimplemented interface methods.
 8. Add tests in `command_test.go` (Decode round-trip) and `execute_test.go` (Execute against a fake ops).
 
-## Skill enumeration recipe (`EnumerateSkills`)
-
-`EnumerateSkills` discovers two skill sources from a clone and merges them into one manifest. The handler lives in `internal/workspace/realhandler.go`; the plugin/marketplace half lives in `internal/workspace/pluginskills.go` (the same installer is reusable on the review path).
-
-1. **Repo-local** — scan `<clone>/.claude/skills/<dir>/SKILL.md`. The directory name is the invocation handle; `name`/`description` frontmatter is display-only. Emit `{name: <dir>, source: "repo", plugin_name: nil}`.
-2. **Plugin/marketplace install-then-scan** — parse `<clone>/.claude/settings.json` for `extraKnownMarketplaces` + `enabledPlugins` (`"<plugin>@<marketplace>"`). Per declared marketplace run `claude plugin marketplace add <source>`; per declared plugin run `claude plugin install <plugin>@<marketplace>`. Each call is independent — failures log at WARN and skip; one bad plugin does not abort the rest.
-3. **Cache scan** — walk `~/.claude/plugins/cache/<marketplace>/<plugin>/skills/<skill>/SKILL.md`. Handle is namespaced `<plugin>:<skill>`. Emit `{name: "<plugin>:<skill>", source: "plugin", plugin_name: "<plugin>"}`.
-
-**Always-degrade contract:** repo-local skills always return; plugin skills are best-effort. A finished enumeration with zero plugin skills is a success, not a failure.
-
-**Private marketplaces:** the repository's GitHub installation token is threaded into the subprocess environment via `GIT_ASKPASS` so same-host private fetches can authenticate. Public marketplaces and repo-local skills need no extra auth.
-
-**Side effect:** `claude plugin install` writes into the agent's `~/.claude/plugins/` (HOME, shared across workspaces), not the per-workspace clone — acceptable for a read-only config probe; the plugin cache persists.

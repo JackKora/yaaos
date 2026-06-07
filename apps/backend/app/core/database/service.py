@@ -179,6 +179,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("043_create_claude_code_repos", "create_claude_code_repos"),
     ("044_canonical_findings_schema", "canonical_findings_schema"),
     ("045_shed_workspace_columns", "shed_workspace_columns"),
+    ("046_drop_skill_manifest_columns", "drop_skill_manifest_columns"),
 )
 
 
@@ -1335,6 +1336,19 @@ async def _apply_canonical_findings_schema(conn) -> None:  # type: ignore[no-unt
     await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=new_tables))
 
 
+async def _apply_drop_skill_manifest_columns(conn) -> None:  # type: ignore[no-untyped-def]
+    """Drop `skills` and `enumerated_at` from `claude_code_repos`.
+
+    The skill-enumeration feature is retired. `claude_code_repos` keeps its
+    identity columns (`id`, `org_id`, `repo_external_id`, `created_at`,
+    `updated_at`); the `skill_name` text field is added in a later phase.
+
+    Idempotent: DROP COLUMN IF EXISTS.
+    """
+    await conn.execute(text("ALTER TABLE claude_code_repos DROP COLUMN IF EXISTS skills"))
+    await conn.execute(text("ALTER TABLE claude_code_repos DROP COLUMN IF EXISTS enumerated_at"))
+
+
 async def _apply_shed_workspace_columns(conn) -> None:  # type: ignore[no-untyped-def]
     """Remove vestigial columns from `workspaces` and tighten `owning_agent_id`.
 
@@ -1486,6 +1500,8 @@ async def _apply_pending() -> None:
                 await _apply_canonical_findings_schema(conn)
             elif kind == "shed_workspace_columns":
                 await _apply_shed_workspace_columns(conn)
+            elif kind == "drop_skill_manifest_columns":
+                await _apply_drop_skill_manifest_columns(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

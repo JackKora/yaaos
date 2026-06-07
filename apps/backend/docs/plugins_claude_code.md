@@ -56,25 +56,11 @@ Singleton; each `review` call spawns its own subprocess and reads its own settin
 
 Never branches on env vars. When `YAAOS_CODING_AGENT_STUB` is set, `app/web.py` calls `testing.stub_coding_agent.wrap_all_registered_plugins()` after `bootstrap()`. See [testing_stub_coding_agent.md](testing_stub_coding_agent.md).
 
-### Skill enumeration
-
-Discovers all skills a repo can run reviews with, cached per `(org_id, repo_external_id)`.
-
-- **Workflow:** `enumerate_skills_v1` (`enumerate_workflow.py`) — `ProvisionWorkspace → EnumerateSkills → CleanupWorkspace`, `finalizer_step_id="cleanup"`. Runs on a system-generated ticket (`type="skill_enumeration"`, `source="system"`) so the engine stays ticket-bound; system tickets are intentionally visible in the Tickets UI list.
-- **Context provider:** `workflow_context.py` registers the generic `WorkflowContextProvider` for `skill_enumeration` tickets; it populates `WorkspaceTicketContext.clone_url` (from the payload's repo full-name) and `installation_token` (via `vcs.get_installation_token`). `core/workspace` never imports `vcs`; the plugin is the bridge.
-- **Recipe (agent-side, in `apps/agent/internal/workspace/`):**
-  1. Repo-local scan: `<clone>/.claude/skills/<dir>/SKILL.md` → `{name: <dir>, source: "repo", plugin_name: null}`.
-  2. Plugin/marketplace install-then-scan: parse `<clone>/.claude/settings.json` for `extraKnownMarketplaces` + `enabledPlugins`; run `claude plugin marketplace add` per marketplace, `claude plugin install` per plugin (each call independent — failures log and skip).
-  3. Cache scan: `~/.claude/plugins/cache/<marketplace>/<plugin>/skills/<skill>/SKILL.md` → `{name: "<plugin>:<skill>", source: "plugin", plugin_name: "<plugin>"}`.
-  Repo-local always returns; plugin discovery is best-effort. The GitHub installation token is threaded via `GIT_ASKPASS` so private same-host marketplace fetches can authenticate.
-- **Resume:** the `EnumerateSkills` WorkflowCommand's terminal event carries `{skills: SkillManifestEntry[]}`. `PersistSkillManifest` upserts into `claude_code_repos.skills` (JSONB), sets `enumerated_at`, emits SSE `skills_enumerated` (org channel, payload `repo_external_id`).
-- **Endpoints:** `POST /api/claude-code/repos/{repo_external_id}/skills/refresh` starts the workflow; `GET /api/claude-code/repos` lists repos; `GET /api/claude-code/repos/{repo_external_id}/skills` reads the cached manifest. `SkillManifestEntry` is `{name, source: "repo"|"plugin", plugin_name: str|None}`.
-
 ## Data owned
 
 `claude_code_settings` — one row per org: `encrypted_anthropic_api_key`, `default_model` (optional), `cli_path` (optional).
 
-`claude_code_repos` — one row per `(org_id, repo_external_id)`. `skills` JSONB (default `[]`) holds the `SkillManifestEntry[]` manifest; `enumerated_at` records the last successful enumeration; `created_at`/`updated_at`. No `status` column — the workflow's own state is the source of truth for in-flight enumerations.
+`claude_code_repos` — one row per `(org_id, repo_external_id)`. Columns: `created_at`, `updated_at`.
 
 ## How it's tested
 

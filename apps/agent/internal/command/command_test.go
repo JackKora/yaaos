@@ -149,25 +149,6 @@ func TestDecodeRoundTrip(t *testing.T) {
 		}
 	})
 
-	t.Run("EnumerateSkills", func(t *testing.T) {
-		raw := mustMarshal(t, map[string]any{
-			"command_id":   "cmd-es",
-			"workspace_id": "ws-es",
-			"traceparent":  "tp-es",
-			"kind":         "EnumerateSkills",
-		})
-		cmd, err := command.Decode(raw)
-		if err != nil {
-			t.Fatalf("Decode: %v", err)
-		}
-		hdr := cmd.Header()
-		assertHeader(t, hdr, "cmd-es", "ws-es", "tp-es", protocol.KindEnumerateSkills)
-		assertTimeout(t, cmd.Timeout(), 5*time.Minute)
-		if _, ok := cmd.(*command.EnumerateSkillsCommand); !ok {
-			t.Errorf("expected *command.EnumerateSkillsCommand, got %T", cmd)
-		}
-	})
-
 	t.Run("ConfigUpdate", func(t *testing.T) {
 		// Nested `config` object — the exact shape the control plane emits
 		// (model_dump of ConfigUpdateCommand{config: AgentConfig{...}}). The
@@ -339,7 +320,6 @@ func TestSetTraceparent_AllKinds(t *testing.T) {
 		&command.RefreshWorkspaceAuthCommand{},
 		&command.InvokeClaudeCodeCommand{},
 		&command.CleanupWorkspaceCommand{},
-		&command.EnumerateSkillsCommand{},
 		&command.ConfigUpdateCommand{},
 	}
 	for _, c := range cmds {

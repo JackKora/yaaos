@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// CommandKind enumerates the five AgentCommand kinds.
+// CommandKind enumerates the AgentCommand kinds.
 type CommandKind string
 
 const (
@@ -22,7 +22,6 @@ const (
 	KindRefreshWorkspaceAuth CommandKind = "RefreshWorkspaceAuth"
 	KindInvokeClaudeCode     CommandKind = "InvokeClaudeCode"
 	KindCleanupWorkspace     CommandKind = "CleanupWorkspace"
-	KindEnumerateSkills      CommandKind = "EnumerateSkills"
 	KindConfigUpdate         CommandKind = "ConfigUpdate"
 )
 
@@ -92,12 +91,6 @@ type InvokeClaudeCodeCommand struct {
 }
 
 type CleanupWorkspaceCommand struct {
-	CommandHeader
-}
-
-// EnumerateSkillsCommand asks the agent to scan the cloned repo for skills
-// (repo-local .claude/skills/*/SKILL.md) and return a SkillManifestEntry list.
-type EnumerateSkillsCommand struct {
 	CommandHeader
 }
 

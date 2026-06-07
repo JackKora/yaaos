@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import DateTime, LargeBinary, String, UniqueConstraint, func, text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,11 +31,11 @@ class ClaudeCodeSettingsRow(Base):
 
 
 class ClaudeCodeRepoRow(Base):
-    """Per-(org, repo) skill manifest cache for the claude_code plugin.
+    """Per-(org, repo) identity row for the claude_code plugin.
 
-    `skills` is the last-enumerated `SkillManifestEntry[]` (overwritten by
-    Refresh). `enumerated_at` is null until the first successful enumeration.
-    No `status` column — enumeration state lives in the workflow execution.
+    Tracks the mapping between an org and a repository. No skill-manifest
+    columns — those were shed in favour of the per-repo `skill_name` text field
+    added in a later phase.
     """
 
     __tablename__ = "claude_code_repos"
@@ -48,8 +46,6 @@ class ClaudeCodeRepoRow(Base):
     )
     org_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     repo_external_id: Mapped[str] = mapped_column(String, nullable=False)
-    skills: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
-    enumerated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
