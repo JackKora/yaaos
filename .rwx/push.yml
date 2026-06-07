@@ -219,3 +219,26 @@ tasks:
           options:
             language: JavaScript
             framework: Playwright
+
+  # ─── deploy ──────────────────────────────────────────────────────────
+  #
+  # Deploys to Fly.io on green CI for `main`. The five CI tasks (docs/backend/
+  # web/agent/e2e) run in parallel; `after:` gates this task on ALL of them
+  # SUCCEEDING (ordering-only — unlike `use`, it does not merge their
+  # filesystems); `use: [code]` supplies the source as the Docker build
+  # context. `--remote-only` builds the amd64 image on Fly's remote builder
+  # (this RWX runner is arm64), so no Docker is needed in the task. The app +
+  # process groups + build target + deploy strategy are declared in the
+  # repo-root fly.toml. FLY_API_TOKEN is read from the `yaaos` vault.
+  - key: deploy-prod
+    if: ${{ init.branch == 'main' }}
+    after: [docs-ci, backend-ci, web-ci, agent-ci, e2e-ci]
+    use: [code]
+    env:
+      FLY_API_TOKEN: ${{ vaults.yaaos.secrets.FLY_API_TOKEN }}
+    run: |
+      set -e
+      curl -L https://fly.io/install.sh | sh
+      export FLYCTL_INSTALL="$HOME/.fly"
+      export PATH="$FLYCTL_INSTALL/bin:$PATH"
+      flyctl deploy --remote-only --config fly.toml

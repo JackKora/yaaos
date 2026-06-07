@@ -1,0 +1,24 @@
+# Keep the Fly remote-builder context small and out of the image.
+# The backend Dockerfile builds the SPA (apps/web) + backend (apps/backend)
+# from the repo root; everything below is irrelevant to that build.
+
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/tmp
+**/dist
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+
+# Planning scaffolding — gitignored working docs, never part of the image.
+plan/
+
+# Local tooling / editor noise
+.claude
+.idea
+.vscode
+*.log
+.DS_Store
