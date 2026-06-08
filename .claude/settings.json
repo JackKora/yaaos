@@ -1,1 +1,26 @@
-{}
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Read"
+    ],
+    "deny": [
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(sudo *)",
+      "Bash(dd *)",
+      "Bash(mkfs *)",
+      "Bash(shred *)",
+      "Bash(truncate *)",
+      "Bash(git reset --hard *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git clean *)",
+      "Bash(docker system prune *)",
+      "Bash(chmod -R *)"
+    ]
+  }
+}
