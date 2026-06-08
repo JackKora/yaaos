@@ -10,7 +10,7 @@ FastAPI service in Python 3.14. Single Docker image runs the API, serves the bun
 
 ## Module map
 
-31 modules: **18 core · 6 domain · 4 plugins · 3 testing**. Each has a doc with five fixed sections.
+Modules are organized in four layers — **core · domain · plugins · testing**. Each has a doc with five fixed sections.
 
 ### Core — infrastructure, no business logic
 
