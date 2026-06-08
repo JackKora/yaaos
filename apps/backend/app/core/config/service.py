@@ -12,8 +12,9 @@ variables for the canonical list.
 
 from functools import cache
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -84,13 +85,13 @@ class Settings(BaseSettings):
     # The project is auto-created on first request if it doesn't exist.
     braintrust_project: str = "yaaos"
 
-    # Canonical public hostname of this backend deployment. Used to validate the
-    # `X-Yaaos-Audience` header inside the agent's signed STS payload. Must match
-    # what `hostFromURL(YAAOS_BACKEND_URL)` produces on the agent side — typically
-    # "app.yaaos.cloud" (no scheme, no path). Required; boot fails if unset.
-    yaaos_public_hostname: str = Field(
+    # Full external origin of this backend deployment (scheme + host[:port], no
+    # path), e.g. "https://app.yaaos.cloud". Single source for both the public
+    # link base (`yaaos_app_base_url`) and the agent identity-exchange audience
+    # (`yaaos_public_hostname`) — both derived below. Required; boot fails if unset.
+    yaaos_public_origin: str = Field(
         ...,
-        description="Canonical public hostname (no scheme/path, e.g. app.yaaos.cloud). Required for agent identity-exchange audience binding.",
+        description="Full external origin (scheme+host[:port], no path), e.g. https://app.yaaos.cloud.",
     )
 
     # Time controls. Production defaults are reasonable; tests set short.
@@ -165,7 +166,6 @@ class Settings(BaseSettings):
     # Invitations + dev SMTP (Mailpit).
     yaaos_invitation_token_secret: SecretStr = SecretStr("dev-only-invitation-secret")
     yaaos_invitation_lifetime_seconds: int = 60 * 60 * 24 * 7  # 7 days
-    yaaos_app_base_url: str = "http://localhost:8080"
     smtp_host: str = "localhost"
     smtp_port: int = 1025
     smtp_username: str = ""
@@ -178,6 +178,20 @@ class Settings(BaseSettings):
         """True when `yaaos_env` is `dev` or `test`. Use for affordances that
         should be permissive in both (NullPool, no-Secure cookies, etc.)."""
         return self.yaaos_env != "prod"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def yaaos_public_hostname(self) -> str:
+        """Agent identity-exchange audience: host[:port], no scheme/path.
+        `.netloc` (not `.hostname`) so a port survives — e.g. the test stack's
+        `http://web:8080` → `web:8080`, matching the agent's `url.Host`."""
+        return urlparse(self.yaaos_public_origin).netloc
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def yaaos_app_base_url(self) -> str:
+        """Public base for emitted links (OAuth callbacks, invite/SAML/MCP URLs)."""
+        return self.yaaos_public_origin.rstrip("/")
 
     @property
     def cors_origins_list(self) -> list[str]:

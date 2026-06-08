@@ -393,17 +393,17 @@ async def test_identity_exchange_response_includes_org_id(db_session) -> None:
 
 
 async def test_identity_exchange_audience_mismatch_returns_401(db_session, monkeypatch) -> None:
-    """Audience header in the payload does not match YAAOS_PUBLIC_HOSTNAME → 401."""
+    """Audience header in the payload does not match YAAOS_PUBLIC_ORIGIN → 401."""
     del db_session
 
     import json as _json  # noqa: PLC0415
 
     from app.core.config import Settings  # noqa: PLC0415
 
-    # Override the settings so YAAOS_PUBLIC_HOSTNAME is set to a known value.
+    # Override the settings so YAAOS_PUBLIC_ORIGIN is set to a known value.
     monkeypatch.setattr(
         "app.core.agent_gateway.web.get_settings",
-        lambda: Settings.model_construct(yaaos_public_hostname="app.yaaos.cloud"),
+        lambda: Settings.model_construct(yaaos_public_origin="https://app.yaaos.cloud"),
     )
 
     async def _stub(_payload: str) -> VerifiedIdentity:  # unreachable after audience check
@@ -434,7 +434,7 @@ async def test_identity_exchange_audience_mismatch_returns_401(db_session, monke
 
 
 async def test_identity_exchange_missing_audience_returns_401(db_session, monkeypatch) -> None:
-    """Empty/absent X-Yaaos-Audience when YAAOS_PUBLIC_HOSTNAME is set → 401."""
+    """Empty/absent X-Yaaos-Audience when YAAOS_PUBLIC_ORIGIN is set → 401."""
     del db_session
 
     import json as _json  # noqa: PLC0415
@@ -443,7 +443,7 @@ async def test_identity_exchange_missing_audience_returns_401(db_session, monkey
 
     monkeypatch.setattr(
         "app.core.agent_gateway.web.get_settings",
-        lambda: Settings.model_construct(yaaos_public_hostname="app.yaaos.cloud"),
+        lambda: Settings.model_construct(yaaos_public_origin="https://app.yaaos.cloud"),
     )
 
     async def _stub(_payload: str) -> VerifiedIdentity:  # unreachable after audience check
