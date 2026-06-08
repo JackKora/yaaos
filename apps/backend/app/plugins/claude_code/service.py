@@ -848,16 +848,24 @@ class ClaudeCodePlugin:
     ) -> Invocation:
         """Build the `Invocation` for a remote PR review.
 
-        Resolves the API key from `claude_code_settings`, assembles the
-        prompt (review instructions + output schema appendix), and returns
-        the complete exec spec. The Anthropic key goes in `exec.env` — the
+        Resolves the per-repo skill name from `claude_code_repos`, decrypts
+        the Anthropic key from `claude_code_settings`, assembles the prompt
+        (review instructions + output schema appendix), and returns the
+        complete exec spec. The Anthropic key goes in `exec.env` — the
         accepted carve-out for wire-bound exec.
 
-        The skill handle is hardcoded to `"code-review"` — the repo-own
-        happy path. Skill-assignment resolution (repo-own vs plugin vs
-        bundle) lands in a follow-up iteration.
+        Raises `CodingAgentError` when the skill name is unconfigured or the
+        Anthropic key is absent — the review step fails cleanly before dispatch.
         """
-        del session  # reserved for future skill-assignment DB lookup
+        from app.plugins.claude_code.repos import resolve_skill  # noqa: PLC0415
+
+        skill_name = await resolve_skill(ctx.org_id, ctx.repo_external_id, session=session)
+        if not skill_name:
+            raise CodingAgentError(
+                f"skill_name not configured for repo {ctx.repo_external_id!r} — "
+                "set it in Coding Agents settings before dispatching a review"
+            )
+
         api_key, cli_path_setting = await self._load_settings_for_invocation()
         if not api_key:
             raise CodingAgentError("ANTHROPIC_API_KEY not set in claude_code_settings")
@@ -897,7 +905,7 @@ class ClaudeCodePlugin:
         from app.core.agent_gateway import InvokeClaudeCodeLimits  # noqa: PLC0415
 
         return Invocation(
-            kind="code-review",
+            kind=skill_name,
             exec=ExecSpec(argv=argv, stdin=prompt, env=env),
             limits=InvokeClaudeCodeLimits(wallclock_seconds=_DEFAULT_TIMEOUT_SECONDS),
         )
@@ -944,8 +952,7 @@ class ClaudeCodePlugin:
     ) -> tuple[str, ...]:
         """Return WorkflowCommand kinds to insert before the review step.
 
-        Hardcoded to `()` — skill-assignment resolution lands in a follow-up
-        iteration. The bundle/plugin branch is added when skill routing is built.
+        Returns `()` — the per-repo skill name model has no preflight steps.
         """
         del ctx, session
         return ()

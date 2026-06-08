@@ -181,6 +181,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("045_shed_workspace_columns", "shed_workspace_columns"),
     ("046_drop_skill_manifest_columns", "drop_skill_manifest_columns"),
     ("047_drop_default_model", "drop_default_model"),
+    ("048_add_skill_name_to_claude_code_repos", "add_skill_name_to_claude_code_repos"),
 )
 
 
@@ -1359,6 +1360,16 @@ async def _apply_drop_default_model(conn) -> None:  # type: ignore[no-untyped-de
     await conn.execute(text("ALTER TABLE claude_code_settings DROP COLUMN IF EXISTS default_model"))
 
 
+async def _apply_add_skill_name_to_claude_code_repos(conn) -> None:  # type: ignore[no-untyped-def]
+    """Add `skill_name` (nullable text) to `claude_code_repos`.
+
+    The per-repo skill handle typed by the admin in the Coding Agents settings
+    page. `build_review_invocation` reads this and raises when it is null/empty,
+    failing the review cleanly before dispatch. Idempotent: ADD COLUMN IF NOT EXISTS.
+    """
+    await conn.execute(text("ALTER TABLE claude_code_repos ADD COLUMN IF NOT EXISTS skill_name TEXT"))
+
+
 async def _apply_shed_workspace_columns(conn) -> None:  # type: ignore[no-untyped-def]
     """Remove vestigial columns from `workspaces` and tighten `owning_agent_id`.
 
@@ -1514,6 +1525,8 @@ async def _apply_pending() -> None:
                 await _apply_drop_skill_manifest_columns(conn)
             elif kind == "drop_default_model":
                 await _apply_drop_default_model(conn)
+            elif kind == "add_skill_name_to_claude_code_repos":
+                await _apply_add_skill_name_to_claude_code_repos(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

@@ -1189,6 +1189,32 @@
         "title": "ProviderStatus",
         "type": "object"
       },
+      "RepoSkillRow": {
+        "description": "One entry in the repos list — the repo identifier and its stored skill name.",
+        "properties": {
+          "repo_external_id": {
+            "title": "Repo External Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Name"
+          }
+        },
+        "required": [
+          "repo_external_id",
+          "skill_name"
+        ],
+        "title": "RepoSkillRow",
+        "type": "object"
+      },
       "RereviewRequest": {
         "properties": {
           "ticket_id": {
@@ -1327,6 +1353,23 @@
           "value"
         ],
         "title": "SetKeyRequest",
+        "type": "object"
+      },
+      "SetRepoSkillRequest": {
+        "properties": {
+          "skill_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Name"
+          }
+        },
+        "title": "SetRepoSkillRequest",
         "type": "object"
       },
       "SetVcsRequest": {
@@ -1838,6 +1881,32 @@
           }
         },
         "title": "_PatchUserRequest",
+        "type": "object"
+      },
+      "_RepoSkillRequest": {
+        "properties": {
+          "org_slug": {
+            "minLength": 1,
+            "title": "Org Slug",
+            "type": "string"
+          },
+          "repo_external_id": {
+            "minLength": 1,
+            "title": "Repo External Id",
+            "type": "string"
+          },
+          "skill_name": {
+            "minLength": 1,
+            "title": "Skill Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "org_slug",
+          "repo_external_id",
+          "skill_name"
+        ],
+        "title": "_RepoSkillRequest",
         "type": "object"
       },
       "_SamlSignRequest": {
@@ -3078,6 +3147,232 @@
           }
         },
         "summary": "Health",
+        "tags": [
+          "claude_code"
+        ]
+      }
+    },
+    "/api/claude_code/repos": {
+      "get": {
+        "description": "List repos connected to the org, joined with each repo's stored skill name.\n\nJoins the live GitHub repo list (from the VCS install) with stored\n`claude_code_repos` rows. Repos present in GitHub but absent from the DB\nare included with `skill_name=null`. Repos in the DB but absent from the\nGitHub list are omitted — the admin must reconnect via GitHub App settings.",
+        "operationId": "list_repos_api_claude_code_repos_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Org-Slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Org-Slug"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "yaaos_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Yaaos Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Repos Api Claude Code Repos Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Repos",
+        "tags": [
+          "claude_code"
+        ]
+      }
+    },
+    "/api/claude_code/repos/{repo_external_id}": {
+      "get": {
+        "description": "Read the stored skill name for one repo.\n\n`repo_external_id` contains a `/` (`owner/repo`) so the path segment uses\n`:path` to avoid the `%2F`-decoded-before-routing 405 bug.",
+        "operationId": "get_repo_skill_api_claude_code_repos__repo_external_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo_external_id",
+            "required": true,
+            "schema": {
+              "title": "Repo External Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Org-Slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Org-Slug"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "yaaos_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Yaaos Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSkillRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Repo Skill",
+        "tags": [
+          "claude_code"
+        ]
+      },
+      "put": {
+        "description": "Write the skill name for one repo. Creates the identity row if absent.\n\n`repo_external_id` contains a `/` (`owner/repo`) so the path segment uses\n`:path` to avoid the `%2F`-decoded-before-routing 405 bug.",
+        "operationId": "set_repo_skill_route_api_claude_code_repos__repo_external_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo_external_id",
+            "required": true,
+            "schema": {
+              "title": "Repo External Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Org-Slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Org-Slug"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "yaaos_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Yaaos Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRepoSkillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSkillRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Repo Skill Route",
         "tags": [
           "claude_code"
         ]

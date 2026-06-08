@@ -323,6 +323,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/claude_code/repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Repos
+         * @description List repos connected to the org, joined with each repo's stored skill name.
+         *
+         *     Joins the live GitHub repo list (from the VCS install) with stored
+         *     `claude_code_repos` rows. Repos present in GitHub but absent from the DB
+         *     are included with `skill_name=null`. Repos in the DB but absent from the
+         *     GitHub list are omitted — the admin must reconnect via GitHub App settings.
+         */
+        get: operations["list_repos_api_claude_code_repos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/claude_code/repos/{repo_external_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Repo Skill
+         * @description Read the stored skill name for one repo.
+         *
+         *     `repo_external_id` contains a `/` (`owner/repo`) so the path segment uses
+         *     `:path` to avoid the `%2F`-decoded-before-routing 405 bug.
+         */
+        get: operations["get_repo_skill_api_claude_code_repos__repo_external_id__get"];
+        /**
+         * Set Repo Skill Route
+         * @description Write the skill name for one repo. Creates the identity row if absent.
+         *
+         *     `repo_external_id` contains a `/` (`owner/repo`) so the path segment uses
+         *     `:path` to avoid the `%2F`-decoded-before-routing 405 bug.
+         */
+        put: operations["set_repo_skill_route_api_claude_code_repos__repo_external_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/coding-agents": {
         parameters: {
             query?: never;
@@ -2125,6 +2180,16 @@ export interface components {
             /** Updated At */
             updated_at: string | null;
         };
+        /**
+         * RepoSkillRow
+         * @description One entry in the repos list — the repo identifier and its stored skill name.
+         */
+        RepoSkillRow: {
+            /** Repo External Id */
+            repo_external_id: string;
+            /** Skill Name */
+            skill_name: string | null;
+        };
         /** RereviewRequest */
         RereviewRequest: {
             /**
@@ -2200,6 +2265,11 @@ export interface components {
         SetKeyRequest: {
             /** Value */
             value: string;
+        };
+        /** SetRepoSkillRequest */
+        SetRepoSkillRequest: {
+            /** Skill Name */
+            skill_name?: string | null;
         };
         /** SetVcsRequest */
         SetVcsRequest: {
@@ -2394,6 +2464,15 @@ export interface components {
             clear_github_username: boolean;
             /** Display Name */
             display_name?: string | null;
+        };
+        /** _RepoSkillRequest */
+        _RepoSkillRequest: {
+            /** Org Slug */
+            org_slug: string;
+            /** Repo External Id */
+            repo_external_id: string;
+            /** Skill Name */
+            skill_name: string;
         };
         /** _SamlSignRequest */
         _SamlSignRequest: {
@@ -3045,6 +3124,115 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    list_repos_api_claude_code_repos_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Org-Slug"?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                yaaos_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_repo_skill_api_claude_code_repos__repo_external_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Org-Slug"?: string | null;
+            };
+            path: {
+                repo_external_id: string;
+            };
+            cookie?: {
+                yaaos_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSkillRow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_repo_skill_route_api_claude_code_repos__repo_external_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Org-Slug"?: string | null;
+            };
+            path: {
+                repo_external_id: string;
+            };
+            cookie?: {
+                yaaos_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetRepoSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSkillRow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

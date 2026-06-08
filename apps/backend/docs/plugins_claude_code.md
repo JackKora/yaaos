@@ -16,7 +16,7 @@ Per-mode prompts live in `prompts/` (`incremental_review.md`, `verify_fix.md`, `
 
 ### `build_review_invocation` — remote-dispatch exec spec
 
-Takes a `ReviewContext{org_id, repo_external_id, pr_external_id, head_sha, base_sha, output_schema}`. Decrypts the Anthropic key; assembles argv (`claude --print --output-format=stream-json …`), prompt (review instructions + `git diff base..head` directive + `output_schema` appendix), and env (`ANTHROPIC_API_KEY`). Returns `Invocation{kind="code-review", exec: ExecSpec, limits: InvokeClaudeCodeLimits(1200s)}`. The exec spec is serialized into the `InvokeClaudeCodeCommand` the Go agent executes.
+Takes a `ReviewContext{org_id, repo_external_id, pr_external_id, head_sha, base_sha, output_schema}`. Reads `skill_name` for the repo via `resolve_skill` — raises `CodingAgentError` if absent or empty. Decrypts the Anthropic key; assembles argv (`claude --print --output-format=stream-json …`), prompt (review instructions + `git diff base..head` directive + `output_schema` appendix), and env (`ANTHROPIC_API_KEY`). Returns `Invocation{kind=<skill_name>, exec: ExecSpec, limits: InvokeClaudeCodeLimits(1200s)}`. The exec spec is serialized into the `InvokeClaudeCodeCommand` the Go agent executes.
 
 ### `parse_review_output` — stream-json parse
 
@@ -56,7 +56,17 @@ Never branches on env vars. When `YAAOS_CODING_AGENT_STUB` is set, `app/web.py` 
 
 `claude_code_settings` — one row per org: `encrypted_anthropic_api_key`, `cli_path` (optional).
 
-`claude_code_repos` — one row per `(org_id, repo_external_id)`. Columns: `created_at`, `updated_at`.
+`claude_code_repos` — one row per `(org_id, repo_external_id)`. Columns: `skill_name` (nullable text — the SKILL.md identifier the agent should invoke), `created_at`, `updated_at`.
+
+## HTTP routes
+
+All under `/api/claude_code/`:
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/repos` | `CODING_AGENT_READ` | Live GitHub repos joined with stored `skill_name`. Returns `{repos: [{repo_external_id, skill_name}]}`. Repos in GitHub but absent from DB included with `skill_name=null`; repos in DB but gone from GitHub omitted. |
+| `GET` | `/repos/{repo_external_id:path}` | `CODING_AGENT_READ` | Read skill name for one repo. `:path` type handles `owner/repo` slash. |
+| `PUT` | `/repos/{repo_external_id:path}` | `CODING_AGENT_WRITE` | Write skill name for one repo; creates the row if absent. |
 
 ## How it's tested
 
@@ -65,5 +75,6 @@ Unit tests in `app/plugins/claude_code/test/`:
 - `test_stream_parsing.py` — `_parse_stream_events` handles well-formed streams, garbage interleaved with valid JSON, and partial streams (timeout case).
 - `test_settings_schema.py` — settings round-trip on `{mcp_proxy_ids}`.
 - `test_defaults_endpoint.py` — auth gate + response shape for `GET /api/claude_code/defaults`.
+- `test_repo_skill_service.py` — service tests (`@pytest.mark.service`): `resolve_skill`/`set_repo_skill` round-trips against real Postgres; unit tests: `build_review_invocation` raises when skill absent/empty, uses resolved skill name as `Invocation.kind`.
 
 CLI subprocess + envelope parsing + Anthropic auth probe exercised end-to-end by e2e tests with `YAAOS_CODING_AGENT_STUB=1`.

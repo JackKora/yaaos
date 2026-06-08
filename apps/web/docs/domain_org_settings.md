@@ -32,7 +32,8 @@ Tab visibility is role-gated: admin sees all tabs; builder sees Members only (`t
 1. **`BrokenIntegrationsNotice`** — amber banner when any MCP credential has `last_refresh_status="failed"` (from `/api/auth/me`).
 2. **`BuilderReadOnlyBanner`** — info banner; UI only. Server enforces `require(Action.CODING_AGENT_WRITE)`.
 3. **`AnthropicKeyCard`** — BYOK Anthropic key. Write-only: post-save shows `Configured ✓ · last set <ts>` with Test/Rotate/Clear; plaintext never read back.
-4. **`DangerZone`** — `ConfirmModal` → `useUninstallCodingAgent`.
+4. **`RepoSkillsCard`** — per-repo skill name text inputs. Calls `GET /api/claude_code/repos` (`useClaudeCodeRepos`) for the live repo list joined with stored skill names. Each row (`RepoSkillRow`) has an uncontrolled text input and a Save button that fires `PUT /api/claude_code/repos/{encodeURIComponent(owner/repo)}` (`useSetRepoSkill`). Empty state shown when no repos are connected. Renders under its own `<ErrorBoundary>` + `<Suspense>`.
+5. **`DangerZone`** — `ConfirmModal` → `useUninstallCodingAgent`.
 
 ## Forms
 
@@ -69,6 +70,7 @@ All settings tests use MSW to intercept HTTP rather than `vi.mock("../queries")`
 
 - `coding_agents/test/coding_agents.test.tsx` — component/MSW: empty state, Add picker with installed plugins disabled, Remove confirmation, settings link.
 - `coding_agents/test/plugin_registry.test.tsx` — unit: dispatch to registered vs. unknown plugin.
+- `coding_agents/plugins/claude_code/test/claude_code_settings.test.tsx` — component/MSW: renders one input per repo, Save fires PUT with `encodeURIComponent`-encoded path (regression guard for the `%2F`-before-routing bug), empty state when no repos connected.
 - `byok/test/byok.test.tsx` — component/MSW: not_set / configured / rotate states; save / test / clear flows.
 - `integrations/test/integrations.test.tsx` — component/MSW: connect flow, allowlist, enabled toggle, disconnect.
 - `vcs/test/vcs.test.tsx` — component/MSW: picker, connected, needs-setup, unprovisioned states; remove confirmation.

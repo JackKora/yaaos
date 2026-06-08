@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, SecretStr
 
 from app.core.auth import Action, public_route
+from app.core.database import session as db_session
 from app.core.sessions import require
 from app.core.webserver import RouteSpec, register_routes
 from app.plugins.claude_code.service import _set_anthropic_key, bootstrap_anthropic_env, get_plugin
@@ -46,6 +47,104 @@ async def defaults_endpoint() -> dict:
     from app.plugins.claude_code.defaults import EFFORTS, MODELS  # noqa: PLC0415
 
     return {"models": list(MODELS), "efforts": list(EFFORTS)}
+
+
+# ── Per-repo skill name routes ────────────────────────────────────────────────
+
+
+class RepoSkillRow(BaseModel):
+    """One entry in the repos list — the repo identifier and its stored skill name."""
+
+    repo_external_id: str
+    skill_name: str | None
+
+
+class SetRepoSkillRequest(BaseModel):
+    skill_name: str | None = None
+
+
+@router.get("/repos", dependencies=[Depends(require(Action.CODING_AGENT_READ))])
+async def list_repos() -> dict[str, object]:
+    """List repos connected to the org, joined with each repo's stored skill name.
+
+    Joins the live GitHub repo list (from the VCS install) with stored
+    `claude_code_repos` rows. Repos present in GitHub but absent from the DB
+    are included with `skill_name=null`. Repos in the DB but absent from the
+    GitHub list are omitted — the admin must reconnect via GitHub App settings.
+    """
+    import httpx  # noqa: PLC0415
+
+    from app.core.auth import org_id_var  # noqa: PLC0415
+    from app.domain import vcs as vcs_mod  # noqa: PLC0415
+    from app.plugins.claude_code.repos import list_repos_with_skill  # noqa: PLC0415
+    from app.plugins.github import get_plugin as get_github_plugin  # noqa: PLC0415
+
+    org_id = org_id_var.get() or DEFAULT_ORG_ID
+
+    # Fetch the live GitHub repo list for the org's installation.
+    try:
+        token = await vcs_mod.get_installation_token("github", org_id)
+    except Exception as e:
+        return {"repos": [], "error": f"install token: {e}"}
+
+    base_url = get_github_plugin().base_url
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{base_url}/installation/repositories",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                params={"per_page": 100},
+            )
+        github_repos = [r["full_name"] for r in resp.json().get("repositories", [])]
+    except Exception:
+        github_repos = []
+
+    # Read stored skill names from our table.
+    async with db_session() as s:
+        stored = await list_repos_with_skill(org_id, session=s)
+
+    skill_by_repo = {r["repo_external_id"]: r["skill_name"] for r in stored}
+
+    # Join: include only repos present in the live GitHub list.
+    rows = [RepoSkillRow(repo_external_id=repo, skill_name=skill_by_repo.get(repo)) for repo in github_repos]
+    return {"repos": [r.model_dump() for r in rows]}
+
+
+@router.get("/repos/{repo_external_id:path}", dependencies=[Depends(require(Action.CODING_AGENT_READ))])
+async def get_repo_skill(repo_external_id: str) -> RepoSkillRow:
+    """Read the stored skill name for one repo.
+
+    `repo_external_id` contains a `/` (`owner/repo`) so the path segment uses
+    `:path` to avoid the `%2F`-decoded-before-routing 405 bug.
+    """
+    from app.core.auth import org_id_var  # noqa: PLC0415
+    from app.plugins.claude_code.repos import resolve_skill  # noqa: PLC0415
+
+    org_id = org_id_var.get() or DEFAULT_ORG_ID
+    async with db_session() as s:
+        skill_name = await resolve_skill(org_id, repo_external_id, session=s)
+    return RepoSkillRow(repo_external_id=repo_external_id, skill_name=skill_name)
+
+
+@router.put("/repos/{repo_external_id:path}", dependencies=[Depends(require(Action.CODING_AGENT_WRITE))])
+async def set_repo_skill_route(repo_external_id: str, req: SetRepoSkillRequest) -> RepoSkillRow:
+    """Write the skill name for one repo. Creates the identity row if absent.
+
+    `repo_external_id` contains a `/` (`owner/repo`) so the path segment uses
+    `:path` to avoid the `%2F`-decoded-before-routing 405 bug.
+    """
+    from app.core.auth import org_id_var  # noqa: PLC0415
+    from app.plugins.claude_code.repos import set_repo_skill  # noqa: PLC0415
+
+    org_id = org_id_var.get() or DEFAULT_ORG_ID
+    async with db_session() as s:
+        await set_repo_skill(org_id, repo_external_id, req.skill_name, session=s)
+        await s.commit()
+    return RepoSkillRow(repo_external_id=repo_external_id, skill_name=req.skill_name or None)
 
 
 register_routes(

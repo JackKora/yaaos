@@ -60,6 +60,23 @@ export async function seedGithubInstall(
   });
 }
 
+/** Seed the `skill_name` for a connected repo so `build_review_invocation`
+ *  can resolve a non-null skill handle. Required before dispatching a real
+ *  review in e2e specs (otherwise the review step fails with "skill_name
+ *  not configured").
+ */
+export async function seedRepoSkill(opts: {
+  orgSlug: string;
+  repoExternalId: string;
+  skillName: string;
+}): Promise<void> {
+  await jsonPost(`${YAAOS_URL}/api/testing/seed/repo_skill`, {
+    org_slug: opts.orgSlug,
+    repo_external_id: opts.repoExternalId,
+    skill_name: opts.skillName,
+  });
+}
+
 /** Insert a single lesson via the testing surface. For specs that need a
  *  pre-existing lesson as a *precondition*, not as the thing under test.
  */

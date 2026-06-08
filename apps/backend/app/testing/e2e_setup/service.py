@@ -110,6 +110,28 @@ async def seed_github_install(
         await s.commit()
 
 
+async def seed_repo_skill(*, org_slug: str, repo_external_id: str, skill_name: str) -> None:
+    """Write `skill_name` for a connected repo via the public repos service.
+
+    Requires the org to exist and have a Claude Code install (seeded by
+    ``seed_github_install`` first). Used by e2e specs that trigger reviews
+    so ``build_review_invocation`` can resolve a non-null skill name.
+
+    Deliberate side-effect: calls ``claude_code.repos.set_repo_skill`` —
+    the same path the PUT route exercises — so the seed is a smoke test of
+    the public write API.
+    """
+    from app.domain.orgs import get_org_by_slug  # noqa: PLC0415
+    from app.plugins.claude_code import set_repo_skill  # noqa: PLC0415
+
+    org = await get_org_by_slug(org_slug)
+    if org is None:
+        raise ValueError(f"org {org_slug!r} not found — seed it first via bootstrap_owner")
+    async with db_session() as s:
+        await set_repo_skill(org.id, repo_external_id, skill_name, session=s)
+        await s.commit()
+
+
 async def seed_lesson(*, repo_external_id: str, title: str, body: str) -> UUID:
     """Insert a single lesson via the public ``lessons.create`` service.
 
@@ -389,6 +411,7 @@ __all__ = [
     "seed_bootstrap_owner",
     "seed_github_install",
     "seed_lesson",
+    "seed_repo_skill",
     "seed_user_with_session",
     "seed_workspace_agent",
     "stage_oauth_test_profile",
