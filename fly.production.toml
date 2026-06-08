@@ -1,0 +1,81 @@
+# Fly.io deployment manifest — yaaos production (app.yaaos.cloud).
+#
+# One app, two process groups (web + worker) built from the shared backend
+# image (apps/backend/Dockerfile). The `web` and `worker` stages differ only
+# in CMD, so we build the `web` target and let [processes] supply each group's
+# command; the tini ENTRYPOINT is preserved, so SIGTERM still reaches the
+# Python child.
+#
+# Deployed by the `deploy-prod` task in .rwx/push.yml (flyctl deploy
+# --remote-only — builds amd64 on Fly's remote builder).
+#
+# Config placement: non-secrets live here in [env]; credentials/keys/tokens
+# are set via `fly secrets` (encrypted, never in git). Never define the same
+# var in both — a secret silently overrides an [env] value of the same name.
+
+app = "yaaos"
+primary_region = "ord"
+
+# Generous shutdown window. Phase 1 has no worker drain yet (SIGTERM cancels
+# in-flight tasks); 30s lets uvicorn finish in-flight HTTP on the web group.
+# Phase 2 (worker graceful drain + OTel flush budget) will raise this.
+kill_timeout = "30s"
+
+# Phase 1: rolling. bluegreen needs a health check on EVERY process group to
+# gate the cutover, but the worker has no HTTP/TCP port to check — so bluegreen
+# would hang or strand the old worker. Rolling is safe for a checkless worker
+# (the standard worker pattern). Cost: a brief web blip per deploy on the
+# single web machine. Zero-downtime (bluegreen + a 6PN-private worker health
+# endpoint + worker graceful drain + health-503) is the phase-2 slice.
+[deploy]
+  strategy = "rolling"
+
+[build]
+  dockerfile = "apps/backend/Dockerfile"
+  target = "web"
+
+[env]
+  YAAOS_ENV = "prod"
+  YAAOS_PUBLIC_HOSTNAME = "app.yaaos.cloud"
+
+  # Non-secret GitHub identifiers — they appear in browser URLs / settings
+  # pages, so they belong here in [env], not in `fly secrets`. The matching
+  # *secrets* (private key, webhook secret, OAuth client secret) stay in
+  # `fly secrets`.
+  YAAOS_GITHUB_APP_ID = "3983378"
+  YAAOS_GITHUB_APP_SLUG = "yaaos"
+  YAAOS_GITHUB_OAUTH_CLIENT_ID = "Ov23liOakRow3PX62StR"
+
+  # SMTP non-secret identifiers (SMTP_HOST/PORT/USERNAME/USE_TLS/FROM) remain
+  # set in the Fly dashboard env for now; SMTP_PASSWORD stays a secret.
+
+# ── web: FastAPI/uvicorn HTTP + SSE ──────────────────────────────────────
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+  processes = ["web"]
+
+  # Fly's internal checker hits the machine directly (not via Cloudflare), so
+  # /api/health stays reachable. Generous grace_period: the web process runs
+  # migrate() (advisory-locked) during lifespan startup before the HTTP server
+  # accepts connections.
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "45s"
+    method = "GET"
+    path = "/api/health"
+
+# ── process commands (override image CMD; tini entrypoint preserved) ──────
+[processes]
+  web = "python apps/backend/app/web.py"
+  worker = "python apps/backend/app/worker.py"
+
+# Single small machine per group (fixed 1+1, no autoscaling per v1 scope).
+# The image carries the Claude Code CLI for in-process reviews — 1 GB floor.
+# Tune later if observed load warrants.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
