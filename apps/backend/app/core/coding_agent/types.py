@@ -21,10 +21,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.agent_gateway import InvokeClaudeCodeLimits
 from app.core.vcs import Diff, VCSPullRequest
@@ -32,6 +32,24 @@ from app.core.workspace import HealthStatus, Workspace
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@runtime_checkable
+class LessonRef(Protocol):
+    """Structural contract for a lesson passed into an incremental review.
+
+    Lets `core/coding_agent` accept `domain/lessons.Lesson` objects without a
+    core→domain import: any object exposing `id` / `title` / `body` satisfies
+    it. `assemble_incremental_review_prompt` reads exactly these three fields.
+    """
+
+    @property
+    def id(self) -> UUID: ...
+    @property
+    def title(self) -> str: ...
+    @property
+    def body(self) -> str: ...
+
 
 # Re-exported for the canonical schema so reviewers can compare field sets.
 # `Severity` stays here as the raw-string alias used by the Protocol.
@@ -210,17 +228,19 @@ class IncrementalReviewContext(BaseModel):
     Prior findings passed so the agent can avoid re-raising issues already
     known.
 
-    `lessons` is typed `list[Any]` to avoid a core→domain import; callers
-    supply `domain/lessons.Lesson` objects, which satisfy the duck-type
-    access in `prompts.assemble_incremental_review_prompt` (`.id`, `.title`,
-    `.body`).
+    `lessons` are `LessonRef`-shaped (`domain/lessons.Lesson` satisfies the
+    Protocol structurally) so `core/coding_agent` stays free of a core→domain
+    import while keeping the `.id` / `.title` / `.body` access in
+    `prompts.assemble_incremental_review_prompt` typed.
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     pr: VCSPullRequest
     diff: Diff
     prev_sha: str
     head_sha: str
-    lessons: list[Any] = []
+    lessons: list[LessonRef] = []
     language_hint: str | None = None
     prior_open_finding_summaries: list[str] = []
     prior_acknowledged_finding_summaries: list[str] = []
