@@ -45,7 +45,7 @@ class NetworkPolicy(StrEnum):
 
 
 class RepoRefForSpec(BaseModel):
-    """Minimal repo identity in a workspace spec. Mirrors domain/vcs RepoRef."""
+    """Minimal repo identity in a workspace spec. Mirrors core/vcs RepoRef."""
 
     plugin_id: str
     external_id: str

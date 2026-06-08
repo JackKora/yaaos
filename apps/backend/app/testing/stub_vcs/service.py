@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.domain.vcs import (
+from app.core.vcs import (
     Comment,
     Diff,
     FileSummary,

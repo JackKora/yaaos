@@ -14,7 +14,7 @@ import pytest
 import pytest_asyncio
 
 from app.core.redis import RedisPubsub, bind_pubsub
-from app.domain.vcs import (
+from app.core.vcs import (
     bind_vcs_registry,
     current_vcs_registry,
 )

@@ -14,7 +14,7 @@ from uuid import UUID
 
 import pytest
 
-from app.domain.vcs import VCSPullRequest
+from app.core.vcs import VCSPullRequest
 from app.plugins.github.service import GitHubPlugin, _format_finding_body
 
 _ORG_ID = UUID("00000000-0000-0000-0000-000000000001")

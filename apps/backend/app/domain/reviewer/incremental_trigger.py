@@ -31,6 +31,7 @@ from sqlalchemy import desc, select, update
 
 from app.core.database import session as db_session
 from app.core.observability import spawn
+from app.core.vcs import get_plugin as get_vcs_plugin
 from app.domain import tickets
 from app.domain.reviewer.constants import DEFAULT_EFFORT as _DEFAULT_EFFORT
 from app.domain.reviewer.constants import DEFAULT_MODEL as _DEFAULT_MODEL
@@ -45,7 +46,6 @@ from app.domain.reviewer.trigger import (
     humanize_skip,
 )
 from app.domain.tickets import get_pull_request
-from app.domain.vcs import get_plugin as get_vcs_plugin
 
 log = structlog.get_logger("reviewer.incremental_trigger")
 

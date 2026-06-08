@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from app.domain.vcs import Diff
+from app.core.vcs import Diff
 
 # Order matters only insofar as we return the first match — pick more
 # specific patterns first if you add overlapping rules.

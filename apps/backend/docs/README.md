@@ -10,7 +10,7 @@ FastAPI service in Python 3.14. Single Docker image runs the API, serves the bun
 
 ## Module map
 
-31 modules: **17 core · 7 domain · 4 plugins · 3 testing**. Each has a doc with five fixed sections.
+31 modules: **18 core · 6 domain · 4 plugins · 3 testing**. Each has a doc with five fixed sections.
 
 ### Core — infrastructure, no business logic
 
@@ -29,6 +29,7 @@ FastAPI service in Python 3.14. Single Docker image runs the API, serves the bun
 | [core_tasks](core_tasks.md) | `@task` decorator + atomic-in-session `enqueue()` over taskiq + Redis; owns the outbox table and worker process. |
 | [core_workflow](core_workflow.md) | Workflow engine — typed workflows + WorkflowCommand categories (skeleton). |
 | [core_agent_gateway](core_agent_gateway.md) | Wire protocol to customer-deployed WorkspaceAgents (skeleton). |
+| [core_vcs](core_vcs.md) | Abstract VCS types + `VCSPlugin` Protocol + registry. |
 | [core_sse](core_sse.md) | Redis pub/sub for ActivityEvent fanout to SSE subscribers; declares `/api/sse` as org-scoped. |
 | [core_identity](core_identity.md) | Users, emails, OAuth identities, sessions, login orchestrator, TOTP. |
 | [core_sessions](core_sessions.md) | `require(action)` + `public_route` dependency factories; `/api/auth/*` endpoints. |
@@ -37,7 +38,6 @@ FastAPI service in Python 3.14. Single Docker image runs the API, serves the bun
 
 | Module | Responsibility |
 |---|---|
-| [domain_vcs](domain_vcs.md) | Abstract VCS types + `VCSPlugin` Protocol + registry. |
 | [domain_lessons](domain_lessons.md) | Per-repo lessons CRUD + prompt retrieval. |
 | [domain_coding_agent](domain_coding_agent.md) | `CodingAgentPlugin` Protocol + registry. |
 | [domain_tickets](domain_tickets.md) | Ticket lifecycle + PR mirror (`pull_requests` table). |

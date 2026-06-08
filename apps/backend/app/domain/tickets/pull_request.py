@@ -33,7 +33,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.audit_log import Actor, audit_for_pr
 from app.core.database import Base
 from app.core.database import session as db_session
-from app.domain.vcs import VCSPullRequest
+from app.core.vcs import VCSPullRequest
 
 # ---------------------------------------------------------------------------
 # Row

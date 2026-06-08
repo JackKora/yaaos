@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.identity import repository as identity_repo
+from app.core.vcs import VCSPullRequest
 from app.domain.mcp_proxy import lookup_token, mint_token, revoke_token
 from app.domain.mcp_proxy.models import McpReviewTokenRow
 from app.domain.mcp_proxy.service import run_sweep_loop, sweep_expired
@@ -23,7 +24,6 @@ from app.domain.reviewer import (
 )
 from app.domain.tickets import create as create_ticket
 from app.domain.tickets import upsert as upsert_pr
-from app.domain.vcs import VCSPullRequest
 
 
 async def _seed_review(db_session) -> tuple:  # type: ignore[return]

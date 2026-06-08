@@ -6,8 +6,8 @@ works for any ticket carrying a repo — both `skill_enumeration` and
 `pr_review` types. Registered at module import so the single process-wide
 provider always has VCS credentials.
 
-`plugins/claude_code → domain/vcs` is a legal downward import
-(plugins > domain). `core/workspace` never imports `domain/vcs` — only
+`plugins/claude_code → core/vcs` is a legal downward import
+(plugins > core). `core/workspace` never imports `core/vcs` — only
 this concrete implementation does, keeping the layer rule intact.
 """
 
@@ -17,9 +17,9 @@ from uuid import UUID
 
 from pydantic import SecretStr
 
+from app.core.vcs import get_installation_token
 from app.core.workspace import WorkspaceTicketContext, register_workflow_context_provider
 from app.domain.tickets import get_workspace_ticket_context as _get_ticket_ctx
-from app.domain.vcs import get_installation_token
 
 
 class _ClaudeCodeWorkflowContextProvider:

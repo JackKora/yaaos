@@ -225,7 +225,7 @@ async def _post_findings_via_vcs(
     Passes named primitive args — no value object crosses the `vcs` boundary.
     Each finding is posted independently; the plugin renders per-platform.
     """
-    from app.domain.vcs import get_plugin as get_vcs_plugin  # noqa: PLC0415
+    from app.core.vcs import get_plugin as get_vcs_plugin  # noqa: PLC0415
 
     plugin = get_vcs_plugin(vcs_plugin_id)
 

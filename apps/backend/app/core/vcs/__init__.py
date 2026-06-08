@@ -1,6 +1,6 @@
-"""domain/vcs — abstract types + plugin Protocol for VCS providers."""
+"""core/vcs — vendor-neutral VCS abstraction: transport types, Protocol, registry, exception hierarchy."""
 
-from app.domain.vcs.registry import (
+from app.core.vcs.registry import (
     VCSRegistry,
     bind_vcs_registry,
     current_vcs_registry,
@@ -10,7 +10,7 @@ from app.domain.vcs.registry import (
     register_vcs_plugin,
     registered_plugin_ids,
 )
-from app.domain.vcs.types import (
+from app.core.vcs.types import (
     Comment,
     CommentCreated,
     Diff,

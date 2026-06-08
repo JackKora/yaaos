@@ -270,11 +270,11 @@ class SecretsScan:
         if ticket_ctx is None or ticket_ctx.pr_id is None:
             return Outcome.success(outputs={"rule_id": None})
 
+        from app.core.vcs import get_plugin as get_vcs_plugin  # noqa: PLC0415
         from app.domain.reviewer.secrets_detection import (  # noqa: PLC0415
             detect_secrets,
             secrets_warning_body,
         )
-        from app.domain.vcs import get_plugin as get_vcs_plugin  # noqa: PLC0415
 
         try:
             vcs_plugin = get_vcs_plugin(ticket_ctx.plugin_id)

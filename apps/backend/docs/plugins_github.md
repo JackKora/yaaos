@@ -1,10 +1,10 @@
 # plugins/github
 
-> Only place GitHub-specific code lives. Implements `domain/vcs.VCSPlugin`, owns `/api/github/`, and provides the GitHub user-auth `Provider`.
+> Only place GitHub-specific code lives. Implements `core/vcs.VCSPlugin`, owns `/api/github/`, and provides the GitHub user-auth `Provider`.
 
 ## Scope
 
-Bridges GitHub REST + webhooks to `domain/vcs` types. Two distinct GitHub registrations: a **GitHub App** for per-org installs; a **GitHub OAuth App** for "Sign in with GitHub". They are different GitHub primitives — do not conflate them. No per-org credential storage.
+Bridges GitHub REST + webhooks to `core/vcs` types. Two distinct GitHub registrations: a **GitHub App** for per-org installs; a **GitHub OAuth App** for "Sign in with GitHub". They are different GitHub primitives — do not conflate them. No per-org credential storage.
 
 ## Module architecture
 

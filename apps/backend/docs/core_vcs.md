@@ -1,4 +1,4 @@
-# domain/vcs
+# core/vcs
 
 > Vendor-neutral abstraction over VCS providers — transport types, Protocol, registry, exception hierarchy. No finding taxonomy.
 
@@ -14,10 +14,11 @@ Does NOT own: finding taxonomy (lives in `domain/reviewer`), business logic, fil
 - **Plugin methods never see yaaos UUIDs.** They take `external_id: str` (GitHub: `"owner/repo#123"`). Conversion happens at the call site.
 - **`get_installation_token` is short-lived; callers use once** (e.g., `git clone` via `GIT_ASKPASS`) and forget. Never cached.
 - **Status-not-raise for transient errors:** a thin retry wrapper at the plugin call site retries `VCSTransientError` and `VCSRateLimitError` with backoff. Other `VCSError` subclasses propagate to the background-task wrapper or HTTP middleware.
+- **Lives in `core/`** because after finding taxonomy moved to `domain/reviewer`, the module is pure transport infrastructure — no business decisions. `plugins/github → core/vcs` and `domain/* → core/vcs` are both legal downward imports.
 
 ## `VCSPlugin` Protocol
 
-Signatures in `app/domain/vcs/types.py`:
+Signatures in `app/core/vcs/types.py`:
 
 - Read: `fetch_pr`, `fetch_diff`, `list_yaaos_comments`, `is_repo_accessible`.
 - Write (findings): `post_finding(external_id, *, file, line_start, line_end, severity, category, confidence, finding_display_id, rationale, rule_violated, rule_source, suggested_fix) -> str` — posts one finding as a platform comment; returns the external comment id. When `file`/`line_start` are `None`, the plugin posts a top-level PR comment.
@@ -27,7 +28,7 @@ Signatures in `app/domain/vcs/types.py`:
 
 ## Registry
 
-`app/domain/vcs/registry.py` — `VCSRegistry` holds the plugin map; the live instance is held in a `ContextVar` (`_registry_var`). A module-level `_default_registry` captures all import-time `bootstrap()` calls — production never calls `bind_vcs_registry()`. Per-test isolation binds a fresh `.copy()` of the session-scoped canonical snapshot via `plugin_registries_isolation` in `app/testing/isolation.py`. `register_vcs_plugin` rejects duplicates. `scoped_vcs_plugin(plugin)` in `app/testing/isolation` is the context manager for ad-hoc per-test swaps — it binds a fresh copy with the plugin replaced and restores the prior binding on exit.
+`app/core/vcs/registry.py` — `VCSRegistry` holds the plugin map; the live instance is held in a `ContextVar` (`_registry_var`). A module-level `_default_registry` captures all import-time `bootstrap()` calls — production never calls `bind_vcs_registry()`. Per-test isolation binds a fresh `.copy()` of the session-scoped canonical snapshot via `plugin_registries_isolation` in `app/testing/isolation.py`. `register_vcs_plugin` rejects duplicates. `scoped_vcs_plugin(plugin)` in `app/testing/isolation` is the context manager for ad-hoc per-test swaps — it binds a fresh copy with the plugin replaced and restores the prior binding on exit.
 
 ## Events
 
@@ -39,4 +40,4 @@ None. Registry is in-memory. PR mirror state is in `domain/tickets` (`pull_reque
 
 ## How it's tested
 
-`app/domain/vcs/test/test_events_discriminator.py` — `VCSEvent` round-trips via `TypeAdapter` for each kind. Plugin behaviour in `app/plugins/<plugin>/test/`.
+`app/core/vcs/test/test_events_discriminator.py` — `VCSEvent` round-trips via `TypeAdapter` for each kind. Plugin behaviour in `app/plugins/<plugin>/test/`.

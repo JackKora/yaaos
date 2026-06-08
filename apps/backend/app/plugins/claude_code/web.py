@@ -74,8 +74,8 @@ async def list_repos() -> dict[str, object]:
     """
     import httpx  # noqa: PLC0415
 
+    from app.core import vcs as vcs_mod  # noqa: PLC0415
     from app.core.auth import org_id_var  # noqa: PLC0415
-    from app.domain import vcs as vcs_mod  # noqa: PLC0415
     from app.plugins.claude_code.repos import list_repos_with_skill  # noqa: PLC0415
     from app.plugins.github import get_plugin as get_github_plugin  # noqa: PLC0415
 

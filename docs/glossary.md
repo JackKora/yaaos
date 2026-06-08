@@ -15,7 +15,7 @@
 | **Finding** | One reviewer comment in the canonical schema: optional `file`/`line`, `category`, `severity` (`blocker / should_fix / nit`), `confidence` (`verified / plausible / speculative`), `rationale`, `rule_violated`, `rule_source`, `suggested_fix`, plus a persisted `finding_display_id` (per-PR monotonic int, rendered as `<category-prefix>-<id>` like `sec-3`). Defined in `domain/reviewer`. The skill (not yaaos) decides what to surface; yaaos validates the schema and posts the result. |
 | **ReportedFinding** | Raw skill output before schema validation — same fields as `Finding` but raw strings (no enum validation). Lives in `domain/coding_agent`. `domain/reviewer.publish_findings` validates and converts to `Finding`. |
 | **Lesson** | Repo-scoped institutional memory: `{title, body, source_pr_url}`, 1000-char body cap. Surfaces in agent prompts. Owned by `domain/lessons`. |
-| **Plugin** | Vendor-specific implementation of a Protocol in `domain/` or `core/`. Three Protocols: `VCSPlugin` (github), `CodingAgentPlugin` (claude_code), `WorkspaceProvider`. Vendor SDKs only in `apps/backend/app/plugins/`. |
+| **Plugin** | Vendor-specific implementation of a Protocol in `core/`. Three Protocols: `VCSPlugin` (`core/vcs`, github), `CodingAgentPlugin` (`domain/coding_agent`, claude_code), `WorkspaceProvider` (`core/workspace`). Vendor SDKs only in `apps/backend/app/plugins/`. |
 | **Verdict** | Terminal review state: `APPROVED / CHANGES_REQUESTED / COMMENT`. Decided by the CLI; returned in `ReviewResult.state`. |
 | **Skip reason** | Why a job didn't run: `fork`, `bot_author`, `trivial_diff`, `too_large`, `secrets_detected`, `ui_cancel`, `superseded`. |
 | **Audit entry** | One append-only row in `audit_log`. Kind: `<entity>.<verb_past>`. Payload: Pydantic model owned by the writing module. |
@@ -29,7 +29,7 @@
 | **Provider** | OAuth identity provider. Plugins implement the `Provider` Protocol; return `ProviderProfile` (`external_subject`, `primary_email`, `email_verified`, `display_name`, `mfa_satisfied`). |
 | **SSO** | SAML 2.0 per-org single sign-on. SP-initiated. Satisfied assertion → `sso_satisfied_for_org_id` on session. Middleware blocks org access when SSO is enabled and session isn't satisfied. |
 | **Break-glass Owner** | SSO `exempt_owner`. Signs in via OAuth + TOTP when SSO is broken. Candidate must have a verified TOTP secret. Each bypass audits `break_glass_exempt_owner`. |
-| **VCS plugin** | Implements `domain/vcs.VCSPlugin`. Ships `github` only. At most one per org; state on `orgs.vcs_plugin_id` + `orgs.vcs_settings`. |
+| **VCS plugin** | Implements `core/vcs.VCSPlugin`. Ships `github` only. At most one per org; state on `orgs.vcs_plugin_id` + `orgs.vcs_settings`. |
 | **Plugin install** | A specific `(org_id, plugin_id)` adoption. Mutations audit (`vcs.installed / vcs.cleared / coding_agent.installed / coding_agent.uninstalled`). |
 | **Verified GitHub username** | `users.github_username`. Denorm written by the OAuth callback on every sign-in. Re-binding is "sign in with GitHub again." Never user-typed. |
 | **Session-timeout override** | Nullable `orgs.session_timeout_override` (minutes). `require()` dep rejects sessions past `last_seen_at + override`. Null falls back to `SESSION_IDLE_TIMEOUT` (12h). |

@@ -11,6 +11,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from app.core.vcs import VCSPullRequest
 from app.core.workflow import CommandContext
 from app.core.workspace import (
     WorkspaceTicketContext,
@@ -20,7 +21,6 @@ from app.domain.reviewer.commands import PostFindings
 from app.domain.reviewer.models import FindingRow
 from app.domain.tickets import create as create_ticket
 from app.domain.tickets import upsert as upsert_pr
-from app.domain.vcs import VCSPullRequest
 
 
 class _StaticContextProvider:

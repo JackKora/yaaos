@@ -29,6 +29,7 @@ from app.core.auth import AuthMiddleware
 from app.core.identity import repository as identity_repo
 from app.core.oauth import ProviderConfig
 from app.core.secrets import encrypt
+from app.core.vcs import VCSPullRequest
 from app.domain.integrations import _REGISTRY, create_credential
 from app.domain.mcp_proxy import (
     consume_broken_creds,
@@ -48,7 +49,6 @@ from app.domain.reviewer import (
 )
 from app.domain.tickets import create as create_ticket
 from app.domain.tickets import upsert as upsert_pr
-from app.domain.vcs import VCSPullRequest
 
 # Every test in this file drives the MCP proxy end-to-end (real Postgres via
 # `db_session`, stub IntegrationProvider in `_REGISTRY`, stub upstream via

@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextvars import ContextVar
 from uuid import UUID
 
-from app.domain.vcs.types import PluginNotFoundError, VCSPlugin
+from app.core.vcs.types import PluginNotFoundError, VCSPlugin
 
 
 class VCSRegistry:

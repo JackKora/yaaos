@@ -11,9 +11,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.vcs import VCSPullRequest
 from app.domain import tickets
 from app.domain.tickets import create as create_ticket
-from app.domain.vcs import VCSPullRequest
 
 
 def _vcs_pr(*, external_id: str, number: int = 1) -> VCSPullRequest:

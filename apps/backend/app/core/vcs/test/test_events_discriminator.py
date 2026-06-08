@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from pydantic import TypeAdapter
 
-from app.domain.vcs import (
+from app.core.vcs import (
     PullRequestClosed,
     PullRequestReadyForReview,
     VCSEvent,

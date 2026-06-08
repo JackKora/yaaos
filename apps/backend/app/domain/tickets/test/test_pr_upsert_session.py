@@ -17,10 +17,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from app.core.vcs import VCSPullRequest
 from app.domain.tickets import create as create_ticket
 from app.domain.tickets import upsert
 from app.domain.tickets.pull_request import PullRequestRow
-from app.domain.vcs import VCSPullRequest
 
 
 def _vcs_pr(*, external_id: str = "acme/repo#42") -> VCSPullRequest:

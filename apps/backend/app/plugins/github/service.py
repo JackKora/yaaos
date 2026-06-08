@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import session as db_session
-from app.domain.vcs import (
+from app.core.vcs import (
     Comment,
     Diff,
     FileSummary,
@@ -73,7 +73,7 @@ def _platform_credentials() -> tuple[str, str, str]:
 
 
 class GitHubPlugin:
-    """Implements domain/vcs.VCSPlugin against GitHub's REST API."""
+    """Implements core/vcs.VCSPlugin against GitHub's REST API."""
 
     plugin_id = "github"
 

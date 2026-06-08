@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from app.core.vcs import Diff
 from app.core.workflow import CommandContext
 from app.core.workspace import (
     WorkspaceTicketContext,
     register_workflow_context_provider,
 )
 from app.domain.reviewer.commands import SecretsScan
-from app.domain.vcs import Diff
 from app.testing.stub_vcs import register_stub_vcs
 
 
