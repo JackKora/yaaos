@@ -48,7 +48,7 @@ def _required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setenv("YAAOS_ENCRYPTION_KEY", "SUPER-SECRET-ENCRYPTION-KEY-DO-NOT-LEAK")
     monkeypatch.setenv("REDIS_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-    monkeypatch.setenv("YAAOS_PUBLIC_HOSTNAME", "app.yaaos.cloud")
+    monkeypatch.setenv("YAAOS_PUBLIC_ORIGIN", "https://app.yaaos.cloud")
     monkeypatch.setenv("YAAOS_GITHUB_OAUTH_CLIENT_SECRET", "SUPER-SECRET-GH-OAUTH-SECRET")
     monkeypatch.setenv("YAAOS_GITHUB_APP_PRIVATE_KEY", "SUPER-SECRET-GH-PRIVATE-KEY")
     monkeypatch.setenv("YAAOS_GITHUB_APP_WEBHOOK_SECRET", "SUPER-SECRET-GH-WEBHOOK-SECRET")
@@ -123,12 +123,12 @@ def test_settings_class_lists_every_known_secret() -> None:
     assert not missing, f"Settings is missing fields this test expects: {sorted(missing)}"
 
 
-def test_settings_fails_fast_when_yaaos_public_hostname_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """YAAOS_PUBLIC_HOSTNAME is required — Settings construction must raise
+def test_settings_fails_fast_when_yaaos_public_origin_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """YAAOS_PUBLIC_ORIGIN is required — Settings construction must raise
     when it is absent, not silently default to an empty string."""
     from pydantic import ValidationError  # noqa: PLC0415
 
-    monkeypatch.delenv("YAAOS_PUBLIC_HOSTNAME", raising=False)
+    monkeypatch.delenv("YAAOS_PUBLIC_ORIGIN", raising=False)
     get_settings.cache_clear()
     with pytest.raises(ValidationError):
         Settings()

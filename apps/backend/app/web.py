@@ -140,4 +140,12 @@ if __name__ == "__main__":
         port=settings.yaaos_port,
         ws_ping_interval=30,
         ws_ping_timeout=10,
+        # Behind Fly's proxy (and Cloudflare): trust X-Forwarded-Proto/-For so
+        # request.url.scheme reflects the original https. Without this, scheme
+        # is the internal http and code that builds absolute URLs from the
+        # request (e.g. the OAuth redirect_uri in core/sessions) emits http://.
+        # Only Fly's proxy can reach the container's internal address, so
+        # trusting all forwarded IPs is the standard, safe setting on Fly.
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
