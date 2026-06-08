@@ -665,6 +665,7 @@ from = ["app.core.workspace"]
 [[interfaces]]
 expose = [
   "ActivityEvent",
+  "ActivityLog",
   "AnswerQuestionContext",
   "AnswerQuestionDto",
   "AnswerQuestionResult",
@@ -693,6 +694,7 @@ expose = [
   "StaleCheckContext",
   "StaleCheckDto",
   "StaleCheckResult",
+  "Usage",
   "ValidationResult",
   "VerifyFixContext",
   "VerifyFixDto",

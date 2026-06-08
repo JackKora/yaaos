@@ -11,12 +11,13 @@ Covers:
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select, text
 
 import app.web  # noqa: F401 — registers all models so FK metadata resolves correctly
-from app.domain.coding_agent.models import CodingAgentRunRow
+from app.domain.coding_agent.models import CodingAgentActivityRow, CodingAgentRunRow
 from app.domain.coding_agent.run_service import (
     create_run,
     finalize_run,
@@ -24,8 +25,13 @@ from app.domain.coding_agent.run_service import (
     get_run_id_for_workflow_step,
 )
 from app.domain.coding_agent.run_sink_impl import CodingAgentRunSinkImpl
+from app.domain.coding_agent.types import ActivityEvent, ActivityLog, Usage
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+
+def datetime_now() -> datetime:
+    return datetime.now(UTC)
 
 
 async def _seed_run(
@@ -92,13 +98,13 @@ async def test_create_run_inserts_running_row(db_session) -> None:
 @pytest.mark.service
 @pytest.mark.asyncio
 async def test_finalize_run_writes_status_exit_code_duration(db_session) -> None:
-    """finalize_run writes status, exit_code, and a non-negative duration_ms."""
+    """finalize_run writes status, exit_code, a non-negative duration_ms, and tokens."""
     org_id = uuid.uuid4()
     run_id, *_ = await _seed_run(db_session, org_id=org_id)
 
     await finalize_run(
         run_id,
-        usage=None,
+        usage=Usage(tokens_in=10, tokens_out=20, duration_ms=500),
         activity=None,
         exit_code=0,
         status="success",
@@ -110,12 +116,68 @@ async def test_finalize_run_writes_status_exit_code_duration(db_session) -> None
     ).scalar_one()
     assert row.status == "success"
     assert row.exit_code == 0
-    assert row.duration_ms is not None
-    assert row.duration_ms >= 0
+    # `usage.duration_ms` takes precedence over wallclock when present.
+    assert row.duration_ms == 500
     assert row.completed_at is not None
-    # Token usage is NULL until usage parsing is wired.
-    assert row.tokens_in is None
-    assert row.tokens_out is None
+    # Token usage written from the supplied `Usage`.
+    assert row.tokens_in == 10
+    assert row.tokens_out == 20
+
+
+@pytest.mark.service
+@pytest.mark.asyncio
+async def test_finalize_run_persists_activity_blob(db_session) -> None:
+    """finalize_run inserts one coding_agent_activity row when `activity` is supplied."""
+    org_id = uuid.uuid4()
+    run_id, *_ = await _seed_run(db_session, org_id=org_id)
+
+    activity = ActivityLog(
+        events=(
+            ActivityEvent(
+                seq=0,
+                ts=datetime_now(),
+                kind="session_start",
+                message="Session started · model opus",
+                detail={"model": "opus"},
+            ),
+            ActivityEvent(
+                seq=1,
+                ts=datetime_now(),
+                kind="result",
+                message="Review complete",
+                detail={"num_turns": 1},
+            ),
+        )
+    )
+
+    await finalize_run(
+        run_id,
+        usage=Usage(tokens_in=100, tokens_out=50, duration_ms=1200),
+        activity=activity,
+        exit_code=0,
+        status="success",
+        session=db_session,
+    )
+
+    rows = (
+        (
+            await db_session.execute(
+                select(CodingAgentActivityRow).where(CodingAgentActivityRow.run_id == run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.org_id == org_id
+    assert isinstance(row.payload, dict)
+    assert "events" in row.payload
+    assert len(row.payload["events"]) == 2
+    assert row.payload["events"][0]["seq"] == 0
+    assert row.payload["events"][0]["kind"] == "session_start"
+    assert row.payload["events"][1]["seq"] == 1
+    assert row.payload["events"][1]["kind"] == "result"
 
 
 @pytest.mark.service
@@ -127,7 +189,7 @@ async def test_finalize_run_failure_status(db_session) -> None:
 
     await finalize_run(
         run_id,
-        usage=None,
+        usage=Usage(),
         activity=None,
         exit_code=1,
         status="failure",

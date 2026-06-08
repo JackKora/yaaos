@@ -1,10 +1,11 @@
 """Types + Protocol for the coding-agent abstraction.
 
 The Protocol exposes five in-process task modes (retained, unused in the
-remote path) plus three remote-dispatch methods: `build_review_invocation`,
-`parse_review_output`, `review_preflight_steps`. Plugins own prompt assembly,
-exec spec construction, and parsing for each mode; consumers hand over domain
-context and receive domain results.
+remote path) plus five remote-dispatch methods: `build_review_invocation`,
+`parse_review_output`, `review_preflight_steps`, `parse_usage`,
+`render_activity`. Plugins own prompt assembly, exec spec construction, and
+parsing for each mode; consumers hand over domain context and receive
+domain results.
 
 `ReportedFinding` is the raw-string output twin for findings returned by
 the agent. It carries no enum constraints (those live in `domain/reviewer`)
@@ -64,8 +65,12 @@ class ActivityEvent(BaseModel):
     Pre-rendered by the plugin so the FE doesn't have to interpret raw
     Claude Code stream-json shapes — `message` is the user-facing string
     shown in the UI; `detail` is the raw event data for the expanded view.
+
+    `seq` is the monotonic 0-based index inside the run's `ActivityLog`,
+    assigned by `render_activity` after filtering null renders.
     """
 
+    seq: int = 0
     ts: datetime
     kind: str
     message: str
@@ -73,6 +78,33 @@ class ActivityEvent(BaseModel):
 
 
 OnActivity = Callable[[ActivityEvent], Awaitable[None]]
+
+
+class Usage(BaseModel):
+    """Per-run token usage + wallclock duration.
+
+    Parsed from the terminal `type=result` stream-json event by
+    `CodingAgentPlugin.parse_usage`. Persisted onto `coding_agent_runs`
+    by `finalize_run`. Fields default to None when the agent didn't report
+    them (e.g. a non-conforming or truncated terminal event).
+    """
+
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    duration_ms: int | None = None
+
+
+class ActivityLog(BaseModel):
+    """Pre-rendered activity stream for one coding-agent run.
+
+    Produced once per run from the terminal stdout by
+    `CodingAgentPlugin.render_activity` — the same event sequence the
+    in-process path streams via `OnActivity`, captured durably for the
+    Activity tab. Persisted as a JSONB blob in the partitioned
+    `coding_agent_activity` table.
+    """
+
+    events: tuple[ActivityEvent, ...] = ()
 
 
 class FindingAnchor(BaseModel):
@@ -340,7 +372,7 @@ class CodingAgentPlugin(Protocol):
     async def health_check(self) -> HealthStatus: ...
 
     # ── Remote-dispatch methods (Shape B) ────────────────────────────────
-    # These three replace the in-process run-methods for the remote model.
+    # These five replace the in-process run-methods for the remote model.
     # The in-process run-methods above are retained for future re-introduction.
 
     async def build_review_invocation(
@@ -364,6 +396,25 @@ class CodingAgentPlugin(Protocol):
         Finds the terminal `type=result` event, extracts the `result` field,
         and lenient-parses the JSON. Raises `ValueError` on any parse failure
         or structurally non-conforming output so `PostFindings` can gate on it.
+        """
+        ...
+
+    def parse_usage(self, stdout: str) -> Usage:
+        """Parse token usage + duration from the terminal stream-json event.
+
+        Reads the last `type=result` event's `usage.input_tokens` /
+        `usage.output_tokens` + `duration_ms`. Missing fields surface as
+        `None`. A stream with no terminal `result` event returns an empty
+        `Usage()` — never raises.
+        """
+        ...
+
+    def render_activity(self, stdout: str) -> ActivityLog:
+        """Pre-render the full activity stream from terminal stdout.
+
+        Walks every parseable stream-json event, converts each to an
+        `ActivityEvent`, drops null renders, and assigns monotonic
+        `seq`. Returns an empty `ActivityLog` on no parseable events.
         """
         ...
 

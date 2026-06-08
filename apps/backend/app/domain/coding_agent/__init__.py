@@ -50,6 +50,7 @@ from app.domain.coding_agent.service import (
 )
 from app.domain.coding_agent.types import (
     ActivityEvent,
+    ActivityLog,
     AnswerQuestionContext,
     AnswerQuestionResult,
     CodingAgentCacheMiss,
@@ -72,6 +73,7 @@ from app.domain.coding_agent.types import (
     Severity,
     StaleCheckContext,
     StaleCheckResult,
+    Usage,
     ValidationResult,
     VerifyFixContext,
     VerifyFixResult,
@@ -81,6 +83,7 @@ _register_run_sink(CodingAgentRunSinkImpl())
 
 __all__ = [
     "ActivityEvent",
+    "ActivityLog",
     "AnswerQuestionContext",
     "AnswerQuestionDto",
     "AnswerQuestionResult",
@@ -109,6 +112,7 @@ __all__ = [
     "StaleCheckContext",
     "StaleCheckDto",
     "StaleCheckResult",
+    "Usage",
     "ValidationResult",
     "VerifyFixContext",
     "VerifyFixDto",

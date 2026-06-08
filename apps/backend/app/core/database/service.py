@@ -184,6 +184,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("048_add_skill_name_to_claude_code_repos", "add_skill_name_to_claude_code_repos"),
     ("049_create_coding_agent_runs", "create_coding_agent_runs"),
     ("050_reviews_run_id", "reviews_run_id"),
+    ("051_create_coding_agent_activity", "create_coding_agent_activity"),
 )
 
 
@@ -1402,6 +1403,68 @@ async def _apply_reviews_run_id(conn) -> None:  # type: ignore[no-untyped-def]
     )
 
 
+async def _apply_create_coding_agent_activity(conn) -> None:  # type: ignore[no-untyped-def]
+    """Create the codebase's first partitioned table — `coding_agent_activity`.
+
+    Layout: `PARTITION BY RANGE (created_at)` (weekly partitions, 4-week TTL).
+    PK is `(run_id, created_at)` because Postgres requires the partition key
+    in every unique constraint. Owned by `domain/coding_agent`; one row per
+    `coding_agent_runs` row, holding a pre-rendered `ActivityLog` JSONB blob.
+
+    This migration creates the parent table + ~2 weeks of `PARTITION OF`
+    children covering (current week - 1) → (current week + 1). There is no
+    automatic partition create-ahead/drop maintenance yet; this fixed window
+    seeds the table. Each child partition is named `coding_agent_activity_pYYYYWW`
+    using ISO week numbering — UTC-anchored. The loop runs idempotent
+    `IF NOT EXISTS` so re-running this migration is safe.
+    """
+    # Parent table — partitioned by RANGE on created_at.
+    await conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS coding_agent_activity ("
+            "  run_id UUID NOT NULL,"
+            "  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
+            "  org_id UUID NOT NULL,"
+            "  payload JSONB NOT NULL,"
+            "  CONSTRAINT coding_agent_activity_pkey PRIMARY KEY (run_id, created_at),"
+            "  CONSTRAINT coding_agent_activity_run_id_fkey"
+            "    FOREIGN KEY (run_id) REFERENCES coding_agent_runs(id) ON DELETE CASCADE"
+            ") PARTITION BY RANGE (created_at)"
+        )
+    )
+
+    # Child partitions: one per ISO week from (now - 1 week) through (now + 1 week),
+    # inclusive — three weekly partitions for the initial ~2-week window. Bounds
+    # are week-start (Monday UTC 00:00:00) to next-week-start (exclusive upper
+    # bound). Names use ISO week (YYYYWW) for deterministic ordering. Idempotent
+    # via IF NOT EXISTS.
+    from datetime import UTC, datetime, timedelta  # noqa: PLC0415
+
+    now = datetime.now(UTC)
+    # Floor to UTC Monday 00:00:00 of the current ISO week.
+    today_midnight = datetime(now.year, now.month, now.day, tzinfo=UTC)
+    week_start = today_midnight - timedelta(days=today_midnight.weekday())
+
+    for offset in (-1, 0, 1):
+        lower = week_start + timedelta(weeks=offset)
+        upper = lower + timedelta(weeks=1)
+        iso_year, iso_week, _ = lower.isocalendar()
+        partition_name = f"coding_agent_activity_p{iso_year:04d}{iso_week:02d}"
+        lower_lit = lower.strftime("%Y-%m-%d %H:%M:%S+00")
+        upper_lit = upper.strftime("%Y-%m-%d %H:%M:%S+00")
+        # Bounds and the partition name are derived from server-side `datetime.now`
+        # and a fixed ISO-week format — no request data ever reaches this branch,
+        # so f-string interpolation is injection-free. Same reasoning as the
+        # `truncate_all_tables` site below.
+        await conn.execute(
+            text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+                f"CREATE TABLE IF NOT EXISTS {partition_name} "
+                f"PARTITION OF coding_agent_activity "
+                f"FOR VALUES FROM ('{lower_lit}') TO ('{upper_lit}')"
+            )
+        )
+
+
 async def _apply_shed_workspace_columns(conn) -> None:  # type: ignore[no-untyped-def]
     """Remove vestigial columns from `workspaces` and tighten `owning_agent_id`.
 
@@ -1563,6 +1626,8 @@ async def _apply_pending() -> None:
                 await _apply_create_coding_agent_runs(conn)
             elif kind == "reviews_run_id":
                 await _apply_reviews_run_id(conn)
+            elif kind == "create_coding_agent_activity":
+                await _apply_create_coding_agent_activity(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

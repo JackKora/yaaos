@@ -29,6 +29,7 @@ from app.core.plugin_kit import PluginMeta
 from app.core.workspace import Workspace, WorkspaceExecError
 from app.domain.coding_agent import (
     ActivityEvent,
+    ActivityLog,
     AnswerQuestionContext,
     AnswerQuestionResult,
     CodingAgentError,
@@ -45,6 +46,7 @@ from app.domain.coding_agent import (
     ReviewResult,
     StaleCheckContext,
     StaleCheckResult,
+    Usage,
     ValidationResult,
     VerifyFixContext,
     VerifyFixResult,
@@ -956,6 +958,54 @@ class ClaudeCodePlugin:
         """
         del ctx, session
         return ()
+
+    def parse_usage(self, stdout: str) -> Usage:
+        """Extract token usage + duration from the terminal `type=result` event.
+
+        Reads the last `type=result` event and pulls `usage.input_tokens`,
+        `usage.output_tokens`, and `duration_ms`. Missing fields surface
+        as `None`. A stream with no terminal `result` event returns an
+        empty `Usage()` — never raises so callers can finalize a run row
+        even when the agent crashed mid-stream.
+        """
+        events = _parse_stream_events(stdout)
+        result_event = next((e for e in reversed(events) if e.get("type") == "result"), None)
+        if result_event is None:
+            return Usage()
+        usage_blob = result_event.get("usage") or {}
+        tokens_in: int | None = None
+        tokens_out: int | None = None
+        if isinstance(usage_blob, dict):
+            raw_in = usage_blob.get("input_tokens")
+            raw_out = usage_blob.get("output_tokens")
+            if isinstance(raw_in, int):
+                tokens_in = raw_in
+            if isinstance(raw_out, int):
+                tokens_out = raw_out
+        duration_raw = result_event.get("duration_ms")
+        duration_ms: int | None = duration_raw if isinstance(duration_raw, int) else None
+        return Usage(tokens_in=tokens_in, tokens_out=tokens_out, duration_ms=duration_ms)
+
+    def render_activity(self, stdout: str) -> ActivityLog:
+        """Pre-render the full activity stream from terminal stdout.
+
+        Walks every parseable stream-json event, drops null renders (events
+        with no useful UI representation), and assigns monotonic `seq`
+        starting from 0. Returns an empty `ActivityLog` for stdout with
+        no parseable events.
+        """
+        events = _parse_stream_events(stdout)
+        rendered: list[ActivityEvent] = []
+        seq = 0
+        for raw_event in events:
+            ev = _render_activity(raw_event)
+            if ev is None:
+                continue
+            # `_render_activity` returns a new ActivityEvent with `seq=0`
+            # (the default); stamp the monotonic index here.
+            rendered.append(ev.model_copy(update={"seq": seq}))
+            seq += 1
+        return ActivityLog(events=tuple(rendered))
 
     async def validate_config(self, agent_config: dict[str, Any]) -> ValidationResult:
         errors: list[str] = []

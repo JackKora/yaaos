@@ -25,6 +25,8 @@
 
 **`truncate_all_tables`** — uses `DELETE FROM` (not `TRUNCATE`) to avoid blocking SSE/WS/background `AccessShare` readers. Sets `lock_timeout=2s`. UUID PKs mean no sequence reset needed. Raises `RuntimeError` in `prod`. Only used by the test-reset path; never call elsewhere.
 
+**Partitioned tables — DDL lives here.** Postgres-native `PARTITION BY RANGE` tables are created exclusively in `core/database` migrations (e.g. `_apply_create_coding_agent_activity` for `coding_agent_activity`). Reason: partition DDL needs raw `text(...)` SQL with interpolated partition names + range bounds; `bin/check_table_access` allowlists only `core/database/**` for cross-table raw SQL. Owning domain modules declare their mapped class on a dedicated `DeclarativeBase` with its own `MetaData()` so `Base.metadata.create_all` skips the parent (otherwise SQLAlchemy creates an unpartitioned table that conflicts with the migration). Every `CREATE TABLE` inside such a migration uses `IF NOT EXISTS` so re-running after partial application is safe. `coding_agent_activity` is the codebase's first partitioned table; the rolling create-ahead + drop maintenance loop is a follow-up.
+
 ## Gotchas
 
 - `expire_on_commit=False` on all sessions — attributes stay accessible after commit without an extra round-trip.

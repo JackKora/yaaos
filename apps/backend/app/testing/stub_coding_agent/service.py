@@ -21,6 +21,7 @@ import structlog
 from app.core.workspace import Workspace
 from app.domain.coding_agent import (
     ActivityEvent,
+    ActivityLog,
     AnswerQuestionContext,
     AnswerQuestionResult,
     HealthStatus,
@@ -34,6 +35,7 @@ from app.domain.coding_agent import (
     ReviewResult,
     StaleCheckContext,
     StaleCheckResult,
+    Usage,
     ValidationResult,
     VerifyFixContext,
     VerifyFixResult,
@@ -218,6 +220,29 @@ class StubCodingAgentPlugin:
         if hasattr(self._wrapped, "parse_review_output"):
             return self._wrapped.parse_review_output(stdout)
         return []
+
+    def parse_usage(self, stdout: str) -> Usage:
+        """Delegate to the wrapped plugin's `parse_usage` when present; otherwise
+        return a stub `Usage` matching `_STUB_TELEMETRY` so finalize_run still
+        writes deterministic token counts in offline tests.
+        """
+        if hasattr(self._wrapped, "parse_usage"):
+            return self._wrapped.parse_usage(stdout)
+        return Usage(
+            tokens_in=_STUB_TELEMETRY.tokens_in,
+            tokens_out=_STUB_TELEMETRY.tokens_out,
+            duration_ms=_STUB_TELEMETRY.latency_ms,
+        )
+
+    def render_activity(self, stdout: str) -> ActivityLog:
+        """Delegate to the wrapped plugin's `render_activity` when present;
+        otherwise emit the canned-activity sequence with monotonic `seq` so
+        finalize_run persists a non-empty blob in offline tests.
+        """
+        if hasattr(self._wrapped, "render_activity"):
+            return self._wrapped.render_activity(stdout)
+        events = tuple(ev.model_copy(update={"seq": i}) for i, ev in enumerate(_canned_activity()))
+        return ActivityLog(events=events)
 
     async def review_preflight_steps(self, ctx: ReviewContext, *, session: Any) -> tuple[str, ...]:
         del ctx, session

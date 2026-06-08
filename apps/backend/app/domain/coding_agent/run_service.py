@@ -1,12 +1,13 @@
 """Run lifecycle service for coding-agent executions.
 
-Manages `coding_agent_runs` rows:
+Manages `coding_agent_runs` rows + `coding_agent_activity` blobs:
 - `create_run` — called from the CodeReview dispatch command (same
   transaction, status=running). Only `InvokeClaudeCode` commands get a
   run row.
 - `finalize_run` — called by the coding-agent run sink on the terminal
-  AgentEvent. Writes status/exit_code/duration_ms; tokens_in/out are
-  NULL until usage-parsing is wired.
+  AgentEvent. Writes status, exit_code, tokens_in/out, duration_ms onto
+  the run row, and inserts the pre-rendered `ActivityLog` JSONB blob
+  into the partitioned `coding_agent_activity` table.
 """
 
 from __future__ import annotations
@@ -18,7 +19,8 @@ import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.coding_agent.models import CodingAgentRunRow
+from app.domain.coding_agent.models import CodingAgentActivityRow, CodingAgentRunRow
+from app.domain.coding_agent.types import ActivityLog, Usage
 
 log = structlog.get_logger("domain.coding_agent.run_service")
 
@@ -71,36 +73,46 @@ async def create_run(
 async def finalize_run(
     run_id: UUID,
     *,
-    usage: object,  # Usage | None
-    activity: object,  # ActivityLog | None
+    usage: Usage,
+    activity: ActivityLog | None,
     exit_code: int | None,
     status: str,
     session: AsyncSession,
 ) -> None:
-    """Write terminal fields onto an existing run row.
+    """Write terminal fields onto an existing run row + persist the activity blob.
 
     Called by the coding-agent run sink on an `InvokeClaudeCode` terminal
-    AgentEvent. Writes `status`, `exit_code`, and `duration_ms` (derived
-    from `started_at` → now). `tokens_in`/`tokens_out` remain NULL.
-
-    The `usage` and `activity` parameters are reserved for future use;
-    callers pass `None` and the values are ignored.
+    AgentEvent. Writes `status`, `exit_code`, `tokens_in`, `tokens_out`,
+    and `duration_ms` (preferring `usage.duration_ms` when the agent
+    reported it; falling back to the wallclock delta from `started_at`
+    → now). When `activity` is non-None, inserts one row into the
+    partitioned `coding_agent_activity` table with the JSON-serialised
+    `ActivityLog`. The run-row's `org_id` is read to tenant-stamp the
+    activity row.
 
     Required `session`; caller commits.
     """
-    del usage, activity  # reserved for future use; not consumed today
-
     now = datetime.now(UTC)
 
-    # Read started_at to compute duration.
+    # Read started_at + org_id together; we need both.
     row = (
-        await session.execute(select(CodingAgentRunRow.started_at).where(CodingAgentRunRow.id == run_id))
+        await session.execute(
+            select(CodingAgentRunRow.started_at, CodingAgentRunRow.org_id).where(
+                CodingAgentRunRow.id == run_id
+            )
+        )
     ).one_or_none()
 
     duration_ms: int | None = None
+    org_id: UUID | None = None
     if row is not None:
-        elapsed = now - row[0].replace(tzinfo=UTC) if row[0].tzinfo is None else now - row[0]
+        started_at, org_id = row[0], row[1]
+        elapsed = now - started_at.replace(tzinfo=UTC) if started_at.tzinfo is None else now - started_at
         duration_ms = max(0, int(elapsed.total_seconds() * 1000))
+
+    # Prefer the agent-reported duration when present; fall back to wallclock.
+    if usage.duration_ms is not None:
+        duration_ms = usage.duration_ms
 
     await session.execute(
         update(CodingAgentRunRow)
@@ -108,17 +120,33 @@ async def finalize_run(
         .values(
             status=status,
             exit_code=exit_code,
+            tokens_in=usage.tokens_in,
+            tokens_out=usage.tokens_out,
             duration_ms=duration_ms,
             completed_at=now,
-            # tokens_in / tokens_out remain NULL until usage parsing is wired
         )
     )
+
+    if activity is not None and org_id is not None:
+        # Persist the pre-rendered activity blob into the partitioned table.
+        # `created_at` is left to the server default — the partition key picks
+        # the active weekly partition automatically.
+        activity_row = CodingAgentActivityRow(
+            run_id=run_id,
+            org_id=org_id,
+            payload=activity.model_dump(mode="json"),
+        )
+        session.add(activity_row)
+
     log.info(
         "coding_agent.run.finalized",
         run_id=str(run_id),
         status=status,
         exit_code=exit_code,
         duration_ms=duration_ms,
+        tokens_in=usage.tokens_in,
+        tokens_out=usage.tokens_out,
+        activity_events=len(activity.events) if activity is not None else 0,
     )
 
 
