@@ -7,8 +7,12 @@
 - `CodingAgentActivityRow` (`coding_agent_activity`) — pre-rendered
   `ActivityLog` JSONB blob, one row per run, persisted by `finalize_run`.
   The underlying table is `PARTITION BY RANGE (created_at)` (weekly,
-  4-week TTL); the partitioning DDL lives in `core/database`. The ORM
-  class describes the row shape only — it does not manage partitions.
+  4-week TTL). The mapped class lives on the shared `Base` and declares
+  `postgresql_partition_by` so `Base.metadata.create_all` emits the
+  partitioned parent (the drift sentinel against the migration). Child
+  partitions are not managed by the ORM — they come from the
+  `after_create` listener in `core/database` (create_all path) and the
+  daily maintenance task (`migrate()` / prod path).
 """
 
 from __future__ import annotations
@@ -16,22 +20,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, MetaData, PrimaryKeyConstraint, String, func, text
+from sqlalchemy import DateTime, Index, Integer, PrimaryKeyConstraint, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-
-
-# `coding_agent_activity` is the codebase's first partitioned table — its DDL
-# (PARTITION BY RANGE + per-week PARTITION OF) lives in `core/database` and
-# cannot go through `Base.metadata.create_all`, which would CREATE TABLE
-# without partitioning and then conflict with the partitioned migration.
-# Declaring the row on a separate `MetaData` keeps it out of `create_all`
-# while still allowing ORM `session.add(...)` inserts.
-class _PartitionedBase(DeclarativeBase):
-    metadata = MetaData()
 
 
 class CodingAgentRunRow(Base):
@@ -59,6 +53,8 @@ class CodingAgentRunRow(Base):
     agent_command_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     # Reporting dimension — e.g. "review".
     command_kind: Mapped[str] = mapped_column(String, nullable=False)
+    # The coding-agent plugin that issued this run.
+    plugin_id: Mapped[str] = mapped_column(String, nullable=False)
     # Requested model/effort; nullable — not all invocations carry these.
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     effort: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -87,15 +83,19 @@ class CodingAgentRunRow(Base):
     )
 
 
-class CodingAgentActivityRow(_PartitionedBase):
+class CodingAgentActivityRow(Base):
     """Pre-rendered activity blob for one coding-agent run.
 
     The underlying `coding_agent_activity` table is `PARTITION BY RANGE
-    (created_at)` (weekly partitions, dropped after 4 weeks); partitioned
-    DDL lives in `core/database`. `payload` is the JSON-serialised
-    `ActivityLog` value object. PK `(run_id, created_at)` — `created_at`
-    must participate in the PK because Postgres requires the partition
-    key in every unique constraint.
+    (created_at)` (weekly partitions, dropped after 4 weeks). The class
+    lives on the shared `Base` and declares `postgresql_partition_by` so
+    `Base.metadata.create_all` emits the partitioned parent — keeping the
+    ORM column shape and the migration DDL from drifting silently. Child
+    partitions are seeded by the `after_create` listener in `core/database`
+    (create_all path) and rolled forward by the daily maintenance task.
+    `payload` is the JSON-serialised `ActivityLog` value object. PK
+    `(run_id, created_at)` — `created_at` must participate in the PK
+    because Postgres requires the partition key in every unique constraint.
 
     Row count: one per run. The Activity tab tolerates a missing row
     ("activity expired") so old runs whose partition has been dropped
@@ -111,4 +111,7 @@ class CodingAgentActivityRow(_PartitionedBase):
     org_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)  # type: ignore[type-arg]
 
-    __table_args__ = (PrimaryKeyConstraint("run_id", "created_at", name="coding_agent_activity_pkey"),)
+    __table_args__ = (
+        PrimaryKeyConstraint("run_id", "created_at", name="coding_agent_activity_pkey"),
+        {"postgresql_partition_by": "RANGE (created_at)"},
+    )

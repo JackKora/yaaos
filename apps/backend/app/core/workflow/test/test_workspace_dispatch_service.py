@@ -30,6 +30,8 @@ from app.core.agent_gateway import (
     enqueue_command,
     record_agent_event,
 )
+from app.core.audit_log import ActorKind
+from app.core.auth import org_context
 from app.core.tasks import drain_once, get_pending_task_names
 from app.core.workflow import (
     CommandCategory,
@@ -179,7 +181,10 @@ async def test_workspace_dispatch_parks_on_returned_command_id_and_resumes(
             reported_at=datetime.now(UTC),
             traceparent="",
         )
-        await record_agent_event(terminal_event, session=db_session)
+        # The ownership guard in `record_agent_event` asserts the command row's
+        # org matches the active org context, so run inside `org_context`.
+        async with org_context(org_id, ActorKind.WORKSPACE, actor_id=None):
+            await record_agent_event(terminal_event, session=db_session)
         await db_session.commit()
 
         # Drain handle_agent_event + route_workflow + start_step for terminal +

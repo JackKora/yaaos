@@ -34,6 +34,11 @@ class _CommandBase(BaseModel):
     command_id: UUID
     workspace_id: UUID
     traceparent: str
+    # Per-command completion capability token, minted at claim and echoed back on
+    # the terminal/progress AgentEvent. Plain `str` (not SecretStr): it must
+    # serialize its real value to the agent over the wire — same rationale as
+    # `AuthBlock.token`. NEVER log this field.
+    completion_token: str | None = None
 
 
 # ── The five concrete AgentCommand kinds ────────────────────────────────
@@ -168,6 +173,10 @@ class AgentEvent(BaseModel):
     attempt: int = 0
     reported_at: datetime
     traceparent: str
+    # Echoed back from the command's `completion_token`. Verified (constant-time)
+    # against `agent_commands.completion_token_hash` before any side effect.
+    # NEVER log this field.
+    completion_token: str | None = None
 
     def is_terminal(self) -> bool:
         return self.kind in TERMINAL_EVENT_KINDS

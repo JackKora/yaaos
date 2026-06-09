@@ -36,8 +36,8 @@ from app.core.coding_agent.types import (
     VerifyFixContext,
 )
 
-# `lessons` in IncrementalReviewContext carries `domain/lessons.Lesson` objects
-# at runtime (duck-typed as `Any`). Access only `.id`, `.title`, `.body` here.
+# `lessons` in IncrementalReviewContext satisfies `LessonRef` (id/title/body) —
+# see types.py. `domain/lessons.Lesson` is the runtime implementer.
 
 
 # ── Prompt-template loader ───────────────────────────────────────────────

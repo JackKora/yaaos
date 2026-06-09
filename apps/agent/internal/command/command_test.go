@@ -211,6 +211,26 @@ func TestDecodeRoundTrip(t *testing.T) {
 			t.Fatal("Decode: expected error for max_workspaces=0, got nil")
 		}
 	})
+
+	t.Run("completion_token survives decode", func(t *testing.T) {
+		raw := mustMarshal(t, map[string]any{
+			"command_id":       "cmd-tok",
+			"workspace_id":     "ws-tok",
+			"traceparent":      "tp-tok",
+			"completion_token": "tok-123",
+			"kind":             "WriteFiles",
+			"files": []map[string]any{
+				{"path": "a.txt", "content": "hello"},
+			},
+		})
+		cmd, err := command.Decode(raw)
+		if err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		if got := cmd.Header().CompletionToken; got != "tok-123" {
+			t.Errorf("completion_token: want tok-123 got %q", got)
+		}
+	})
 }
 
 // TestDecode_ConfigUpdate_Validation is a table-driven test for the full

@@ -127,7 +127,7 @@ depends_on = ["app.core.audit_log", "app.core.auth", "app.core.coding_agent", "a
 
 [[modules]]
 path = "app.plugins.claude_code"
-depends_on = ["app.core.agent_gateway", "app.core.auth", "app.core.byok", "app.core.coding_agent", "app.core.config", "app.core.database", "app.core.sessions", "app.core.vcs", "app.core.webserver", "app.core.workspace", "app.domain.orgs", "app.domain.tickets", "app.plugins.github"]
+depends_on = ["app.core.agent_gateway", "app.core.auth", "app.core.byok", "app.core.coding_agent", "app.core.config", "app.core.database", "app.core.sessions", "app.core.vcs", "app.core.webserver", "app.core.workspace", "app.domain.orgs", "app.domain.tickets"]
 
 [[modules]]
 path = "app.plugins.github"
@@ -632,6 +632,7 @@ expose = [
   "get_installation_token",
   "get_plugin",
   "is_registered",
+  "list_installation_repos",
   "register_vcs_plugin",
   "registered_plugin_ids",
 ]

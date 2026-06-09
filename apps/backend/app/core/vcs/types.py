@@ -251,3 +251,13 @@ class VCSPlugin(Protocol):
         future orchestration uses it just before each git push/fetch.
         """
         ...
+
+    async def list_installation_repos(self, org_id: UUID) -> list[str]:
+        """Live list of repo full-names / external ids the org's install can see.
+
+        The plugin resolves its own installation credentials and queries the
+        provider — sibling plugins read repo enumeration through this method
+        (via the `core/vcs` registry), never by importing the VCS plugin.
+        Returns an empty list when the install is absent or the call fails.
+        """
+        ...

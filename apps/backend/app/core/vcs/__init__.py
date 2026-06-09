@@ -7,6 +7,7 @@ from app.core.vcs.registry import (
     get_installation_token,
     get_plugin,
     is_registered,
+    list_installation_repos,
     register_vcs_plugin,
     registered_plugin_ids,
 )
@@ -64,6 +65,7 @@ __all__ = [
     "get_installation_token",
     "get_plugin",
     "is_registered",
+    "list_installation_repos",
     "register_vcs_plugin",
     "registered_plugin_ids",
 ]

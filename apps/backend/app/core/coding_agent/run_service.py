@@ -12,6 +12,7 @@ Manages `coding_agent_runs` rows + `coding_agent_activity` blobs:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -32,6 +33,7 @@ async def create_run(
     step_id: str,
     agent_command_id: UUID,
     command_kind: str,
+    plugin_id: str,
     model: str | None = None,
     effort: str | None = None,
     session: AsyncSession,
@@ -53,6 +55,7 @@ async def create_run(
         step_id=step_id,
         agent_command_id=agent_command_id,
         command_kind=command_kind,
+        plugin_id=plugin_id,
         model=model,
         effort=effort,
         status="running",
@@ -168,6 +171,39 @@ async def get_run_id_for_command(
     if row is None:
         return None
     return row[0]
+
+
+@dataclass(frozen=True)
+class RunRef:
+    """The run id + the coding-agent plugin that issued it.
+
+    The run-sink resolves the plugin from `plugin_id` rather than a constant
+    so `core/coding_agent` never hardcodes a vendor.
+    """
+
+    run_id: UUID
+    plugin_id: str
+
+
+async def get_run_ref_for_command(
+    agent_command_id: UUID,
+    *,
+    session: AsyncSession,
+) -> RunRef | None:
+    """Return the `(run_id, plugin_id)` for an `agent_command_id`, or None.
+
+    Used by the run-sink to resolve which plugin parses the terminal event.
+    """
+    row = (
+        await session.execute(
+            select(CodingAgentRunRow.id, CodingAgentRunRow.plugin_id).where(
+                CodingAgentRunRow.agent_command_id == agent_command_id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return RunRef(run_id=row[0], plugin_id=row[1])
 
 
 async def get_run_id_for_workflow_step(

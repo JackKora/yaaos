@@ -154,6 +154,7 @@ class CodeReview:
             step_id=ctx.step_id,
             agent_command_id=command_id,
             command_kind=invocation.kind,
+            plugin_id=plugin.plugin_id,
             session=session,
         )
         log.info(

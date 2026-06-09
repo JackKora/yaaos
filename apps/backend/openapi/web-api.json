@@ -26,6 +26,17 @@
             "title": "Command Id",
             "type": "string"
           },
+          "completion_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Token"
+          },
           "failure_reason": {
             "anyOf": [
               {

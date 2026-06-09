@@ -400,6 +400,14 @@ components:
         traceparent:
           type: string
           description: W3C trace context the agent restores when emitting child spans.
+        completion_token:
+          type: string
+          nullable: true
+          description: |
+            Per-command completion capability token minted by the control plane
+            at claim. The agent echoes it back on the terminal/progress AgentEvent;
+            the backend verifies it (constant-time) before any side effect.
+            Treated as a secret — never logged in cleartext.
 
     ProvisionWorkspaceCommand:
       allOf:
@@ -651,6 +659,13 @@ components:
           format: date-time
         traceparent:
           type: string
+        completion_token:
+          type: string
+          nullable: true
+          description: |
+            Echoed back from the command's `completion_token`. Verified
+            (constant-time) against the stored per-command hash before any side
+            effect. Treated as a secret — never logged in cleartext.
 
     WorkspaceEvent:
       type: object

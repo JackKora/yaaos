@@ -32,6 +32,10 @@ type CommandHeader struct {
 	WorkspaceID string      `json:"workspace_id"`
 	Traceparent string      `json:"traceparent"`
 	Kind        CommandKind `json:"kind"`
+	// CompletionToken is a one-time backend-minted capability the agent
+	// echoes on every AgentEvent it posts for this command. The backend
+	// verifies it by hash before accepting the event.
+	CompletionToken string `json:"completion_token,omitempty"`
 }
 
 // RepoRef matches the spec's nested `repo` object on ProvisionWorkspace.
@@ -116,6 +120,9 @@ type AgentEvent struct {
 	Attempt       int            `json:"attempt,omitempty"`
 	ReportedAt    time.Time      `json:"reported_at"`
 	Traceparent   string         `json:"traceparent"`
+	// CompletionToken echoes the originating command's CompletionToken so the
+	// backend can authorize this event by hash.
+	CompletionToken string `json:"completion_token,omitempty"`
 }
 
 // ── Identity / heartbeat / claim ───────────────────────────────────────

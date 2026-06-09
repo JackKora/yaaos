@@ -162,6 +162,35 @@ class GitHubPlugin:
         """
         return await self._installation_token(org_id)
 
+    async def list_installation_repos(self, org_id: UUID) -> list[str]:
+        """Live repo full-names the org's GitHub App install can see.
+
+        Resolves an installation token internally and queries
+        `/installation/repositories`. GitHub's install picker is the
+        authority — no yaaos-side allowlist. Returns an empty list when the
+        install is absent or the call fails.
+        """
+        try:
+            token = await self._installation_token(org_id)
+        except Exception:
+            return []
+        try:
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=15) as client:
+                resp = await client.get(
+                    "/installation/repositories",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    params={"per_page": 100},
+                )
+        except httpx.HTTPError:
+            return []
+        if resp.status_code != 200:
+            return []
+        return [r["full_name"] for r in resp.json().get("repositories", [])]
+
     async def _api_headers(self, org_id: UUID) -> dict[str, str]:
         token = await self._installation_token(org_id)
         return {

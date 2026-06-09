@@ -17,6 +17,9 @@ the row to `done`.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
@@ -356,13 +359,22 @@ async def claim_next(
         if row is None:
             return None
 
-    # Stamp agent_id + claimed_at on the single selected row.
+    # Stamp agent_id + claimed_at on the single selected row, and mint the
+    # per-command completion capability token. We persist only the sha256 hash;
+    # the raw token is returned to the claiming agent exactly once (injected into
+    # the command DTO below) and never stored — bearer-token discipline applied
+    # to `agent_commands`.
+    raw = secrets.token_urlsafe(32)
     row.agent_id = agent_id
     row.status = "claimed"
     row.claimed_at = now
+    row.completion_token_hash = hashlib.sha256(raw.encode()).hexdigest()
     await session.flush()
 
-    return _row_to_command(row)
+    # Inject the raw token into the returned DTO without re-persisting it to
+    # `row.payload`. `_CommandBase` is frozen, so `model_copy(update=...)` returns
+    # a new typed instance of the concrete subtype carrying the token on the wire.
+    return _row_to_command(row).model_copy(update={"completion_token": raw})
 
 
 async def acknowledge_command_received(
@@ -562,10 +574,22 @@ async def record_agent_event(
     can therefore report a terminal event for a workspace that has been torn
     down (`failure-report-precedes-disposal`), and the workflow still resumes.
 
-    `agent_id` — the `workspace_agents.id` of the reporting bearer — is used
-    to create the lean workspace row when a `ProvisionWorkspace` command
-    completes successfully (the Go agent never sends workspace events, so the
-    row is materialised here on the terminal `completed_success` event instead).
+    Enforces a per-command completion-capability-token check before any side
+    effect: the token minted at `claim_next` is stored as
+    `agent_commands.completion_token_hash` (sha256; raw never persisted) and
+    echoed back on the event's `completion_token`. The presented token is
+    re-hashed and compared constant-time against the stored hash; a mismatch
+    raises `StaleClaimError` (mapped to 410). Authorization binds to the COMMAND,
+    not to the worker's mutable `(org_id, agent_id)` — so an agent whose identity
+    legitimately rotated on re-auth still completes its in-flight command. When
+    `completion_token_hash` is NULL (command never went through `claim_next`,
+    e.g. test-seeded rows) verification is skipped.
+
+    `agent_id` — the `workspace_agents.id` of the reporting bearer — is passed
+    to the sink's `materialise_provision_success` when a `ProvisionWorkspace`
+    command completes successfully (the Go agent never sends workspace events,
+    so the lean row is materialised by the sink instead). The gateway no longer
+    synthesizes a WorkspaceEvent on this path.
 
     Required `session`; caller commits.
     """
@@ -573,7 +597,10 @@ async def record_agent_event(
     from app.core.agent_gateway.types import AgentEventKind  # noqa: PLC0415
 
     # Handle `received` before the row lookup — `received` only updates the
-    # command row lease and does not require workflow correlation.
+    # command row lease and does not require workflow correlation. It is fine
+    # that this early-returning branch does not verify the completion token: it
+    # bumps the lease only (no claim release, materialisation, or workflow
+    # resume), and a mismatched token would simply replay through the reaper.
     if event.kind == AgentEventKind.RECEIVED:
         await acknowledge_command_received(event.command_id, session=session)
         log.info(
@@ -591,6 +618,19 @@ async def record_agent_event(
     )
     if cmd_row is None:
         raise StaleClaimError(f"no agent_commands row for {event.command_id}")
+
+    # Completion-capability-token check — the churn-proof replacement for the
+    # org/agent ownership guard. Authorization binds to the COMMAND via the
+    # one-time token minted at claim, not to the worker's mutable identity (which
+    # legitimately rotates on re-auth). Run BEFORE any claim release, run-sink
+    # call, lean-row materialisation, or workflow enqueue. Constant-time compare;
+    # the token is never logged. Skipped when the command never went through
+    # `claim_next` (NULL hash — e.g. test-seeded rows).
+    if cmd_row.completion_token_hash is not None:
+        presented = hashlib.sha256((event.completion_token or "").encode()).hexdigest()
+        if not hmac.compare_digest(presented, cmd_row.completion_token_hash):
+            raise StaleClaimError(f"command {event.command_id} completion token mismatch")
+
     holder_workflow_id = cmd_row.workflow_execution_id
 
     if not event.is_terminal():
@@ -643,35 +683,25 @@ async def record_agent_event(
             session=session,
         )
 
-    # Lean workspace row creation for ProvisionWorkspace.
+    # Lean workspace row materialisation for ProvisionWorkspace.
     #
     # The Go agent never sends workspace events (WorkspaceEvent is a
-    # backend-side type — see openapi_drift_test.go). The row must therefore
-    # be materialised here, on the terminal `completed_success` for the
-    # ProvisionWorkspace command, using `cmd_row.workspace_id` (minted in
-    # `ProvisionWorkspace.dispatch`) and the reporting bearer's `agent_id`.
-    # The sink's `apply_workspace_event` handles idempotency (row already
-    # exists → status transition only, no duplicate insert).
+    # backend-side type — see openapi_drift_test.go). The control plane
+    # therefore materialises the row on the terminal `completed_success` for
+    # the ProvisionWorkspace command. The gateway does not synthesize a
+    # WorkspaceEvent or pick a "kind"; it delegates to the sink, which owns all
+    # workspace-state shaping (provider id, TTL, spec). The sink is idempotent
+    # — a row already present is left untouched.
     if (
         agent_id is not None
         and cmd_row.command_kind == AgentCommandKind.PROVISION_WORKSPACE
         and cmd_row.workspace_id is not None
         and event.kind == AgentEventKind.COMPLETED_SUCCESS
     ):
-        await get_report_sink().apply_workspace_event(
-            WorkspaceEventReport(
-                workspace_id=cmd_row.workspace_id,
-                command_id=event.command_id,
-                kind="created",
-                agent_id=agent_id,
-            ),
-            session,
-        )
-        log.info(
-            "agent.provision_workspace.lean_row_created",
-            workspace_id=str(cmd_row.workspace_id),
-            command_id=str(event.command_id),
-            agent_id=str(agent_id),
+        await get_report_sink().materialise_provision_success(
+            command_id=event.command_id,
+            agent_id=agent_id,
+            session=session,
         )
 
     if holder_workflow_id is None:

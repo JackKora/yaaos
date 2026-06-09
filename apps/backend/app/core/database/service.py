@@ -8,8 +8,9 @@ without reshaping bootstrap.
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -187,6 +188,8 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("051_create_coding_agent_activity", "create_coding_agent_activity"),
     ("052_create_scheduled_runs", "create_scheduled_runs"),
     ("053_drop_reviews_dead_columns", "drop_reviews_dead_columns"),
+    ("054_coding_agent_runs_plugin_id", "coding_agent_runs_plugin_id"),
+    ("055_agent_commands_completion_token_hash", "agent_commands_completion_token_hash"),
 )
 
 
@@ -685,10 +688,11 @@ async def _apply_agent_identity_exchange_schema(conn) -> None:  # type: ignore[n
         "    ALTER TABLE workspaces DROP COLUMN agent_id; "
         "  END IF; "
         "END $$",
-        # Add FK (ON DELETE SET NULL so dropping an agent doesn't cascade-delete workspaces).
+        # Add FK (ON DELETE RESTRICT: owning_agent_id is NOT NULL, so a
+        # workspace_agents row cannot be deleted while a workspace references it).
         "ALTER TABLE workspaces DROP CONSTRAINT IF EXISTS fk_workspaces_owning_agent",
         "ALTER TABLE workspaces ADD CONSTRAINT fk_workspaces_owning_agent "
-        "FOREIGN KEY (owning_agent_id) REFERENCES workspace_agents(id) ON DELETE SET NULL",
+        "FOREIGN KEY (owning_agent_id) REFERENCES workspace_agents(id) ON DELETE RESTRICT",
         "CREATE INDEX IF NOT EXISTS ix_workspaces_owning_agent_id ON workspaces (owning_agent_id)",
         # bearer_tokens: add issued_iam_arn.
         "ALTER TABLE bearer_tokens ADD COLUMN IF NOT EXISTS issued_iam_arn TEXT",
@@ -1405,20 +1409,103 @@ async def _apply_reviews_run_id(conn) -> None:  # type: ignore[no-untyped-def]
     )
 
 
+# Window of ISO-week offsets seeded/maintained for `coding_agent_activity`:
+# the current week plus the next two. The seeding migration, the daily
+# maintenance task, and the create_all `after_create` listener all use this
+# same window so a fresh DB and a long-running one have identical create-ahead.
+_CODING_AGENT_ACTIVITY_WINDOW_OFFSETS = (0, 1, 2)
+
+
+def _coding_agent_activity_week_start(now: datetime) -> datetime:
+    """UTC Monday 00:00:00 of the ISO week containing `now`.
+
+    The single anchor every partition-name/range computation derives from, so
+    naming stays consistent across the migration, maintenance, and listener.
+    """
+    today_midnight = datetime(now.year, now.month, now.day, tzinfo=UTC)
+    return today_midnight - timedelta(days=today_midnight.weekday())
+
+
+def _coding_agent_activity_partition_ddl(now: datetime) -> list[str]:
+    """`CREATE TABLE IF NOT EXISTS … PARTITION OF` statements for the window.
+
+    One weekly child partition per offset in
+    `_CODING_AGENT_ACTIVITY_WINDOW_OFFSETS` (current week → +2). Bounds run
+    from week-start (Monday UTC 00:00:00) to next-week-start (exclusive). Names
+    are `coding_agent_activity_pYYYYWW` using ISO year-week for deterministic
+    ordering. The single source of truth for partition naming + range bounds —
+    shared by the seeding migration, the maintenance task, and the create_all
+    `after_create` listener.
+
+    Bounds and the partition name derive from server-side `now` + a fixed
+    ISO-week format — no caller data ever reaches these strings, so the
+    f-string interpolation is injection-free.
+    """
+    week_start = _coding_agent_activity_week_start(now)
+    statements: list[str] = []
+    for offset in _CODING_AGENT_ACTIVITY_WINDOW_OFFSETS:
+        lower = week_start + timedelta(weeks=offset)
+        upper = lower + timedelta(weeks=1)
+        iso_year, iso_week, _ = lower.isocalendar()
+        partition_name = f"coding_agent_activity_p{iso_year:04d}{iso_week:02d}"
+        lower_lit = lower.strftime("%Y-%m-%d %H:%M:%S+00")
+        upper_lit = upper.strftime("%Y-%m-%d %H:%M:%S+00")
+        statements.append(
+            f"CREATE TABLE IF NOT EXISTS {partition_name} "
+            f"PARTITION OF coding_agent_activity "
+            f"FOR VALUES FROM ('{lower_lit}') TO ('{upper_lit}')"
+        )
+    return statements
+
+
+@event.listens_for(Base.metadata, "after_create")
+def _seed_coding_agent_activity_partitions(target, connection, **kw):  # type: ignore[no-untyped-def]
+    """Seed child partitions when `Base.metadata.create_all` emits the parent.
+
+    A `RANGE`-partitioned parent rejects INSERTs until a covering child
+    partition exists. `create_all`-based schema setups (not the `migrate()`
+    path, which seeds via `_apply_create_coding_agent_activity`) need the
+    listener so a freshly created `coding_agent_activity` can take rows.
+
+    Fires once per `create_all`; runs only when the partitioned parent is
+    among the tables just created (`tables` kwarg). Idempotent — every
+    statement is `CREATE TABLE IF NOT EXISTS … PARTITION OF`. Reuses the
+    shared window helper so the listener, migration, and maintenance task
+    agree on partition naming + the (0, +1, +2) window.
+    """
+    created = kw.get("tables")
+    if created is not None and not any(t.name == "coding_agent_activity" for t in created):
+        return
+    if created is None and "coding_agent_activity" not in target.tables:
+        return
+    for stmt in _coding_agent_activity_partition_ddl(datetime.now(UTC)):
+        connection.execute(
+            text(
+                stmt
+            )  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        )
+
+
 async def _apply_create_coding_agent_activity(conn) -> None:  # type: ignore[no-untyped-def]
     """Create the codebase's first partitioned table — `coding_agent_activity`.
 
     Layout: `PARTITION BY RANGE (created_at)` (weekly partitions, 4-week TTL).
     PK is `(run_id, created_at)` because Postgres requires the partition key
-    in every unique constraint. Owned by `domain/coding_agent`; one row per
+    in every unique constraint. Owned by `core/coding_agent`; one row per
     `coding_agent_runs` row, holding a pre-rendered `ActivityLog` JSONB blob.
 
-    This migration creates the parent table + ~2 weeks of `PARTITION OF`
-    children covering (current week - 1) → (current week + 1). There is no
-    automatic partition create-ahead/drop maintenance yet; this fixed window
-    seeds the table. Each child partition is named `coding_agent_activity_pYYYYWW`
-    using ISO week numbering — UTC-anchored. The loop runs idempotent
-    `IF NOT EXISTS` so re-running this migration is safe.
+    The parent shape is also declared on the ORM model
+    (`CodingAgentActivityRow` on the shared `Base`, with
+    `postgresql_partition_by`); column drift between this DDL and the model
+    surfaces at `Base.metadata.create_all`. This raw `CREATE TABLE` is still
+    the `migrate()`/prod path — create_all is not run there.
+
+    The seed window matches `maintain_coding_agent_activity_partitions`:
+    the current ISO-UTC week through +2 (3 partitions), via the shared
+    `_coding_agent_activity_partition_ddl` helper. Each child partition is
+    named `coding_agent_activity_pYYYYWW` using ISO week numbering. Every
+    `CREATE` runs idempotent `IF NOT EXISTS` so re-running this migration is
+    safe.
     """
     # Parent table — partitioned by RANGE on created_at.
     await conn.execute(
@@ -1435,35 +1522,11 @@ async def _apply_create_coding_agent_activity(conn) -> None:  # type: ignore[no-
         )
     )
 
-    # Child partitions: one per ISO week from (now - 1 week) through (now + 1 week),
-    # inclusive — three weekly partitions for the initial ~2-week window. Bounds
-    # are week-start (Monday UTC 00:00:00) to next-week-start (exclusive upper
-    # bound). Names use ISO week (YYYYWW) for deterministic ordering. Idempotent
-    # via IF NOT EXISTS.
-    from datetime import UTC, datetime, timedelta  # noqa: PLC0415
-
-    now = datetime.now(UTC)
-    # Floor to UTC Monday 00:00:00 of the current ISO week.
-    today_midnight = datetime(now.year, now.month, now.day, tzinfo=UTC)
-    week_start = today_midnight - timedelta(days=today_midnight.weekday())
-
-    for offset in (-1, 0, 1):
-        lower = week_start + timedelta(weeks=offset)
-        upper = lower + timedelta(weeks=1)
-        iso_year, iso_week, _ = lower.isocalendar()
-        partition_name = f"coding_agent_activity_p{iso_year:04d}{iso_week:02d}"
-        lower_lit = lower.strftime("%Y-%m-%d %H:%M:%S+00")
-        upper_lit = upper.strftime("%Y-%m-%d %H:%M:%S+00")
-        # Bounds and the partition name are derived from server-side `datetime.now`
-        # and a fixed ISO-week format — no request data ever reaches this branch,
-        # so f-string interpolation is injection-free. Same reasoning as the
-        # `truncate_all_tables` site below.
+    for stmt in _coding_agent_activity_partition_ddl(datetime.now(UTC)):
         await conn.execute(
-            text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-                f"CREATE TABLE IF NOT EXISTS {partition_name} "
-                f"PARTITION OF coding_agent_activity "
-                f"FOR VALUES FROM ('{lower_lit}') TO ('{upper_lit}')"
-            )
+            text(
+                stmt
+            )  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         )
 
 
@@ -1477,42 +1540,28 @@ async def maintain_coding_agent_activity_partitions() -> None:
     EXISTS` for create, `DROP TABLE IF EXISTS` for drop, repeated runs on
     the same day are no-ops.
 
-    Raw partition DDL lives here (not in `domain/coding_agent`) because
+    Raw partition DDL lives here (not in `core/coding_agent`) because
     `core/database` is the only module the table-access checker allows
     raw SQL on the `coding_agent_activity` parent. The companion
-    `@scheduled` task in `domain/coding_agent` calls this function once a
+    `@scheduled` task in `core/coding_agent` calls this function once a
     day.
 
     Partition naming + week alignment match the seeding migration
-    (`_apply_create_coding_agent_activity`): UTC Monday 00:00 week start,
-    `coding_agent_activity_pYYYYWW` using ISO-year-week.
+    (`_apply_create_coding_agent_activity`) and the create_all `after_create`
+    listener via the shared `_coding_agent_activity_partition_ddl` helper: UTC
+    Monday 00:00 week start, `coding_agent_activity_pYYYYWW` using ISO-year-week.
     """
-    from datetime import UTC, datetime, timedelta  # noqa: PLC0415
-
     now = datetime.now(UTC)
-    today_midnight = datetime(now.year, now.month, now.day, tzinfo=UTC)
-    week_start = today_midnight - timedelta(days=today_midnight.weekday())
+    week_start = _coding_agent_activity_week_start(now)
 
     engine = get_engine()
     async with engine.begin() as conn:
         # Create-ahead: current week + next two (3 partitions, ~2-week window).
-        for offset in (0, 1, 2):
-            lower = week_start + timedelta(weeks=offset)
-            upper = lower + timedelta(weeks=1)
-            iso_year, iso_week, _ = lower.isocalendar()
-            partition_name = f"coding_agent_activity_p{iso_year:04d}{iso_week:02d}"
-            lower_lit = lower.strftime("%Y-%m-%d %H:%M:%S+00")
-            upper_lit = upper.strftime("%Y-%m-%d %H:%M:%S+00")
-            # Bounds and partition name are derived from server-side
-            # `datetime.now` + a fixed ISO-week format — no caller data ever
-            # reaches this branch, so f-string interpolation is injection-free
-            # (same reasoning as `_apply_create_coding_agent_activity`).
+        for stmt in _coding_agent_activity_partition_ddl(now):
             await conn.execute(
-                text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-                    f"CREATE TABLE IF NOT EXISTS {partition_name} "
-                    f"PARTITION OF coding_agent_activity "
-                    f"FOR VALUES FROM ('{lower_lit}') TO ('{upper_lit}')"
-                )
+                text(
+                    stmt
+                )  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             )
 
         # Drop: partitions whose week is more than 4 weeks before the current
@@ -1602,8 +1651,9 @@ async def _apply_outbox_entries_pk_created_at(conn) -> None:  # type: ignore[no-
     alter is idempotent when the column is already NOT NULL. Executes inside a
     single connection so all three steps share one implicit transaction.
     """
-    # Step 1: enforce NOT NULL (idempotent — errors if already NOT NULL are
-    # silently swallowed by the IF NOT EXISTS on step 3's ADD CONSTRAINT).
+    # Step 1: enforce NOT NULL. SET NOT NULL is idempotent in PostgreSQL — a
+    # no-op when the column is already NOT NULL (step 3's IF NOT EXISTS guard is
+    # independent; it only prevents "constraint already exists" on re-run).
     # Postgres will error on SET NOT NULL when nulls exist; outbox_entries has
     # a server_default so no production rows have NULL created_at.
     await conn.execute(text("ALTER TABLE outbox_entries ALTER COLUMN created_at SET NOT NULL"))
@@ -1638,6 +1688,37 @@ async def _apply_drop_reviews_dead_columns(conn) -> None:  # type: ignore[no-unt
         "ALTER TABLE reviews DROP COLUMN IF EXISTS completed_at",
     ]:
         await conn.execute(text(stmt))
+
+
+async def _apply_coding_agent_runs_plugin_id(conn) -> None:  # type: ignore[no-untyped-def]
+    """Add `coding_agent_runs.plugin_id` — the plugin that issued the run.
+
+    The run-sink resolves which plugin parses the terminal event from this
+    column rather than a hardcoded id. `server_default='claude_code'` is a
+    one-time backfill so any pre-existing rows satisfy NOT NULL — today the
+    only shipped coding-agent plugin.
+    Idempotent: ADD COLUMN IF NOT EXISTS.
+    """
+    await conn.execute(
+        text(
+            "ALTER TABLE coding_agent_runs ADD COLUMN IF NOT EXISTS "
+            "plugin_id TEXT NOT NULL DEFAULT 'claude_code'"
+        )
+    )
+
+
+async def _apply_agent_commands_completion_token_hash(conn) -> None:  # type: ignore[no-untyped-def]
+    """Add `agent_commands.completion_token_hash` (text, nullable).
+
+    Stores sha256 of the per-command completion capability token minted at
+    `claim_next`; the raw token is returned to the agent once and never
+    persisted. `record_agent_event` verifies the presented token against this
+    hash (constant-time) before any side effect — the churn-proof replacement
+    for the org/agent ownership guard. NULL when a command never went through
+    `claim_next` (e.g. test-seeded rows) — verification is skipped then.
+    No backfill (nullable). Idempotent: ADD COLUMN IF NOT EXISTS.
+    """
+    await conn.execute(text("ALTER TABLE agent_commands ADD COLUMN IF NOT EXISTS completion_token_hash TEXT"))
 
 
 async def _apply_pending() -> None:
@@ -1759,6 +1840,10 @@ async def _apply_pending() -> None:
                 await _apply_create_scheduled_runs(conn)
             elif kind == "drop_reviews_dead_columns":
                 await _apply_drop_reviews_dead_columns(conn)
+            elif kind == "coding_agent_runs_plugin_id":
+                await _apply_coding_agent_runs_plugin_id(conn)
+            elif kind == "agent_commands_completion_token_hash":
+                await _apply_agent_commands_completion_token_hash(conn)
             await conn.execute(
                 text("INSERT INTO schema_migrations (version) VALUES (:v)"),
                 {"v": version},

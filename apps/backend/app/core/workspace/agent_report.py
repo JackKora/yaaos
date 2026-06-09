@@ -36,11 +36,14 @@ from app.core.workspace.types import WorkspaceStatus
 
 log = structlog.get_logger("core.workspace.agent_report")
 
-# Remote-provider id for lean-created rows.
-_REMOTE_PROVIDER_ID = "remote_agent"
+# Last-resort provider id when no provider is registered (should not happen in
+# a booted process — every process imports a provider at startup). The real id
+# is resolved from the registered provider so a second provider entering this
+# path is labelled correctly.
+_FALLBACK_PROVIDER_ID = "remote_agent"
 
-# Default workspace TTL in seconds for lean-created rows; matches
-# `ProvisionWorkspace` dispatch defaults.
+# Last-resort workspace TTL in seconds, used only when the originating command
+# payload carries neither `ttl_seconds` nor `max_idle_seconds`.
 _DEFAULT_TTL_SECONDS = 600
 
 # Maps the agent-side workspace event kind to the control-plane status column.
@@ -145,6 +148,53 @@ class WorkspaceAgentReportSinkImpl:
             new_status=new_status,
         )
         return WorkspaceEventOutcome(resolved_status=new_status, accepted=True)
+
+    async def materialise_provision_success(
+        self,
+        *,
+        command_id: UUID,
+        agent_id: UUID,
+        session: AsyncSession,
+    ) -> None:
+        """Create the lean `workspaces` row for a successfully provisioned
+        workspace, owned by `agent_id`.
+
+        Reads the originating `ProvisionWorkspace` command row (org, workspace
+        id, TTL, idle window, repo) and inserts the row with `status='active'`.
+        Idempotent — if a row already exists for the workspace, the insert is
+        skipped (the Go agent may retry a terminal event).
+        """
+        from app.core.agent_gateway import get_command_org_and_payload  # noqa: PLC0415
+
+        result = await get_command_org_and_payload(command_id, session=session)
+        if result is None:
+            return
+        org_id, cmd_payload = result
+
+        workspace_id_raw = cmd_payload.get("workspace_id")
+        if workspace_id_raw is None:
+            return
+        workspace_id = UUID(str(workspace_id_raw))
+
+        existing = (
+            await session.execute(select(WorkspaceRow.id).where(WorkspaceRow.id == workspace_id))
+        ).one_or_none()
+        if existing is not None:
+            return
+
+        await _insert_lean_workspace_row(
+            workspace_id=workspace_id,
+            org_id=org_id,
+            agent_id=agent_id,
+            cmd_payload=cmd_payload,
+            session=session,
+        )
+        log.info(
+            "workspace.provision_success_materialised",
+            workspace_id=str(workspace_id),
+            command_id=str(command_id),
+            agent_id=str(agent_id),
+        )
 
     async def resolve_claim(
         self,
@@ -251,10 +301,9 @@ async def _create_lean_workspace_row(
 ) -> bool:
     """Insert a lean `workspaces` row on the agent's first workspace event.
 
-    Resolves `org_id` and `spec` from the originating `agent_commands` row
-    (by `command_id`). `owning_agent_id` comes from the reporting bearer
-    (`report.agent_id`). The row is inserted with `status='active'` — no
-    `creating` intermediate state.
+    Resolves `org_id` and the originating command payload from the
+    `agent_commands` row (by `command_id`), then delegates the insert to
+    `_insert_lean_workspace_row`.
 
     Returns True when the row was inserted, False when `command_id` is None
     or the `agent_commands` row is not found (no source to derive data from).
@@ -269,19 +318,66 @@ async def _create_lean_workspace_row(
         return False
 
     org_id, cmd_payload = result
+    await _insert_lean_workspace_row(
+        workspace_id=report.workspace_id,
+        org_id=org_id,
+        agent_id=report.agent_id,
+        cmd_payload=cmd_payload,
+        session=session,
+    )
+    return True
+
+
+async def _insert_lean_workspace_row(
+    *,
+    workspace_id: UUID,
+    org_id: UUID,
+    agent_id: UUID | None,
+    cmd_payload: dict,
+    session: AsyncSession,
+) -> None:
+    """Insert the lean `workspaces` row from a resolved org + command payload.
+
+    The TTL and idle window come from the `ProvisionWorkspace` payload
+    (`ttl_seconds`/`max_idle_seconds`, both ints ≥60), falling back to the
+    module default only when absent. `provider_id` is resolved from the
+    registered provider so the row is labelled with the actual provider rather
+    than a hardcoded id.
+
+    `spec` carries only the non-secret fields the row needs — the head SHA.
+    The cleartext GitHub installation token in `cmd_payload["auth"]["token"]`
+    is deliberately excluded: it is a short-lived wire credential that lives on
+    the retired command row and must never be persisted in long-lived workspace
+    state.
+    """
+    ttl_seconds = cmd_payload.get("ttl_seconds") or _DEFAULT_TTL_SECONDS
+    max_idle_seconds = cmd_payload.get("max_idle_seconds") or _DEFAULT_TTL_SECONDS
     now = datetime.now(UTC)
     ws_row = WorkspaceRow(
-        id=report.workspace_id,
+        id=workspace_id,
         org_id=org_id,
-        owning_agent_id=report.agent_id,
-        provider_id=_REMOTE_PROVIDER_ID,
-        spec=cmd_payload,
+        owning_agent_id=agent_id,
+        provider_id=_resolve_provider_id(),
+        spec={"sha": cmd_payload.get("repo", {}).get("head_sha")},
         status=WorkspaceStatus.ACTIVE.value,
         current_command_id=None,
         activated_at=now,
-        expires_at=now + timedelta(seconds=_DEFAULT_TTL_SECONDS),
-        max_idle_seconds=_DEFAULT_TTL_SECONDS,
+        expires_at=now + timedelta(seconds=ttl_seconds),
+        max_idle_seconds=max_idle_seconds,
     )
     session.add(ws_row)
     await session.flush()
-    return True
+
+
+def _resolve_provider_id() -> str:
+    """Return the registered workspace provider's `plugin_id`.
+
+    Falls back to `_FALLBACK_PROVIDER_ID` only when no provider is registered
+    (not expected in a booted process).
+    """
+    from app.core.workspace.service import list_workspace_providers  # noqa: PLC0415
+
+    providers = list_workspace_providers()
+    if not providers:
+        return _FALLBACK_PROVIDER_ID
+    return providers[0].plugin_id

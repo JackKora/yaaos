@@ -522,11 +522,12 @@ func (p *Pool) CloseAll(ctx context.Context) {
 
 func failureEvent(header protocol.CommandHeader, reason string) protocol.AgentEvent {
 	return protocol.AgentEvent{
-		CommandID:     header.CommandID,
-		Kind:          protocol.EventCompletedFailure,
-		FailureReason: reason,
-		Traceparent:   header.Traceparent,
-		ReportedAt:    time.Now().UTC(),
+		CommandID:       header.CommandID,
+		Kind:            protocol.EventCompletedFailure,
+		FailureReason:   reason,
+		Traceparent:     header.Traceparent,
+		ReportedAt:      time.Now().UTC(),
+		CompletionToken: header.CompletionToken,
 	}
 }
 

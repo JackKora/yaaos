@@ -72,36 +72,18 @@ async def list_repos() -> dict[str, object]:
     are included with `skill_name=null`. Repos in the DB but absent from the
     GitHub list are omitted — the admin must reconnect via GitHub App settings.
     """
-    import httpx  # noqa: PLC0415
-
     from app.core import vcs as vcs_mod  # noqa: PLC0415
     from app.core.auth import org_id_var  # noqa: PLC0415
     from app.plugins.claude_code.repos import list_repos_with_skill  # noqa: PLC0415
-    from app.plugins.github import get_plugin as get_github_plugin  # noqa: PLC0415
 
     org_id = org_id_var.get() or DEFAULT_ORG_ID
 
-    # Fetch the live GitHub repo list for the org's installation.
+    # Fetch the live repo list for the org's VCS install through core/vcs —
+    # the github plugin owns repo enumeration; we never import it directly.
     try:
-        token = await vcs_mod.get_installation_token("github", org_id)
+        github_repos = await vcs_mod.list_installation_repos("github", org_id)
     except Exception as e:
-        return {"repos": [], "error": f"install token: {e}"}
-
-    base_url = get_github_plugin().base_url
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                f"{base_url}/installation/repositories",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                params={"per_page": 100},
-            )
-        github_repos = [r["full_name"] for r in resp.json().get("repositories", [])]
-    except Exception:
-        github_repos = []
+        return {"repos": [], "error": f"install repos: {e}"}
 
     # Read stored skill names from our table.
     async with db_session() as s:

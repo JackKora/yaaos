@@ -84,6 +84,68 @@ async def _make_agent(db_session, *, org_id: UUID | None = None) -> UUID:
     return UUID(str(result["id"]))
 
 
+# ── Completion capability token ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_claim_mints_completion_token_and_stores_only_hash(db_session) -> None:
+    """`claim_next` mints a per-command completion token: the raw value is
+    injected on the returned DTO; only its sha256 hash is persisted on the row.
+    The raw token is never written to the persisted payload."""
+    import hashlib  # noqa: PLC0415
+
+    org_id = uuid4()
+    agent_id = await _make_agent(db_session, org_id=org_id)
+    cmd = _make_provision_cmd()
+    await enqueue_command(org_id=org_id, command=cmd, session=db_session)
+    await db_session.flush()
+
+    claimed = await claim_next(
+        agent_id,
+        lifecycle="configured",
+        new_workspaces=1,
+        workspace_ids=[],
+        wait_seconds=0,
+        session=db_session,
+    )
+    assert claimed is not None
+    assert claimed.command_id == cmd.command_id
+    token = claimed.completion_token
+    assert token, "claim_next must inject the raw completion token on the DTO"
+
+    row = (
+        await db_session.execute(select(AgentCommandRow).where(AgentCommandRow.id == cmd.command_id))
+    ).scalar_one_or_none()
+    assert row is not None
+    assert row.status == "claimed"
+    # Only the hash is persisted; it matches sha256 of the raw token.
+    assert row.completion_token_hash == hashlib.sha256(token.encode()).hexdigest()
+    # The raw token is never persisted in the payload.
+    assert token not in str(row.payload)
+    assert row.payload.get("completion_token") in (None, "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_unconfigured_claim_carries_no_completion_token(db_session) -> None:
+    """The `unconfigured` lifecycle returns a ConfigUpdate built in-memory with
+    no DB row — it carries no completion token."""
+    agent_id = await _make_agent(db_session)
+    claimed = await claim_next(
+        agent_id,
+        lifecycle="unconfigured",
+        new_workspaces=0,
+        workspace_ids=[],
+        wait_seconds=0,
+        session=db_session,
+    )
+    assert claimed is not None
+    assert claimed.kind == AgentCommandKind.CONFIG_UPDATE
+    # ConfigUpdateCommand has no completion_token field at all (separate base).
+    assert getattr(claimed, "completion_token", None) is None
+
+
 # ── Enqueue + durable persistence ──────────────────────────────────────────
 
 

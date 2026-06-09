@@ -18,17 +18,23 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.agent_gateway import (
     AgentEvent,
     AgentEventKind,
+    AuthBlock,
     CleanupWorkspaceCommand,
+    ProvisionWorkspaceCommand,
+    RepoRef,
+    StaleClaimError,
     WorkspaceEvent,
     enqueue_command,
     record_agent_event,
     record_workspace_event,
 )
-from app.core.audit_log import list_for_entity
+from app.core.audit_log import ActorKind, list_for_entity
+from app.core.auth import org_context
 from app.core.tasks import drain_once, get_pending_task_names
 from app.core.workflow import (
     CommandCategory,
@@ -277,6 +283,202 @@ async def test_lean_row_org_id_from_command_row(db_session) -> None:
     assert ws.org_id == org_id
 
 
+# ── ProvisionWorkspace success → lean row materialisation ────────────────
+
+
+def _make_provision_command(
+    *, workspace_id: UUID, command_id: UUID, ttl_seconds: int = 900
+) -> ProvisionWorkspaceCommand:
+    return ProvisionWorkspaceCommand(
+        command_id=command_id,
+        workspace_id=workspace_id,
+        traceparent="",
+        repo=RepoRef(
+            plugin_id="github",
+            external_id="123",
+            clone_url="https://github.com/me/repo.git",
+            head_sha="deadbeef",
+        ),
+        history=1,
+        auth=AuthBlock(kind="github_installation", token="super-secret-installation-token"),
+        ttl_seconds=ttl_seconds,
+        max_idle_seconds=ttl_seconds,
+    )
+
+
+@pytest.mark.asyncio
+async def test_provision_success_completion_token_verified(db_session) -> None:
+    """A command claimed via `claim_next` mints a completion token. A terminal
+    `completed_success` echoing the correct token materialises the lean row; a
+    terminal event with a wrong/empty token raises StaleClaimError and creates
+    no workspace row."""
+    from app.core.agent_gateway import claim_next  # noqa: PLC0415
+
+    org_id = uuid4()
+    agent_result = await seed_agent(org_id=org_id, session=db_session)
+    agent_id = UUID(str(agent_result["id"]))
+
+    workspace_id = uuid4()
+    command_id = uuid4()
+    cmd = _make_provision_command(workspace_id=workspace_id, command_id=command_id)
+    await enqueue_command(org_id=org_id, command=cmd, session=db_session)
+    await db_session.flush()
+
+    # Claim the command as the agent — this mints the completion token and
+    # returns it on the command DTO.
+    claimed = await claim_next(
+        agent_id,
+        lifecycle="configured",
+        new_workspaces=1,
+        workspace_ids=[],
+        wait_seconds=0,
+        session=db_session,
+    )
+    assert claimed is not None
+    assert claimed.command_id == command_id
+    token = claimed.completion_token
+    assert token, "claim_next must inject the raw completion token on the DTO"
+
+    # A terminal event with a WRONG token is rejected and creates no row.
+    bad_event = AgentEvent(
+        command_id=command_id,
+        kind=AgentEventKind.COMPLETED_SUCCESS,
+        outcome_label="success",
+        outputs={},
+        reported_at=datetime.now(UTC),
+        traceparent="",
+        completion_token="not-the-real-token",
+    )
+    with pytest.raises(StaleClaimError):
+        async with org_context(org_id, ActorKind.WORKSPACE):
+            await record_agent_event(bad_event, agent_id=agent_id, session=db_session)
+    assert (await db_session.get(WorkspaceRow, workspace_id)) is None
+
+    # An empty token is also rejected.
+    empty_event = AgentEvent(
+        command_id=command_id,
+        kind=AgentEventKind.COMPLETED_SUCCESS,
+        outcome_label="success",
+        outputs={},
+        reported_at=datetime.now(UTC),
+        traceparent="",
+        completion_token=None,
+    )
+    with pytest.raises(StaleClaimError):
+        async with org_context(org_id, ActorKind.WORKSPACE):
+            await record_agent_event(empty_event, agent_id=agent_id, session=db_session)
+    assert (await db_session.get(WorkspaceRow, workspace_id)) is None
+
+    # The correct token succeeds and materialises the lean row.
+    good_event = AgentEvent(
+        command_id=command_id,
+        kind=AgentEventKind.COMPLETED_SUCCESS,
+        outcome_label="success",
+        outputs={},
+        reported_at=datetime.now(UTC),
+        traceparent="",
+        completion_token=token,
+    )
+    async with org_context(org_id, ActorKind.WORKSPACE):
+        await record_agent_event(good_event, agent_id=agent_id, session=db_session)
+    await db_session.flush()
+
+    ws = await db_session.get(WorkspaceRow, workspace_id)
+    assert ws is not None, "correct token should materialise the lean row"
+    assert ws.status == WorkspaceStatus.ACTIVE.value
+    assert ws.owning_agent_id == agent_id
+
+
+@pytest.mark.asyncio
+async def test_provision_success_materialises_lean_row(db_session) -> None:
+    """The happy path materialises the lean row via the sink: status active,
+    org/agent from the command + bearer, TTL from the payload, provider id from
+    the registered provider, and a spec that carries the SHA but no token."""
+    from datetime import timedelta  # noqa: PLC0415
+
+    org_id = uuid4()
+    agent_result = await seed_agent(org_id=org_id, session=db_session)
+    agent_id = UUID(str(agent_result["id"]))
+
+    workspace_id = uuid4()
+    command_id = uuid4()
+    ttl_seconds = 900
+    cmd = _make_provision_command(workspace_id=workspace_id, command_id=command_id, ttl_seconds=ttl_seconds)
+    await enqueue_command(org_id=org_id, command=cmd, session=db_session)
+    await db_session.flush()
+
+    assert (await db_session.get(WorkspaceRow, workspace_id)) is None
+
+    event = AgentEvent(
+        command_id=command_id,
+        kind=AgentEventKind.COMPLETED_SUCCESS,
+        outcome_label="success",
+        outputs={},
+        reported_at=datetime.now(UTC),
+        traceparent="",
+    )
+    before = datetime.now(UTC)
+    async with org_context(org_id, ActorKind.WORKSPACE):
+        await record_agent_event(event, agent_id=agent_id, session=db_session)
+    await db_session.flush()
+
+    ws = await db_session.get(WorkspaceRow, workspace_id)
+    assert ws is not None, "lean row should be materialised on ProvisionWorkspace success"
+    assert ws.status == WorkspaceStatus.ACTIVE.value
+    assert ws.org_id == org_id
+    assert ws.owning_agent_id == agent_id
+    assert ws.max_idle_seconds == ttl_seconds
+    # expires_at derived from the payload TTL, not the default.
+    assert ws.expires_at >= before + timedelta(seconds=ttl_seconds - 5)
+    # provider id resolved via the registry (falls back to the single shipped
+    # provider id when no provider is bound in this service-test context).
+    assert ws.provider_id == "remote_agent"
+    # spec carries the SHA only — never the installation token.
+    assert ws.spec == {"sha": "deadbeef"}
+    assert "auth" not in ws.spec
+    assert "token" not in str(ws.spec)
+
+
+@pytest.mark.asyncio
+async def test_provision_success_idempotent(db_session) -> None:
+    """Replaying the terminal `completed_success` does not insert a duplicate
+    workspace row."""
+    from app.core.audit_log import ActorKind  # noqa: PLC0415
+    from app.core.auth import org_context  # noqa: PLC0415
+
+    org_id = uuid4()
+    agent_result = await seed_agent(org_id=org_id, session=db_session)
+    agent_id = UUID(str(agent_result["id"]))
+
+    workspace_id = uuid4()
+    command_id = uuid4()
+    cmd = _make_provision_command(workspace_id=workspace_id, command_id=command_id)
+    await enqueue_command(org_id=org_id, command=cmd, session=db_session)
+    await db_session.flush()
+
+    event = AgentEvent(
+        command_id=command_id,
+        kind=AgentEventKind.COMPLETED_SUCCESS,
+        outcome_label="success",
+        outputs={},
+        reported_at=datetime.now(UTC),
+        traceparent="",
+    )
+    async with org_context(org_id, ActorKind.WORKSPACE):
+        await record_agent_event(event, agent_id=agent_id, session=db_session)
+    await db_session.flush()
+
+    # Replay the same terminal event. The command row is retired (status=done)
+    # but still present, so the guard re-passes; the sink sees the existing
+    # workspace row and skips the insert — no duplicate, no error.
+    async with org_context(org_id, ActorKind.WORKSPACE):
+        await record_agent_event(event, agent_id=agent_id, session=db_session)
+    await db_session.flush()
+
+    rows = (await db_session.execute(select(WorkspaceRow.id).where(WorkspaceRow.id == workspace_id))).all()
+    assert len(rows) == 1
+
+
 # ── release_claim timing ─────────────────────────────────────────────────
 
 
@@ -328,7 +530,8 @@ async def test_release_claim_before_next_try_claim(db_session) -> None:
         reported_at=datetime.now(UTC),
         traceparent="",
     )
-    await record_agent_event(event, session=db_session)
+    async with org_context(org_id, ActorKind.WORKSPACE):
+        await record_agent_event(event, session=db_session)
     await db_session.flush()
 
     # After the terminal event, current_command_id must be None.
@@ -413,7 +616,8 @@ async def test_finalizer_fires_once_on_terminal_fail(db_session) -> None:
             reported_at=datetime.now(UTC),
             traceparent="",
         )
-        await record_agent_event(fail_event, session=db_session)
+        async with org_context(org_id, ActorKind.WORKSPACE):
+            await record_agent_event(fail_event, session=db_session)
         await db_session.commit()
 
         # Drain: handle_agent_event → route_workflow (fires finalizer) →
@@ -491,7 +695,8 @@ async def test_finalizer_does_not_refire_on_success(db_session) -> None:
             reported_at=datetime.now(UTC),
             traceparent="",
         )
-        await record_agent_event(success_event, session=db_session)
+        async with org_context(org_id, ActorKind.WORKSPACE):
+            await record_agent_event(success_event, session=db_session)
         await db_session.commit()
 
         await _drain(db_session)
@@ -557,7 +762,8 @@ async def test_failure_reason_and_audit_written_on_terminal_fail(db_session) -> 
             reported_at=datetime.now(UTC),
             traceparent="",
         )
-        await record_agent_event(fail_event, session=db_session)
+        async with org_context(org_id, ActorKind.WORKSPACE):
+            await record_agent_event(fail_event, session=db_session)
         await db_session.commit()
 
         await _drain(db_session)
@@ -630,7 +836,8 @@ async def test_failure_reason_without_structured_key_uses_label(db_session) -> N
             reported_at=datetime.now(UTC),
             traceparent="",
         )
-        await record_agent_event(fail_event, session=db_session)
+        async with org_context(org_id, ActorKind.WORKSPACE):
+            await record_agent_event(fail_event, session=db_session)
         await db_session.commit()
 
         await _drain(db_session)
@@ -700,7 +907,8 @@ async def test_finalizer_original_failure_reason_preserved(db_session) -> None:
             reported_at=datetime.now(UTC),
             traceparent="",
         )
-        await record_agent_event(fail_event, session=db_session)
+        async with org_context(org_id, ActorKind.WORKSPACE):
+            await record_agent_event(fail_event, session=db_session)
         await db_session.commit()
 
         await _drain(db_session)

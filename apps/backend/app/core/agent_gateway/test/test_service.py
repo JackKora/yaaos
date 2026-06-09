@@ -259,7 +259,13 @@ async def test_terminal_event_advances_workflow_to_done(db_session) -> None:
             reported_at=datetime.now(UTC),
             traceparent="00-aabbccdd-1122-01",
         )
-        await record_agent_event(event, session=db_session)
+        # The ownership guard reads the org contextvar, so wrap in org_context
+        # (mirrors the agent_gateway event endpoint).
+        from app.core.audit_log import ActorKind  # noqa: PLC0415
+        from app.core.auth import org_context  # noqa: PLC0415
+
+        async with org_context(test_org_id, ActorKind.WORKSPACE):
+            await record_agent_event(event, session=db_session)
         await db_session.commit()
 
         # Drain handle_agent_event + route_workflow → workflow reaches DONE.

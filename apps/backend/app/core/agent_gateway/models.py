@@ -158,6 +158,8 @@ class AgentCommandRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     # agent_id is stamped at claim time. NULL until claimed.
     agent_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    # sha256 of the per-command completion capability token minted at claim; raw never stored.
+    completion_token_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # attempt counts re-queues; capped to prevent infinite retry.
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

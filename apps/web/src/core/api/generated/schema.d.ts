@@ -1714,6 +1714,8 @@ export interface components {
              * Format: uuid
              */
             command_id: string;
+            /** Completion Token */
+            completion_token?: string | null;
             /** Failure Reason */
             failure_reason?: string | null;
             kind: components["schemas"]["AgentEventKind"];

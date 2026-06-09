@@ -64,7 +64,7 @@ All under `/api/claude_code/`:
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `GET` | `/repos` | `CODING_AGENT_READ` | Live GitHub repos joined with stored `skill_name`. Returns `{repos: [{repo_external_id, skill_name}]}`. Repos in GitHub but absent from DB included with `skill_name=null`; repos in DB but gone from GitHub omitted. |
+| `GET` | `/repos` | `CODING_AGENT_READ` | Live VCS repos joined with stored `skill_name`. Repo list comes from `core/vcs.list_installation_repos("github", org_id)` — never a direct github-plugin import. Returns `{repos: [{repo_external_id, skill_name}]}`. Repos in the live list but absent from DB included with `skill_name=null`; repos in DB but gone from the live list omitted. |
 | `GET` | `/repos/{repo_external_id:path}` | `CODING_AGENT_READ` | Read skill name for one repo. `:path` type handles `owner/repo` slash. |
 | `PUT` | `/repos/{repo_external_id:path}` | `CODING_AGENT_WRITE` | Write skill name for one repo; creates the row if absent. |
 

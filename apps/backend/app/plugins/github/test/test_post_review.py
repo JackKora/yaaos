@@ -14,7 +14,7 @@ from uuid import UUID
 
 import pytest
 
-from app.core.vcs import VCSPullRequest
+from app.core.vcs import VCSAuthError, VCSPullRequest
 from app.plugins.github.service import GitHubPlugin, _format_finding_body
 
 _ORG_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -144,6 +144,58 @@ async def test_post_comment_posts_to_issue_comments(plugin: GitHubPlugin, httpx_
     assert len(requests) == 1
     body = json.loads(requests[0].content)
     assert body["body"] == "yaaos refused — secrets detected"
+
+
+async def test_list_installation_repos_returns_full_names(
+    plugin: GitHubPlugin, monkeypatch: pytest.MonkeyPatch, httpx_mock
+) -> None:  # type: ignore[no-untyped-def]
+    """Maps `/installation/repositories` to a flat list of repo full-names."""
+
+    async def _token(self: GitHubPlugin, org_id: UUID) -> str:
+        return "install-tok"
+
+    monkeypatch.setattr(GitHubPlugin, "_installation_token", _token)
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{_BASE_URL}/installation/repositories?per_page=100",
+        json={"total_count": 2, "repositories": [{"full_name": "acme/web"}, {"full_name": "acme/api"}]},
+    )
+
+    repos = await plugin.list_installation_repos(_ORG_ID)
+
+    assert repos == ["acme/web", "acme/api"]
+
+
+async def test_list_installation_repos_empty_on_error(
+    plugin: GitHubPlugin, monkeypatch: pytest.MonkeyPatch, httpx_mock
+) -> None:  # type: ignore[no-untyped-def]
+    """A non-200 from GitHub yields an empty list, not an exception."""
+
+    async def _token(self: GitHubPlugin, org_id: UUID) -> str:
+        return "install-tok"
+
+    monkeypatch.setattr(GitHubPlugin, "_installation_token", _token)
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{_BASE_URL}/installation/repositories?per_page=100",
+        status_code=404,
+        json={},
+    )
+
+    assert await plugin.list_installation_repos(_ORG_ID) == []
+
+
+async def test_list_installation_repos_empty_on_missing_install(
+    plugin: GitHubPlugin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No active install (token raises) yields an empty list."""
+
+    async def _token(self: GitHubPlugin, org_id: UUID) -> str:
+        raise VCSAuthError("no active GitHub App installation")
+
+    monkeypatch.setattr(GitHubPlugin, "_installation_token", _token)
+
+    assert await plugin.list_installation_repos(_ORG_ID) == []
 
 
 def test_format_finding_body_includes_handle_and_rule() -> None:

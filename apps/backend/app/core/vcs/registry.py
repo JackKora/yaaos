@@ -80,3 +80,10 @@ async def get_installation_token(plugin_id: str, org_id: UUID) -> str:
     """Top-level dispatcher. Workspace plugins call this for fresh git auth."""
     plugin = get_plugin(plugin_id)
     return await plugin.get_installation_token(org_id)
+
+
+async def list_installation_repos(plugin_id: str, org_id: UUID) -> list[str]:
+    """Top-level dispatcher. Sibling plugins call this to enumerate the org's
+    repos without importing the VCS plugin directly."""
+    plugin = get_plugin(plugin_id)
+    return await plugin.list_installation_repos(org_id)

@@ -25,12 +25,13 @@ class WorkspaceRow(Base):
     # that ran `ProvisionWorkspace` — that pod owns this workspace for its whole
     # life, so every post-provision command routes back to it. NOT NULL; every
     # workspace row is created by and belongs to an agent. FK enforces referential
-    # integrity; ON DELETE SET NULL so dropping an agent row orphans the workspace
-    # (the workspace's remaining lifecycle is still visible to operators) rather
-    # than cascading a delete of potentially live workspaces.
+    # integrity; ON DELETE RESTRICT so a `workspace_agents` row cannot be deleted
+    # while any workspace still references it. A workspace never outlives its
+    # owning agent — RESTRICT keeps the NOT NULL invariant intact (SET NULL would
+    # try to NULL a NOT NULL column and fail the delete anyway).
     owning_agent_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True),
-        ForeignKey("workspace_agents.id", ondelete="SET NULL"),
+        ForeignKey("workspace_agents.id", ondelete="RESTRICT"),
         nullable=False,
     )
     provider_id: Mapped[str] = mapped_column(String, nullable=False)

@@ -1,11 +1,13 @@
 """Types + Protocol for the coding-agent abstraction.
 
-The Protocol exposes five in-process task modes (retained, unused in the
-remote path) plus five remote-dispatch methods: `build_review_invocation`,
-`parse_review_output`, `review_preflight_steps`, `parse_usage`,
-`render_activity`. Plugins own prompt assembly, exec spec construction, and
-parsing for each mode; consumers hand over domain context and receive
-domain results.
+The Protocol exposes five in-process task modes plus five remote-dispatch
+methods: `build_review_invocation`, `parse_review_output`,
+`review_preflight_steps`, `parse_usage`, `render_activity`. Together they
+define the full plugin capability surface; the shipped remote review path
+exercises the build/parse/render/preflight subset, while the in-process
+methods are part of the contract a fully-featured plugin satisfies. Plugins
+own prompt assembly, exec spec construction, and parsing for each mode;
+consumers hand over domain context and receive domain results.
 
 `ReportedFinding` is the raw-string output twin for findings returned by
 the agent. It carries no enum constraints (those live in `domain/reviewer`)
@@ -395,8 +397,11 @@ class CodingAgentPlugin(Protocol):
     async def health_check(self) -> HealthStatus: ...
 
     # ── Remote-dispatch methods (Shape B) ────────────────────────────────
-    # These five replace the in-process run-methods for the remote model.
-    # The in-process run-methods above are retained for future re-introduction.
+    # The in-process run methods above and the remote-dispatch methods below
+    # together define the full plugin capability surface. The shipped remote
+    # review path exercises only the build/parse/render/preflight subset; the
+    # in-process methods are part of the contract a fully-featured plugin
+    # satisfies.
 
     async def build_review_invocation(
         self,

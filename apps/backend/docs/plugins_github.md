@@ -22,7 +22,7 @@ Env vars: `yaaos_github_app_id`, `yaaos_github_app_slug`, `yaaos_github_app_priv
 1. **App JWT** (`_build_app_jwt`) — RS256-signed, 9-minute window. Fake PEM sentinel returns `jwt-fake-<app_id>` for test stacks.
 2. **Installation token** — `POST /app/installations/{id}/access_tokens`, ~1hr TTL, acquired per-call, no cache.
 
-`get_installation_token(org_id)` is on the public Protocol because the workspace plugin needs it at clone time.
+`get_installation_token(org_id)` is on the public Protocol because the workspace plugin needs it at clone time. `list_installation_repos(org_id)` is on the Protocol too: this plugin owns repo enumeration (`GET /installation/repositories`, `per_page=100`, full-names only; `[]` on missing install or error), and sibling plugins (claude_code) read it through the `core/vcs` registry rather than importing this plugin.
 
 ### Login provider (GitHub OAuth App)
 

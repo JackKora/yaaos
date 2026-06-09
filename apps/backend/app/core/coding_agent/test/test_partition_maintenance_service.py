@@ -1,10 +1,11 @@
 """Service-tier guard for the daily `coding_agent_activity_partition_maintenance`
 `@scheduled` task.
 
-The migration seeds a fixed three-week window (prev/current/next ISO
-weeks); the rolling-window task replaces that with continuous coverage —
-create the current week + the next two, drop partitions whose week is
-more than 4 weeks before the current week.
+The migration seeds the same window as the maintenance task — the current
+ISO-UTC week through +2 — so a fresh DB and a long-running one have
+identical create-ahead. The rolling-window task keeps that coverage
+continuous and drops partitions whose week is more than 4 weeks before
+the current week.
 
 Invariants:
 
@@ -13,9 +14,8 @@ Invariants:
   - `tick_once` at the daily 01:00 UTC slot wins the per-tick claim once.
   - The maintenance body is idempotent under double-fire — running twice
     leaves the same partition set as running once.
-  - The body creates a partition with a future ISO week that the
-    migration's three-week seed cannot have covered (current + 2 weeks
-    is the new window; the migration's window stops at current + 1).
+  - The body keeps the current week + the next two covered (the shared
+    `(0, +1, +2)` window).
   - The body drops a partition whose ISO week is older than 4 weeks
     before the current week.
 """
@@ -119,9 +119,8 @@ async def test_partition_maintenance_fires_at_daily_slot(_migrated_schema: None,
 @pytest.mark.asyncio
 async def test_maintain_creates_two_weeks_ahead(_migrated_schema: None) -> None:
     """The maintenance body's create-ahead window covers current week +
-    next two — wider than the migration's three-week seed
-    (prev/current/next). The current-week-plus-two partition exists
-    after the body runs but is NOT in the migration's seed."""
+    next two — the shared `(0, +1, +2)` window. The current-week-plus-two
+    partition exists after the body runs."""
     now = datetime.now(UTC)
     today_midnight = datetime(now.year, now.month, now.day, tzinfo=UTC)
     week_start = today_midnight - timedelta(days=today_midnight.weekday())
@@ -181,12 +180,12 @@ async def test_maintain_drops_partitions_older_than_four_weeks(_migrated_schema:
     after = await _list_partitions()
     assert old_name not in after, f"expected {old_name} to be dropped; after={after}"
 
-    # The migration's prev-week seed (offset -1) survives — only weeks
-    # strictly older than 4 weeks back are dropped.
-    prev_iso_key = _iso_key_for(week_start - timedelta(weeks=1))
-    prev_name = f"coding_agent_activity_p{prev_iso_key:06d}"
-    assert prev_name in after, (
-        f"prev-week seed {prev_name} should survive (only >4-weeks dropped); after={after}"
+    # The current-week partition (offset 0, in both the seed and maintenance
+    # windows) survives — only weeks strictly older than 4 weeks back are dropped.
+    current_iso_key = _iso_key_for(week_start)
+    current_name = f"coding_agent_activity_p{current_iso_key:06d}"
+    assert current_name in after, (
+        f"current-week partition {current_name} should survive (only >4-weeks dropped); after={after}"
     )
 
 

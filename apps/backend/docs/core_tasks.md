@@ -21,6 +21,7 @@
 - **Recurring schedules are static + declarative** — `@scheduled(name, cron)` and `schedule_task(name, cron, task_ref=...)` register at import time into a process-local registry. No runtime mutation, no leader election. Every worker runs `scheduler_loop`; cluster safety lives in the per-tick claim, not in elected ownership.
 - **Per-tick atomic claim is the sole gate** — for each registered schedule whose cron matches the current floored-minute slot, the tick attempts `INSERT INTO scheduled_runs (schedule_id, fire_time) VALUES (...) ON CONFLICT DO NOTHING`. Only the worker whose insert wins (`rowcount == 1`) calls `enqueue(...)`. Losers see `rowcount == 0` and skip. Mirrors the `github_webhook_events` `ON CONFLICT` dedup precedent.
 - **`fire_time` is floored to the minute (UTC)** — every worker computing within the same minute races the same composite-PK row regardless of within-minute drift; no double-enqueues from multiple sub-minute passes.
+- **`scheduler_loop` failures back off exponentially** — a caught `tick_once` error is logged + swallowed (the loop never exits on a transient hiccup), but the post-error sleep grows as `tick_interval_seconds * 2**consecutive_failures`, capped at 120 s. A successful tick resets the counter and restores the normal cadence. This bounds the error-log rate during a persistent outage (DB unreachable, broker error) to O(log(duration)) instead of a fixed cadence.
 - **Scheduled bodies must remain idempotent** — same rule as every `core/tasks` body. The claim is the strong guarantee that exactly one *enqueue* happens per slot; the body itself can still re-run on dispatch retry per the existing outbox-drain semantics.
 
 ## Gotchas
@@ -43,3 +44,4 @@
 `test/test_scoped_task_registration.py` — task visible inside scope, gone outside, cleans up on exception.
 `test/test_scheduler_exactly_once_service.py` — N concurrent `tick_once` calls on independent sessions for one fire slot → exactly one `scheduled_runs` insert wins → exactly one outbox enqueue. The named guard for the per-tick claim invariant.
 `test/test_scheduled_runs_prune_service.py` — broker registration of the prune task body; body deletes >7-day rows and leaves fresher rows alone.
+`test/test_scheduler_backoff.py` — unit-tests the pure `_backoff_sleep` helper: exponential growth, 120 s cap, normal-cadence restore after a reset.

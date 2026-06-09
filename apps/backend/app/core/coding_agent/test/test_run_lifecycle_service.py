@@ -5,6 +5,9 @@ Covers:
 - `finalize_run` at terminal event writes status/exit_code/duration_ms.
 - The run-sink fires only for InvokeClaudeCode terminal events; all other
   command kinds are no-ops.
+- The run-sink resolves the plugin from the run row's `plugin_id` and skips
+  (logs + returns, no raise, run stays unfinalised) when that plugin is
+  unregistered.
 - `reviews.run_id` is populated when `PostFindings` runs after a CodeReview.
 """
 
@@ -40,6 +43,7 @@ async def _seed_run(
     *,
     org_id: uuid.UUID,
     command_kind: str = "review",
+    plugin_id: str = "claude_code",
 ) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID]:
     """Insert a coding_agent_run with status=running. Returns (run_id, wfe_id, cmd_id, agent_cmd_id)."""
     wfe_id = uuid.uuid4()
@@ -50,6 +54,7 @@ async def _seed_run(
         step_id="review",
         agent_command_id=cmd_id,
         command_kind=command_kind,
+        plugin_id=plugin_id,
         session=db_session,
     )
     return run_id, wfe_id, cmd_id, cmd_id
@@ -72,6 +77,7 @@ async def test_create_run_inserts_running_row(db_session) -> None:
         step_id="review",
         agent_command_id=cmd_id,
         command_kind="review",
+        plugin_id="claude_code",
         session=db_session,
     )
 
@@ -86,6 +92,7 @@ async def test_create_run_inserts_running_row(db_session) -> None:
     assert row.step_id == "review"
     assert row.agent_command_id == cmd_id
     assert row.command_kind == "review"
+    assert row.plugin_id == "claude_code"
     assert row.tokens_in is None
     assert row.tokens_out is None
     assert row.exit_code is None
@@ -279,6 +286,61 @@ async def test_run_sink_finalizes_invoke_claude_code_failure(db_session) -> None
     assert row.exit_code == 1
 
 
+@pytest.mark.service
+@pytest.mark.asyncio
+async def test_run_sink_resolves_plugin_from_run_row(db_session) -> None:
+    """The sink resolves the plugin from the run row's `plugin_id`, not a
+    constant. A run seeded with the registered plugin_id finalizes."""
+    org_id = uuid.uuid4()
+    run_id, _, cmd_id, _ = await _seed_run(
+        db_session, org_id=org_id, command_kind="review", plugin_id="claude_code"
+    )
+
+    sink = CodingAgentRunSinkImpl()
+    await sink.handle_terminal_event(
+        command_id=cmd_id,
+        command_kind="InvokeClaudeCode",
+        event_kind="completed_success",
+        outputs={"exit_code": 0, "stdout": ""},
+        session=db_session,
+    )
+
+    row = (
+        await db_session.execute(select(CodingAgentRunRow).where(CodingAgentRunRow.id == run_id))
+    ).scalar_one()
+    assert row.plugin_id == "claude_code"
+    assert row.status == "success"
+
+
+@pytest.mark.service
+@pytest.mark.asyncio
+async def test_run_sink_skips_when_plugin_unregistered(db_session) -> None:
+    """If the run's plugin_id is not in the registry, the sink logs + returns
+    without raising and without finalizing the run row (defensive: the sink
+    may be loaded without the issuing plugin in a misconfigured env)."""
+    org_id = uuid.uuid4()
+    run_id, _, cmd_id, _ = await _seed_run(
+        db_session, org_id=org_id, command_kind="review", plugin_id="unregistered_plugin"
+    )
+
+    sink = CodingAgentRunSinkImpl()
+    # Must not raise even though the plugin is absent from the registry.
+    await sink.handle_terminal_event(
+        command_id=cmd_id,
+        command_kind="InvokeClaudeCode",
+        event_kind="completed_success",
+        outputs={"exit_code": 0, "stdout": ""},
+        session=db_session,
+    )
+
+    # Run row stays unfinalised (still "running").
+    row = (
+        await db_session.execute(select(CodingAgentRunRow).where(CodingAgentRunRow.id == run_id))
+    ).scalar_one()
+    assert row.status == "running"
+    assert row.completed_at is None
+
+
 # ── reviews.run_id ─────────────────────────────────────────────────────────────
 
 
@@ -382,6 +444,7 @@ async def test_get_run_id_for_workflow_step(db_session) -> None:
         step_id="review",
         agent_command_id=cmd_id,
         command_kind="review",
+        plugin_id="claude_code",
         session=db_session,
     )
 
@@ -411,6 +474,7 @@ async def test_get_step_activity_returns_activity_log_when_present(db_session) -
         step_id="review",
         agent_command_id=cmd_id,
         command_kind="review",
+        plugin_id="claude_code",
         session=db_session,
     )
 
@@ -466,6 +530,7 @@ async def test_get_step_activity_returns_none_when_partition_aged_out(db_session
         step_id="review",
         agent_command_id=cmd_id,
         command_kind="review",
+        plugin_id="claude_code",
         session=db_session,
     )
     # Finalize with `activity=None` — no row is inserted in coding_agent_activity.

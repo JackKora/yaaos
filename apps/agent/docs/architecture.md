@@ -78,6 +78,10 @@ Supervisor maintains a bidirectional WS to `/api/v1/agent/activity` when `Config
 
 `RealHandler.RunClaude` dispatches via the `RunFunc` seam (production default: `RunStreaming`) and wires `OnStdoutLine` to push each Claude Code stream-json line as a `kind=progress` AgentEvent while also accumulating locally for the terminal event. `progress` events record without resuming the workflow engine — only `completed_*` events resume it.
 
+### Per-command completion token
+
+Each command header carries a one-time backend-minted `completion_token`. The agent echoes it on every AgentEvent it posts for that command (`received`, `progress`, terminal `completed_*`); the backend verifies it by hash before accepting the event. The token rides the supervisor→child IPC hop via the embedded `CommandHeader` and is threaded onto every constructed `AgentEvent` (workspace terminal + progress, supervisor-synthesized failures, AgentCommand success). The agent never inspects or stores it — pure pass-through. See [protocol.md § Completion token](protocol.md).
+
 ### Workspace registry and lifecycle
 
 The `Pool` is the single owner of workspace state. It holds one record per workspace_id; each record tracks two orthogonal axes:

@@ -64,6 +64,7 @@ Each takes a `Workspace`, a mode-specific Pydantic context, and an optional `OnA
 | `step_id` | Workflow step id (e.g. `"review"`). |
 | `agent_command_id` | FK to `agent_commands.id` — the exact command that ran. |
 | `command_kind` | Command kind string (e.g. `"InvokeClaudeCode"`). |
+| `plugin_id` | The coding-agent plugin that issued the run. The sink resolves which plugin parses the terminal event from this column — `core/coding_agent` hardcodes no vendor. |
 | `model` | Model identifier from the exec spec (nullable). |
 | `effort` | Effort level from the exec spec (nullable). |
 | `status` | `running` → `success` or `failure`. |
@@ -77,7 +78,8 @@ Index: `(org_id, command_kind, created_at)` for dashboard-style aggregations.
 
 ### Service functions
 
-- `create_run(*, org_id, workflow_execution_id, step_id, agent_command_id, command_kind, model=None, effort=None, session) -> UUID` — inserts with `status=running`, flushes, returns the server-minted run id. Called by `CodeReview.dispatch` in the same transaction so the row is durable iff the dispatch commits.
+- `create_run(*, org_id, workflow_execution_id, step_id, agent_command_id, command_kind, plugin_id, model=None, effort=None, session) -> UUID` — inserts with `status=running`, flushes, returns the server-minted run id. `plugin_id` is the issuing plugin (`CodeReview.dispatch` passes the resolved plugin's `plugin_id`). Called in the same transaction so the row is durable iff the dispatch commits.
+- `get_run_ref_for_command(agent_command_id, *, session) -> RunRef | None` — returns `(run_id, plugin_id)`; the run-sink uses it to resolve which plugin parses the terminal event.
 - `finalize_run(run_id, *, usage: Usage, activity: ActivityLog | None, exit_code, status, session)` — updates `status`, `exit_code`, `tokens_in`/`tokens_out`, `duration_ms`, `completed_at`. Prefers `usage.duration_ms` when present, falling back to wall-clock (`completed_at − started_at`). When `activity` is non-`None` and the run's `org_id` is known, inserts one `coding_agent_activity` row carrying the rendered log as a JSONB payload.
 - `get_run_id_for_command(agent_command_id, *, session) -> UUID | None` — lookup by command id.
 - `get_run_id_for_workflow_step(workflow_execution_id, step_id, *, session) -> UUID | None` — lookup by `(workflow_execution_id, step_id)`.
@@ -85,7 +87,7 @@ Index: `(org_id, command_kind, created_at)` for dashboard-style aggregations.
 
 ### `AgentRunSink` (IoC seam)
 
-`core/agent_gateway` defines the `AgentRunSink` Protocol and a single-slot registry (`register_run_sink` / `get_run_sink` / `clear_run_sink`) in `app/core/agent_gateway/run_sink.py`. This module registers `CodingAgentRunSinkImpl()` at import time via the `core/coding_agent.__init__` side effect. `agent_gateway.record_agent_event` calls the registered sink on every terminal `AgentEvent`; the sink no-ops silently for non-`InvokeClaudeCode` command kinds. For `InvokeClaudeCode` runs it reads the captured stdout from `event.outputs`, calls the registered `claude_code` plugin's `parse_usage` + `render_activity`, and passes the results into `finalize_run`. See [core_agent_gateway.md](core_agent_gateway.md).
+`core/agent_gateway` defines the `AgentRunSink` Protocol and a single-slot registry (`register_run_sink` / `get_run_sink` / `clear_run_sink`) in `app/core/agent_gateway/run_sink.py`. This module registers `CodingAgentRunSinkImpl()` at import time via the `core/coding_agent.__init__` side effect. `agent_gateway.record_agent_event` calls the registered sink on every terminal `AgentEvent`; the sink no-ops silently for non-`InvokeClaudeCode` command kinds. For `InvokeClaudeCode` runs it reads the run row's `plugin_id` (via `get_run_ref_for_command`), resolves that plugin, reads the captured stdout from `event.outputs`, calls the plugin's `parse_usage` + `render_activity`, and passes the results into `finalize_run`. Plugin resolution is defensive: a `PluginNotFoundError` (the sink loaded without the issuing plugin in a misconfigured/multi-plugin env) logs a warning and returns early — the run row stays unfinalised and the workflow still proceeds. See [core_agent_gateway.md](core_agent_gateway.md).
 
 ### Table — `coding_agent_activity`
 
@@ -98,7 +100,7 @@ Partitioned by RANGE on `created_at` (weekly child partitions, ~4-week TTL). Thi
 | `org_id` | Soft FK — for org-scoped queries / partition pruning. |
 | `payload` | JSONB blob — serialized `ActivityLog` (`events` tuple, each with `seq`/`ts`/`kind`/`message`/`detail`). |
 
-The row's SQLAlchemy mapped class (`CodingAgentActivityRow`) is declared on a dedicated `DeclarativeBase` (`_PartitionedBase`) with its own `MetaData()` so `Base.metadata.create_all` skips it — the partitioned parent is created exclusively by the `_apply_create_coding_agent_activity` migration step. Deleting the parent run cascades the activity rows.
+The row's SQLAlchemy mapped class (`CodingAgentActivityRow`) lives on the shared `Base` and declares `postgresql_partition_by="RANGE (created_at)"`, so `Base.metadata.create_all` emits the partitioned parent — keeping the ORM column shape and the migration DDL from drifting. Child partitions are seeded by an `after_create` listener (create_all path) or the `_apply_create_coding_agent_activity` migration (`migrate()`/prod path); both use the seed window `(current week, +1, +2)` matching the maintenance task. Deleting the parent run cascades the activity rows.
 
 ## Data owned
 
@@ -109,7 +111,7 @@ The row's SQLAlchemy mapped class (`CodingAgentActivityRow`) is declared on a de
 
 - `app/core/coding_agent/test/test_registry.py` — register/get/duplicate-rejection, `validate_config` forwarding, `health_check_all` exception-to-unhealthy.
 - `app/core/coding_agent/test/test_invocation.py` — `build_invocation` exec-block shape, argv/stdin/env, allowed-tools constants.
-- `app/core/coding_agent/test/test_run_lifecycle_service.py` — service tests: `create_run`/`finalize_run` round-trip (tokens + duration land on the row), run-sink no-op for non-`InvokeClaudeCode`, activity blob persists to `coding_agent_activity`, `reviews.run_id` populated via `publish_findings`, `get_step_activity` returns the rendered log when present and `None` when no run exists or the activity row is absent (aged-out partition).
+- `app/core/coding_agent/test/test_run_lifecycle_service.py` — service tests: `create_run`/`finalize_run` round-trip (tokens + duration land on the row; `plugin_id` persists), run-sink no-op for non-`InvokeClaudeCode`, run-sink resolves the plugin from the run row's `plugin_id` and skips (logs + returns, no raise, run stays unfinalised) when that plugin is unregistered, activity blob persists to `coding_agent_activity`, `reviews.run_id` populated via `publish_findings`, `get_step_activity` returns the rendered log when present and `None` when no run exists or the activity row is absent (aged-out partition).
 - `app/plugins/claude_code/test/test_stream_parsing.py` — `parse_usage` (extracts tokens + duration, tolerates missing usage block, empty stream) and `render_activity` (monotonic seq across the full stream, null-render filtering, empty-stream → empty log).
-- `app/core/database/test/test_coding_agent_activity_migration.py` — verifies the parent is RANGE-partitioned, ≥3 weekly child partitions exist, and `_apply_create_coding_agent_activity` is idempotent under double-fire.
+- `app/core/database/test/test_coding_agent_activity_migration.py` — verifies the parent is RANGE-partitioned, ≥3 weekly child partitions exist, `_apply_create_coding_agent_activity` is idempotent under double-fire, the shared `_coding_agent_activity_partition_ddl` helper names partitions deterministically for a known UTC date (no backdated week), and a `created_at=now()` row routes to the current-week child.
 - Plugin-specific behaviour in `app/plugins/<plugin>/test/`.

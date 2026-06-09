@@ -185,6 +185,10 @@ class StubVCSPlugin:
         del org_id
         return "stub-installation-token"
 
+    async def list_installation_repos(self, org_id: UUID) -> list[str]:
+        del org_id
+        return []
+
 
 @contextmanager
 def register_stub_vcs(*, plugin_id: str = "github") -> Iterator[StubVCSPlugin]:

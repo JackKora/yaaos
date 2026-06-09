@@ -41,6 +41,10 @@ log = structlog.get_logger("core.tasks.scheduler")
 
 _SCHEDULES: dict[str, _Schedule] = {}
 
+# Upper bound on the scheduler-loop error-backoff sleep. Caps the retry
+# cadence during a persistent outage so the log rate stays O(log(duration)).
+_MAX_SLEEP_SECONDS = 120.0
+
 
 @dataclass(frozen=True, slots=True)
 class _Schedule:
@@ -164,6 +168,22 @@ async def _try_claim(
     return result.rowcount == 1
 
 
+def _backoff_sleep(
+    consecutive_failures: int,
+    tick_interval: float,
+    max_sleep: float = _MAX_SLEEP_SECONDS,
+) -> float:
+    """Exponential backoff sleep for the scheduler loop's error path.
+
+    `consecutive_failures` is the count of ticks that failed in a row
+    *before* this sleep (1 on the first failure). The sleep grows as
+    `tick_interval * 2**consecutive_failures`, capped at `max_sleep`, so a
+    persistent outage produces a log rate of O(log(duration)) rather than
+    a fixed cadence.
+    """
+    return min(tick_interval * 2**consecutive_failures, max_sleep)
+
+
 async def scheduler_loop(*, tick_interval_seconds: float = 20.0) -> None:
     """Long-running tick loop. Runs in the worker alongside the drain.
 
@@ -174,8 +194,12 @@ async def scheduler_loop(*, tick_interval_seconds: float = 20.0) -> None:
     slot.
 
     Failures in `tick_once` are logged + swallowed; the loop never exits
-    on a transient DB or broker hiccup.
+    on a transient DB or broker hiccup. On a persistent failure the sleep
+    grows by exponential backoff (`tick_interval_seconds * 2**failures`,
+    capped at 120 s) so the error-log rate stays bounded; a successful
+    tick resets the counter and restores the normal cadence.
     """
+    consecutive_failures = 0
     while True:
         try:
             async with db_session() as s:
@@ -183,6 +207,14 @@ async def scheduler_loop(*, tick_interval_seconds: float = 20.0) -> None:
                 await s.commit()
             if fired:
                 log.info("tasks.scheduler.fired", schedule_ids=fired)
+            consecutive_failures = 0
+            sleep_seconds = tick_interval_seconds
         except Exception:
-            log.exception("tasks.scheduler.tick_failed")
-        await asyncio.sleep(tick_interval_seconds)
+            consecutive_failures += 1
+            sleep_seconds = _backoff_sleep(consecutive_failures, tick_interval_seconds)
+            log.exception(
+                "tasks.scheduler.tick_failed",
+                consecutive_failures=consecutive_failures,
+                backoff_seconds=sleep_seconds,
+            )
+        await asyncio.sleep(sleep_seconds)

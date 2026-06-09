@@ -689,10 +689,11 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 // they still have a command_id that the backend tracks for the lease.
 func (s *Supervisor) postReceivedEvent(ctx context.Context, header protocol.CommandHeader) {
 	ev := protocol.AgentEvent{
-		CommandID:   header.CommandID,
-		Kind:        protocol.EventReceived,
-		ReportedAt:  time.Now().UTC(),
-		Traceparent: header.Traceparent,
+		CommandID:       header.CommandID,
+		Kind:            protocol.EventReceived,
+		ReportedAt:      time.Now().UTC(),
+		Traceparent:     header.Traceparent,
+		CompletionToken: header.CompletionToken,
 	}
 	if err := s.client.PostCommandEvent(ctx, header.CommandID, ev); err != nil {
 		if err != protocol.ErrStaleClaim {
@@ -852,11 +853,12 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 			event = failureEvent(header, err.Error())
 		} else {
 			event = protocol.AgentEvent{
-				CommandID:   header.CommandID,
-				Kind:        protocol.EventCompletedSuccess,
-				Outputs:     res.ToWire(),
-				ReportedAt:  time.Now().UTC(),
-				Traceparent: childTP,
+				CommandID:       header.CommandID,
+				Kind:            protocol.EventCompletedSuccess,
+				Outputs:         res.ToWire(),
+				ReportedAt:      time.Now().UTC(),
+				Traceparent:     childTP,
+				CompletionToken: header.CompletionToken,
 			}
 		}
 	default:

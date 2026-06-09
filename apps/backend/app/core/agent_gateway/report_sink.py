@@ -77,6 +77,27 @@ class WorkspaceAgentReportSink(Protocol):
         """
         ...
 
+    async def materialise_provision_success(
+        self,
+        *,
+        command_id: UUID,
+        agent_id: UUID,
+        session: object,
+    ) -> None:
+        """Create the lean `workspaces` row for a successfully provisioned
+        workspace, owned by `agent_id`.
+
+        The Go agent never sends workspace events, so the row is materialised
+        on the terminal `completed_success` of the originating
+        `ProvisionWorkspace` command. The sink reads that command's row to
+        resolve the workspace id, org, TTL, idle window, and provider. The
+        operation is idempotent — a row already present for the workspace is
+        left untouched (no duplicate insert).
+
+        `session` is an `AsyncSession`; caller commits.
+        """
+        ...
+
     async def resolve_claim(
         self,
         command_id: UUID,
