@@ -318,7 +318,7 @@ async def test_publish_findings_null_anchor_calls_post_finding(db_session) -> No
         )
 
     assert len(stub.posted_findings) == 1
-    _ext_id, kwargs = stub.posted_findings[0]
+    _org_id, _ext_id, kwargs = stub.posted_findings[0]
     assert kwargs["file"] is None
     assert kwargs["line_start"] is None
 

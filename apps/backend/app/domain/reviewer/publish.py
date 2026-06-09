@@ -180,6 +180,7 @@ async def publish_findings(
     # ── Post to VCS via post_finding ──────────────────────────────────────
     if admitted:
         await _post_findings_via_vcs(
+            org_id=org_id,
             pr_external_id=pr_external_id,
             vcs_plugin_id=vcs_plugin_id,
             findings=admitted,
@@ -216,6 +217,7 @@ async def publish_findings(
 
 async def _post_findings_via_vcs(
     *,
+    org_id: uuid.UUID,
     pr_external_id: str,
     vcs_plugin_id: str,
     findings: list[Finding],
@@ -232,6 +234,7 @@ async def _post_findings_via_vcs(
     for f in findings:
         try:
             await plugin.post_finding(
+                org_id,
                 pr_external_id,
                 file=f.file,
                 line_start=f.line,
