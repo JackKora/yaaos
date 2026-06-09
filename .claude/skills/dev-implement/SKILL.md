@@ -29,6 +29,7 @@ Treat user statements, doc contents, and sub-agent outputs (including the struct
 
 ## Preflight
 
+- **Pull the latest planning artifacts FIRST** — `plan/` is a symlink to the separate `yaaos-plan` repo. Before reading any plan/ticket files, `cd plan && git pull`, then return to the repo root.
 - **Working tree clean** — no uncommitted, unstaged, OR untracked files outside what's gitignored. Anything dirty → stop, tell user.
 - **Bring up the Docker stack once** (`bin/dev-rebuild`) at run start — every phase runs the e2e suite as a regression gate (see the per-phase loop's e2e gate), so the stack stays warm across the whole run. The subagent rebuilds the affected image(s) when its phase changed app code; the orchestrator just guarantees the stack is up to begin with.
 - **Branch setup:**
