@@ -6,9 +6,18 @@
       "Bash",
       "Skill(*)",
       "Skill",
+      "Agent(*)",
+      "Agent",
+      "Task(*)",
+      "Task",
       "WebFetch",
       "WebSearch",
-      "Read"
+      "Read",
+      "Grep",
+      "Glob",
+      "Write",
+      "Edit",
+      "TodoWrite"
     ],
     "deny": [
       "Bash(rm *)",
