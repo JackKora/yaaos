@@ -198,19 +198,10 @@ class GitHubPlugin:
             "Accept": "application/vnd.github+json",
         }
 
-    async def _resolve_org_id(self) -> UUID:
-        """: single org. Find via a github_app_installations row."""
-        async with db_session() as s:
-            row = (await s.execute(select(GitHubAppInstallationRow).limit(1))).scalar_one_or_none()
-        if row is None:
-            return UUID("00000000-0000-0000-0000-000000000001")
-        return row.org_id
-
     # ── VCSPlugin methods ────────────────────────────────────────────────────
 
-    async def fetch_pr(self, external_id: str) -> VCSPullRequest:
+    async def fetch_pr(self, org_id: UUID, external_id: str) -> VCSPullRequest:
         owner, repo, num = _split_external(external_id)
-        org_id = await self._resolve_org_id()
         async with httpx.AsyncClient(base_url=self.base_url, timeout=15) as client:
             resp = await client.get(
                 f"/repos/{owner}/{repo}/pulls/{num}",
@@ -247,9 +238,8 @@ class GitHubPlugin:
             updated_at=_parse(p.get("updated_at")),
         )
 
-    async def fetch_diff(self, external_id: str) -> Diff:
+    async def fetch_diff(self, org_id: UUID, external_id: str) -> Diff:
         owner, repo, num = _split_external(external_id)
-        org_id = await self._resolve_org_id()
         async with httpx.AsyncClient(base_url=self.base_url, timeout=15) as client:
             headers = await self._api_headers(org_id)
             # Raw diff
@@ -276,9 +266,8 @@ class GitHubPlugin:
         ]
         return Diff(raw=raw, files=files)
 
-    async def list_yaaos_comments(self, external_id: str) -> list[Comment]:
+    async def list_yaaos_comments(self, org_id: UUID, external_id: str) -> list[Comment]:
         owner, repo, num = _split_external(external_id)
-        org_id = await self._resolve_org_id()
         async with httpx.AsyncClient(base_url=self.base_url, timeout=15) as client:
             headers = await self._api_headers(org_id)
             inline = await client.get(f"/repos/{owner}/{repo}/pulls/{num}/comments", headers=headers)
@@ -309,7 +298,9 @@ class GitHubPlugin:
             )
         return comments
 
-    async def detect_force_push(self, repo_external_id: str, before_sha: str, after_sha: str) -> bool:
+    async def detect_force_push(
+        self, org_id: UUID, repo_external_id: str, before_sha: str, after_sha: str
+    ) -> bool:
         """Use GitHub's compare API: a force-push diverges history.
 
         `status == "diverged"` means the new head is not a fast-forward from
@@ -319,7 +310,6 @@ class GitHubPlugin:
         if not before_sha or not after_sha or before_sha == after_sha:
             return False
         owner, repo = repo_external_id.split("/", 1)
-        org_id = await self._resolve_org_id()
         try:
             async with httpx.AsyncClient(base_url=self.base_url, timeout=10) as client:
                 resp = await client.get(
@@ -333,7 +323,9 @@ class GitHubPlugin:
             return False
         return resp.json().get("status") == "diverged"
 
-    async def list_commit_messages(self, repo_external_id: str, prev_sha: str, head_sha: str) -> list[str]:
+    async def list_commit_messages(
+        self, org_id: UUID, repo_external_id: str, prev_sha: str, head_sha: str
+    ) -> list[str]:
         """Commit messages between `prev_sha` and `head_sha` via compare API.
 
         Used by reviewer.handle_push to detect base-branch merges. The
@@ -343,7 +335,6 @@ class GitHubPlugin:
         if not prev_sha or not head_sha or prev_sha == head_sha:
             return []
         owner, repo = repo_external_id.split("/", 1)
-        org_id = await self._resolve_org_id()
         try:
             async with httpx.AsyncClient(base_url=self.base_url, timeout=10) as client:
                 resp = await client.get(
@@ -357,9 +348,8 @@ class GitHubPlugin:
         data = resp.json()
         return [((c.get("commit") or {}).get("message", "") or "") for c in data.get("commits", [])]
 
-    async def is_repo_accessible(self, repo_external_id: str) -> bool:
+    async def is_repo_accessible(self, org_id: UUID, repo_external_id: str) -> bool:
         owner, repo = repo_external_id.split("/", 1)
-        org_id = await self._resolve_org_id()
         try:
             async with httpx.AsyncClient(base_url=self.base_url, timeout=10) as client:
                 resp = await client.get(f"/repos/{owner}/{repo}", headers=await self._api_headers(org_id))
@@ -369,6 +359,7 @@ class GitHubPlugin:
 
     async def post_finding(
         self,
+        org_id: UUID,
         external_id: str,
         *,
         file: str | None,
@@ -389,7 +380,6 @@ class GitHubPlugin:
         # that's GitHub's path for top-level PR comments despite the "issues"
         # naming.
         owner, repo, num = _split_external(external_id)
-        org_id = await self._resolve_org_id()
         body = _format_finding_body(
             finding_display_id=finding_display_id,
             category=category,
@@ -403,7 +393,7 @@ class GitHubPlugin:
         async with httpx.AsyncClient(base_url=self.base_url, timeout=30) as client:
             headers = await self._api_headers(org_id)
             if file and line_start is not None:
-                pr = await self.fetch_pr(external_id)
+                pr = await self.fetch_pr(org_id, external_id)
                 resp = await client.post(
                     f"/repos/{owner}/{repo}/pulls/{num}/comments",
                     json={
@@ -424,10 +414,9 @@ class GitHubPlugin:
         resp.raise_for_status()
         return str(resp.json().get("id", ""))
 
-    async def post_comment(self, external_id: str, *, body: str) -> str:
+    async def post_comment(self, org_id: UUID, external_id: str, *, body: str) -> str:
         # Top-level PR comment — uses the issue-comments endpoint.
         owner, repo, num = _split_external(external_id)
-        org_id = await self._resolve_org_id()
         async with httpx.AsyncClient(base_url=self.base_url, timeout=15) as client:
             resp = await client.post(
                 f"/repos/{owner}/{repo}/issues/{num}/comments",
@@ -437,9 +426,10 @@ class GitHubPlugin:
         resp.raise_for_status()
         return str(resp.json().get("id", ""))
 
-    async def post_comment_reply(self, external_id: str, parent_comment_external_id: str, body: str) -> str:
+    async def post_comment_reply(
+        self, org_id: UUID, external_id: str, parent_comment_external_id: str, body: str
+    ) -> str:
         owner, repo, num = _split_external(external_id)
-        org_id = await self._resolve_org_id()
         async with httpx.AsyncClient(base_url=self.base_url, timeout=15) as client:
             resp = await client.post(
                 f"/repos/{owner}/{repo}/pulls/{num}/comments/{parent_comment_external_id}/replies",
@@ -458,7 +448,9 @@ class GitHubPlugin:
         data = resp.json()
         return str(data.get("id", ""))
 
-    async def mark_comments_outdated(self, external_id: str, comment_external_ids: list[str]) -> None:
+    async def mark_comments_outdated(
+        self, org_id: UUID, external_id: str, comment_external_ids: list[str]
+    ) -> None:
         # No-op for GitHub (GitHub marks outdated automatically on force push).
         return
 

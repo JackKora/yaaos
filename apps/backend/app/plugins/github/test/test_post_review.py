@@ -49,16 +49,12 @@ def plugin(monkeypatch: pytest.MonkeyPatch) -> GitHubPlugin:
     p = GitHubPlugin()
     monkeypatch.setattr(GitHubPlugin, "base_url", _BASE_URL)
 
-    async def _org_id(self: GitHubPlugin) -> UUID:
-        return _ORG_ID
-
     async def _headers(self: GitHubPlugin, org_id: UUID) -> dict[str, str]:
         return {}
 
-    async def _fetch_pr(self: GitHubPlugin, external_id: str) -> VCSPullRequest:
+    async def _fetch_pr(self: GitHubPlugin, org_id: UUID, external_id: str) -> VCSPullRequest:
         return _stub_pr()
 
-    monkeypatch.setattr(GitHubPlugin, "_resolve_org_id", _org_id)
     monkeypatch.setattr(GitHubPlugin, "_api_headers", _headers)
     monkeypatch.setattr(GitHubPlugin, "fetch_pr", _fetch_pr)
     return p
@@ -101,7 +97,7 @@ async def test_inline_finding_posts_to_pulls_comments(plugin: GitHubPlugin, http
         json={"id": 100},
     )
 
-    comment_id = await plugin.post_finding("acme/web#7", **_finding_kwargs())
+    comment_id = await plugin.post_finding(_ORG_ID, "acme/web#7", **_finding_kwargs())
 
     assert comment_id == "100"
     requests = httpx_mock.get_requests()
@@ -121,7 +117,7 @@ async def test_null_anchor_finding_posts_to_issue_comments(plugin: GitHubPlugin,
     )
 
     comment_id = await plugin.post_finding(
-        "acme/web#7", **_finding_kwargs(file=None, line_start=None, line_end=None)
+        _ORG_ID, "acme/web#7", **_finding_kwargs(file=None, line_start=None, line_end=None)
     )
 
     assert comment_id == "200"
@@ -137,7 +133,7 @@ async def test_post_comment_posts_to_issue_comments(plugin: GitHubPlugin, httpx_
         json={"id": 300},
     )
 
-    comment_id = await plugin.post_comment("acme/web#7", body="yaaos refused — secrets detected")
+    comment_id = await plugin.post_comment(_ORG_ID, "acme/web#7", body="yaaos refused — secrets detected")
 
     assert comment_id == "300"
     requests = httpx_mock.get_requests()

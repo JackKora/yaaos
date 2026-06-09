@@ -282,7 +282,7 @@ class SecretsScan:
             pr_external_id = str(ticket_ctx.payload.get("pr_external_id") or "")
             if not pr_external_id:
                 return Outcome.success(outputs={"rule_id": None})
-            diff = await vcs_plugin.fetch_diff(pr_external_id)
+            diff = await vcs_plugin.fetch_diff(ticket_ctx.org_id, pr_external_id)
         except Exception as exc:
             log.warning(
                 "secrets_scan.diff_fetch_failed",
@@ -296,7 +296,9 @@ class SecretsScan:
             return Outcome.success(outputs={"rule_id": None})
 
         try:
-            await vcs_plugin.post_comment(pr_external_id, body=secrets_warning_body(rule_id))
+            await vcs_plugin.post_comment(
+                ticket_ctx.org_id, pr_external_id, body=secrets_warning_body(rule_id)
+            )
         except Exception:
             log.exception(
                 "secrets_scan.post_warning_failed",

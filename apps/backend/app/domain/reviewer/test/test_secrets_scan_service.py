@@ -65,7 +65,7 @@ async def test_secrets_scan_skips_when_diff_contains_aws_key(workflow_context_pr
     assert outcome.outputs["rule_id"] == "aws_access_key"
     # Warning posted as a plain top-level comment so the human sees yaaos's refusal.
     assert len(stub.posted_comments) == 1
-    _, comment_body = stub.posted_comments[0]
+    _org_id, _ext_id, comment_body = stub.posted_comments[0]
     assert "aws_access_key" in comment_body
 
 
@@ -123,7 +123,7 @@ async def test_secrets_scan_advances_when_diff_fetch_fails(workflow_context_prov
     class _RaisingPlugin:
         plugin_id = "github"
 
-        async def fetch_diff(self, external_id):  # type: ignore[no-untyped-def]
+        async def fetch_diff(self, org_id, external_id):  # type: ignore[no-untyped-def]
             raise RuntimeError("github transient")
 
     from app.testing.isolation import scoped_vcs_plugin  # noqa: PLC0415

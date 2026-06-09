@@ -79,9 +79,9 @@ async def start_incremental_review(
     last_push_at = await _last_push_timestamp(pr_id)
 
     effective_prev = last_reviewed_sha or prev_head_sha
-    ancestor_ok = await _is_ancestor(pr.plugin_id, pr.repo_external_id, effective_prev, new_head_sha)
+    ancestor_ok = await _is_ancestor(pr.plugin_id, org_id, pr.repo_external_id, effective_prev, new_head_sha)
     new_commit_messages = await _new_commit_messages(
-        pr.plugin_id, pr.repo_external_id, effective_prev, new_head_sha
+        pr.plugin_id, org_id, pr.repo_external_id, effective_prev, new_head_sha
     )
 
     inputs = TriggerInputs(
@@ -302,13 +302,13 @@ async def _last_push_timestamp(pr_id: UUID) -> datetime | None:
 
 
 async def _new_commit_messages(
-    plugin_id: str, repo_external_id: str, prev_sha: str | None, head_sha: str
+    plugin_id: str, org_id: UUID, repo_external_id: str, prev_sha: str | None, head_sha: str
 ) -> list[str]:
     if not prev_sha or prev_sha == head_sha:
         return []
     plugin = get_vcs_plugin(plugin_id)
     try:
-        return await plugin.list_commit_messages(repo_external_id, prev_sha, head_sha)
+        return await plugin.list_commit_messages(org_id, repo_external_id, prev_sha, head_sha)
     except Exception:
         log.warning(
             "incremental.list_commit_messages_failed",
@@ -319,14 +319,16 @@ async def _new_commit_messages(
         return []
 
 
-async def _is_ancestor(plugin_id: str, repo_external_id: str, prev_sha: str | None, head_sha: str) -> bool:
+async def _is_ancestor(
+    plugin_id: str, org_id: UUID, repo_external_id: str, prev_sha: str | None, head_sha: str
+) -> bool:
     if not prev_sha:
         return False
     if prev_sha == head_sha:
         return True
     plugin = get_vcs_plugin(plugin_id)
     try:
-        force_push = await plugin.detect_force_push(repo_external_id, prev_sha, head_sha)
+        force_push = await plugin.detect_force_push(org_id, repo_external_id, prev_sha, head_sha)
         return not force_push
     except Exception:
         log.warning("incremental.is_ancestor_failed", repo=repo_external_id, prev=prev_sha, head=head_sha)

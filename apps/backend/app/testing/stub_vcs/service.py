@@ -86,10 +86,10 @@ class StubVCSPlugin:
         self._commit_messages: dict[tuple[str, str, str], list[str]] = {}
         self._force_push: dict[tuple[str, str, str], bool] = {}
         # Recording — tests read these to assert flow side-effects.
-        # Each entry: (external_id, kwargs_dict) matching post_finding's signature.
-        self.posted_findings: list[tuple[str, dict[str, object]]] = []
-        # Each entry: (external_id, body)
-        self.posted_comments: list[tuple[str, str]] = []
+        # Each entry: (org_id, external_id, kwargs_dict) matching post_finding's signature.
+        self.posted_findings: list[tuple[UUID, str, dict[str, object]]] = []
+        # Each entry: (org_id, external_id, body)
+        self.posted_comments: list[tuple[UUID, str, str]] = []
 
     # ── Test-driven state setters ────────────────────────────────────────
 
@@ -119,27 +119,37 @@ class StubVCSPlugin:
     def validate_settings(self, settings: dict[str, object]) -> dict[str, object]:
         return dict(settings)
 
-    async def fetch_pr(self, external_id: str) -> VCSPullRequest:
+    async def fetch_pr(self, org_id: UUID, external_id: str) -> VCSPullRequest:
+        del org_id
         return self._prs.get(external_id) or _default_pr(external_id, self.plugin_id)
 
-    async def fetch_diff(self, external_id: str) -> Diff:
+    async def fetch_diff(self, org_id: UUID, external_id: str) -> Diff:
+        del org_id
         return self._diffs.get(external_id) or _default_diff()
 
-    async def list_yaaos_comments(self, external_id: str) -> list[Comment]:
+    async def list_yaaos_comments(self, org_id: UUID, external_id: str) -> list[Comment]:
+        del org_id
         return list(self._comments.get(external_id, []))
 
-    async def is_repo_accessible(self, repo_external_id: str) -> bool:
-        del repo_external_id
+    async def is_repo_accessible(self, org_id: UUID, repo_external_id: str) -> bool:
+        del org_id, repo_external_id
         return True
 
-    async def detect_force_push(self, repo_external_id: str, before_sha: str, after_sha: str) -> bool:
+    async def detect_force_push(
+        self, org_id: UUID, repo_external_id: str, before_sha: str, after_sha: str
+    ) -> bool:
+        del org_id
         return self._force_push.get((repo_external_id, before_sha, after_sha), False)
 
-    async def list_commit_messages(self, repo_external_id: str, prev_sha: str, head_sha: str) -> list[str]:
+    async def list_commit_messages(
+        self, org_id: UUID, repo_external_id: str, prev_sha: str, head_sha: str
+    ) -> list[str]:
+        del org_id
         return list(self._commit_messages.get((repo_external_id, prev_sha, head_sha), []))
 
     async def post_finding(
         self,
+        org_id: UUID,
         external_id: str,
         *,
         file: str | None,
@@ -167,19 +177,23 @@ class StubVCSPlugin:
             "rule_source": rule_source,
             "suggested_fix": suggested_fix,
         }
-        self.posted_findings.append((external_id, entry))
+        self.posted_findings.append((org_id, external_id, entry))
         return f"stub-finding-comment-{len(self.posted_findings)}"
 
-    async def post_comment(self, external_id: str, *, body: str) -> str:
-        self.posted_comments.append((external_id, body))
+    async def post_comment(self, org_id: UUID, external_id: str, *, body: str) -> str:
+        self.posted_comments.append((org_id, external_id, body))
         return f"stub-comment-{len(self.posted_comments)}"
 
-    async def post_comment_reply(self, external_id: str, parent_comment_external_id: str, body: str) -> str:
-        del external_id, parent_comment_external_id, body
+    async def post_comment_reply(
+        self, org_id: UUID, external_id: str, parent_comment_external_id: str, body: str
+    ) -> str:
+        del org_id, external_id, parent_comment_external_id, body
         return "stub-reply-comment-id"
 
-    async def mark_comments_outdated(self, external_id: str, comment_external_ids: list[str]) -> None:
-        del external_id, comment_external_ids
+    async def mark_comments_outdated(
+        self, org_id: UUID, external_id: str, comment_external_ids: list[str]
+    ) -> None:
+        del org_id, external_id, comment_external_ids
 
     async def get_installation_token(self, org_id: UUID) -> str:
         del org_id

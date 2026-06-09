@@ -11,7 +11,7 @@ Does NOT own: finding taxonomy (lives in `domain/reviewer`), business logic, fil
 ## Why / invariants
 
 - **No finding value object crosses the boundary.** `post_finding` takes named primitive args; each plugin renders a platform-appropriate body. Finding taxonomy (severity, confidence, category) lives entirely in `domain/reviewer`.
-- **Plugin methods never see yaaos UUIDs.** They take `external_id: str` (GitHub: `"owner/repo#123"`). Conversion happens at the call site.
+- **Every async method takes `org_id: UUID` as the first positional arg.** The plugin uses `org_id` to look up its installation credentials; `external_id: str` (GitHub: `"owner/repo#123"`) identifies the PR or repo within that installation. Conversion from internal IDs to `external_id` happens at the call site.
 - **`get_installation_token` is short-lived; callers use once** (e.g., `git clone` via `GIT_ASKPASS`) and forget. Never cached.
 - **Status-not-raise for transient errors:** a thin retry wrapper at the plugin call site retries `VCSTransientError` and `VCSRateLimitError` with backoff. Other `VCSError` subclasses propagate to the background-task wrapper or HTTP middleware.
 - **Lives in `core/`** because after finding taxonomy moved to `domain/reviewer`, the module is pure transport infrastructure — no business decisions. `plugins/github → core/vcs` and `domain/* → core/vcs` are both legal downward imports.
@@ -21,8 +21,8 @@ Does NOT own: finding taxonomy (lives in `domain/reviewer`), business logic, fil
 Signatures in `app/core/vcs/types.py`:
 
 - Read: `fetch_pr`, `fetch_diff`, `list_yaaos_comments`, `is_repo_accessible`.
-- Write (findings): `post_finding(external_id, *, file, line_start, line_end, severity, category, confidence, finding_display_id, rationale, rule_violated, rule_source, suggested_fix) -> str` — posts one finding as a platform comment; returns the external comment id. When `file`/`line_start` are `None`, the plugin posts a top-level PR comment.
-- Write (plain messages): `post_comment(external_id, *, body) -> str` — plain top-level PR comment for non-finding system messages (e.g., secrets-detected warning).
+- Write (findings): `post_finding(org_id, external_id, *, file, line_start, line_end, severity, category, confidence, finding_display_id, rationale, rule_violated, rule_source, suggested_fix) -> str` — posts one finding as a platform comment; returns the external comment id. When `file`/`line_start` are `None`, the plugin posts a top-level PR comment.
+- Write (plain messages): `post_comment(org_id, external_id, *, body) -> str` — plain top-level PR comment for non-finding system messages (e.g., secrets-detected warning).
 - Write (retained, unused): `post_comment_reply`, `mark_comments_outdated` — kept for future follow-up flows; no domain logic wired.
 - Auth: `get_installation_token(org_id)`.
 - Repo enumeration: `list_installation_repos(org_id) -> list[str]` — live repo full-names the org's install can see; the plugin resolves its own credentials. Sibling plugins read repo lists through this (via the registry), never by importing the VCS plugin. Returns `[]` when the install is absent or the call fails.
