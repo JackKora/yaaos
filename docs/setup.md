@@ -6,7 +6,7 @@
 
 - Docker + Docker Compose v2.
 - A GitHub account with permission to create GitHub Apps on the org you want reviewed.
-- An Anthropic API key (yaaos shells out to the Claude Code CLI).
+- An Anthropic API key (the remote WorkspaceAgent runs the Claude Code CLI).
 - For local webhook testing: a smee.io channel URL.
 
 ## 1. Clone and configure
@@ -156,7 +156,7 @@ bin/dev-rebuild                  # builds image + starts stack
 - **Postgres:** `docker compose -f docker/docker-compose.dev.yml --env-file .env up -d postgres` or native install.
 - **Backend:** `cd apps/backend && uv sync && uv run uvicorn app.web:app --reload --port 8080`
 - **Frontend:** `cd apps/web && pnpm install && pnpm dev` (Vite on `:5173`, proxies `/api/*` to `:8080`)
-- **Claude Code CLI:** `npm install -g @anthropic-ai/claude-code` or set `YAAOS_CODING_AGENT_STUB=1` for deterministic stub responses.
+- **Claude Code CLI:** runs inside the WorkspaceAgent container, not the backend. Set `YAAOS_CODING_AGENT_STUB=1` for deterministic stub responses without a running agent.
 
 ## Test stack
 
