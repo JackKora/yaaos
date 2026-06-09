@@ -255,5 +255,5 @@ apps/e2e/tmp/
 # Design artifacts
 **/design/
 
-# Ticket planning workspace — reserved for yaaos-plan repo 
-plan/
+# Planning workspace — symlink to the separate yaaos-plan repo. Never committed here.
+plan
