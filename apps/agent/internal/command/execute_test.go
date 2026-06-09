@@ -113,8 +113,8 @@ func TestProvisionWorkspaceCommand_Execute(t *testing.T) {
 	}
 }
 
-// TestProvisionWorkspaceCommand_Execute_Reused checks the reused=true path
-// from the legacy handler returns the right wire shape.
+// TestProvisionWorkspaceCommand_Execute_Reused checks the handler returns the
+// right wire shape for the reused=true path.
 func TestProvisionWorkspaceCommand_Execute_Reused(t *testing.T) {
 	ops := &fakeWorkspaceOps{
 		provisionResult: command.ProvisionResult{

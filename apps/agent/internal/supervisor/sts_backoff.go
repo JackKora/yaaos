@@ -23,14 +23,15 @@ const stsBackoffDeadline = 1 * time.Hour
 //   - Valid comma-separated positive integers → custom steps with the 1h deadline.
 //   - Malformed or any non-positive value → WARN + fall back to the prod ramp.
 func parseStsBackoffEnv() *backoff.Schedule {
-	v := os.Getenv("YAAOS_AGENT_STS_BACKOFF_SECONDS")
+	const env = "YAAOS_AGENT_STS_BACKOFF_SECONDS"
+	v := os.Getenv(env)
 	if v == "" {
 		return backoff.NewWithDeadline(stsBackoffDeadline)
 	}
-	steps, err := parseStsBackoffSeconds(v)
+	steps, err := parseBackoffSeconds(env, v)
 	if err != nil {
 		slog.Warn("supervisor.sts_backoff_parse_failed",
-			"env", "YAAOS_AGENT_STS_BACKOFF_SECONDS",
+			"env", env,
 			"value", v,
 			"err", err.Error(),
 			"fallback", "prod ramp (1m/3m/5m/15m/60m)",
@@ -40,23 +41,24 @@ func parseStsBackoffEnv() *backoff.Schedule {
 	return backoff.NewWithStepsAndDeadline(steps, stsBackoffDeadline)
 }
 
-// parseStsBackoffSeconds parses a comma-separated list of positive integers
-// (seconds) into a []time.Duration. Returns an error on any empty token,
-// non-integer token, or non-positive value.
-func parseStsBackoffSeconds(s string) ([]time.Duration, error) {
+// parseBackoffSeconds parses a comma-separated list of positive integers
+// (seconds) into a []time.Duration, shared by the STS and ops backoff surfaces.
+// Returns an error on any non-integer token or non-positive value; envName is
+// carried in the error so the failing surface is identifiable. The empty-token
+// case (e.g. "2,,3") surfaces as a non-integer error on the empty token —
+// strings.Split always yields at least one element, so there is no separate
+// empty-input branch.
+func parseBackoffSeconds(envName, s string) ([]time.Duration, error) {
 	parts := strings.Split(s, ",")
-	if len(parts) == 0 {
-		return nil, &parseError{input: s, reason: "empty input"}
-	}
 	steps := make([]time.Duration, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		n, err := strconv.Atoi(p)
 		if err != nil {
-			return nil, &parseError{input: s, reason: "non-integer token: " + p}
+			return nil, &parseError{env: envName, input: s, reason: "non-integer token: " + p}
 		}
 		if n <= 0 {
-			return nil, &parseError{input: s, reason: "non-positive value: " + p}
+			return nil, &parseError{env: envName, input: s, reason: "non-positive value: " + p}
 		}
 		steps = append(steps, time.Duration(n)*time.Second)
 	}
@@ -64,10 +66,11 @@ func parseStsBackoffSeconds(s string) ([]time.Duration, error) {
 }
 
 type parseError struct {
+	env    string
 	input  string
 	reason string
 }
 
 func (e *parseError) Error() string {
-	return "YAAOS_AGENT_STS_BACKOFF_SECONDS: " + e.reason + " (input: " + e.input + ")"
+	return e.env + ": " + e.reason + " (input: " + e.input + ")"
 }

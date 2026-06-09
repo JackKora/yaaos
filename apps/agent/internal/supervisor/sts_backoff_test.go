@@ -5,12 +5,13 @@ import (
 	"time"
 )
 
+const stsEnv = "YAAOS_AGENT_STS_BACKOFF_SECONDS"
+
 func TestParseStsBackoffSeconds_Default(t *testing.T) {
-	// Unset env var → nil input resolves to the prod default in parseStsBackoffEnv,
-	// but we test parseStsBackoffSeconds directly: empty string is handled by
-	// parseStsBackoffEnv, not by this helper.
-	// We test the happy and error paths of the parse helper here.
-	steps, err := parseStsBackoffSeconds("60,180,300,900,3600")
+	// Empty input is handled by parseStsBackoffEnv (env == "" short-circuits),
+	// not by parseBackoffSeconds. We test the happy and error paths of the
+	// shared parse helper here.
+	steps, err := parseBackoffSeconds(stsEnv, "60,180,300,900,3600")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestParseStsBackoffSeconds_Default(t *testing.T) {
 }
 
 func TestParseStsBackoffSeconds_CustomValid(t *testing.T) {
-	steps, err := parseStsBackoffSeconds("2,2,2,2,2")
+	steps, err := parseBackoffSeconds(stsEnv, "2,2,2,2,2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,21 +48,21 @@ func TestParseStsBackoffSeconds_CustomValid(t *testing.T) {
 }
 
 func TestParseStsBackoffSeconds_MalformedNonInteger(t *testing.T) {
-	_, err := parseStsBackoffSeconds("1,two,3")
+	_, err := parseBackoffSeconds(stsEnv, "1,two,3")
 	if err == nil {
 		t.Fatal("expected error for non-integer token, got nil")
 	}
 }
 
 func TestParseStsBackoffSeconds_MalformedNonPositive(t *testing.T) {
-	_, err := parseStsBackoffSeconds("1,0,3")
+	_, err := parseBackoffSeconds(stsEnv, "1,0,3")
 	if err == nil {
 		t.Fatal("expected error for non-positive value, got nil")
 	}
 }
 
 func TestParseStsBackoffSeconds_MalformedNegative(t *testing.T) {
-	_, err := parseStsBackoffSeconds("1,-5,3")
+	_, err := parseBackoffSeconds(stsEnv, "1,-5,3")
 	if err == nil {
 		t.Fatal("expected error for negative value, got nil")
 	}

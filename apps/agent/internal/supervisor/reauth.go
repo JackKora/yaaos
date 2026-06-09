@@ -5,7 +5,13 @@ import (
 	"os"
 
 	"github.com/yaaos/agent/internal/observability"
+	"github.com/yaaos/agent/internal/protocol"
 )
+
+// osExit is the process-exit hook. It is os.Exit in every build; tests in this
+// package swap it to observe the identity-mismatch exit without killing the
+// test runner. Private, so it can never be swapped from another package.
+var osExit = os.Exit
 
 // reauthIfUnauthorized attempts a fresh identity exchange when `err` is a
 // 401/403 response. Returns true when re-authentication succeeded and the
@@ -18,16 +24,12 @@ import (
 // s.client.SetBearer so the next claim attempt by any worker uses the fresh
 // token.
 //
-// Normal behaviour (YAAOS_AGENT_ACCEPT_IDENTITY_CHANGE unset): the returned
-// agent_id and org_id must match the values pinned at startup, identical to
-// the identity-integrity check in bearerRefreshLoop. A mismatch causes the
-// process to exit.
-//
-// Test-stack behaviour (YAAOS_AGENT_ACCEPT_IDENTITY_CHANGE=1): identity
-// changes are accepted — the pinned agent_id / org_id and the base logger
-// dimensions are updated in-place. This allows the test suite's resetStack()
-// to truncate workspace_agents and then re-seed the org so the agent can
-// recover without restarting the container. Never set in production.
+// Identity integrity: the returned agent_id and org_id must match the values
+// pinned at startup. A mismatch exits the process (production) unless
+// acceptIdentityChange() is true (agent_test builds only — see
+// identity_seam_on.go), which updates the pinned identity in place so the e2e
+// suite can recover after a DB wipe. This is the same rule runOneRefreshCycle
+// applies on the scheduled bearer-refresh path.
 func (s *Supervisor) reauthIfUnauthorized(ctx context.Context, err error) bool {
 	if classifyConnErr(err) != "auth" {
 		return false
@@ -46,9 +48,8 @@ func (s *Supervisor) reauthIfUnauthorized(ctx context.Context, err error) bool {
 		return false
 	}
 
-	acceptChange := os.Getenv("YAAOS_AGENT_ACCEPT_IDENTITY_CHANGE") == "1"
 	if resp.AgentID != s.agentID || resp.OrgID != s.orgID {
-		if !acceptChange {
+		if !acceptIdentityChange() {
 			s.log.Error("supervisor.identity_mismatch_on_reauth",
 				"pinned_agent_id", s.agentID,
 				"pinned_org_id", s.orgID,
@@ -57,19 +58,10 @@ func (s *Supervisor) reauthIfUnauthorized(ctx context.Context, err error) bool {
 			)
 			// Unlock before exit so any runtime finalizers can run cleanly.
 			s.reauthMu.Unlock()
-			os.Exit(1)
+			osExit(1)
+			return false // unreachable in production; reachable when tests swap osExit.
 		}
-		// Test-only: accept the new identity so the agent continues
-		// without restarting after a DB wipe.
-		s.log.Warn("supervisor.identity_changed_on_reauth",
-			"old_agent_id", s.agentID,
-			"new_agent_id", resp.AgentID,
-			"old_org_id", s.orgID,
-			"new_org_id", resp.OrgID,
-		)
-		s.agentID = resp.AgentID
-		s.orgID = resp.OrgID
-		observability.SetStandardDimensions(s.orgID, s.agentID)
+		s.applyAcceptedIdentityChange(resp)
 	}
 
 	s.client.SetBearer(resp.Bearer)
@@ -79,4 +71,20 @@ func (s *Supervisor) reauthIfUnauthorized(ctx context.Context, err error) bool {
 		"org_id", resp.OrgID,
 	)
 	return true
+}
+
+// applyAcceptedIdentityChange updates the pinned identity and observability
+// dimensions in place after an exchange returned a different agent_id/org_id.
+// Only reached when acceptIdentityChange() is true, i.e. in agent_test builds;
+// both reauth surfaces route through it so the accept rule lives in one place.
+func (s *Supervisor) applyAcceptedIdentityChange(resp *protocol.IdentityExchangeResponse) {
+	s.log.Warn("supervisor.identity_changed",
+		"old_agent_id", s.agentID,
+		"new_agent_id", resp.AgentID,
+		"old_org_id", s.orgID,
+		"new_org_id", resp.OrgID,
+	)
+	s.agentID = resp.AgentID
+	s.orgID = resp.OrgID
+	observability.SetStandardDimensions(s.orgID, s.agentID)
 }

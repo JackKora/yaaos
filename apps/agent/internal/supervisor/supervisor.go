@@ -249,6 +249,9 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 	if cfg.ActivityBatchInterval <= 0 {
 		cfg.ActivityBatchInterval = 250 * time.Millisecond
 	}
+	// Parse the ops backoff env once; each surface gets its own schedule built
+	// from the shared step list (a malformed value WARNs once, not three times).
+	opsSteps, opsCustom := opsBackoffSteps()
 	return &Supervisor{
 		cfg:      cfg,
 		client:   client,
@@ -264,9 +267,9 @@ func New(cfg Config, client *protocol.Client, log Logger, prov identity.Provider
 		// YAAOS_AGENT_STS_BACKOFF_SECONDS overrides the step list for test
 		// stacks that need fast re-auth; unset → the prod ramp.
 		stsBackoff:       parseStsBackoffEnv(),
-		claimBackoff:     parseOpsBackoffEnv(),
-		heartbeatBackoff: parseOpsBackoffEnv(),
-		wsBackoff:        parseOpsBackoffEnv(),
+		claimBackoff:     newOpsBackoff(opsSteps, opsCustom),
+		heartbeatBackoff: newOpsBackoff(opsSteps, opsCustom),
+		wsBackoff:        newOpsBackoff(opsSteps, opsCustom),
 		eventPostSteps:   defaultEventPostSteps,
 		dedup:            newDedupCache(dedupCacheSize),
 	}
@@ -550,15 +553,20 @@ func (s *Supervisor) runOneRefreshCycle(ctx context.Context, currentExpiry time.
 	// Identity-integrity check: the backend must return the same agent and org
 	// that were pinned on first exchange. A mismatch means something has
 	// changed under us (pod re-keyed, org reassigned) — continuing would
-	// silently operate under the wrong identity.
+	// silently operate under the wrong identity. acceptIdentityChange() is the
+	// same seam reauthIfUnauthorized uses: always false in production (mismatch
+	// is fatal), true only in agent_test builds so resetStack() can recover.
 	if resp.AgentID != s.agentID || resp.OrgID != s.orgID {
-		s.log.Error("supervisor.identity_mismatch_on_renewal",
-			"pinned_agent_id", s.agentID,
-			"pinned_org_id", s.orgID,
-			"returned_agent_id", resp.AgentID,
-			"returned_org_id", resp.OrgID,
-		)
-		return refreshResult{fatal: true}
+		if !acceptIdentityChange() {
+			s.log.Error("supervisor.identity_mismatch_on_renewal",
+				"pinned_agent_id", s.agentID,
+				"pinned_org_id", s.orgID,
+				"returned_agent_id", resp.AgentID,
+				"returned_org_id", resp.OrgID,
+			)
+			return refreshResult{fatal: true}
+		}
+		s.applyAcceptedIdentityChange(resp)
 	}
 	return refreshResult{
 		newBearer: resp.Bearer,

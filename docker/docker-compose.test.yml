@@ -228,6 +228,11 @@ services:
     build:
       context: ../apps/agent
       dockerfile: Dockerfile
+      args:
+        # Compile the identity-change seam so the agent honors
+        # YAAOS_AGENT_ACCEPT_IDENTITY_CHANGE below. The production image omits
+        # this arg, so that env var is inert there. See apps/agent/Dockerfile.
+        BUILD_TAGS: agent_test
     environment:
       YAAOS_BACKEND_URL: http://web:8080
       YAAOS_AGENT_VERSION: test
