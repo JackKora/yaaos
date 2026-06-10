@@ -165,7 +165,6 @@ def _drive_alembic_upgrade(sync_conn) -> None:  # type: ignore[no-untyped-def]
     cfg.set_main_option("script_location", str(backend_root / "alembic"))
     cfg.attributes["connection"] = sync_conn
     alembic.command.upgrade(cfg, "head")
-    logging.getLogger(__name__).info("migration.upgrade.done")
 
 
 async def migrate() -> None:
@@ -198,6 +197,7 @@ async def migrate() -> None:
             async with get_engine().connect() as conn:
                 await conn.run_sync(_drive_alembic_upgrade)
             await maintain_coding_agent_activity_partitions()
+            logging.getLogger(__name__).info("migration.done")
         finally:
             await lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _MIGRATION_LOCK_KEY})
 
