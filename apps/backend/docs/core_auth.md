@@ -18,7 +18,7 @@
 
 `CloudflareIngressMiddleware` is the **outermost** ASGI layer. It runs before `AuthMiddleware`, rate-limiting, and all route handlers.
 
-- **Header:** `CF-Access-Yaaos-Ingress` — Cloudflare injects this via a Transform Rule using the shared secret set in `YAAOS_CLOUDFLARE_INGRESS_SECRET` (Fly secret). Direct `.fly.dev` hits and Fly IP hits do not carry it → 403.
+- **Header:** `X-Yaaos-cf-Ingress` — Cloudflare injects this via a Transform Rule using the shared secret set in `YAAOS_CLOUDFLARE_INGRESS_SECRET` (Fly secret). Direct `.fly.dev` hits and Fly IP hits do not carry it → 403. The `CF-*` prefix is reserved by Cloudflare for its own managed headers; the `X-Yaaos-cf-*` form follows the `X-Yaaos-*` convention used by `X-Yaaos-Org-Slug` and `X-Yaaos-Audience` while the `cf` segment marks it as Cloudflare-injected.
 - **Exempt path:** `/api/health` passes unconditionally — Fly's internal machine checker bypasses Cloudflare and must still reach the health endpoint.
 - **No-op when empty:** when `YAAOS_CLOUDFLARE_INGRESS_SECRET` is unset or empty (dev/test/e2e), the middleware is a transparent pass-through. Local stacks and Playwright suites are unaffected.
 - **Constant-time compare:** `hmac.compare_digest` guards against timing attacks.
@@ -28,7 +28,7 @@
 
 **Route taxonomy** — every `/api/*` path is exactly one of three categories:
 
-| `RouteSecurity` | Session? | `X-Org-Slug`? | Role check? |
+| `RouteSecurity` | Session? | `X-Yaaos-Org-Slug`? | Role check? |
 |---|---|---|---|
 | `PUBLIC` | no | no | no |
 | `USER_SCOPED` | yes (route dep) | no | no |
@@ -39,9 +39,9 @@
 `classify_route(path, method)` is the single source of truth. Method-exact > exact > prefix. Unclassified `/api/*` falls through as `PUBLIC`.
 
 **Middleware order on `/api/*`:**
-0. `CloudflareIngressMiddleware` (outermost) — 403 unless `CF-Access-Yaaos-Ingress` matches; exempt `/api/health`; no-op when secret unset.
+0. `CloudflareIngressMiddleware` (outermost) — 403 unless `X-Yaaos-cf-Ingress` matches; exempt `/api/health`; no-op when secret unset.
 1. Reset all identity contextvars (ASGI may reuse the task).
-2. Classify route. `ORG_SCOPED` without `X-Org-Slug` (nor `?org=` on `/api/sse/*`) → 400 immediately. `USER_SCOPED` and `ORG_SCOPED` mutations → CSRF double-submit check.
+2. Classify route. `ORG_SCOPED` without `X-Yaaos-Org-Slug` (nor `?org=` on `/api/sse/*`) → 400 immediately. `USER_SCOPED` and `ORG_SCOPED` mutations → CSRF double-submit check.
 3. Post-response guard: if response is 2xx and `route_security_resolved` is still `None`, substitute 500 + log. Forgetting a security dep crashes, not leaks.
 4. OTel spans created during the request carry `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind` via `YaaosDimensionsSpanProcessor` (stamped on every span at creation, not inline after the request).
 

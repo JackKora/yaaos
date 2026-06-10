@@ -31,7 +31,7 @@ Every state transition writes to `audit_log`. SSE events publish for the SPA.
 
 ### UI live update via SSE
 
-SPA mounts one org-keyed `EventSource` on `GET /api/sse/general?org=<slug>` (`withCredentials: true`) from the root `AppShell`. The `?org=` query param carries the org because the browser `EventSource` API cannot set the `X-Org-Slug` header that `/api/sse` routes otherwise require; the backend accepts it for SSE routes and applies the same membership check. Each event invalidates TanStack Query caches:
+SPA mounts one org-keyed `EventSource` on `GET /api/sse/general?org=<slug>` (`withCredentials: true`) from the root `AppShell`. The `?org=` query param carries the org because the browser `EventSource` API cannot set the `X-Yaaos-Org-Slug` header that `/api/sse` routes otherwise require; the backend accepts it for SSE routes and applies the same membership check. Each event invalidates TanStack Query caches:
 
 | Event `kind` | Invalidates |
 |---|---|
@@ -131,11 +131,11 @@ One append-only `audit_log` table owned by `core/audit_log`. Row shape: `{id, or
 
 ### Org scoping
 
-Every domain function takes `org_id` kwarg; every query filters by it. Per-request org from `X-Org-Slug` header (HTTP) or `org_context()` async-context-manager (background jobs).
+Every domain function takes `org_id` kwarg; every query filters by it. Per-request org from `X-Yaaos-Org-Slug` header (HTTP) or `org_context()` async-context-manager (background jobs).
 
 ### Identity & access
 
-- **Cloudflare ingress gate** (`core/auth.CloudflareIngressMiddleware`, outermost): rejects any request not carrying the `CF-Access-Yaaos-Ingress` header with HTTP 403. `/api/health` is exempt (Fly's internal checker bypasses Cloudflare). No-op when `YAAOS_CLOUDFLARE_INGRESS_SECRET` is empty (dev/test/e2e). Runs before all other middleware — direct `.fly.dev` hits are blocked before they reach auth or routes.
+- **Cloudflare ingress gate** (`core/auth.CloudflareIngressMiddleware`, outermost): rejects any request not carrying the `X-Yaaos-cf-Ingress` header with HTTP 403. `/api/health` is exempt (Fly's internal checker bypasses Cloudflare). No-op when `YAAOS_CLOUDFLARE_INGRESS_SECRET` is empty (dev/test/e2e). Runs before all other middleware — direct `.fly.dev` hits are blocked before they reach auth or routes.
 - Auth middleware (`core/auth`): every `/api/*` route declares security via `Depends(require(action))` or `Depends(public_route)`; a post-response guard 500s any 2xx that left `route_security_resolved` unset.
 - Sessions: opaque server-side rows (sha256-hashed tokens), `HttpOnly; SameSite=Lax; Secure` cookies, double-submit CSRF on mutations. SSO satisfaction tracked per-session per-org with 8h TTL.
 - Background jobs open `org_context(org_id, actor_kind, actor_id)` to set the same contextvars + OTel + structlog fields the HTTP middleware sets.

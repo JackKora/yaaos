@@ -111,7 +111,7 @@ Terse, bullets, no code snippets, no `Decisions` section, link don't repeat.
 
 ## Auth + tenancy
 
-- `apiFetch` auto-injects `X-Org-Slug` from `core/api/org-context.ts`. Domain hooks are org-agnostic at the call site.
+- `apiFetch` auto-injects `X-Yaaos-Org-Slug` from `core/api/org-context.ts`. Domain hooks are org-agnostic at the call site.
 - UI role gates go through one primitive in `@core/api/public/membership` (single `Role` + `ROLE_RANK`): `<RequireMembership orgSlug="..." minRole="admin">` for render-gating, `useHasRole(slug, minRole)` / `useMembership(slug)` for boolean checks. Never hand-roll `memberships.find(...)` + a role compare in a component. All of it is a UI hint only — backend `require(action)` is the authority.
 - Every domain page is under `/orgs/$slug/...`. The `/` route probes `/api/auth/me` and redirects.
 

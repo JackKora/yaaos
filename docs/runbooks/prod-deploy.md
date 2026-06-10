@@ -137,14 +137,14 @@ Set via the Fly dashboard Secrets UI:
 
 Cloudflare injects a shared secret into every proxied request so the backend can reject traffic that bypasses Cloudflare entirely.
 
-- Create a Transform Rule that adds the header `CF-Access-Yaaos-Ingress: <secret>` to all requests to `app.yaaos.cloud`.
+- Create a Transform Rule that adds the header `X-Yaaos-cf-Ingress: <secret>` to all requests to `app.yaaos.cloud`. Do **not** use a `CF-*` header name — Cloudflare reserves the `CF-*` prefix for its own managed headers and Transform Rules reject `Set static` on that prefix.
 - The same token value must be set as the `YAAOS_CLOUDFLARE_INGRESS_SECRET` Fly secret. The backend boot check (`_check_required_prod_secrets`) refuses to start with this unset in `production`, so a missed rotation step fails loudly instead of silently disabling ingress enforcement.
 - **These two values must stay in sync.** Rotating the Cloudflare rule value without updating the Fly secret (or vice versa) causes every request to return 403 during the skew window. Rotation procedure: update both atomically (set new Fly secret → update Cloudflare rule → verify → remove old).
 - CORS allowlist in Dash0 must include `https://app.yaaos.cloud` with `Authorization` and `Dash0-Dataset` headers allowed — see §7.
 
 ### Worker health check access
 
-The worker health server binds `0.0.0.0:8081`. Fly's machine checker reaches it directly inside the 6PN (private) network and **bypasses Cloudflare**, so the `CF-Access-Yaaos-Ingress` check does not apply to health probe requests.
+The worker health server binds `0.0.0.0:8081`. Fly's machine checker reaches it directly inside the 6PN (private) network and **bypasses Cloudflare**, so the `X-Yaaos-cf-Ingress` check does not apply to health probe requests.
 
 ---
 

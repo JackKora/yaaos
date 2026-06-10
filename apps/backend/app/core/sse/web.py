@@ -6,7 +6,7 @@
 | GET    | `/api/sse/workspace_activity/{workflow_execution_id}` | `ORG_READ`. Cross-org isolation is the channel key: subscribers attach to `{caller_org}:workspace_activity:{wfx_id}`; publishers publish to `{owner_org}:…`, so a cross-org request silently yields an empty stream rather than 404. |
 
 The `/api/sse` prefix is classified as `ORG_SCOPED` in `core/auth/types.py`,
-so `AuthMiddleware` enforces the `X-Org-Slug` header before the handler runs.
+so `AuthMiddleware` enforces the `X-Yaaos-Org-Slug` header before the handler runs.
 `require(Action.ORG_READ)` resolves the session → membership → sets
 `org_id_var` and marks the route security resolved.
 

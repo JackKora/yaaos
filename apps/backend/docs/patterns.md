@@ -297,7 +297,7 @@ Row shape:
 
 Every domain function takes `org_id` kwarg or reads it from the `org_id_var` contextvar; every query filters by it. Two-track rule:
 
-- **HTTP request handlers** — `Depends(require(Action.X))` resolves `X-Org-Slug` and sets the contextvar. Handlers can read it via `current_org_id()`.
+- **HTTP request handlers** — `Depends(require(Action.X))` resolves `X-Yaaos-Org-Slug` and sets the contextvar. Handlers can read it via `current_org_id()`.
 - **Background work** — every non-HTTP entry point opens `with org_context(org_id, actor_kind, actor_id=None)` from [`core/auth`](core_auth.md). This sets the same contextvars + OTel span attrs (`yaaos.org_id`, `yaaos.actor_kind`, `yaaos.actor_id`) + structlog bound vars so background log lines + audit rows attribute correctly. Wrapped today: GitHub catch-up poller, reviewer worker (`actor_kind=workspace`), taskiq task bodies (`actor_kind=SYSTEM` — via `OrgContextMiddleware` in `core/tasks`, not manual wrapping in each body). Scheduler cleanup jobs that don't emit audit rows + don't read from org-scoped tables (session/invitation/totp/audit purges) do NOT need a wrap — they're global by design.
 - **Discipline rule** — any function reading from an org-scoped table must either (a) take `org_id` as an explicit kwarg, or (b) call `require_org_context()` to assert the contextvar is set. The assertion surfaces forgotten-wrap bugs loudly instead of silently leaking cross-org data.
 
@@ -333,7 +333,7 @@ Every yaaos-issued bearer follows the same shape — adopted in for sessions, in
 
 ## Route security declarations
 
-Every `/api/*` path classifies as one of three `RouteSecurity` categories: `PUBLIC` (no auth), `USER_SCOPED` (session, no org), or `ORG_SCOPED` (session + `X-Org-Slug` + role check). The classifier `classify_route(path, method)` and the prefix/exact lists live in `app/core/auth/types.py`; the middleware enforces `X-Org-Slug` and CSRF based on the category. Route dependencies: `Depends(require(Action.X))` for `ORG_SCOPED`, `Depends(require_session)` (or `Depends(public_route)`) for `USER_SCOPED` handlers that read the session cookie, `Depends(public_route)` for `PUBLIC`. The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset. Action → minimum-role map lives in `app/core/auth/role_policy._REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new URL prefix requires placing it in exactly one of the three category sets in `app/core/auth/types.py`.
+Every `/api/*` path classifies as one of three `RouteSecurity` categories: `PUBLIC` (no auth), `USER_SCOPED` (session, no org), or `ORG_SCOPED` (session + `X-Yaaos-Org-Slug` + role check). The classifier `classify_route(path, method)` and the prefix/exact lists live in `app/core/auth/types.py`; the middleware enforces `X-Yaaos-Org-Slug` and CSRF based on the category. Route dependencies: `Depends(require(Action.X))` for `ORG_SCOPED`, `Depends(require_session)` (or `Depends(public_route)`) for `USER_SCOPED` handlers that read the session cookie, `Depends(public_route)` for `PUBLIC`. The post-response middleware guard returns 500 if a 2xx response left `route_security_resolved` unset. Action → minimum-role map lives in `app/core/auth/role_policy._REQUIRED_ROLE`; adding a new action is a code change, not config. Adding a new URL prefix requires placing it in exactly one of the three category sets in `app/core/auth/types.py`.
 
 ## Testing
 

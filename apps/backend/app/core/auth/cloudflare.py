@@ -11,10 +11,12 @@ and must still reach the health endpoint.
 No-op: when `settings.yaaos_cloudflare_ingress_secret` is empty (dev/test/e2e),
 the middleware passes all requests through so the local stack is unaffected.
 
-Header: `CF-Access-Yaaos-Ingress` — follows Cloudflare Access naming
-conventions and is specific to this deployment. The Cloudflare Transform Rule
-injects this header with the same value set in the `YAAOS_CLOUDFLARE_INGRESS_SECRET`
-Fly secret.
+Header: `X-Yaaos-cf-Ingress` — application-defined custom header (the `cf`
+segment marks it as Cloudflare-injected; matches the `X-Yaaos-*` / `X-Yaaos-Org-Slug`
+convention used elsewhere). The Cloudflare Transform Rule injects this header
+with the same value set in the `YAAOS_CLOUDFLARE_INGRESS_SECRET` Fly secret.
+The `CF-*` prefix is reserved by Cloudflare for its own managed headers and
+rejected by Transform Rules — hence `X-Yaaos-cf-*`, not `CF-*`.
 
 Implemented as pure ASGI (not Starlette `BaseHTTPMiddleware`) to match the
 shape of `AuthMiddleware` — `BaseHTTPMiddleware` buffers responses and breaks SSE.
@@ -28,7 +30,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 #: The request header Cloudflare injects via Transform Rule.
 #: Must match the header name configured in the Cloudflare dashboard.
-CLOUDFLARE_INGRESS_HEADER = "CF-Access-Yaaos-Ingress"
+CLOUDFLARE_INGRESS_HEADER = "X-Yaaos-cf-Ingress"
 
 #: Path exempt from the ingress check — Fly's internal machine checker
 #: bypasses Cloudflare and calls this directly.

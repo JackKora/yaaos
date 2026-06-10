@@ -4,7 +4,7 @@ role enum, and role-policy map.
 Pure infrastructure. The role-resolving dependency factories
 (`require(action)`, `public_route`) live in `core/sessions` because they
 depend on `core/identity` + `domain/orgs`. The middleware here enforces
-the X-Org-Slug requirement for ORG_SCOPED routes and the default-deny
+the X-Yaaos-Org-Slug requirement for ORG_SCOPED routes and the default-deny
 post-response guard.
 
 Intra-core layer order: core/auth < core/tenancy < core/identity < core/sessions.

@@ -177,7 +177,7 @@ class Settings(BaseSettings):
     notion_api_base_url: str = "https://api.notion.com"
 
     # Cloudflare-only ingress gate. When non-empty, the backend rejects any
-    # request that does not carry the matching `CF-Access-Yaaos-Ingress` header
+    # request that does not carry the matching `X-Yaaos-cf-Ingress` header
     # (injected by a Cloudflare Transform Rule). Empty default = no-op so
     # dev/test/e2e are unaffected.
     yaaos_cloudflare_ingress_secret: SecretStr = SecretStr("")

@@ -6,7 +6,7 @@
 
 Owns the single browser-wide `EventSource` connecting to `/api/sse/general` and maps event kinds to query cache invalidations. Domain modules consume queries; `core/sse` makes those queries refresh. The workspace-activity stream is a separate hook (`useWorkflowActivityStream`) that connects to `/api/sse/workspace_activity/{id}`.
 
-`/api/sse` is org-scoped, but the browser `EventSource` API cannot set the `X-Org-Slug` header. The org slug therefore rides in the `?org=<slug>` query param; the backend accepts it for `/api/sse` routes and runs it through the same membership check.
+`/api/sse` is org-scoped, but the browser `EventSource` API cannot set the `X-Yaaos-Org-Slug` header. The org slug therefore rides in the `?org=<slug>` query param; the backend accepts it for `/api/sse` routes and runs it through the same membership check.
 
 ## Public interface
 
