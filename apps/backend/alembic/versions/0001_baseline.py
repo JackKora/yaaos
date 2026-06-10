@@ -661,7 +661,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("pr_id", "finding_display_id", name="uq_findings_pr_display_id"),
     )
     op.create_index("ix_findings_org", "findings", ["org_id"], unique=False)
-    op.create_index(op.f("ix_findings_org_id"), "findings", ["org_id"], unique=False)
     op.create_index("ix_findings_pr", "findings", ["pr_id"], unique=False)
 
     op.create_table(
@@ -673,6 +672,38 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["review_id"], ["reviews.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("token_hash"),
+    )
+
+    # Partial indexes + CHECK constraint declared on the corresponding model __table_args__ but not emitted by autogenerate (raw-DDL only via op.execute since postgresql_where + named CheckConstraint don't always round-trip cleanly through autogenerate).
+    op.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_emails_email_active "
+            "ON user_emails (lower(email)) WHERE verified_at IS NOT NULL"
+        )
+    )
+    op.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_invitations_pending_org_email "
+            "ON invitations (org_id, lower(email)) WHERE accepted_at IS NULL"
+        )
+    )
+    op.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_orgs_registered_iam_arn "
+            "ON orgs (registered_iam_arn) WHERE registered_iam_arn IS NOT NULL"
+        )
+    )
+    op.execute(
+        text(
+            "ALTER TABLE orgs ADD CONSTRAINT ck_orgs_arn_region_paired "
+            "CHECK ((registered_iam_arn IS NULL) = (aws_region IS NULL))"
+        )
+    )
+    op.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_bearer_tokens_agent_active "
+            "ON bearer_tokens (agent_id, expires_at) WHERE revoked_at IS NULL"
+        )
     )
 
 
