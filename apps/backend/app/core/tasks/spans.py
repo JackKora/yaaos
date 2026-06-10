@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode, Tracer
 from taskiq import TaskiqMessage, TaskiqMiddleware
@@ -45,13 +46,21 @@ class TaskSpanMiddleware(TaskiqMiddleware):
     def __init__(self, *, tracer: Tracer | None = None) -> None:
         super().__init__()
         self._tracer: Tracer = tracer if tracer is not None else _tracer
-        # Per-task-invocation open spans keyed on taskiq task_id (per-invocation UUID).
+        # Per-task-invocation open spans keyed on taskiq task_id (per-invocation
+        # UUID). Each value is the (span, context-token) pair: the token is
+        # returned by `context.attach` and must be passed to `context.detach`
+        # when the body finishes so the prior context is restored.
         # asyncio is cooperative and each task_id is unique so no lock is needed.
-        self._spans: dict[str, Any] = {}
+        self._spans: dict[str, tuple[Any, object]] = {}
 
     async def pre_execute(self, message: TaskiqMessage) -> TaskiqMessage:
+        # `start_span` only creates the span — it does NOT install it as the
+        # current context. Attach it so spans created inside the task body
+        # (SQLAlchemy auto-instrumentation, manual spans) nest under it rather
+        # than under whatever context was active at dequeue time.
         span = self._tracer.start_span(f"task:{message.task_name}")
-        self._spans[message.task_id] = span
+        token = otel_context.attach(trace.set_span_in_context(span))
+        self._spans[message.task_id] = (span, token)
         return message
 
     async def post_execute(
@@ -59,9 +68,10 @@ class TaskSpanMiddleware(TaskiqMiddleware):
         message: TaskiqMessage,
         result: TaskiqResult[Any],
     ) -> None:
-        span = self._spans.pop(message.task_id, None)
-        if span is None:
+        entry = self._spans.pop(message.task_id, None)
+        if entry is None:
             return
+        span, token = entry
         try:
             if result.is_err and result.error is not None:
                 exc = result.error
@@ -69,6 +79,7 @@ class TaskSpanMiddleware(TaskiqMiddleware):
                     span.record_exception(exc)
                     span.set_status(StatusCode.ERROR, str(exc))
         finally:
+            otel_context.detach(token)
             span.end()
 
     async def on_error(
@@ -77,14 +88,16 @@ class TaskSpanMiddleware(TaskiqMiddleware):
         result: TaskiqResult[Any],
         exception: BaseException,
     ) -> None:
-        span = self._spans.pop(message.task_id, None)
-        if span is None:
+        entry = self._spans.pop(message.task_id, None)
+        if entry is None:
             return
+        span, token = entry
         try:
             if isinstance(exception, Exception):
                 span.record_exception(exception)
                 span.set_status(StatusCode.ERROR, str(exception))
         finally:
+            otel_context.detach(token)
             span.end()
 
 

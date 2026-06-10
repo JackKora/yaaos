@@ -107,8 +107,8 @@ async def _general_stream(org_id: UUID) -> AsyncIterator[str]:
     yield sse_prelude()
     it = subscribe_general(org_id).__aiter__()
     while True:
-        next_task = asyncio.ensure_future(it.__anext__())
-        shutdown_task = asyncio.ensure_future(_get_event().wait())
+        next_task = asyncio.create_task(it.__anext__())
+        shutdown_task = asyncio.create_task(_get_event().wait())
         done, pending = await asyncio.wait(
             {next_task, shutdown_task},
             return_when=asyncio.FIRST_COMPLETED,
@@ -134,8 +134,8 @@ async def _workspace_activity_stream(org_id: UUID, workflow_execution_id: UUID) 
     yield sse_prelude()
     it = subscribe_workspace_activity(org_id, workflow_execution_id).__aiter__()
     while True:
-        next_task = asyncio.ensure_future(it.__anext__())
-        shutdown_task = asyncio.ensure_future(_get_event().wait())
+        next_task = asyncio.create_task(it.__anext__())
+        shutdown_task = asyncio.create_task(_get_event().wait())
         done, pending = await asyncio.wait(
             {next_task, shutdown_task},
             return_when=asyncio.FIRST_COMPLETED,

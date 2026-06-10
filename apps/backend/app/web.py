@@ -153,6 +153,14 @@ if __name__ == "__main__":
         # trusting all forwarded IPs is the standard, safe setting on Fly.
         proxy_headers=True,
         forwarded_allow_ips="*",
+        # log_config=None: don't let uvicorn run its own dict-config. Our
+        # observability.configure() already owns the root logger (structlog
+        # ProcessorFormatter + OTel LoggingHandler + secret-scrub + dim filters).
+        # uvicorn's default config sets uvicorn.access propagate=False with its
+        # own handler — which both skips the OTLP pipe and clobbers the
+        # access-log DEBUG-demotion filter. With None, uvicorn.* loggers
+        # propagate to root and flow through one pipe.
+        log_config=None,
         # Allow active HTTP connections (long polls, SSE streams) to finish
         # on SIGTERM before the process exits.  30 s is generous enough for
         # long-poll endpoints to return and short enough to fit within the

@@ -43,6 +43,7 @@ The verifier:
 from __future__ import annotations
 
 import json
+import os
 import re
 import ssl
 import time
@@ -70,13 +71,11 @@ _STS_HOST_RE = re.compile(r"^sts(?:\.(?P<region>[a-z0-9-]+))?\.amazonaws\.com$")
 #
 # Startup assertion: if app_mode=production but this override is also set, the
 # process must refuse to boot — a prod deployment should never talk to a mock.
-import os as _os  # noqa: E402
-
 _STS_HOST_OVERRIDE_ENV = "YAAOS_STS_HOST_OVERRIDE"
 
 # Read from os.environ directly — this is a container-layer override, not a
 # pydantic-settings field. get_settings().is_production provides the mode check.
-_sts_override_host: str | None = _os.environ.get(_STS_HOST_OVERRIDE_ENV)
+_sts_override_host: str | None = os.environ.get(_STS_HOST_OVERRIDE_ENV)
 
 if _sts_override_host and get_settings().is_production:
     raise RuntimeError(

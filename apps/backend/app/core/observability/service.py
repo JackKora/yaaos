@@ -23,6 +23,7 @@ explicitly skips the per-signal append, causing bare-base 404s.
 """
 
 import logging
+import re
 import sys
 from typing import Any, Literal
 
@@ -83,6 +84,7 @@ def configure(role: Role = "app") -> None:
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         _inject_trace_context,
+        _redact_secrets,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
@@ -96,6 +98,11 @@ def configure(role: Role = "app") -> None:
     )
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(formatter)
+    # Handler-level gating at log_level (not NOTSET): the access-log demotion
+    # below relies on handlers dropping DEBUG records that propagate up from
+    # `uvicorn.access` — logger-level gating alone would not, since a
+    # propagated record is not re-checked against the root logger's level.
+    stream_handler.setLevel(log_level)
 
     # Configure the root stdlib logger with our handler.  basicConfig is NOT
     # called here — we manage the root logger directly so we don't double-add
@@ -109,18 +116,26 @@ def configure(role: Role = "app") -> None:
     # Stamp yaaos dimension contextvars as LogRecord attributes so the OTel
     # LoggingHandler maps them to queryable log attributes in Dash0.
     root_logger.addFilter(_YaaosLogDimsFilter())
+    # Mask secret-keyed values on foreign records before any handler — covers
+    # the OTLP export pipe, which the structlog foreign_pre_chain does not reach.
+    root_logger.addFilter(_SecretScrubFilter())
     root_logger.addHandler(stream_handler)
 
-    # Attach OTel's LoggingHandler at NOTSET so it inherits the root level —
-    # one knob (LOG_LEVEL) gates both stdout and the OTLP export path.
+    # Demote uvicorn access logs to DEBUG so production (LOG_LEVEL=INFO) drops
+    # them from both stdout and OTLP while access_log stays enabled. Survives
+    # because app/web.py passes log_config=None to uvicorn (no dict-config to
+    # clobber it) and uvicorn.access then propagates to this root logger.
+    logging.getLogger("uvicorn.access").addFilter(_AccessLogDebugFilter())
+
+    # Attach OTel's LoggingHandler gated at log_level so the single LOG_LEVEL
+    # knob controls both stdout and the OTLP export path (and so demoted
+    # access-log DEBUG records are dropped from OTLP in production).
     # Guard against double-attachment (e.g. if something called basicConfig first).
     if _logger_provider is not None:
         from opentelemetry.sdk._logs import LoggingHandler  # noqa: PLC0415
 
         otel_handler = LoggingHandler(logger_provider=_logger_provider)
-        # NOTSET: inherit root level; no handler-level filter so the single
-        # LOG_LEVEL knob controls both stdout and OTLP.
-        otel_handler.setLevel(logging.NOTSET)
+        otel_handler.setLevel(log_level)
         root_logger.addHandler(otel_handler)
 
     structlog.configure(
@@ -146,6 +161,47 @@ def _inject_trace_context(_logger: Any, _method_name: str, event_dict: dict[str,
     event_dict["trace_id"] = format(ctx.trace_id, "032x")
     event_dict["span_id"] = format(ctx.span_id, "016x")
     return event_dict
+
+
+# ── Secret redaction ─────────────────────────────────────────────────────────
+
+# Keys whose values are secret-ish and must never be rendered raw. Match is
+# case-insensitive substring. `bearer` catches BearerContext field names;
+# `authorization` covers HTTP header dicts; `token` covers token_hash and
+# friends; `signed_request` carries AWS sigv4 secrets.
+_REDACT_KEY_RE = re.compile(r"(?i)(authorization|bearer|token|secret|password|api[_-]?key|signed_request)")
+_REDACT_MASK = "***"
+
+
+def _scrub(value: Any) -> Any:
+    """Recursively mask values under any secret-matching key.
+
+    Dicts: mask matching keys, recurse into the rest. Lists/tuples: recurse
+    per-element (preserving type) so a list of header dicts is scrubbed too.
+    Scalars pass through. Key-based by design — free-text strings are left
+    intact (parsing arbitrary text for secrets is unreliable and mangles
+    legitimate logs)."""
+    if isinstance(value, dict):
+        return {
+            k: (_REDACT_MASK if isinstance(k, str) and _REDACT_KEY_RE.search(k) else _scrub(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub(v) for v in value)
+    return value
+
+
+def _redact_secrets(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+    """structlog processor — mask secret-keyed values in the event dict.
+
+    Runs in `shared_processors`, so it covers both structlog-native records and
+    foreign stdlib records routed through the `ProcessorFormatter`'s
+    `foreign_pre_chain` on the stdout pipe. The OTLP export pipe is covered
+    separately by `_SecretScrubFilter` on the root logger, because the OTel
+    `LoggingHandler` bypasses the `ProcessorFormatter`."""
+    return _scrub(event_dict)  # type: ignore[no-any-return]
 
 
 # ── Standard dimension helpers ──────────────────────────────────────────────
@@ -260,6 +316,48 @@ class _YaaosLogDimsFilter(logging.Filter):
             setattr(record, _LOG_ATTR_COMMAND_ID, command_id)
 
         return True  # never suppress; only annotate
+
+
+class _SecretScrubFilter(logging.Filter):
+    """stdlib Filter that masks secret-keyed values on foreign log records
+    before any handler sees them — crucially the OTel `LoggingHandler`, which
+    is attached directly to the root logger and so bypasses structlog's
+    `ProcessorFormatter` (where `foreign_pre_chain` runs). Without this filter,
+    foreign library records (FastAPI / SQLAlchemy / httpx / uvicorn) would
+    export to OTLP unscrubbed.
+
+    Scrubs structured payloads only: a dict `record.msg` and dict / tuple
+    `record.args` (the values a library interpolates into its message — e.g. a
+    header dict in an httpx error). Free-text `record.msg` is left intact for
+    the same reason `_scrub` is key-based: pattern-masking arbitrary text is
+    unreliable and mangles legitimate logs. App records are already
+    `SecretStr`-masked at the boundary, so this targets the foreign-record gap."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, dict):
+            record.msg = _scrub(record.msg)
+        if isinstance(record.args, dict):
+            record.args = _scrub(record.args)
+        elif isinstance(record.args, tuple):
+            record.args = tuple(_scrub(a) for a in record.args)
+        return True  # never suppress; only scrub
+
+
+class _AccessLogDebugFilter(logging.Filter):
+    """stdlib Filter that demotes `uvicorn.access` records to DEBUG severity.
+
+    uvicorn emits one access line per request at INFO. Production runs at
+    `LOG_LEVEL=INFO`, so demoting to DEBUG drops access lines from both the
+    stdout handler and the OTLP export path (both gated at `log_level`) while
+    keeping `access_log=True` — they resurface only when an operator runs at
+    `LOG_LEVEL=DEBUG`. Installed on the `uvicorn.access` logger in `configure()`;
+    `app/web.py` passes `log_config=None` to uvicorn so this filter survives
+    (uvicorn's default dict-config would otherwise reconfigure the logger)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.levelno = logging.DEBUG
+        record.levelname = "DEBUG"
+        return True
 
 
 def _configure_otel(

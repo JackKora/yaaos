@@ -11,6 +11,7 @@ timeout.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 
 import pytest
@@ -130,8 +131,8 @@ async def test_reset_shutdown_event_unblocks_next_stream() -> None:
     # Cancel the collector task and give the event loop a tick to process the
     # cancellation before closing the generator.
     collector.cancel()
-    try:
+    # Awaiting the cancelled task raises CancelledError; suppress that (and any
+    # incidental error from the torn-down generator) before closing it.
+    with contextlib.suppress(asyncio.CancelledError, Exception):
         await collector
-    except asyncio.CancelledError, Exception:
-        pass
     await gen.aclose()

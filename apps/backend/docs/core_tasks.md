@@ -57,9 +57,9 @@ parameters to avoid touching global OTel state.
 
 `core/tasks/spans.py` declares `TaskSpanMiddleware`, wired into the broker in `runtime.run()` alongside `OrgContextMiddleware` and `TaskMetricsMiddleware`. For each task execution:
 
-- Opens a span named `task:<task_name>` via `pre_execute`.
+- Opens a span named `task:<task_name>` via `pre_execute` and `context.attach`es it as the current context (keyed with the span by `task_id`), so spans created inside the body — SQLAlchemy auto-instrumentation, manual spans — nest under the task span instead of the dequeue-time context.
 - On error (`on_error` / `post_execute` with `is_err`): calls `span.record_exception(exc)` + `span.set_status(ERROR)` so the failure is visible in traces, not just logs.
-- Ends the span in `post_execute` / `on_error` — even if exception recording itself fails.
+- `context.detach`es the stored token and ends the span in `post_execute` / `on_error` — even if exception recording itself fails.
 
 Tests inject a tracer from a local `TracerProvider` + `InMemorySpanExporter` via the `tracer=` constructor parameter, matching the `TaskMetricsMiddleware` instrument-injection pattern.
 
@@ -100,6 +100,6 @@ Shutdown hooks must tolerate in-flight work — `_WORKER_DRAIN_GRACE_SECONDS` bo
 `test/test_scheduled_runs_prune_service.py` — broker registration of the prune task body; body deletes >7-day rows and leaves fresher rows alone.
 `test/test_scheduler_backoff.py` — unit-tests the pure `_backoff_sleep` helper: exponential growth, 120 s cap, normal-cadence restore after a reset.
 `test/test_task_metrics_service.py` — `TaskMetricsMiddleware` with injected `InMemoryMetricReader` instruments: successful body increments `task.started` + `task.succeeded` + records `task.duration`; failing body increments `task.failed` instead.
-`test/test_task_span_service.py` — `TaskSpanMiddleware` with injected `InMemorySpanExporter` tracer: failing body produces a span with ERROR status + exception event; successful body produces a span with no exception events.
+`test/test_task_span_service.py` — `TaskSpanMiddleware` with injected `InMemorySpanExporter` tracer: failing body produces a span with ERROR status + exception event; successful body produces a span with no exception events; a span opened inside the body nests under the task span (shared trace + parent = task span).
 `test/test_worker_health_service.py` — `build_worker_health_app` with stub ping callables: 200 when all pass; 503 on DB failure; 503 on Redis failure; 503 when heartbeat is stale. Also unit-tests `WorkerHeartbeat.is_fresh()` transitions.
 `test/test_graceful_drain_service.py` — drain loop exits cleanly on stop signal; in-flight body completes before worker exits (await-not-cancel); over-grace body is abandoned, not cancelled, and the worker still exits.
