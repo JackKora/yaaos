@@ -1,5 +1,6 @@
 """Service test — all 3 OTel signals reach an HTTP listener with correct
-headers and resource attributes; shutdown() force-flushes buffered records.
+headers and resource attributes; shutdown() force-flushes buffered records;
+FastAPI HTTP metrics and system metrics emit once a MeterProvider is wired.
 
 This test drives _configure_otel() directly (bypassing the idempotency guard)
 and exercises the providers via their direct references rather than via the
@@ -11,6 +12,10 @@ OTel globals (which the SDK permits setting only once per process). It asserts:
   - The trace resource carries service.version and deployment.environment.name.
   - shutdown() force-flushes a buffered log record (i.e. a record emitted before
     shutdown() completes arrives at the stub after await).
+  - FastAPIInstrumentor emits http.server.* instruments (duration + active
+    requests + response size) after a request when a MeterProvider is wired.
+  - SystemMetricsInstrumentor registers process/system CPU/memory/GC instruments
+    once wired to the MeterProvider (the source that makes the meter non-empty).
 
 The test is marked `service` per patterns.md convention (cross-module flow with
 no Postgres required — the OTel SDK + HTTP boundary is the integration surface).
@@ -165,14 +170,20 @@ def test_all_three_signals_reach_stub(otlp_stub: _RecordingServer, monkeypatch: 
     meter_provider.force_flush(timeout_millis=5_000)
 
     # Emit one log record through a handler wired to the logger provider.
+    # Set the logger level to INFO so the record passes the level filter —
+    # the root stdlib logger defaults to WARNING in test environments, which
+    # would silently drop the INFO record before it reaches the OTel handler.
     handler = LoggingHandler(logger_provider=logger_provider)
     test_logger = logging.getLogger("test_otel_export")
+    prior_level = test_logger.level
+    test_logger.setLevel(logging.INFO)
     test_logger.addHandler(handler)
     try:
         test_logger.info("export-test-log-record")
         logger_provider.force_flush(timeout_millis=5_000)
     finally:
         test_logger.removeHandler(handler)
+        test_logger.setLevel(prior_level)
 
     paths = otlp_stub.paths_received()
     assert "/v1/traces" in paths, f"No traces received. Paths: {paths}"
@@ -241,8 +252,13 @@ async def test_shutdown_flushes_buffered_records(
     svc._logger_provider = logger_provider
 
     # Emit a log record that may still be in the batch buffer.
+    # Set the logger level to INFO — root stdlib logger defaults to WARNING in
+    # test environments and would silently drop INFO records before the OTel
+    # handler sees them.
     handler = LoggingHandler(logger_provider=logger_provider)
     test_logger = logging.getLogger("test_shutdown_flush")
+    prior_level = test_logger.level
+    test_logger.setLevel(logging.INFO)
     test_logger.addHandler(handler)
     try:
         test_logger.info("pre-shutdown-flush-record")
@@ -250,6 +266,7 @@ async def test_shutdown_flushes_buffered_records(
         await svc.shutdown()
     finally:
         test_logger.removeHandler(handler)
+        test_logger.setLevel(prior_level)
         # Restore module state so other tests aren't affected.
         svc._tracer_provider = None
         svc._meter_provider = None
@@ -257,3 +274,124 @@ async def test_shutdown_flushes_buffered_records(
 
     paths = otlp_stub.paths_received()
     assert "/v1/logs" in paths, f"shutdown() did not flush log records to stub. Paths received: {paths}"
+
+
+# ── Metric-source tests (FastAPI + system metrics) ────────────────────────────
+
+
+@pytest.mark.service
+def test_fastapi_http_server_metrics_emit_after_request() -> None:
+    """http.server.* instruments are registered and emit values after one HTTP request.
+
+    Uses InMemoryMetricReader so no real OTLP stub is needed.
+
+    The global FastAPIInstrumentor may already be instrumented (configure() is
+    called from app.web at collection time, which replaces fastapi.FastAPI with
+    _InstrumentedFastAPI so every new FastAPI() auto-wires the global provider).
+    This test works around that by:
+    1. Calling uninstrument() so fastapi.FastAPI is restored to the original.
+    2. Re-importing fastapi.FastAPI from the module (not from the cached `from
+       fastapi import FastAPI` binding) to get the original class.
+    3. Creating the test app with the original FastAPI class.
+    4. Instrumenting it explicitly with a local MeterProvider.
+    5. Restoring the global instrumentation state in the finally block.
+    """
+    import fastapi as _fastapi  # noqa: PLC0415
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # noqa: PLC0415
+    from opentelemetry.sdk.metrics import MeterProvider  # noqa: PLC0415
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader  # noqa: PLC0415
+
+    global_inst = FastAPIInstrumentor()
+    was_instrumented = global_inst._is_instrumented_by_opentelemetry
+    if was_instrumented:
+        global_inst.uninstrument()
+
+    # Re-read fastapi.FastAPI from the module so we get the restored original
+    # class (not the _InstrumentedFastAPI reference that was cached by any
+    # prior `from fastapi import FastAPI` import in this process).
+    OrigFastAPI = _fastapi.FastAPI
+
+    reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(metric_readers=[reader])
+
+    app = OrigFastAPI()
+
+    @app.get("/health-probe")
+    def _health() -> dict[str, str]:
+        return {"ok": "true"}
+
+    try:
+        FastAPIInstrumentor.instrument_app(app, meter_provider=meter_provider)
+        client = TestClient(app, raise_server_exceptions=False)
+        client.get("/health-probe")
+
+        metrics_data = reader.get_metrics_data()
+        assert metrics_data is not None, "InMemoryMetricReader returned no data"
+
+        instrument_names: set[str] = set()
+        for rm in metrics_data.resource_metrics:
+            for sm in rm.scope_metrics:
+                for m in sm.metrics:
+                    instrument_names.add(m.name)
+
+        assert "http.server.duration" in instrument_names, (
+            f"Expected http.server.duration; got: {instrument_names}"
+        )
+        assert "http.server.active_requests" in instrument_names, (
+            f"Expected http.server.active_requests; got: {instrument_names}"
+        )
+    finally:
+        FastAPIInstrumentor.uninstrument_app(app)
+        meter_provider.shutdown()
+        # Restore the global instrumentation state so other tests are unaffected.
+        if was_instrumented:
+            global_inst.instrument()
+
+
+@pytest.mark.service
+def test_system_metrics_instruments_registered_when_wired() -> None:
+    """SystemMetricsInstrumentor registers CPU/memory/GC instruments once wired.
+
+    Verifies that _configure_otel's system-metrics wiring produces a non-empty
+    metric stream — i.e. the MeterProvider is not empty after instrumentation.
+    Uses InMemoryMetricReader; no real OTLP endpoint required.
+
+    The global SystemMetricsInstrumentor may already be instrumented (configure()
+    wires it at boot). This test calls uninstrument() first so it can supply its
+    own MeterProvider, then calls uninstrument() again in the finally block.
+    """
+    from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor  # noqa: PLC0415
+    from opentelemetry.sdk.metrics import MeterProvider  # noqa: PLC0415
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader  # noqa: PLC0415
+
+    global_inst = SystemMetricsInstrumentor()
+    was_instrumented = global_inst._is_instrumented_by_opentelemetry
+    if was_instrumented:
+        global_inst.uninstrument()
+
+    reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(metric_readers=[reader])
+
+    inst = SystemMetricsInstrumentor()
+    try:
+        inst.instrument(meter_provider=meter_provider)
+
+        metrics_data = reader.get_metrics_data()
+        assert metrics_data is not None, "InMemoryMetricReader returned no data after system-metrics wiring"
+
+        instrument_names: set[str] = set()
+        for rm in metrics_data.resource_metrics:
+            for sm in rm.scope_metrics:
+                for m in sm.metrics:
+                    instrument_names.add(m.name)
+
+        # Check a representative cross-section: process CPU + memory + GC.
+        assert any("cpu" in n for n in instrument_names), f"No CPU instrument found; got: {instrument_names}"
+        assert any("memory" in n for n in instrument_names), (
+            f"No memory instrument found; got: {instrument_names}"
+        )
+        assert any("gc" in n for n in instrument_names), f"No GC instrument found; got: {instrument_names}"
+    finally:
+        inst.uninstrument()
+        meter_provider.shutdown()

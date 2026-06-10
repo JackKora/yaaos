@@ -11,6 +11,10 @@
 
 **OTel always on, exporters optional** — all three providers are always initialized. OTLP/HTTP exporters are attached only when `otel_exporter_otlp_endpoint` is set. Adding a real exporter in prod is a single env-var flip (`OTEL_EXPORTER_OTLP_ENDPOINT` + `OTEL_EXPORTER_OTLP_HEADERS`); no code change or feature flags.
 
+**Metric sources** — the MeterProvider is non-empty from boot:
+- `FastAPIInstrumentor` emits `http.server.duration`, `http.server.active_requests`, and `http.server.response.size` automatically once the global MeterProvider is set (web process only).
+- `SystemMetricsInstrumentor` (from `opentelemetry-instrumentation-system-metrics`, which pulls `psutil`) registers CPU, memory, and GC observable instruments on both the web and worker processes. Wired in `_configure_otel` by passing `meter_provider=` explicitly — no global state mutation beyond what the SDK owns.
+
 **Exporter no-arg construction** — exporters are constructed with NO `endpoint=` / `headers=` kwargs. The SDK reads `OTEL_EXPORTER_OTLP_ENDPOINT` (base URL, e.g. `https://ingress.<region>.aws.dash0.com`) and appends `/v1/{traces,metrics,logs}` per signal; `OTEL_EXPORTER_OTLP_HEADERS` carries the `Authorization: Bearer …,Dash0-Dataset: …` pair. Passing `endpoint=` explicitly skips the per-signal append → bare-base 404, telemetry silently dropped.
 
 **`configure(role=...)` must be called once at boot** — `"app"` from `web.py`, `"worker"` from `core/tasks/runtime.py`. Sets `service.name` accordingly. Idempotent (module-level `_initialized` flag + OTel "already instrumented" guard).

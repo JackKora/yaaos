@@ -261,6 +261,19 @@ def _configure_otel(
         SQLAlchemyInstrumentor().instrument()
     except Exception:
         pass
+    # System metrics (CPU / mem / GC) for both web and worker processes.
+    # SystemMetricsInstrumentor reads from psutil and registers observable
+    # instruments against the supplied meter_provider; no global state mutated.
+    # Idempotent guard matches the pattern above — a second call raises if
+    # already instrumented; swallow to keep configure() safe in test re-runs.
+    try:
+        from opentelemetry.instrumentation.system_metrics import (  # noqa: PLC0415
+            SystemMetricsInstrumentor,
+        )
+
+        SystemMetricsInstrumentor().instrument(meter_provider=meter_provider)
+    except Exception:
+        pass
 
 
 async def shutdown() -> None:
