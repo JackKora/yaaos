@@ -189,7 +189,7 @@ export interface paths {
         /**
          * Providers
          * @description List registered provider ids. The SPA renders one button per id on
-         *     the login page; the test stub appears only when YAAOS_ENV=test.
+         *     the login page; the test stub appears only when APP_MODE=test.
          */
         get: operations["providers_api_auth_providers_get"];
         put?: never;
