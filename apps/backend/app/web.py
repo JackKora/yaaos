@@ -153,4 +153,9 @@ if __name__ == "__main__":
         # trusting all forwarded IPs is the standard, safe setting on Fly.
         proxy_headers=True,
         forwarded_allow_ips="*",
+        # Allow active HTTP connections (long polls, SSE streams) to finish
+        # on SIGTERM before the process exits.  30 s is generous enough for
+        # long-poll endpoints to return and short enough to fit within the
+        # kill_timeout budget in fly.production.toml.
+        timeout_graceful_shutdown=30,
     )

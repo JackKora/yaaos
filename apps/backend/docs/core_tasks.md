@@ -16,7 +16,7 @@
 - **`OrgContextMiddleware`** enters `org_context(metadata.org_id, ActorKind.SYSTEM)` before every task body — `current_org_id()` is reliably available inside any task.
 - **Task bodies must tolerate duplicate delivery.** The drain stamps `dispatched_at` only after a successful Redis push — a crash between push and stamp redispatches. Bodies look up state from DB rather than trusting args alone.
 - **`@task` registration happens at composition root, not inside `runtime`.** `app/worker.py` imports all task-defining modules before calling `runtime.run()`, so `@task` decorators are registered with the broker before the worker loop starts. `runtime.run()` itself does not import task-defining modules.
-- **Worker races four tasks via `asyncio.wait(FIRST_COMPLETED):** drain loop, taskiq receiver, scheduler tick loop, stop signal. Stop signal wins on SIGTERM; the others tear down gracefully.
+- **Worker races five tasks via `asyncio.wait(FIRST_COMPLETED)`:** drain loop, taskiq receiver, scheduler tick loop, liveness ticker, stop signal. Stop signal wins on SIGTERM; shutdown then proceeds in ordered steps — see § Worker graceful drain below.
 - **`drain_loop` and the taskiq receiver catch their own errors** — a defect logs `tasks.worker.child_crashed` and exits cleanly rather than silently discarding the exception.
 - **Recurring schedules are static + declarative** — `@scheduled(name, cron)` and `schedule_task(name, cron, task_ref=...)` register at import time into a process-local registry. No runtime mutation, no leader election. Every worker runs `scheduler_loop`; cluster safety lives in the per-tick claim, not in elected ownership.
 - **Per-tick atomic claim is the sole gate** — for each registered schedule whose cron matches the current floored-minute slot, the tick attempts `INSERT INTO scheduled_runs (schedule_id, fire_time) VALUES (...) ON CONFLICT DO NOTHING`. Only the worker whose insert wins (`rowcount == 1`) calls `enqueue(...)`. Losers see `rowcount == 0` and skip. Mirrors the `github_webhook_events` `ON CONFLICT` dedup precedent.
@@ -63,6 +63,23 @@ parameters to avoid touching global OTel state.
 
 Tests inject a tracer from a local `TracerProvider` + `InMemorySpanExporter` via the `tracer=` constructor parameter, matching the `TaskMetricsMiddleware` instrument-injection pattern.
 
+## Worker graceful drain
+
+On SIGTERM `runtime.run()` executes an ordered shutdown sequence so in-flight task bodies are not hard-cancelled:
+
+1. **Stop the drain loop** — `drain_stop` event is set; `drain_loop` exits cleanly between batches (not via `CancelledError`). No new tasks are pushed to the broker from this point.
+2. **Stop the scheduler loop** — cancelled (idempotent; an interrupted tick re-runs on the next worker startup).
+3. **Stop the liveness ticker** — cancelled; health check no longer needed during drain.
+4. **Set `consume_stop`** — the Receiver's prefetcher stops accepting new messages from the broker.
+5. **AWAIT the consume task (not cancel)** — `Receiver.listen` calls `asyncio.wait(in_flight_tasks, timeout=_WORKER_DRAIN_GRACE_SECONDS)`. Bodies that finish within the grace window complete normally; bodies that exceed it are **abandoned, not cancelled** — the worker exits regardless.
+6. **Run reverse-order shutdown hooks** — broker, Redis, DB.
+
+`_WORKER_DRAIN_GRACE_SECONDS = 60` is the constant in `runtime.py`. `fly.production.toml kill_timeout` must exceed this value plus the OTel flush budget or Fly will hard-kill mid-drain.
+
+`drain_loop` accepts a `stop: asyncio.Event | None` parameter. When set, the loop exits after the current batch rather than continuing to poll. The runtime passes a dedicated `drain_stop` event (not the process-level `stop`) so the drain can be halted before the Receiver's finish event without racing the SIGTERM handler.
+
+Shutdown hooks must tolerate in-flight work — `_WORKER_DRAIN_GRACE_SECONDS` bounds the wait, but abandoned bodies may still be running when hooks execute.
+
 ## Worker liveness heartbeat and health server
 
 `runtime.run()` starts two additional tasks alongside drain / consume / scheduler:
@@ -85,3 +102,4 @@ Tests inject a tracer from a local `TracerProvider` + `InMemorySpanExporter` via
 `test/test_task_metrics_service.py` — `TaskMetricsMiddleware` with injected `InMemoryMetricReader` instruments: successful body increments `task.started` + `task.succeeded` + records `task.duration`; failing body increments `task.failed` instead.
 `test/test_task_span_service.py` — `TaskSpanMiddleware` with injected `InMemorySpanExporter` tracer: failing body produces a span with ERROR status + exception event; successful body produces a span with no exception events.
 `test/test_worker_health_service.py` — `build_worker_health_app` with stub ping callables: 200 when all pass; 503 on DB failure; 503 on Redis failure; 503 when heartbeat is stale. Also unit-tests `WorkerHeartbeat.is_fresh()` transitions.
+`test/test_graceful_drain_service.py` — drain loop exits cleanly on stop signal; in-flight body completes before worker exits (await-not-cancel); over-grace body is abandoned, not cancelled, and the worker still exits.

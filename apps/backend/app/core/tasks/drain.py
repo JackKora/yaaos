@@ -137,12 +137,24 @@ async def _taskiq_dispatcher_for(broker: AsyncBroker) -> Dispatcher:
     return dispatch
 
 
-async def drain_loop(broker: AsyncBroker, *, poll_idle_seconds: float = 0.1) -> None:
+async def drain_loop(
+    broker: AsyncBroker,
+    *,
+    stop: asyncio.Event | None = None,
+    poll_idle_seconds: float = 0.1,
+) -> None:
     """Long-running coroutine: poll undispatched outbox rows and ship
     them to the broker. Sleeps `poll_idle_seconds` between empty polls;
-    immediately re-polls when a batch had work."""
+    immediately re-polls when a batch had work.
+
+    Pass `stop` to request a clean exit between batches.  When `stop` is
+    set the loop drains the current in-progress batch (if any) and returns
+    normally — no `CancelledError` is raised.  On SIGTERM the worker sets
+    `stop` BEFORE setting the Receiver's `finish_event` so no new tasks
+    are pushed to the broker while in-flight bodies are draining.
+    """
     dispatcher = await _taskiq_dispatcher_for(broker)
-    while True:
+    while stop is None or not stop.is_set():
         try:
             async with session() as s:
                 n = await drain_once(s, dispatcher=dispatcher)
