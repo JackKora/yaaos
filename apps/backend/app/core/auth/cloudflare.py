@@ -55,9 +55,11 @@ def _json_403() -> tuple[dict, dict]:
 class CloudflareIngressMiddleware:
     """Pure-ASGI Cloudflare ingress gate.
 
-    Registration: must be the **last** `app.add_middleware(...)` call in
-    `_install_middleware` so it runs as the outermost layer — FastAPI applies
-    middleware in reverse-registration order.
+    Registration: must be the second-to-last `app.add_middleware(...)` call in
+    `_install_middleware` so it runs as the outermost *security gate*. The
+    `CSPMiddleware` is registered after it (and therefore runs strictly
+    outermost) so the CSP header lands on every response, including this
+    middleware's 403s.
     """
 
     def __init__(self, app: ASGIApp) -> None:

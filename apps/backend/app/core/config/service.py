@@ -187,6 +187,11 @@ class Settings(BaseSettings):
     # dev/test/e2e are unaffected.
     yaaos_cloudflare_ingress_secret: SecretStr = SecretStr("")
 
+    # Content-Security-Policy mode. `report-only` is the safe default —
+    # CSP violations log in browser DevTools but don't block resources.
+    # Promote to `enforce` once the report-only deploy has run clean.
+    yaaos_csp_mode: Literal["report-only", "enforce"] = "report-only"
+
     # Non-prod-only STS host allowlist override (e.g. `mock-aws:4566`) for the
     # agent identity-exchange replay path. `core/agent_gateway/sts_verifier`
     # compiles it into a secondary host regex. Forbidden in production — a prod

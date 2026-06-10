@@ -42,7 +42,7 @@ export { setIdentity } from "../identity";
 export { YaaosSpanProcessor } from "../span-processor";
 
 export interface ObservabilityConfig {
-  /** OTLP HTTP collector base URL, e.g. `https://ingress.eu-west-1.aws.dash0.com/otlp`. */
+  /** OTLP HTTP collector base URL, e.g. `https://ingress.europe-west4.gcp.dash0.com`. */
   collectorEndpoint: string | undefined;
   /**
    * Dash0 web-signal bearer token. Must be a Dash0 web-signal-restricted,

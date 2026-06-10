@@ -16,7 +16,7 @@
 
 ## Cloudflare ingress gate
 
-`CloudflareIngressMiddleware` is the **outermost** ASGI layer. It runs before `AuthMiddleware`, rate-limiting, and all route handlers.
+`CloudflareIngressMiddleware` is the **outermost security gate** in the ASGI chain. It runs before `AuthMiddleware`, rate-limiting, and all route handlers. (`CSPMiddleware` is registered strictly outermost so its header lands on Cloudflare's 403s, but it's a header injector, not a gate — see `core/webserver`.)
 
 - **Header:** `X-Yaaos-cf-Ingress` — Cloudflare injects this via a Transform Rule using the shared secret set in `YAAOS_CLOUDFLARE_INGRESS_SECRET` (Fly secret). Direct `.fly.dev` hits and Fly IP hits do not carry it → 403. The `CF-*` prefix is reserved by Cloudflare for its own managed headers; the `X-Yaaos-cf-*` form follows the `X-Yaaos-*` convention used by `X-Yaaos-Org-Slug` and `X-Yaaos-Audience` while the `cf` segment marks it as Cloudflare-injected.
 - **Exempt path:** `/api/health` passes unconditionally — Fly's internal machine checker bypasses Cloudflare and must still reach the health endpoint.
@@ -39,11 +39,12 @@
 `classify_route(path, method)` is the single source of truth. Method-exact > exact > prefix. Unclassified `/api/*` falls through as `PUBLIC`.
 
 **Middleware order on `/api/*`:**
-0. `CloudflareIngressMiddleware` (outermost) — 403 unless `X-Yaaos-cf-Ingress` matches; exempt `/api/health`; no-op when secret unset.
-1. Reset all identity contextvars (ASGI may reuse the task).
-2. Classify route. `ORG_SCOPED` without `X-Yaaos-Org-Slug` (nor `?org=` on `/api/sse/*`) → 400 immediately. `USER_SCOPED` and `ORG_SCOPED` mutations → CSRF double-submit check.
-3. Post-response guard: if response is 2xx and `route_security_resolved` is still `None`, substitute 500 + log. Forgetting a security dep crashes, not leaks.
-4. OTel spans created during the request carry `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind` via `YaaosDimensionsSpanProcessor` (stamped on every span at creation, not inline after the request).
+0. `CSPMiddleware` (outermost) — injects `Content-Security-Policy` or `…-Report-Only` on every response. Owned by `core/webserver`, not `core/auth`. Outside the security gates so its header lands on Cloudflare's 403s too.
+1. `CloudflareIngressMiddleware` — 403 unless `X-Yaaos-cf-Ingress` matches; exempt `/api/health`; no-op when secret unset.
+2. Reset all identity contextvars (ASGI may reuse the task).
+3. Classify route. `ORG_SCOPED` without `X-Yaaos-Org-Slug` (nor `?org=` on `/api/sse/*`) → 400 immediately. `USER_SCOPED` and `ORG_SCOPED` mutations → CSRF double-submit check.
+4. Post-response guard: if response is 2xx and `route_security_resolved` is still `None`, substitute 500 + log. Forgetting a security dep crashes, not leaks.
+5. OTel spans created during the request carry `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind` via `YaaosDimensionsSpanProcessor` (stamped on every span at creation, not inline after the request).
 
 **`POST /api/orgs` is `USER_SCOPED`, not `ORG_SCOPED`** — org-create must work before the SPA has selected an org. Lives in `USER_SCOPED_METHOD_EXACT`.
 

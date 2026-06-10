@@ -648,6 +648,8 @@ from = ["app.core.vcs"]
 
 [[interfaces]]
 expose = [
+  "CSPMiddleware",
+  "CSP_POLICY",
   "RouteSpec",
   "ShutdownHook",
   "create_app",

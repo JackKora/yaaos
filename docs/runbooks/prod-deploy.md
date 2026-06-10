@@ -261,6 +261,17 @@ Runs once after migrations complete:
 3. Five interactive prompts: email, GitHub username, display name, org name, org slug.
 4. Idempotent — a second run with the same inputs is a no-op.
 
+### CSP report-only → enforce
+
+`YAAOS_CSP_MODE` defaults to `report-only` — the backend emits `Content-Security-Policy-Report-Only`, the browser logs violations to DevTools but doesn't block resources. After the first prod deploy:
+
+1. Load the SPA in Chrome with DevTools → Console open. Click through the main flows (dashboard, settings, ticket detail).
+2. Filter Console for "Refused" / "Content Security Policy" — every violation logs there.
+3. If clean: `fly secrets set YAAOS_CSP_MODE=enforce --app yaaos` to promote to enforcing mode. (Or set in `fly.production.toml [env]` — it's not a secret.)
+4. If a directive is too tight: edit `apps/backend/app/core/webserver/csp.py` to add the host, ship, repeat from step 1.
+
+The CSP policy itself lives in `csp.py` as a constant — no per-route customization. Adding a host means changing that file.
+
 ### Agent image publish
 
 The WorkspaceAgent image publishes separately from the backend deploy:

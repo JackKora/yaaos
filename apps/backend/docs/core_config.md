@@ -32,6 +32,8 @@
 - `is_non_prod` — `app_mode != "production"` (shorthand for dev + test together)
 - `cors_origins_list` returns `["*"]` when `is_non_prod`; otherwise parsed `YAAOS_CORS_ORIGINS`.
 
+**`YAAOS_CSP_MODE`** — `Literal["report-only", "enforce"]`, default `"report-only"`. Controls which CSP header `core/webserver.CSPMiddleware` emits: `Content-Security-Policy-Report-Only` (browser logs violations to DevTools but doesn't block) or `Content-Security-Policy` (browser enforces). Same policy string in both modes — only the header name flips. The policy directive list is a constant in `core/webserver/csp.py` (`CSP_POLICY`); adding a host means changing that file and shipping. Promote from `report-only` to `enforce` once a real-traffic deploy has run clean and no unexpected violations appear in DevTools / Dash0.
+
 **`YAAOS_CLOUDFLARE_INGRESS_SECRET`** — shared secret injected by a Cloudflare Transform Rule into the `X-Yaaos-cf-Ingress` header on every proxied request. `CloudflareIngressMiddleware` reads this at request time (not boot time) and rejects mismatches with 403. Empty default = no-op so dev/test/e2e are unaffected; in `production` `_check_required_prod_secrets` refuses to boot if unset, so the no-op branch is unreachable in prod. Set as a Fly secret in production.
 
 **Non-prod-only knobs forbidden in production** — one `model_validator(mode="after")` (`_forbid_non_prod_only_settings_in_prod`) **refuses to construct `Settings`** (crashes boot with a `ValidationError`, listing every offender) when `app_mode == "production"` and any mock/stub knob is set. Each is safe-by-default (unset / `False`); dev/test compose + `conftest` set them. The guarded knobs:
