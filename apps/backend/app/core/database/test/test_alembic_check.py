@@ -13,6 +13,8 @@ prevents "edited a model, forgot a revision" drift.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
@@ -43,10 +45,24 @@ async def test_models_match_db_schema(_migrated_schema: None) -> None:
         )
 
 
+def _include_name(name: str, type_: str, parent_names: dict) -> bool:  # type: ignore[no-untyped-def]
+    """Exclude partition children from the autogenerate diff.
+
+    `coding_agent_activity` is PARTITION BY RANGE (created_at); children
+    (e.g. coding_agent_activity_p202624) are created and rolled forward by
+    maintain_coding_agent_activity_partitions() — not via Alembic revisions.
+    Reporting them as "removed tables" would be a false positive.
+    See apps/backend/app/core/database/service.py::maintain_coding_agent_activity_partitions.
+    """
+    if type_ == "table" and re.fullmatch(r"coding_agent_activity_p\d+", name):
+        return False
+    return True
+
+
 def _compare(sync_conn) -> list:  # type: ignore[no-untyped-def]
     """Sync inner: build MigrationContext on the bare sync DBAPI connection,
     run compare_metadata against Base.metadata. Returns the diff list."""
-    mc = MigrationContext.configure(sync_conn)
+    mc = MigrationContext.configure(sync_conn, opts={"include_name": _include_name})
     return list(compare_metadata(mc, Base.metadata))
 
 
