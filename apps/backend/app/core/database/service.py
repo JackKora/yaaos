@@ -1,14 +1,15 @@
-"""SQLAlchemy async engine + session factory + `schema_migrations` bootstrap.
+"""SQLAlchemy async engine + session factory + migration runner.
 
-The skeleton uses no ORM models yet. The infrastructure exists so /health can
-do a `SELECT 1` against the DB and so future modules drop in their tables
-without reshaping bootstrap.
+Boots the schema via Alembic (``migrate()``) and owns the async engine
+and session factory the rest of the backend uses.
 """
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
@@ -1227,32 +1228,60 @@ def _assert_min_pg_version(server_version_num: str) -> None:
         )
 
 
+def _drive_alembic_upgrade(sync_conn) -> None:  # type: ignore[no-untyped-def]
+    """Sync callback passed to ``conn.run_sync`` — drives ``alembic upgrade head``.
+
+    Resolves paths from ``__file__`` so the call is cwd-independent;
+    ``migrate()`` may be called from the web process or the worker process with
+    different cwds.  Stashes the sync DBAPI connection on the Alembic config so
+    ``env.py``'s boot path uses it directly rather than opening a second engine.
+    """
+    import alembic.command  # noqa: PLC0415
+    import alembic.config  # noqa: PLC0415
+
+    # service.py lives at apps/backend/app/core/database/service.py.
+    # Climb 4 levels up to reach apps/backend/.
+    backend_root = Path(__file__).resolve().parents[3]
+    ini_path = backend_root / "alembic.ini"
+    cfg = alembic.config.Config(str(ini_path))
+    # Override script_location with an absolute path so cwd doesn't matter.
+    # alembic.ini stores "alembic" as a relative path; resolve it against the ini file's directory.
+    cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    cfg.attributes["connection"] = sync_conn
+    alembic.command.upgrade(cfg, "head")
+    logging.getLogger(__name__).info("migration.upgrade.done")
+
+
 async def migrate() -> None:
-    """Apply any un-applied migrations. Idempotent and concurrency-safe.
+    """Apply any pending Alembic revisions. Idempotent and concurrency-safe.
 
     Asserts the engine is Postgres >= 18 before touching any DDL — a wrong
     engine fails loudly here rather than deep inside a migration.
 
     Serializes via a Postgres session-scoped advisory lock held on a dedicated
-    connection that spans the whole call. Two processes starting at once (web
-    + worker, or two web instances) both call `migrate()`; whichever acquires
-    the lock first applies, the other blocks, then re-reads `applied` inside
-    the lock and finds nothing to do.
+    connection that spans the whole Alembic upgrade.  Two processes starting at
+    once (web + worker) both call ``migrate()``; whichever acquires the lock
+    first applies, the other blocks, then Alembic reads ``alembic_version`` and
+    finds it is already at head.
 
-    Session-scoped (not `pg_advisory_xact_lock`) because per-migration commits
-    happen in separate transactions — the lock has to outlive each. Today
-    there is no pooler in front of Postgres; this lock would break under
-    PgBouncer transaction pooling (session affinity is lost between
-    statements) so a pooler in this path would need to be bypassed.
+    The advisory lock is on a *dedicated* connection (``lock_conn``), separate
+    from the connection passed to ``run_sync``.  The lock must outlive
+    Alembic's per-revision transactions; a shared connection would release the
+    lock when Alembic commits.
+
+    After ``alembic upgrade head`` returns, ``maintain_coding_agent_activity_partitions``
+    seeds the current ISO-week child partition and the next two for the
+    partitioned ``coding_agent_activity`` table.
     """
     async with get_engine().connect() as conn:
         result = await conn.execute(text("SHOW server_version_num"))
         _assert_min_pg_version(result.scalar_one())
-    await ensure_schema_migrations_table()
     async with get_engine().connect() as lock_conn:
         await lock_conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": _MIGRATION_LOCK_KEY})
         try:
-            await _apply_pending()
+            async with get_engine().connect() as conn:
+                await conn.run_sync(_drive_alembic_upgrade)
+            await maintain_coding_agent_activity_partitions()
         finally:
             await lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _MIGRATION_LOCK_KEY})
 
