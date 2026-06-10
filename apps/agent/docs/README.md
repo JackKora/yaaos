@@ -44,13 +44,12 @@ Two-stage `golang:1.26-alpine` builder → `debian:bookworm-slim` runtime. ~80 M
 
 ### Registry + tagging
 
-Published to **`ghcr.io/yaaos/yaaos-agent`**. Tags:
+Published to **`docker.io/yaaos/agent`** (Docker Hub). Tags:
 
-- `vX.Y.Z` — immutable release tag; pin this in production.
-- `latest` — most recent stable; getting-started only.
-- `sha-<short>` — every CI build; for bisection/rollback.
+- `MAJOR.MINOR` — immutable release tag (e.g. `0.1`); pin this in production. Minor increments on every `main` merge that changes `apps/agent/**`; major is the human-edited value in `apps/agent/VERSION`.
+- `latest` — points to the most recent release; getting-started only.
 
-Multi-arch: `linux/amd64` + `linux/arm64` (built with `docker buildx`).
+Build target: `linux/amd64` (built with `docker buildx --platform linux/amd64` from the arm64 RWX CI runner).
 
 ## Deployment (ECS Fargate)
 
@@ -99,7 +98,7 @@ Register the role ARN in yaaos: `PATCH /api/orgs` with `{workspace_provider: "re
   "taskRoleArn": "arn:aws:iam::ACCOUNT:role/yaaos-agent",
   "containerDefinitions": [{
     "name": "agent",
-    "image": "ghcr.io/yaaos/yaaos-agent:vX.Y.Z",
+    "image": "yaaos/agent:MAJOR.MINOR",
     "essential": true,
     "command": ["supervisor"],
     "environment": [
