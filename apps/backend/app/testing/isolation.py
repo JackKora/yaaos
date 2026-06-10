@@ -7,6 +7,7 @@ test context — no direct submodule attribute mutation, no restore loops.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -14,6 +15,7 @@ import pytest
 import pytest_asyncio
 
 from app.core.redis import RedisPubsub, bind_pubsub
+from app.core.sse import bind_shutdown_event
 from app.core.vcs import (
     bind_vcs_registry,
     current_vcs_registry,
@@ -29,6 +31,17 @@ async def pubsub_isolation() -> None:
     still use the `redis_or_skip` fixture to gate on reachability.
     """
     bind_pubsub(RedisPubsub())
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def sse_shutdown_event_isolation() -> None:
+    """Bind a fresh asyncio.Event as the SSE shutdown signal for each test.
+
+    Autouse so every test in the backend suite gets an isolated event without
+    importing or calling anything. A previously-set event from another test
+    cannot leak into this one.
+    """
+    bind_shutdown_event(asyncio.Event())
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -209,6 +222,7 @@ __all__ = [
     "recovery_policies_isolation",
     "scheduler_registry_isolation",
     "scoped_vcs_plugin",
+    "sse_shutdown_event_isolation",
     "subscriber_registry_isolation",
     "terminal_hooks_isolation",
     "workflow_context_provider_isolation",

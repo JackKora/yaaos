@@ -19,6 +19,11 @@ from app.core import observability
 
 redis.bind_pubsub(redis.RedisPubsub())
 
+import asyncio  # noqa: E402
+from app.core import sse as _core_sse  # noqa: E402
+
+_core_sse.bind_shutdown_event(asyncio.Event())
+
 observability.configure(role="app")
 
 # 3. Webserver registry must exist before any domain module registers routes.

@@ -11,18 +11,21 @@ so `AuthMiddleware` enforces the `X-Yaaos-Org-Slug` header before the handler ru
 `org_id_var` and marks the route security resolved.
 
 Graceful close on deploy: both stream generators race their subscription
-`__anext__` against `_shutdown_event`.  When the event fires (set by
-`shutdown()`), the generator emits a final `retry:`+comment frame that tells
+`__anext__` against the contextvar-bound shutdown event.  When `shutdown()`
+sets the event, the generator emits a final `retry:`+comment frame that tells
 the browser's `EventSource` to reconnect within ~1 s, then returns — the
 `StreamingResponse` completes cleanly instead of hanging on a dead socket.
 The `retry:` value is 1000 ms; any already-pending `__anext__` task is
-cancelled before the generator exits.
+cancelled before the generator exits.  The event is bound at process startup
+via `bind_shutdown_event` (composition root) and per-test via the
+`sse_shutdown_event_isolation` autouse fixture in `app/testing/isolation`.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextvars import ContextVar
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -40,14 +43,7 @@ from app.core.webserver import RouteSpec, register_routes
 
 router = APIRouter()
 
-# Process-wide shutdown event — lazily initialised the first time `_get_event()`
-# is called within each event loop.  Lazy init avoids binding to the wrong loop
-# when the module is imported in a test environment (pytest creates a new event
-# loop per test; a module-level `asyncio.Event()` would bind to the loop active
-# at import time and raise "bound to a different event loop" in subsequent
-# tests).  In production there is exactly one event loop for the process
-# lifetime, so the singleton is created once and never replaced.
-_shutdown_event: asyncio.Event | None = None
+_shutdown_event_var: ContextVar[asyncio.Event | None] = ContextVar("_shutdown_event_var", default=None)
 
 # The final frame sent to the client on deploy.  `retry: 1000` asks the
 # browser to reconnect in ~1 s; the comment line is ignored by `onmessage`
@@ -55,22 +51,33 @@ _shutdown_event: asyncio.Event | None = None
 _SHUTDOWN_FRAME = "retry: 1000\n: server closing\n\n"
 
 
-def _get_event() -> asyncio.Event:
-    """Return the current shutdown event, creating it lazily if needed.
+def bind_shutdown_event(event: asyncio.Event) -> None:
+    """Bind `event` as the active SSE shutdown signal for the current Context.
 
-    Called at the start of each stream generator iteration so the event is
-    always bound to the running event loop.
+    Called once at process startup (composition root) and once per test
+    (`sse_shutdown_event_isolation` fixture in `app/testing/isolation`).
+    Subsequent calls in the same Context replace the prior binding.
     """
-    global _shutdown_event
-    if _shutdown_event is None:
-        _shutdown_event = asyncio.Event()
-    return _shutdown_event
+    _shutdown_event_var.set(event)
+
+
+def _get_event() -> asyncio.Event:
+    """Return the active shutdown event. Raises `RuntimeError` if
+    `bind_shutdown_event` has not been called — fail-fast so forgotten
+    startup binds surface immediately rather than silently producing wrong state."""
+    event = _shutdown_event_var.get()
+    if event is None:
+        raise RuntimeError(
+            "sse shutdown event not bound: call bind_shutdown_event(asyncio.Event()) "
+            "at process startup or use the sse_shutdown_event_isolation fixture in tests."
+        )
+    return event
 
 
 async def shutdown() -> None:
     """Signal all active SSE stream generators to close gracefully.
 
-    Sets the process-wide shutdown event.  Each stream generator races its
+    Sets the contextvar-bound shutdown event.  Each stream generator races its
     next-event await against this event; when it fires the generator emits
     a final `retry:`+comment frame and returns.  The `StreamingResponse`
     then completes cleanly so the browser's `EventSource` reconnects
@@ -79,18 +86,6 @@ async def shutdown() -> None:
     Registered with the web shutdown registry only — SSE is web-presence.
     """
     _get_event().set()
-
-
-def _reset_shutdown_event_for_tests() -> None:
-    """Replace the module-level shutdown event with a fresh (unset) instance.
-
-    Test-only.  Each test that exercises shutdown behaviour calls this before
-    the test body so a previously-set event from an earlier test does not
-    immediately terminate the new generator.  Setting to None forces lazy
-    re-init in the current event loop on the next `_get_event()` call.
-    """
-    global _shutdown_event
-    _shutdown_event = None
 
 
 async def _general_stream(org_id: UUID) -> AsyncIterator[str]:

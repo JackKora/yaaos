@@ -544,6 +544,7 @@ from = ["app.core.sessions"]
 [[interfaces]]
 expose = [
   "GeneralEventKind",
+  "bind_shutdown_event",
   "publish_general",
   "publish_general_after_commit",
   "publish_workspace_activity",

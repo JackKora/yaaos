@@ -11,13 +11,12 @@ timeout.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import uuid
 
 import pytest
 
 from app.core.sse import shutdown
-from app.core.sse.web import _general_stream, _reset_shutdown_event_for_tests, _workspace_activity_stream
+from app.core.sse.web import _general_stream, _workspace_activity_stream
 
 
 @pytest.mark.service
@@ -30,8 +29,6 @@ async def test_shutdown_causes_general_stream_to_emit_final_frame_and_return() -
     reconnects promptly, and an SSE comment (`: ` prefix) so it does not fire
     `onmessage` on the client.
     """
-    _reset_shutdown_event_for_tests()
-
     org_id = uuid.uuid4()
     gen = _general_stream(org_id)
 
@@ -68,8 +65,6 @@ async def test_shutdown_causes_workspace_activity_stream_to_emit_final_frame_and
     """Same contract as the general stream: `shutdown()` on a live
     `_workspace_activity_stream` emits the final frame and raises StopAsyncIteration.
     """
-    _reset_shutdown_event_for_tests()
-
     org_id = uuid.uuid4()
     wfx_id = uuid.uuid4()
     gen = _workspace_activity_stream(org_id, wfx_id)
@@ -99,40 +94,4 @@ async def test_shutdown_of_idle_stream_no_active_waiters() -> None:
     Regression guard: the shutdown event must be settable even when no
     stream generator is waiting on it.
     """
-    _reset_shutdown_event_for_tests()
     await shutdown()  # must not raise
-
-
-@pytest.mark.service
-@pytest.mark.asyncio
-async def test_reset_shutdown_event_unblocks_next_stream() -> None:
-    """_reset_shutdown_event_for_tests() creates a fresh event so a subsequent
-    stream generator is not immediately terminated.
-
-    Validates the test-isolation helper used in the other tests above.
-    """
-    _reset_shutdown_event_for_tests()
-    await shutdown()  # set the event
-
-    # Without reset the next generator would see the event already set and
-    # emit the final frame immediately.  After reset it should block.
-    _reset_shutdown_event_for_tests()
-
-    org_id = uuid.uuid4()
-    gen = _general_stream(org_id)
-    # Drain prelude
-    prelude = await asyncio.wait_for(gen.__anext__(), timeout=3.0)
-    assert prelude.startswith(":")
-
-    # The generator should now block (not immediately terminate).
-    collector = asyncio.create_task(gen.__anext__())
-    await asyncio.sleep(0.05)
-    assert not collector.done(), "stream should not terminate before shutdown is called again"
-    # Cancel the collector task and give the event loop a tick to process the
-    # cancellation before closing the generator.
-    collector.cancel()
-    # Awaiting the cancelled task raises CancelledError; suppress that (and any
-    # incidental error from the torn-down generator) before closing it.
-    with contextlib.suppress(asyncio.CancelledError, Exception):
-        await collector
-    await gen.aclose()
