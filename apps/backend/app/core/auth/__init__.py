@@ -20,6 +20,7 @@ from app.core.auth.context import (
     actor_id_var,
     actor_kind_var,
     bind_request_structlog_vars,
+    command_id_var,
     current_actor_kind,
     current_org_id,
     current_user_id,
@@ -29,6 +30,7 @@ from app.core.auth.context import (
     require_org_context,
     route_security_resolved,
     user_id_var,
+    workflow_execution_id_var,
 )
 from app.core.auth.cookies import (
     CSRF_COOKIE_NAME,
@@ -83,6 +85,7 @@ __all__ = [
     "bind_request_structlog_vars",
     "classify_route",
     "clear_cookie_attrs",
+    "command_id_var",
     "csrf_cookie_attrs",
     "current_actor_kind",
     "current_org_id",
@@ -99,4 +102,5 @@ __all__ = [
     "route_security_resolved",
     "session_cookie_attrs",
     "user_id_var",
+    "workflow_execution_id_var",
 ]

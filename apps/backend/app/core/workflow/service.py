@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import command_id_var, workflow_execution_id_var
 from app.core.database import session as db_session
 from app.core.observability import with_remote_parent_span
 from app.core.sse import GeneralEventKind, publish_general_after_commit
@@ -108,20 +109,24 @@ async def start_step(
 
     Span: emits a `workflow.start_step` span whose parent is the upstream
     span encoded in `traceparent`, so all task bodies in one workflow run
-    nest under the same trace ID. The span sets the `workflow_execution_id`
-    + `step_id` + `attempt` attributes for observability.
+    nest under the same trace ID. `yaaos.workflow_id` is stamped on every
+    span and log record inside this scope via the span processor +
+    `_YaaosLogDimsFilter`; `step_id` and `attempt` remain explicit attrs.
     """
-    with with_remote_parent_span(_tracer, "workflow.start_step", traceparent) as span:
-        span.set_attribute("workflow.execution_id", workflow_execution_id)
-        span.set_attribute("workflow.step_id", step_id)
-        span.set_attribute("workflow.attempt", attempt)
-        await _start_step_impl(
-            workflow_execution_id=workflow_execution_id,
-            step_id=step_id,
-            attempt=attempt,
-            inputs=inputs,
-            traceparent=traceparent,
-        )
+    wf_token = workflow_execution_id_var.set(workflow_execution_id)
+    try:
+        with with_remote_parent_span(_tracer, "workflow.start_step", traceparent) as span:
+            span.set_attribute("workflow.step_id", step_id)
+            span.set_attribute("workflow.attempt", attempt)
+            await _start_step_impl(
+                workflow_execution_id=workflow_execution_id,
+                step_id=step_id,
+                attempt=attempt,
+                inputs=inputs,
+                traceparent=traceparent,
+            )
+    finally:
+        workflow_execution_id_var.reset(wf_token)
 
 
 async def _start_step_impl(
@@ -277,19 +282,25 @@ async def handle_agent_event(
     has already advanced exits cleanly.
 
     Span: nests under the upstream span from `traceparent` so the agent's
-    work and the control-plane's resumption are one trace.
+    work and the control-plane's resumption are one trace. `yaaos.workflow_id`
+    and `yaaos.command_id` are stamped on every span and log record in this
+    scope via the span processor + `_YaaosLogDimsFilter`.
     """
-    with with_remote_parent_span(_tracer, "workflow.handle_agent_event", traceparent) as span:
-        span.set_attribute("workflow.execution_id", workflow_execution_id)
-        span.set_attribute("workflow.agent_command_id", agent_command_id)
-        span.set_attribute("workflow.outcome_label", outcome_label)
-        await _handle_agent_event_impl(
-            workflow_execution_id=workflow_execution_id,
-            agent_command_id=agent_command_id,
-            outcome_label=outcome_label,
-            outputs=outputs,
-            traceparent=traceparent,
-        )
+    wf_token = workflow_execution_id_var.set(workflow_execution_id)
+    cmd_token = command_id_var.set(agent_command_id)
+    try:
+        with with_remote_parent_span(_tracer, "workflow.handle_agent_event", traceparent) as span:
+            span.set_attribute("workflow.outcome_label", outcome_label)
+            await _handle_agent_event_impl(
+                workflow_execution_id=workflow_execution_id,
+                agent_command_id=agent_command_id,
+                outcome_label=outcome_label,
+                outputs=outputs,
+                traceparent=traceparent,
+            )
+    finally:
+        command_id_var.reset(cmd_token)
+        workflow_execution_id_var.reset(wf_token)
 
 
 async def _handle_agent_event_impl(
@@ -359,21 +370,26 @@ async def route_workflow(
     mark the workflow terminal. Atomic transition + outbox enqueue in a
     single transaction.
 
-    Span: nests under the upstream span from `traceparent`.
+    Span: nests under the upstream span from `traceparent`. `yaaos.workflow_id`
+    is stamped on every span and log record in this scope via the span
+    processor + `_YaaosLogDimsFilter`; step/outcome are kept as explicit attrs.
     """
-    with with_remote_parent_span(_tracer, "workflow.route_workflow", traceparent) as span:
-        span.set_attribute("workflow.execution_id", workflow_execution_id)
-        if completed_step_id is not None:
-            span.set_attribute("workflow.completed_step_id", completed_step_id)
-        if outcome_label is not None:
-            span.set_attribute("workflow.outcome_label", outcome_label)
-        await _route_workflow_impl(
-            workflow_execution_id=workflow_execution_id,
-            completed_step_id=completed_step_id,
-            outcome_label=outcome_label,
-            outputs=outputs,
-            traceparent=traceparent,
-        )
+    wf_token = workflow_execution_id_var.set(workflow_execution_id)
+    try:
+        with with_remote_parent_span(_tracer, "workflow.route_workflow", traceparent) as span:
+            if completed_step_id is not None:
+                span.set_attribute("workflow.completed_step_id", completed_step_id)
+            if outcome_label is not None:
+                span.set_attribute("workflow.outcome_label", outcome_label)
+            await _route_workflow_impl(
+                workflow_execution_id=workflow_execution_id,
+                completed_step_id=completed_step_id,
+                outcome_label=outcome_label,
+                outputs=outputs,
+                traceparent=traceparent,
+            )
+    finally:
+        workflow_execution_id_var.reset(wf_token)
 
 
 async def _route_workflow_impl(

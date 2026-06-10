@@ -104,6 +104,11 @@ def configure(role: Role = "app") -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
     root_logger.handlers.clear()
+    # Clear any previously added filters (idempotency guard).
+    root_logger.filters.clear()
+    # Stamp yaaos dimension contextvars as LogRecord attributes so the OTel
+    # LoggingHandler maps them to queryable log attributes in Dash0.
+    root_logger.addFilter(_YaaosLogDimsFilter())
     root_logger.addHandler(stream_handler)
 
     # Attach OTel's LoggingHandler at NOTSET so it inherits the root level —
@@ -141,6 +146,120 @@ def _inject_trace_context(_logger: Any, _method_name: str, event_dict: dict[str,
     event_dict["trace_id"] = format(ctx.trace_id, "032x")
     event_dict["span_id"] = format(ctx.span_id, "016x")
     return event_dict
+
+
+# ── Standard dimension helpers ──────────────────────────────────────────────
+
+# Attribute names emitted on every span + log record when contextvars are set.
+_ATTR_ORG_ID = "yaaos.org_id"
+_ATTR_USER_ID = "yaaos.user_id"
+_ATTR_ACTOR_KIND = "yaaos.actor_kind"
+_ATTR_WORKFLOW_ID = "yaaos.workflow_id"
+_ATTR_COMMAND_ID = "yaaos.command_id"
+
+# LogRecord attribute names (snake_case, no dot — LogRecord attrs can't have
+# dots; the LoggingHandler picks up all non-reserved attrs from vars(record)).
+_LOG_ATTR_ORG_ID = "yaaos_org_id"
+_LOG_ATTR_USER_ID = "yaaos_user_id"
+_LOG_ATTR_ACTOR_KIND = "yaaos_actor_kind"
+_LOG_ATTR_WORKFLOW_ID = "yaaos_workflow_execution_id"
+_LOG_ATTR_COMMAND_ID = "yaaos_command_id"
+
+
+class YaaosDimensionsSpanProcessor:
+    """OTel `SpanProcessor` that stamps standard yaaos dimensions on every span
+    at creation (`on_start`).
+
+    Reads the auth contextvars (`org_id_var`, `user_id_var`, `actor_kind_var`,
+    `workflow_execution_id_var`, `command_id_var`) and sets the corresponding
+    attributes on the span. Attributes are only stamped when the var is set
+    (not None/empty) — background spans carry org+actor but no `user_id`;
+    non-workflow spans carry no `workflow_id`/`command_id`.
+
+    OTel attributes do NOT inherit to child spans, so a processor on `on_start`
+    is the only mechanism that makes dims universal without per-span code.
+    """
+
+    def on_start(self, span: Any, parent_context: Any = None) -> None:
+        # Late import to avoid circular-import at module level (auth → context;
+        # observability must not import auth at module level).
+        from app.core.auth import (  # noqa: PLC0415
+            actor_kind_var,
+            command_id_var,
+            org_id_var,
+            user_id_var,
+            workflow_execution_id_var,
+        )
+
+        org_id = org_id_var.get()
+        user_id = user_id_var.get()
+        actor_kind = actor_kind_var.get()
+        workflow_id = workflow_execution_id_var.get()
+        command_id = command_id_var.get()
+
+        if org_id is not None:
+            span.set_attribute(_ATTR_ORG_ID, str(org_id))
+        if user_id is not None:
+            span.set_attribute(_ATTR_USER_ID, str(user_id))
+        if actor_kind is not None:
+            span.set_attribute(_ATTR_ACTOR_KIND, actor_kind.value)
+        if workflow_id is not None:
+            span.set_attribute(_ATTR_WORKFLOW_ID, workflow_id)
+        if command_id is not None:
+            span.set_attribute(_ATTR_COMMAND_ID, command_id)
+
+    def on_end(self, span: Any) -> None:
+        pass
+
+    def shutdown(self) -> None:
+        pass
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        return True
+
+
+class _YaaosLogDimsFilter(logging.Filter):
+    """stdlib logging Filter that stamps yaaos dimension contextvars as
+    `LogRecord` attributes before the OTel `LoggingHandler` processes the
+    record.
+
+    OTel's `LoggingHandler._get_attributes` picks up every non-reserved
+    attribute from `vars(record)`, so setting `record.yaaos_org_id = "..."` etc.
+    makes the dims queryable in Dash0 as log attributes — not just embedded in
+    the formatted message string.
+
+    Runs on every record that passes through the root logger, so both
+    structlog-native records and foreign library records (FastAPI/SQLAlchemy)
+    carry the same dims.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        from app.core.auth import (  # noqa: PLC0415
+            actor_kind_var,
+            command_id_var,
+            org_id_var,
+            user_id_var,
+            workflow_execution_id_var,
+        )
+
+        org_id = org_id_var.get()
+        user_id = user_id_var.get()
+        actor_kind = actor_kind_var.get()
+        workflow_id = workflow_execution_id_var.get()
+        command_id = command_id_var.get()
+
+        if org_id is not None:
+            setattr(record, _LOG_ATTR_ORG_ID, str(org_id))
+        if user_id is not None:
+            setattr(record, _LOG_ATTR_USER_ID, str(user_id))
+        if actor_kind is not None:
+            setattr(record, _LOG_ATTR_ACTOR_KIND, actor_kind.value)
+        if workflow_id is not None:
+            setattr(record, _LOG_ATTR_WORKFLOW_ID, workflow_id)
+        if command_id is not None:
+            setattr(record, _LOG_ATTR_COMMAND_ID, command_id)
+
+        return True  # never suppress; only annotate
 
 
 def _configure_otel(
@@ -192,6 +311,11 @@ def _configure_otel(
 
     # ── TracerProvider ─────────────────────────────────────────────────────
     tracer_provider = TracerProvider(resource=resource)
+    # Stamp standard dims on every span at creation so child spans always
+    # carry org_id/user_id/actor_kind/workflow_id/command_id without per-span
+    # set_attribute calls.  SynchronousMultiSpanProcessor runs on_start in the
+    # calling thread — reading contextvars inside on_start is safe.
+    tracer_provider.add_span_processor(YaaosDimensionsSpanProcessor())
     if endpoint:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: PLC0415
             OTLPSpanExporter,

@@ -6,7 +6,7 @@
 
 - Owns: `CloudflareIngressMiddleware`, `AuthMiddleware`, `RouteSecurity` enum, `Action` enum, `Role` enum, `_REQUIRED_ROLE` map, `required_role_for(action)`, identity contextvars, `org_context()`, `classify_route()`.
 - Does NOT own: session-cookie resolution or membership lookup — those are in [`core/sessions`](core_sessions.md), which also owns `/api/auth/*` routes.
-- Emits: sets `org_id_var`, `user_id_var`, `actor_kind_var`, `actor_id_var`, `route_security_resolved`. Consumed by structlog, OTel middleware, and audit-log writes.
+- Emits: sets `org_id_var`, `user_id_var`, `actor_kind_var`, `actor_id_var`, `workflow_execution_id_var`, `command_id_var`, `route_security_resolved`. Consumed by structlog, OTel span processor, log filter, and audit-log writes.
 
 ## Role
 
@@ -43,11 +43,15 @@
 1. Reset all identity contextvars (ASGI may reuse the task).
 2. Classify route. `ORG_SCOPED` without `X-Org-Slug` (nor `?org=` on `/api/sse/*`) → 400 immediately. `USER_SCOPED` and `ORG_SCOPED` mutations → CSRF double-submit check.
 3. Post-response guard: if response is 2xx and `route_security_resolved` is still `None`, substitute 500 + log. Forgetting a security dep crashes, not leaks.
-4. Tag OTel span with `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind`.
+4. OTel spans created during the request carry `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind` via `YaaosDimensionsSpanProcessor` (stamped on every span at creation, not inline after the request).
 
 **`POST /api/orgs` is `USER_SCOPED`, not `ORG_SCOPED`** — org-create must work before the SPA has selected an org. Lives in `USER_SCOPED_METHOD_EXACT`.
 
-**`org_context(org_id, actor_kind, actor_id)`** — async context manager for background jobs. Sets the same four identity vars + `route_security_resolved = "background"` + OTel attrs + structlog `bind_contextvars`. Resets on exit.
+**`org_context(org_id, actor_kind, actor_id)`** — async context manager for background jobs. Sets the four identity vars + `route_security_resolved = "background"` + OTel attrs on the current span + structlog `bind_contextvars`. Resets on exit. Does NOT set `workflow_execution_id_var` or `command_id_var` — those are set by workflow task bodies.
+
+**`workflow_execution_id_var` + `command_id_var`** — workflow-scope contextvars. None outside an active workflow task body. Set/reset by `core/workflow` task bodies (`start_step`, `handle_agent_event`, `route_workflow`) so every span and log record in scope carries `yaaos.workflow_id` and `yaaos.command_id` via the span processor and `_YaaosLogDimsFilter`. Not set in background work or HTTP requests.
+
+**Standard dims on every span** — `YaaosDimensionsSpanProcessor` (in `core/observability`) reads all six identity/workflow contextvars on `on_start` and stamps `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind`, `yaaos.workflow_id`, `yaaos.command_id` on every new span. Dims are only stamped when the var is set — background spans carry org+actor but no `user_id`; non-workflow spans carry no `workflow_id`/`command_id`. The middleware's previous inline `set_attribute` calls are removed; the processor makes dims universal without per-span code.
 
 **Pure-ASGI, not `BaseHTTPMiddleware`** — contextvars set inside the route handler propagate back to the middleware on the way out. `BaseHTTPMiddleware` runs downstream in a separate task, making those mutations invisible.
 

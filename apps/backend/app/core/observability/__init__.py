@@ -6,7 +6,7 @@ adds wire-protocol trace propagation helpers
 boundary.
 """
 
-from app.core.observability.service import configure, get_logger, shutdown
+from app.core.observability.service import YaaosDimensionsSpanProcessor, configure, get_logger, shutdown
 from app.core.observability.slow_request import (
     SLOW_REQUEST_THRESHOLD_MS,
     SlowRequestLogMiddleware,
@@ -25,6 +25,7 @@ from app.core.shutdown_registry import (
 __all__ = [
     "SLOW_REQUEST_THRESHOLD_MS",
     "SlowRequestLogMiddleware",
+    "YaaosDimensionsSpanProcessor",
     "active_task_count",
     "configure",
     "current_traceparent",

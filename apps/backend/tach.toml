@@ -51,7 +51,7 @@ depends_on = []
 
 [[modules]]
 path = "app.core.observability"
-depends_on = ["app.core.config", "app.core.shutdown_registry"]
+depends_on = ["app.core.auth", "app.core.config", "app.core.shutdown_registry"]
 
 [[modules]]
 path = "app.core.redis"
@@ -296,6 +296,7 @@ expose = [
   "bind_request_structlog_vars",
   "classify_route",
   "clear_cookie_attrs",
+  "command_id_var",
   "csrf_cookie_attrs",
   "current_actor_kind",
   "current_org_id",
@@ -312,6 +313,7 @@ expose = [
   "route_security_resolved",
   "session_cookie_attrs",
   "user_id_var",
+  "workflow_execution_id_var",
 ]
 from = ["app.core.auth"]
 
@@ -489,6 +491,7 @@ from = ["app.core.oauth"]
 expose = [
   "SLOW_REQUEST_THRESHOLD_MS",
   "SlowRequestLogMiddleware",
+  "YaaosDimensionsSpanProcessor",
   "active_task_count",
   "configure",
   "current_traceparent",

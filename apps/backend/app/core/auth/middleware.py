@@ -27,7 +27,6 @@ from __future__ import annotations
 import json
 
 import structlog
-from opentelemetry import trace
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -195,15 +194,5 @@ class AuthMiddleware:
             # request scope.
             unbind_request_structlog_vars()
 
-        # Tag the OTel span (best-effort).
-        span = trace.get_current_span()
-        if span is not None:
-            org_id = org_id_var.get()
-            user_id = user_id_var.get()
-            actor_kind = actor_kind_var.get()
-            if org_id is not None:
-                span.set_attribute("yaaos.org_id", str(org_id))
-            if user_id is not None:
-                span.set_attribute("yaaos.user_id", str(user_id))
-            if actor_kind is not None:
-                span.set_attribute("yaaos.actor_kind", actor_kind.value)
+        # Dims are stamped on every span (including this request-root span) by
+        # YaaosDimensionsSpanProcessor.on_start — no manual set_attribute needed.
