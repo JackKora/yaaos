@@ -35,6 +35,24 @@
 - `outbox_entries` — `(id uuid, created_at timestamptz NOT NULL, kind text, payload jsonb, dispatched_at nullable, attempt int, last_error text nullable)`. Composite PK `(id, created_at)` — partition-ready hedge (migration 042). `created_at` has a server default; the NOT NULL + composite PK are idempotent DDL applied on top of migration 014. Only kind today: `taskiq_enqueue`.
 - `scheduled_runs` — `(schedule_id text, fire_time timestamptz, created_at timestamptz)`. Composite PK `(schedule_id, fire_time)`. One row per fired slot; the insert IS the cluster-safe enqueue gate. Pruned daily by the `scheduled_runs_prune` `@scheduled` task (deletes rows >7 days old) — the first `@scheduled` consumer, self-exercising the scheduler.
 
+## Worker metrics
+
+`core/tasks/metrics.py` declares four OTel instruments that the worker emits per task execution,
+dimensioned by **task name only** (not `org_id` — per-org cardinality would explode the metric stream):
+
+| Instrument | Kind | Unit | Meaning |
+|---|---|---|---|
+| `task.started` | Counter | `1` | Incremented once when a task body begins. |
+| `task.succeeded` | Counter | `1` | Incremented when a task body returns without error. |
+| `task.failed` | Counter | `1` | Incremented when a task body raises an exception. |
+| `task.duration` | Histogram | `s` | Wall-clock execution time from `pre_execute` to `post_execute` or `on_error`. |
+
+`TaskMetricsMiddleware` is the carrier — wired into the broker in `runtime.run()` alongside
+`OrgContextMiddleware`. The module-level instruments are obtained via `metrics.get_meter(__name__)`
+at import time; in the worker process they delegate to the real `MeterProvider` set by
+`observability.configure(role="worker")`. Tests inject fresh instruments via constructor
+parameters to avoid touching global OTel state.
+
 ## How it's tested
 
 `test/test_service.py` — registry registration, double-register rejection, `enqueue` outbox payload.
@@ -45,3 +63,4 @@
 `test/test_scheduler_exactly_once_service.py` — N concurrent `tick_once` calls on independent sessions for one fire slot → exactly one `scheduled_runs` insert wins → exactly one outbox enqueue. The named guard for the per-tick claim invariant.
 `test/test_scheduled_runs_prune_service.py` — broker registration of the prune task body; body deletes >7-day rows and leaves fresher rows alone.
 `test/test_scheduler_backoff.py` — unit-tests the pure `_backoff_sleep` helper: exponential growth, 120 s cap, normal-cadence restore after a reset.
+`test/test_task_metrics_service.py` — `TaskMetricsMiddleware` with injected `InMemoryMetricReader` instruments: successful body increments `task.started` + `task.succeeded` + records `task.duration`; failing body increments `task.failed` instead.
