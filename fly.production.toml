@@ -16,15 +16,18 @@
 app = "yaaos"
 primary_region = "ord"
 
-# Graceful-shutdown budget: 30s lets uvicorn drain in-flight HTTP on the web
-# group. Raise this when worker graceful drain + OTel flush budget lands.
-kill_timeout = "30s"
+# Graceful-shutdown budget: covers the worker drain grace (60s) + uvicorn
+# timeout_graceful_shutdown (30s) + worst-case OTel flush across all three
+# providers (~90s serial). Fly's hard-kill cap is 300s.
+kill_timeout = "180s"
 
-# Rolling deploy — changed to bluegreen once worker graceful drain + health-503
-# gate land (both process groups need a passing health check for bluegreen to
-# cut over; the worker health check added below satisfies the worker side).
+# Bluegreen deploy: Fly gates cutover on a passing health check across every
+# process group before shifting traffic. Both groups have a check (web:
+# [[http_service.checks]] → /api/health; worker: [[services.http_checks]] →
+# :8081/health). Rolling was used before the worker health endpoint + worker
+# drain + health-503 gate were in place.
 [deploy]
-  strategy = "rolling"
+  strategy = "bluegreen"
 
 [build]
   dockerfile = "apps/backend/Dockerfile"
@@ -92,7 +95,7 @@ kill_timeout = "30s"
   worker = "python apps/backend/app/worker.py"
 
 # Single small machine per group (fixed 1+1, no autoscaling).
-# 1 GB floor: Claude Code CLI and its Node runtime are memory-hungry.
+# 1 GB: matches observed peak RSS for web + worker under normal load.
 # Tune if observed load warrants.
 [[vm]]
   size = "shared-cpu-1x"
