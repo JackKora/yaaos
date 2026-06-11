@@ -11,7 +11,7 @@ Present-tense documentation for shipped code.
 
 ## Runbooks
 
-- [runbooks/prod-deploy.md](runbooks/prod-deploy.md) — manual-config checklist + deploy flow + rollback for `app.yaaos.cloud`.
+- [runbooks/prod-deploy.md](runbooks/prod-deploy.md) — manual-config checklist + deploy flow + rollback for `app.yaaos.dev`.
 - [runbooks/secret-rotation.md](runbooks/secret-rotation.md) — rotating every secret yaaos depends on.
 
 ## Per-app

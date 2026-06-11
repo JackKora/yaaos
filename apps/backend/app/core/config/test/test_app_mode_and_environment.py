@@ -25,7 +25,7 @@ def _base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setenv("YAAOS_ENCRYPTION_KEY", "VHJ5SW5nTm90VG9CcmVha1lvdXJTZWNyZXRzS2V5MTIzPQ==")
     monkeypatch.setenv("REDIS_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-    monkeypatch.setenv("YAAOS_PUBLIC_ORIGIN", "https://app.yaaos.cloud")
+    monkeypatch.setenv("YAAOS_PUBLIC_ORIGIN", "https://app.yaaos.dev")
     monkeypatch.setenv("ENVIRONMENT", "test")
     # conftest sets YAAOS_CODING_AGENT_STUB=1 process-wide for the suite; clear it
     # here so the prod-mode tests below present a coherent production env (the

@@ -104,12 +104,12 @@ class Settings(BaseSettings):
     braintrust_project: str = "yaaos"
 
     # Full external origin of this backend deployment (scheme + host[:port], no
-    # path), e.g. "https://app.yaaos.cloud". Single source for both the public
+    # path), e.g. "https://app.yaaos.dev". Single source for both the public
     # link base (`yaaos_app_base_url`) and the agent identity-exchange audience
     # (`yaaos_public_hostname`) — both derived below. Required; boot fails if unset.
     yaaos_public_origin: str = Field(
         ...,
-        description="Full external origin (scheme+host[:port], no path), e.g. https://app.yaaos.cloud.",
+        description="Full external origin (scheme+host[:port], no path), e.g. https://app.yaaos.dev.",
     )
 
     # Time controls. Production defaults are reasonable; tests set short.

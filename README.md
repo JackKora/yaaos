@@ -76,7 +76,7 @@ Three components, two trust zones.
   | Redis | [Upstash](https://upstash.com) | Session cache, pub/sub, ephemeral queues |
   | Postgres | [Neon](https://neon.tech) | Primary datastore — users, tickets, audit log, encrypted secrets |
   | Observability | [Dash0](https://dash0.com) | Traces, metrics, logs (PII-scrubbed at the exporter) |
-- **Responsible disclosure.** Report suspected vulnerabilities to [admin@yaaos.cloud](mailto:admin@yaaos.cloud). We respond within one business day.
+- **Responsible disclosure.** Report suspected vulnerabilities to [admin@yaaos.dev](mailto:admin@yaaos.dev). We respond within one business day.
 
 # Links
-See https://yaaos.cloud for the website and https://app.yaaos.cloud for the app.
+See https://yaaos.dev for the website and https://app.yaaos.dev for the app.
