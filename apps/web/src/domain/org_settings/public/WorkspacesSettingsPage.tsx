@@ -38,7 +38,7 @@ import { z } from "zod";
 import { OrgSettingsLayout } from "../OrgSettingsLayout";
 import { useOrgSettings, useUpdateOrgSettings } from "../queries";
 
-const BACKEND_URL = "https://app.yaaos.cloud";
+const BACKEND_URL = "https://app.yaaos.dev";
 const MIN_AGENT_VERSION_DISPLAY = "any";
 
 // Narrow STS-enabled regions list. Mirrors the AWS STS endpoint allowlist

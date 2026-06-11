@@ -17,7 +17,7 @@
 
 **Cached singleton** — `Settings()` parses env on every call; `@cache` on `get_settings()` makes subsequent calls free. Tests monkeypatching env must call `get_settings.cache_clear()` afterward.
 
-**`YAAOS_PUBLIC_ORIGIN`** — required. Full external origin of this backend deployment (scheme + host[:port], no path; e.g. `https://app.yaaos.cloud`). Boot fails with a `ValidationError` when unset. Two values derive from it as `computed_field` properties (so existing readers are unchanged): `yaaos_app_base_url` = the origin (public link base for OAuth callbacks, invitation/SAML/MCP URLs), and `yaaos_public_hostname` = its `netloc` (host[:port]), which `core/agent_gateway` validates against the `X-Yaaos-Audience` header. The derived hostname must match `hostFromURL(YAAOS_BACKEND_URL)` on the agent side — that's `url.Host`, so a port is preserved (e.g. `web:8080`); use `.netloc`, not `.hostname`.
+**`YAAOS_PUBLIC_ORIGIN`** — required. Full external origin of this backend deployment (scheme + host[:port], no path; e.g. `https://app.yaaos.dev`). Boot fails with a `ValidationError` when unset. Two values derive from it as `computed_field` properties (so existing readers are unchanged): `yaaos_app_base_url` = the origin (public link base for OAuth callbacks, invitation/SAML/MCP URLs), and `yaaos_public_hostname` = its `netloc` (host[:port]), which `core/agent_gateway` validates against the `X-Yaaos-Audience` header. The derived hostname must match `hostFromURL(YAAOS_BACKEND_URL)` on the agent side — that's `url.Host`, so a port is preserved (e.g. `web:8080`); use `.netloc`, not `.hostname`.
 
 **`APP_MODE` vs `ENVIRONMENT` — two orthogonal axes.**
 

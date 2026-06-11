@@ -32,7 +32,7 @@ os.environ.setdefault("YAAOS_HEARTBEAT_INTERVAL_SECONDS", "1")
 os.environ.setdefault("YAAOS_MCP_TOKEN_SWEEP_INTERVAL_SECONDS", "1")
 # Required. Full external origin; the derived public_hostname (its netloc) is
 # the agent identity-exchange audience the tests sign.
-os.environ.setdefault("YAAOS_PUBLIC_ORIGIN", "https://app.yaaos.cloud")
+os.environ.setdefault("YAAOS_PUBLIC_ORIGIN", "https://app.yaaos.dev")
 
 # Re-export autouse isolation fixtures so pytest auto-discovers them. The import
 # is deferred until after env vars are set because app.testing.isolation triggers

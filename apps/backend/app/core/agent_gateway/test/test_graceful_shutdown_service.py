@@ -347,7 +347,7 @@ async def test_region_mismatch_writes_identity_exchange_failed_audit_row(db_sess
     set_verify_identity_override(_stub)
 
     _signed_payload = (
-        '{"url":"https://sts.amazonaws.com/","headers":{"x-yaaos-audience":"app.yaaos.cloud"},"body":""}'
+        '{"url":"https://sts.amazonaws.com/","headers":{"x-yaaos-audience":"app.yaaos.dev"},"body":""}'
     )
 
     async with _agent_client() as c:
@@ -385,7 +385,7 @@ async def test_region_mismatch_no_org_writes_no_audit_row(db_session) -> None:
     set_verify_identity_override(_stub)
 
     _signed_payload = (
-        '{"url":"https://sts.amazonaws.com/","headers":{"x-yaaos-audience":"app.yaaos.cloud"},"body":""}'
+        '{"url":"https://sts.amazonaws.com/","headers":{"x-yaaos-audience":"app.yaaos.dev"},"body":""}'
     )
 
     async with _agent_client() as c:

@@ -1,4 +1,4 @@
-# Fly.io deployment manifest — yaaos production (app.yaaos.cloud).
+# Fly.io deployment manifest — yaaos production (app.yaaos.dev).
 #
 # One app, two process groups (web + worker) built from the shared backend
 # image (apps/backend/Dockerfile). The `web` and `worker` stages differ only
@@ -39,7 +39,7 @@ kill_timeout = "180s"
   ENVIRONMENT = "production"
   # Full external origin. Derives the public link base (yaaos_app_base_url) and
   # the agent identity-exchange audience (yaaos_public_hostname).
-  YAAOS_PUBLIC_ORIGIN = "https://app.yaaos.cloud"
+  YAAOS_PUBLIC_ORIGIN = "https://app.yaaos.dev"
 
   # Non-secret GitHub identifiers — they appear in browser URLs / settings
   # pages, so they belong here in [env], not in `fly secrets`. The matching

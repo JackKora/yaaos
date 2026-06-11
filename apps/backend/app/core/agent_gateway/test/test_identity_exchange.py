@@ -83,9 +83,9 @@ def _reset_verifier():
     reset_nonce_cache_for_tests()
 
 
-_AUDIENCE = "app.yaaos.cloud"
+_AUDIENCE = "app.yaaos.dev"
 _SIGNED_PAYLOAD = (
-    '{"url":"https://sts.amazonaws.com/","headers":{"x-yaaos-audience":"app.yaaos.cloud"},"body":""}'
+    '{"url":"https://sts.amazonaws.com/","headers":{"x-yaaos-audience":"app.yaaos.dev"},"body":""}'
 )
 
 
@@ -403,7 +403,7 @@ async def test_identity_exchange_audience_mismatch_returns_401(db_session, monke
     # Override the settings so YAAOS_PUBLIC_ORIGIN is set to a known value.
     monkeypatch.setattr(
         "app.core.agent_gateway.web.get_settings",
-        lambda: Settings.model_construct(yaaos_public_origin="https://app.yaaos.cloud"),
+        lambda: Settings.model_construct(yaaos_public_origin="https://app.yaaos.dev"),
     )
 
     async def _stub(_payload: str) -> VerifiedIdentity:  # unreachable after audience check
@@ -443,7 +443,7 @@ async def test_identity_exchange_missing_audience_returns_401(db_session, monkey
 
     monkeypatch.setattr(
         "app.core.agent_gateway.web.get_settings",
-        lambda: Settings.model_construct(yaaos_public_origin="https://app.yaaos.cloud"),
+        lambda: Settings.model_construct(yaaos_public_origin="https://app.yaaos.dev"),
     )
 
     async def _stub(_payload: str) -> VerifiedIdentity:  # unreachable after audience check

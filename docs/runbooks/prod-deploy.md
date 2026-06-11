@@ -1,6 +1,6 @@
 # Production deploy
 
-Manual-config checklist + deploy flow + rollback for `app.yaaos.cloud`. Grouped by provider, dependency-ordered. A teammate can stand up prod from scratch by working through every section in order.
+Manual-config checklist + deploy flow + rollback for `app.yaaos.dev`. Grouped by provider, dependency-ordered. A teammate can stand up prod from scratch by working through every section in order.
 
 ## Config placement rule
 
@@ -69,7 +69,7 @@ Already committed. Key values:
 |---|---|
 | `APP_MODE` | `production` |
 | `ENVIRONMENT` | `production` |
-| `YAAOS_PUBLIC_ORIGIN` | `https://app.yaaos.cloud` |
+| `YAAOS_PUBLIC_ORIGIN` | `https://app.yaaos.dev` |
 | `YAAOS_GITHUB_APP_ID` | (GitHub App numeric ID) |
 | `YAAOS_GITHUB_APP_SLUG` | `yaaos` |
 | `YAAOS_GITHUB_OAUTH_CLIENT_ID` | (OAuth App client ID) |
@@ -86,7 +86,7 @@ Set in the Fly dashboard env (not `[env]` block — avoids a redeploy to change)
 | `SMTP_PORT` | `465` |
 | `SMTP_USERNAME` | `resend` |
 | `SMTP_USE_TLS` | `true` |
-| `SMTP_FROM` | `yaaos <noreply@yaaos.cloud>` |
+| `SMTP_FROM` | `yaaos <noreply@yaaos.dev>` |
 
 ### Fly secrets
 
@@ -118,8 +118,8 @@ Set via the Fly dashboard Secrets UI:
 
 ## 5. GitHub App
 
-- **Webhook URL:** `https://app.yaaos.cloud/api/intake/github` — set this after the first deploy.
-- **OAuth callback URL:** `https://app.yaaos.cloud/api/auth/github/callback`.
+- **Webhook URL:** `https://app.yaaos.dev/api/intake/github` — set this after the first deploy.
+- **OAuth callback URL:** `https://app.yaaos.dev/api/auth/github/callback`.
 - App ID, OAuth client ID, and slug go in `fly.production.toml [env]` (visible identifiers — not secrets).
 - Private key (`YAAOS_GITHUB_APP_PRIVATE_KEY`), webhook secret (`YAAOS_GITHUB_APP_WEBHOOK_SECRET`), and OAuth client secret (`YAAOS_GITHUB_OAUTH_CLIENT_SECRET`) go in Fly secrets.
 
@@ -129,18 +129,18 @@ Set via the Fly dashboard Secrets UI:
 
 ### DNS and TLS
 
-- Add `fly certs add app.yaaos.cloud` (via `flyctl ssh console` on the jump host) for the Fly-side certificate.
-- Add a Cloudflare DNS record pointing `app.yaaos.cloud` → the Fly app, with proxy **ON** (orange cloud).
+- Add `fly certs add app.yaaos.dev` (via `flyctl ssh console` on the jump host) for the Fly-side certificate.
+- Add a Cloudflare DNS record pointing `app.yaaos.dev` → the Fly app, with proxy **ON** (orange cloud).
 - SSL/TLS mode: **Full (strict)**.
 
 ### Transform Rule (ingress enforcement)
 
 Cloudflare injects a shared secret into every proxied request so the backend can reject traffic that bypasses Cloudflare entirely.
 
-- Create a Transform Rule that adds the header `X-Yaaos-cf-Ingress: <secret>` to all requests to `app.yaaos.cloud`. Do **not** use a `CF-*` header name — Cloudflare reserves the `CF-*` prefix for its own managed headers and Transform Rules reject `Set static` on that prefix.
+- Create a Transform Rule that adds the header `X-Yaaos-cf-Ingress: <secret>` to all requests to `app.yaaos.dev`. Do **not** use a `CF-*` header name — Cloudflare reserves the `CF-*` prefix for its own managed headers and Transform Rules reject `Set static` on that prefix.
 - The same token value must be set as the `YAAOS_CLOUDFLARE_INGRESS_SECRET` Fly secret. The backend boot check (`_check_required_prod_secrets`) refuses to start with this unset in `production`, so a missed rotation step fails loudly instead of silently disabling ingress enforcement.
 - **These two values must stay in sync.** Rotating the Cloudflare rule value without updating the Fly secret (or vice versa) causes every request to return 403 during the skew window. Rotation procedure: update both atomically (set new Fly secret → update Cloudflare rule → verify → remove old).
-- CORS allowlist in Dash0 must include `https://app.yaaos.cloud` with `Authorization` and `Dash0-Dataset` headers allowed — see §7.
+- CORS allowlist in Dash0 must include `https://app.yaaos.dev` with `Authorization` and `Dash0-Dataset` headers allowed — see §7.
 
 ### Worker health check access
 
@@ -178,13 +178,13 @@ The `deploy-prod` RWX task passes these as `--build-arg` values to `flyctl deplo
 
 ### CORS
 
-In the Dash0 dashboard, add a CORS allow entry for `https://app.yaaos.cloud` with `Authorization` and `Dash0-Dataset` as allowed headers. Required for the browser to send OTLP spans directly to Dash0.
+In the Dash0 dashboard, add a CORS allow entry for `https://app.yaaos.dev` with `Authorization` and `Dash0-Dataset` as allowed headers. Required for the browser to send OTLP spans directly to Dash0.
 
 ---
 
 ## 8. Resend (email)
 
-- Domain `yaaos.cloud` must be verified in Resend: add the SPF and DKIM records in Cloudflare DNS as **DNS-only (grey cloud)** — proxied records break email DNS validation.
+- Domain `yaaos.dev` must be verified in Resend: add the SPF and DKIM records in Cloudflare DNS as **DNS-only (grey cloud)** — proxied records break email DNS validation.
 - `SMTP_PASSWORD` Fly secret = the Resend API key (`re_…`). The email layer is vendor-neutral SMTP; the env var is `SMTP_PASSWORD`, not `RESEND_API_KEY`.
 - **Port 465 + SSL only.** The email send path (`apps/backend/app/domain/orgs/email.py`) uses `SMTP_SSL` or plain `SMTP` — there is no `starttls()` call, so port 587/STARTTLS would send cleartext. Use port 465 with `SMTP_USE_TLS=true`.
 
@@ -299,6 +299,6 @@ Only **additive** migrations (new table, new nullable column, new index) are saf
 
 ### Verification after rollback
 
-- `https://app.yaaos.cloud/api/health` returns 200.
+- `https://app.yaaos.dev/api/health` returns 200.
 - Worker health: `fly ssh console` → `curl http://localhost:8081/health`.
 - Log in via the browser; trigger a test PR webhook if possible.

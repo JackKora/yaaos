@@ -48,7 +48,7 @@ def _required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setenv("YAAOS_ENCRYPTION_KEY", "SUPER-SECRET-ENCRYPTION-KEY-DO-NOT-LEAK")
     monkeypatch.setenv("REDIS_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
-    monkeypatch.setenv("YAAOS_PUBLIC_ORIGIN", "https://app.yaaos.cloud")
+    monkeypatch.setenv("YAAOS_PUBLIC_ORIGIN", "https://app.yaaos.dev")
     monkeypatch.setenv("YAAOS_GITHUB_OAUTH_CLIENT_SECRET", "SUPER-SECRET-GH-OAUTH-SECRET")
     monkeypatch.setenv("YAAOS_GITHUB_APP_PRIVATE_KEY", "SUPER-SECRET-GH-PRIVATE-KEY")
     monkeypatch.setenv("YAAOS_GITHUB_APP_WEBHOOK_SECRET", "SUPER-SECRET-GH-WEBHOOK-SECRET")

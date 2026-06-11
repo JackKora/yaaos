@@ -42,9 +42,9 @@ import (
 var agentVersion = "0.0.0-dev"
 
 // Hardcoded production backend. Customers don't configure this — the
-// agent ships pre-pointed at app.yaaos.cloud. Overrideable via
+// agent ships pre-pointed at app.yaaos.dev. Overrideable via
 // `YAAOS_BACKEND_URL` for development and integration testing only.
-const defaultBackendURL = "https://app.yaaos.cloud"
+const defaultBackendURL = "https://app.yaaos.dev"
 
 func main() {
 	// run() returns the desired exit code so deferred cleanups (the log
