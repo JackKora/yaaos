@@ -132,7 +132,9 @@ class CodeReview:
             invocation = await plugin.build_review_invocation(review_ctx, session=session)
         except Exception as exc:
             # inside-span failure: workflow.start_step outer span is active during dispatch
-            trace.get_current_span().record_exception(exc)
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
             log.exception(
                 "code_review.build_invocation_failed",
                 workflow_execution_id=ctx.workflow_execution_id,
