@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 // Mocks for AppShell's real-component tests
 // ---------------------------------------------------------------------------
-const routeState = { pathname: "/orgs/acme/dashboard", status: "idle" as const };
+const routeState = { pathname: "/org/acme/dashboard", status: "idle" as const };
 
 vi.mock("@core/sse/public/subscriber", () => ({ useServerEvents: () => {} }));
 vi.mock("@core/observability/public/use-otel-identity-sync", () => ({
@@ -44,7 +44,7 @@ import { AppShell } from "../public/app-shell";
 
 afterEach(() => {
   cleanup();
-  routeState.pathname = "/orgs/acme/dashboard";
+  routeState.pathname = "/org/acme/dashboard";
 });
 
 beforeEach(() => {
@@ -85,7 +85,7 @@ function FocusResetHarness({
 describe("AppShell — focus reset on route change", () => {
   describe("real AppShell: <main> receives focus on mount", () => {
     it("focuses <main> when the Outlet renders nothing", async () => {
-      routeState.pathname = "/orgs/acme/dashboard";
+      routeState.pathname = "/org/acme/dashboard";
       render(<AppShell />);
 
       await waitFor(
@@ -100,7 +100,7 @@ describe("AppShell — focus reset on route change", () => {
   describe("focus-reset logic (harness): route-driven focus placement", () => {
     it("focuses <main> when no <h1> is present", async () => {
       render(
-        <FocusResetHarness pathname="/orgs/acme/dashboard">
+        <FocusResetHarness pathname="/org/acme/dashboard">
           <section>content without a heading</section>
         </FocusResetHarness>,
       );
@@ -115,7 +115,7 @@ describe("AppShell — focus reset on route change", () => {
 
     it("focuses the first <h1> when one is present", async () => {
       render(
-        <FocusResetHarness pathname="/orgs/acme/tickets">
+        <FocusResetHarness pathname="/org/acme/tickets">
           <h1 tabIndex={-1} data-testid="page-h1">
             Tickets
           </h1>
@@ -137,7 +137,7 @@ describe("AppShell — focus reset on route change", () => {
       type Page = "dashboard" | "lessons";
       function NavigationDriver() {
         const [page, setPage] = useState<Page>("dashboard");
-        const pathname = page === "dashboard" ? "/orgs/acme/dashboard" : "/orgs/acme/lessons";
+        const pathname = page === "dashboard" ? "/org/acme/dashboard" : "/org/acme/lessons";
         return (
           <>
             <FocusResetHarness pathname={pathname}>

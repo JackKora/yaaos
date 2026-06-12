@@ -192,7 +192,7 @@ function BandHeader({ title, count }: { title: string; count: number }) {
       </div>
       {count > 0 && (
         <Link
-          to="/orgs/$slug/tickets"
+          to="/org/$slug/tickets"
           params={(prev) => ({ slug: prev.slug as string })}
           className="text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
@@ -210,7 +210,7 @@ function RowList({ children }: { children: React.ReactNode }) {
 function InFlightRow({ ticket }: { ticket: Ticket }) {
   return (
     <Link
-      to="/orgs/$slug/tickets/$ticketId"
+      to="/org/$slug/tickets/$ticketId"
       params={(prev) => ({ slug: prev.slug as string, ticketId: ticket.id })}
       className="flex items-center gap-3 px-3 py-2.5 border-b border-border last:border-0 hover:bg-accent text-sm transition-colors"
       data-testid={`dashboard-inflight-${ticket.id}`}
@@ -232,7 +232,7 @@ function NeedsAttentionRow({ ticket }: { ticket: Ticket }) {
         : "text-info";
   return (
     <Link
-      to="/orgs/$slug/tickets/$ticketId"
+      to="/org/$slug/tickets/$ticketId"
       params={(prev) => ({ slug: prev.slug as string, ticketId: ticket.id })}
       className="flex items-center gap-3 px-3 py-2.5 border-b border-border last:border-0 hover:bg-accent text-sm transition-colors"
       data-testid={`dashboard-needs-attention-${ticket.id}`}

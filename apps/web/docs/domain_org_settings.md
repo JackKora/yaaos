@@ -1,6 +1,6 @@
 # domain/org_settings
 
-> Org-scoped settings pages under `/orgs/$slug/settings/*`, sharing `OrgSettingsLayout` for consistent tab navigation.
+> Org-scoped settings pages under `/org/$slug/settings/*`, sharing `OrgSettingsLayout` for consistent tab navigation.
 
 ## Scope
 
@@ -41,7 +41,7 @@ All input forms across the settings pages use `react-hook-form` + Zod (`zodResol
 
 ## Workspaces page
 
-`WorkspacesSettingsPage.tsx` at `/orgs/$slug/settings/workspaces`. Admin-only. No mode selector — the system has exactly one provider (`remote_agent`). Renders under `<ErrorBoundary>` + `<Suspense>` (both `useOrgSettings` and `useAgents` are awaited before content renders). Renders:
+`WorkspacesSettingsPage.tsx` at `/org/$slug/settings/workspaces`. Admin-only. No mode selector — the system has exactly one provider (`remote_agent`). Renders under `<ErrorBoundary>` + `<Suspense>` (both `useOrgSettings` and `useAgents` are awaited before content renders). Renders:
 - **AWS configuration card** — IAM role ARN input + AWS region dropdown (RHF + Zod; ARN validated against `arn:aws:iam::\d{12}:role/[\w+=,.@-]+`). Save calls `PATCH /api/orgs` with `registered_iam_arn` + `aws_region`. Server lowercases before storing and returns 422 `arn_already_registered` if another org holds the same ARN.
   - **ARN-change confirmation** — when the saved ARN differs from the current value and one or more online/stale agents exist, a `ConfirmModal` appears before saving: "This will disconnect N running WorkspaceAgents and fail their in-flight Workspaces. Continue?" N comes from `GET /api/orgs/{slug}/agents` (online + stale count). Cancel aborts the save; confirm proceeds. The modal uses the `destructive` tone.
 - **Agent deployment card** — deploy snippet + backend URL + min version info.

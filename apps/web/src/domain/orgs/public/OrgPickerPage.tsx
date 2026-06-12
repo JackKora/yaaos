@@ -103,7 +103,7 @@ function OrgList({ onCreateClick }: { onCreateClick: () => void }) {
       {orgs.map((o) => (
         <li key={o.slug}>
           <Link
-            to="/orgs/$slug/dashboard"
+            to="/org/$slug/dashboard"
             params={{ slug: o.slug }}
             data-testid={`org-picker-row-${o.slug}`}
             className="flex items-center gap-3 px-4 py-3 rounded-md border border-border hover:bg-accent hover:text-accent-foreground transition-colors"
@@ -153,7 +153,7 @@ function CreateOrgModal({
         onSuccess: (resp) => {
           onOpenChange(false);
           reset();
-          window.location.href = `/orgs/${resp.slug}/dashboard`;
+          window.location.href = `/org/${resp.slug}/dashboard`;
         },
       },
     );
@@ -171,7 +171,7 @@ function CreateOrgModal({
         <DialogHeader>
           <DialogTitle>Create organization</DialogTitle>
           <DialogDescription>
-            A short slug becomes the URL prefix: <span className="mono">/orgs/&lt;slug&gt;</span>.
+            A short slug becomes the URL prefix: <span className="mono">/org/&lt;slug&gt;</span>.
             You'll start as Admin.
           </DialogDescription>
         </DialogHeader>

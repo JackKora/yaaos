@@ -1,6 +1,6 @@
 /**
  * Current org slug — derived from the URL on every read. The URL path is
- * the only source of truth: `/orgs/$slug/...` ⇒ `$slug`; everything else
+ * the only source of truth: `/org/$slug/...` ⇒ `$slug`; everything else
  * (including `/login`, `/orgs` picker, and any non-org route) ⇒ `null`.
  *
  * There is no module-global cache. Two browser tabs in different orgs
@@ -12,7 +12,7 @@
  */
 import { useRouterState } from "@tanstack/react-router";
 
-const ORG_PATH_RE = /^\/orgs\/([^/]+)/;
+const ORG_PATH_RE = /^\/org\/([^/]+)/;
 
 function extractSlug(pathname: string): string | null {
   const m = pathname.match(ORG_PATH_RE);

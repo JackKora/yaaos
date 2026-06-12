@@ -102,7 +102,7 @@ test("PR open → real agent claims InvokeClaudeCode → findings post to fake-g
   });
 
   // Ticket appears in the list within a few SSE/polling ticks.
-  await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+  await page.goto(`${YAAOS_URL}/org/acme/tickets`);
   await expect(page.getByTestId("tickets-list")).toContainText(
     "Real-agent review: happy path",
     { timeout: 20_000 },
@@ -148,7 +148,7 @@ test("SSE-driven ticket list shows new ticket without page reload", async ({
 
   // Land on the tickets list FIRST so the SSE subscriber is mounted before
   // any events fly.
-  await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+  await page.goto(`${YAAOS_URL}/org/acme/tickets`);
   const headSha = await gitHeadSha("acme", "review-happy");
   await dispatchWebhook({
     event: "pull_request",

@@ -36,28 +36,28 @@ test.describe("auth + members", () => {
 
     await page.goto(`${BASE}/login`);
     await page.getByTestId("login-test").click();
-    await page.waitForURL(/\/orgs\/acme\/dashboard$/);
+    await page.waitForURL(/\/org\/acme\/dashboard$/);
 
     // Regression: SPA-internal nav → user details → dashboard click must
-    // land on /orgs/acme/dashboard, not "Not Found".
+    // land on /org/acme/dashboard, not "Not Found".
     await page.getByTestId("user-card-button").click();
     await page.getByTestId("user-nav-details").click();
-    await page.waitForURL(/\/orgs\/acme\/user\/details$/);
+    await page.waitForURL(/\/org\/acme\/user\/details$/);
     await page.getByTestId("nav-dashboard").click();
-    await page.waitForURL(/\/orgs\/acme\/dashboard$/);
+    await page.waitForURL(/\/org\/acme\/dashboard$/);
 
-    // Regression: HARD-NAV directly to /orgs/acme/user/details (no SPA
-    // history), then click Dashboard — must still land on /orgs/acme/dashboard.
+    // Regression: HARD-NAV directly to /org/acme/user/details (no SPA
+    // history), then click Dashboard — must still land on /org/acme/dashboard.
     // Invariant: the sidebar must read the active org slug from the URL on
     // every render. A module-global slug cache that's null on first load
     // would make the sidebar build bare `/dashboard` hrefs → NotFound.
-    await page.goto(`${BASE}/orgs/acme/user/details`);
-    await page.waitForURL(/\/orgs\/acme\/user\/details$/);
+    await page.goto(`${BASE}/org/acme/user/details`);
+    await page.waitForURL(/\/org\/acme\/user\/details$/);
     await page.getByTestId("nav-dashboard").click();
-    await page.waitForURL(/\/orgs\/acme\/dashboard$/);
+    await page.waitForURL(/\/org\/acme\/dashboard$/);
 
     // Members page: invite a new member.
-    await page.goto(`${BASE}/orgs/acme/settings/members`);
+    await page.goto(`${BASE}/org/acme/settings/members`);
     await page.locator('input[type="email"]').fill("bob@example.com");
     // The shadcn Select is a Radix popover, not a native <select>. Open
     // it and click the option in the floating listbox.
@@ -96,7 +96,7 @@ test.describe("auth + members", () => {
     await page.getByRole("option", { name: "admin" }).click();
 
     // Sign out of every session. Action moved to the Security page.
-    await page.goto(`${BASE}/orgs/acme/user/security`);
+    await page.goto(`${BASE}/org/acme/user/security`);
     await page.getByTestId("logout-all").click();
     await page.waitForURL(/\/login(\?|$)/);
   });

@@ -6,7 +6,7 @@
 # command; the tini ENTRYPOINT is preserved, so SIGTERM still reaches the
 # Python child.
 #
-# Deployed by the `deploy-prod` task in .rwx/push.yml (flyctl deploy
+# Deployed by the `deploy-production` task in .rwx/push.yml (flyctl deploy
 # --remote-only — builds amd64 on Fly's remote builder).
 #
 # Config placement: non-secrets live here in [env]; credentials/keys/tokens

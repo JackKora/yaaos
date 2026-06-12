@@ -58,7 +58,7 @@ async def test_login_unknown_provider_returns_404() -> None:
 
 async def _begin_login_and_get_state() -> str:
     async with _client() as c:
-        resp = await c.get("/api/auth/login", params={"provider": "test", "next": "/orgs/x/dashboard"})
+        resp = await c.get("/api/auth/login", params={"provider": "test", "next": "/org/x/dashboard"})
     parts = urlparse(resp.headers["location"])
     return parse_qs(parts.query)["state"][0]
 

@@ -10,7 +10,7 @@ import {
 describe("safeNext", () => {
   it("accepts a same-origin relative path", () => {
     expect(safeNext("/user/details")).toBe("/user/details");
-    expect(safeNext("/orgs/acme/settings/vcs")).toBe("/orgs/acme/settings/vcs");
+    expect(safeNext("/org/acme/settings/vcs")).toBe("/org/acme/settings/vcs");
   });
 
   it("rejects scheme-relative URLs", () => {

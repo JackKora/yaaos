@@ -190,7 +190,7 @@ describe("FetchInstrumentation — traceparent restricted to same-origin /api/",
 
     // Must NOT match same-origin non-/api routes
     expect(pattern.test(`${origin}/static/bundle.js`)).toBe(false);
-    expect(pattern.test(`${origin}/orgs/acme/tickets`)).toBe(false);
+    expect(pattern.test(`${origin}/org/acme/tickets`)).toBe(false);
 
     // Must NOT match paths that merely start with /api without the trailing slash
     // (e.g. a hypothetical /apikeys route should not match — confirmed by the trailing /)

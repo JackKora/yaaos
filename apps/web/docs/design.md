@@ -45,7 +45,7 @@ Pages own their own header (`<h1>` or card header). The layout adds no top paddi
 
 - **One nav surface.** Sidebar only. Sub-page nav is in-content (tab list) or absent.
 - **No breadcrumbs, no back-links.** Two clicks to anything; sidebar + browser back is enough. A "Back to X" link implies depth the IA doesn't have.
-- **URL structure:** `/orgs/$slug/...` for org-scoped pages; `/`, `/login`, `/user/*`, `/orgs` are user-scoped or pre-auth.
+- **URL structure:** `/org/$slug/...` for org-scoped pages; `/`, `/login`, `/user/*`, `/orgs` are user-scoped or pre-auth.
 - **Role gating:** items hidden when the user lacks the required role; groups disappear if no child survives. UI hint only — backend `require(action)` is the authority.
 
 ## State patterns

@@ -135,7 +135,7 @@ export function AgentCardEmpty() {
       <span>
         Set your IAM role in{" "}
         <Link
-          to="/orgs/$slug/settings/workspaces"
+          to="/org/$slug/settings/workspaces"
           params={(prev) => ({ slug: (prev as { slug?: string }).slug ?? "" })}
           className="underline underline-offset-2 hover:text-foreground transition-colors"
           data-testid="agent-card-empty-settings-link"

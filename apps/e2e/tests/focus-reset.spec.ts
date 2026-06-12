@@ -52,7 +52,7 @@ test.describe("focus-reset on route navigation", () => {
     request,
   }) => {
     await loginAsOwner(page, request);
-    await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+    await page.goto(`${YAAOS_URL}/org/acme/tickets`);
     await page.waitForURL(/\/orgs\/acme\/tickets/);
 
     // Move focus to the sidebar so we can assert it moves after navigation.

@@ -87,12 +87,12 @@ def _safe_next(value: str | None) -> str:
     return value
 
 
-_ORG_SLUG_RE = re.compile(r"^/orgs/([^/]+)(/|$)")
+_ORG_SLUG_RE = re.compile(r"^/org/([^/]+)(/|$)")
 
 
 async def _safe_next_for_user(s, value: str | None, *, user_id) -> str:
     """`_safe_next` plus membership validation. If the path points at
-    `/orgs/$slug/...`, require `user_id` to have a membership in `$slug`;
+    `/org/$slug/...`, require `user_id` to have a membership in `$slug`;
     otherwise collapse to `/`. Prevents post-login redirects to orgs the
     user no longer belongs to (or never did). Same allowlist semantics as
     `_safe_next` otherwise.
@@ -221,7 +221,7 @@ async def callback(
             newly_created=login_result.newly_created,
         )
         # Validate next now that we know who's signing in. If next points
-        # at /orgs/$slug/... but the user has no membership in $slug, fall
+        # at /org/$slug/... but the user has no membership in $slug, fall
         # back to `/` (indexRoute will route them to a real destination).
         next_path = await _safe_next_for_user(s, next_path, user_id=login_result.user.id)
         await s.commit()

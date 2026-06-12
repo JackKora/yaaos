@@ -19,7 +19,7 @@ import { ClaudeCodeSettings } from "../ClaudeCodeSettings";
 // ── Stubs ──────────────────────────────────────────────────────────────────
 
 vi.mock("@tanstack/react-router", () => ({
-  useRouterState: () => "/orgs/acme/settings/coding-agents/claude_code",
+  useRouterState: () => "/org/acme/settings/coding-agents/claude_code",
 }));
 
 const ME_RESPONSE = {

@@ -260,7 +260,7 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
   const severity = ticket.max_severity;
   return (
     <Link
-      to="/orgs/$slug/tickets/$ticketId"
+      to="/org/$slug/tickets/$ticketId"
       params={{
         slug: window.location.pathname.split("/")[2] ?? "",
         ticketId: ticket.id,

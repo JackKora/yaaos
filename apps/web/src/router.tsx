@@ -46,7 +46,7 @@ const indexRoute = createRoute({
       const only = body.memberships.length === 1 ? body.memberships[0] : null;
       if (only) {
         throw redirect({
-          to: "/orgs/$slug/dashboard",
+          to: "/org/$slug/dashboard",
           params: { slug: only.slug },
         });
       }
@@ -78,14 +78,14 @@ const orgsPickerRoute = createRoute({
 
 const orgScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/orgs/$slug",
+  path: "/org/$slug",
 });
 
 const orgIndexRoute = createRoute({
   getParentRoute: () => orgScopeRoute,
   path: "/",
   beforeLoad: ({ params }) => {
-    throw redirect({ to: "/orgs/$slug/dashboard", params: { slug: params.slug } });
+    throw redirect({ to: "/org/$slug/dashboard", params: { slug: params.slug } });
   },
 });
 
@@ -115,7 +115,7 @@ const orgLessonsRoute = createRoute({
   validateSearch: lessonsSearchSchema,
 });
 
-// /orgs/$slug/settings → /orgs/$slug/settings/auth. The shell + per-tab
+// /org/$slug/settings → /org/$slug/settings/auth. The shell + per-tab
 // pages live under /settings/{section}; the bare /settings path redirects so
 // older bookmarks don't 404 silently.
 const orgSettingsIndexRoute = createRoute({
@@ -123,7 +123,7 @@ const orgSettingsIndexRoute = createRoute({
   path: "/settings",
   beforeLoad: ({ params }) => {
     throw redirect({
-      to: "/orgs/$slug/settings/auth",
+      to: "/org/$slug/settings/auth",
       params: { slug: params.slug },
     });
   },
@@ -196,7 +196,7 @@ const orgUserRedirectRoute = createRoute({
   path: "/user",
   beforeLoad: ({ params }) => {
     throw redirect({
-      to: "/orgs/$slug/user/details",
+      to: "/org/$slug/user/details",
       params: { slug: params.slug },
     });
   },

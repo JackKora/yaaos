@@ -128,7 +128,7 @@ test("nonconforming output: schema_invalid failure — no findings posted to fak
     }),
   });
 
-  await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+  await page.goto(`${YAAOS_URL}/org/acme/tickets`);
   const comments = await waitForTicketAndSettleComments(
     page,
     "Failure: nonconforming output",
@@ -180,7 +180,7 @@ test("agent failure: terminal failure — cleanup finalizer runs, no findings po
     }),
   });
 
-  await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+  await page.goto(`${YAAOS_URL}/org/acme/tickets`);
   const comments = await waitForTicketAndSettleComments(
     page,
     "Failure: agent exit non-zero",

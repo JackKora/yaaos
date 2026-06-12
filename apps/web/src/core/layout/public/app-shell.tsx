@@ -33,7 +33,7 @@ function SidebarSkeleton() {
 
 // Two routes render outside the shell: `/login` (anonymous, no nav) and
 // `/orgs` (the picker — explicit "no org selected" surface). Every other
-// authenticated route lives under `/orgs/$slug/...` and gets the sidebar.
+// authenticated route lives under `/org/$slug/...` and gets the sidebar.
 const STANDALONE_PATHS = new Set(["/login", "/orgs"]);
 
 export function AppShell() {

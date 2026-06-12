@@ -69,7 +69,7 @@ export function NotificationsBell({ expanded, className }: NotificationsBellProp
           <h3 className="text-sm font-medium">Notifications</h3>
           {slug && (
             <Link
-              to="/orgs/$slug/user/notifications"
+              to="/org/$slug/user/notifications"
               params={{ slug }}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
