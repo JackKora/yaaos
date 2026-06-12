@@ -417,8 +417,8 @@ A single `request_meta_var: ContextVar` carries `{request_id, workflow, user, ..
 
 Auto-instrumentation covers most paths (HTTP + SQLAlchemy via OTel contrib; background coroutines via `spawn`; httpx via `HTTPXClientInstrumentor` installed in `core/observability._configure_otel`). Add manual spans only at meaningful boundaries:
 
-- Every external call — VCS API, coding-agent CLI, webhook signature verification. **VCS calls are already spanned by `core/vcs` dispatch helpers** (`vcs.{plugin_id}.{op}`); callers must use those helpers rather than calling `get_plugin(id).method(...)` directly. The httpx calls inside each plugin method appear as auto-instrumented child spans under the VCS dispatch span.
-- Every plugin entry point — `CodingAgentPlugin.review`, `WorkspaceProvider.provision` (VCS Protocol methods are covered by the dispatch helpers above).
+- Every external call — VCS API, coding-agent CLI, webhook signature verification. **VCS calls are already spanned by `core/vcs` dispatch helpers** (`vcs.{plugin_id}.{op}`); callers must use those helpers rather than calling `get_plugin(id).method(...)` directly. The httpx calls inside each plugin method appear as auto-instrumented child spans under the VCS dispatch span. **Coding-agent IO calls are already spanned by `core/coding_agent` dispatch functions** (`coding_agent.{plugin_id}.{op}`); callers must use `core/coding_agent.review(...)` and siblings rather than calling `get_plugin(id).review(...)` directly. See [core_coding_agent.md § Dispatch spans](core_coding_agent.md#dispatch-spans).
+- Every plugin entry point — `WorkspaceProvider.provision` (VCS and coding-agent Protocol methods are covered by the dispatch helpers above).
 - Long phases inside a background coro — review_job phase transitions each get a span so the trace shows where wall time went.
 
 Don't wrap every domain function — noise hurts more than detail helps.
