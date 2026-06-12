@@ -822,8 +822,6 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 		attribute.String("workspace_id", header.WorkspaceID),
 		attribute.String("command_id", header.CommandID),
 		attribute.String("kind", string(header.Kind)),
-		attribute.String("org_id", s.orgID),
-		attribute.String("agent_id", s.agentID),
 	)
 
 	// Dedup check: if this command_id already produced a terminal event,
@@ -831,12 +829,7 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 	// on the span so dashboards can distinguish re-delivery from fresh dispatch.
 	if cached, hit := s.dedup.lookup(header.CommandID); hit {
 		s.log.Info("supervisor.command_deduped", "command_id", header.CommandID)
-		observability.Metrics().CommandsDeduped.Add(ctx, 1,
-			metric.WithAttributes(
-				attribute.String("org_id", s.orgID),
-				attribute.String("agent_id", s.agentID),
-			),
-		)
+		observability.Metrics().CommandsDeduped.Add(ctx, 1, observability.StandardAttrs())
 		oteltrace.SpanFromContext(ctx).SetAttributes(attribute.Bool("deduped", true))
 		postErr := s.postTerminalEvent(ctx, header, cached)
 		end(postErr)
@@ -920,9 +913,8 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 		metric.WithAttributes(
 			attribute.String("result", result),
 			attribute.String("kind", string(header.Kind)),
-			attribute.String("org_id", s.orgID),
-			attribute.String("agent_id", s.agentID),
 		),
+		observability.StandardAttrs(),
 	)
 	if event.Kind == protocol.EventCompletedFailure {
 		end(fmt.Errorf("dispatch failure: %s", event.FailureReason))
@@ -965,11 +957,8 @@ func (s *Supervisor) postTerminalEvent(ctx context.Context, header protocol.Comm
 		s.log.Warn("supervisor.event_post_failed",
 			"command_id", header.CommandID, "err", err.Error())
 		observability.Metrics().EventsPostRetries.Add(ctx, 1,
-			metric.WithAttributes(
-				attribute.String("kind", string(header.Kind)),
-				attribute.String("org_id", s.orgID),
-				attribute.String("agent_id", s.agentID),
-			),
+			metric.WithAttributes(attribute.String("kind", string(header.Kind))),
+			observability.StandardAttrs(),
 		)
 		if sleepErr := eventPostBackoff.Sleep(ctx); sleepErr != nil {
 			// Context cancelled (e.g. graceful shutdown) — return the

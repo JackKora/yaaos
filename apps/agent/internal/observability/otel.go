@@ -189,6 +189,10 @@ func wireProviders(res *resource.Resource, traceExp sdktrace.SpanExporter, metri
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(traceExp),
+		// DimProcessor stamps org_id + agent_id on every span after identity
+		// exchange. Placed after the batcher so the export pipeline already sees
+		// the attributes when the batch is flushed.
+		sdktrace.WithSpanProcessor(NewDimProcessor()),
 		sdktrace.WithResource(res),
 	)
 	otel.SetTracerProvider(tp)

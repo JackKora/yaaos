@@ -23,6 +23,8 @@ Every signal carries two kinds of attributes:
 
 `instance_id` is resource-only because it belongs to the OTel resource model and is stable for the process lifetime. `org_id` and `agent_id` are span/metric attributes because they're assigned by the backend; they appear after `SetStandardDimensions` is called from the supervisor.
 
+`org_id` and `agent_id` are stamped on every span automatically by `DimProcessor` (registered in `wireProviders`). Per-span code never needs to set them explicitly — the processor reads the current dim values at `OnStart` time, so a mutation between two spans is reflected immediately. Pre-identity-exchange spans (e.g. `agent.identity_exchange`) emit without these attributes; `DimProcessor` is a no-op while either value is empty.
+
 ## Resource vs attribute split — why
 
 OTel resources describe the emitting entity (the agent instance). Span/metric attributes describe the event. Putting `org_id`/`agent_id` on the resource would require rebuilding the SDK before those values are known; attaching them as attributes avoids that. Cardinality is safe: orgs and agents are few.
@@ -51,7 +53,7 @@ Either path: customers configure their own collector (Datadog, Honeycomb, etc.) 
 
 ## Per-command dimensions
 
-The supervisor adds `workspace_id` and `command_id` as span attributes on the `supervisor.dispatch.<kind>` span for each command (see `internal/supervisor`). These are span-scoped, not process-wide.
+The supervisor adds `workspace_id`, `command_id`, and `kind` as span attributes on the `supervisor.dispatch.<kind>` span for each command (see `internal/supervisor`). These are span-scoped, not process-wide. `org_id` and `agent_id` are no longer set explicitly on this span — `DimProcessor` handles them automatically.
 
 ## Instruments summary
 
@@ -75,7 +77,8 @@ Key counters emitted by the supervisor (all carry `org_id` + `agent_id`):
 
 ## Entry points
 
-- `apps/agent/internal/observability/otel.go` — `Init`, `Config`, `Result`, `SetInstanceID`.
+- `apps/agent/internal/observability/otel.go` — `Init`, `Config`, `Result`, `SetInstanceID`, `wireProviders` (registers `DimProcessor`).
+- `apps/agent/internal/observability/dim_processor.go` — `DimProcessor`, `NewDimProcessor`.
 - `apps/agent/internal/observability/metrics.go` — `Instruments`, `Metrics()`, `SetStandardDimensions`, `StandardAttrs`.
 - `apps/agent/cmd/agent/main.go` — `var agentVersion` (ldflags target `main.agentVersion`; `YAAOS_AGENT_VERSION` runtime override).
 - `apps/agent/VERSION` — human-edited major integer; the publish pipeline derives the full semver from it.
