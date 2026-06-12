@@ -377,10 +377,15 @@ async def claim_next(
     row.completion_token_hash = hashlib.sha256(raw.encode()).hexdigest()
     await session.flush()
 
-    # Inject the raw token into the returned DTO without re-persisting it to
-    # `row.payload`. `_CommandBase` is frozen, so `model_copy(update=...)` returns
-    # a new typed instance of the concrete subtype carrying the token on the wire.
-    return _row_to_command(row).model_copy(update={"completion_token": raw})
+    # Inject the raw token and workflow_execution_id into the returned DTO without
+    # re-persisting them to `row.payload`. `_CommandBase` is frozen, so
+    # `model_copy(update=...)` returns a new typed instance of the concrete subtype.
+    # workflow_execution_id is read from the row's dedicated column (not the payload)
+    # so agent-side spans can carry workflow_id without a separate lookup.
+    updates: dict = {"completion_token": raw}
+    if row.workflow_execution_id is not None:
+        updates["workflow_execution_id"] = row.workflow_execution_id
+    return _row_to_command(row).model_copy(update=updates)
 
 
 async def acknowledge_command_received(

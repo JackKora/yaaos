@@ -116,16 +116,16 @@ All three OTel signals (traces, metrics, logs) share two standard dimensions on 
 
 **Span inventory** — all spans the agent emits via `tracing.StartSpan`. Every span carries `org_id` + `agent_id` automatically via `DimProcessor` after identity exchange. Each is a child of the span in the "Parent" column (or a root if the context carries no parent):
 
-| Span name | Parent | Where |
-|---|---|---|
-| `supervisor.dispatch.<kind>` | backend-injected traceparent | `supervisor.go` `routeCommand` |
-| `workspace.handle.<kind>` | `supervisor.dispatch.<kind>` | `workspace.go` `executeCommand` |
-| `workspace.clone` | `workspace.handle.ProvisionWorkspace` | `realhandler.go` `ProvisionWorkspace` |
-| `workspace.runclaude` | `workspace.handle.InvokeClaudeCode` | `realhandler.go` `RunClaude` |
-| `agent.identity_exchange` | none (fresh root per call) | `supervisor.go` `exchangeIdentity` |
-| `agent.identity_refresh` | none (fresh root per call) | `supervisor.go` `runOneRefreshCycle` |
-| `agent.claim` | none (per HTTP call, NOT per loop iteration) | `supervisor.go` `claimLoop` |
-| `agent.activity_ws.dial` | none (per dial attempt, NOT per message) | `supervisor.go` `dialAndStartWS` |
+| Span name | Parent | Where | Notable attributes |
+|---|---|---|---|
+| `supervisor.dispatch.<kind>` | backend-injected traceparent | `supervisor.go` `routeCommand` | `workspace_id`, `command_id`, `kind`; `workflow_id` when present |
+| `workspace.handle.<kind>` | `supervisor.dispatch.<kind>` | `workspace.go` `executeCommand` | `workspace_id`, `command_id`, `kind`; `workflow_id` when present |
+| `workspace.clone` | `workspace.handle.ProvisionWorkspace` | `realhandler.go` `ProvisionWorkspace` | |
+| `workspace.runclaude` | `workspace.handle.InvokeClaudeCode` | `realhandler.go` `RunClaude` | |
+| `agent.identity_exchange` | none (fresh root per call) | `supervisor.go` `exchangeIdentity` | |
+| `agent.identity_refresh` | none (fresh root per call) | `supervisor.go` `runOneRefreshCycle` | |
+| `agent.claim` | none (per HTTP call, NOT per loop iteration) | `supervisor.go` `claimLoop` | |
+| `agent.activity_ws.dial` | none (per dial attempt, NOT per message) | `supervisor.go` `dialAndStartWS` | |
 
 Grep recipe: `rg -n "tracing.StartSpan" apps/agent/internal/`
 

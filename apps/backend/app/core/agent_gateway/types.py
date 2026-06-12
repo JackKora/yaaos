@@ -39,6 +39,10 @@ class _CommandBase(BaseModel):
     # serialize its real value to the agent over the wire — same rationale as
     # `AuthBlock.token`. NEVER log this field.
     completion_token: str | None = None
+    # Workflow execution that dispatched this command. Stamped at enqueue time so
+    # agent-side spans can carry workflow_id without a separate lookup. NULL for
+    # agent-scoped commands (ConfigUpdate) that do not correlate to a workflow.
+    workflow_execution_id: UUID | None = None
 
 
 # ── The five concrete AgentCommand kinds ────────────────────────────────

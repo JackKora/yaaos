@@ -818,11 +818,15 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 	header := cmd.Header()
 
 	ctx = tracing.ExtractContext(ctx, header.Traceparent)
-	ctx, end := tracing.StartSpan(ctx, "supervisor.dispatch."+string(header.Kind),
+	spanAttrs := []attribute.KeyValue{
 		attribute.String("workspace_id", header.WorkspaceID),
 		attribute.String("command_id", header.CommandID),
 		attribute.String("kind", string(header.Kind)),
-	)
+	}
+	if header.WorkflowExecutionID != "" {
+		spanAttrs = append(spanAttrs, attribute.String("workflow_id", header.WorkflowExecutionID))
+	}
+	ctx, end := tracing.StartSpan(ctx, "supervisor.dispatch."+string(header.Kind), spanAttrs...)
 
 	// Dedup check: if this command_id already produced a terminal event,
 	// replay the cached result without re-dispatching. Records deduped=true
