@@ -318,5 +318,5 @@ export async function loginAsOwner(
   await seedGithubInstall({ targetOrgSlug: orgSlug });
   await page.goto(`${YAAOS_URL}/login`);
   await page.getByTestId("login-test").click();
-  await page.waitForURL(new RegExp(`/orgs/${orgSlug}/dashboard$`));
+  await page.waitForURL(new RegExp(`/org/${orgSlug}/dashboard$`));
 }

@@ -98,7 +98,7 @@ export function UserCard({ expanded }: { expanded: boolean }) {
           {slug && (
             <>
               <Link
-                to="/orgs/$slug/user/details"
+                to="/org/$slug/user/details"
                 params={{ slug }}
                 className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
                 data-testid="user-nav-details"
@@ -106,7 +106,7 @@ export function UserCard({ expanded }: { expanded: boolean }) {
                 <UserIcon className="h-3.5 w-3.5" /> Details
               </Link>
               <Link
-                to="/orgs/$slug/user/security"
+                to="/org/$slug/user/security"
                 params={{ slug }}
                 className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-accent hover:text-foreground"
                 data-testid="user-nav-security"

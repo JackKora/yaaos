@@ -207,7 +207,7 @@ async def sso_acs(
         # source of truth for "Owner skipped SSO".
         await s.commit()
 
-    next_path = f"/orgs/{slug}/dashboard"
+    next_path = f"/org/{slug}/dashboard"
     resp = RedirectResponse(next_path, status_code=303)
     if created is not None:
         from app.core.auth import csrf_cookie_attrs, session_cookie_attrs  # noqa: PLC0415

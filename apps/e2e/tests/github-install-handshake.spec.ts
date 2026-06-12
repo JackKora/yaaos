@@ -48,10 +48,10 @@ test.describe("github install handshake", () => {
     // Log in as Owner.
     await page.goto(`${YAAOS_URL}/login`);
     await page.getByTestId("login-test").click();
-    await page.waitForURL(/\/orgs\/acme\/dashboard$/);
+    await page.waitForURL(/\/org\/acme\/dashboard$/);
 
     // Navigate to VCS settings; empty state surfaces the picker.
-    await page.goto(`${YAAOS_URL}/orgs/acme/settings/vcs`);
+    await page.goto(`${YAAOS_URL}/org/acme/settings/vcs`);
     await expect(page.getByTestId("vcs-picker")).toBeVisible();
 
     // Click the GitHub picker option. The SPA fires the JSON install/start
@@ -60,13 +60,13 @@ test.describe("github install handshake", () => {
     // yaaos's `/api/github/install_callback`, which writes the install row
     // and 302's to "/". The SPA bounces to the org dashboard.
     await Promise.all([
-      page.waitForURL(/\/orgs\/acme\/dashboard$/, { timeout: 15_000 }),
+      page.waitForURL(/\/org\/acme\/dashboard$/, { timeout: 15_000 }),
       page.getByTestId("vcs-picker-add-github").click(),
     ]);
 
     // Return to VCS settings — the GitHub card should now render the
     // connected (healthy) state with the account login fake-github seeded.
-    await page.goto(`${YAAOS_URL}/orgs/acme/settings/vcs`);
+    await page.goto(`${YAAOS_URL}/org/acme/settings/vcs`);
     await expect(page.getByTestId("vcs-connected")).toBeVisible();
     await expect(page.getByTestId("vcs-github-details")).toBeVisible();
     await expect(page.getByTestId("vcs-github-details")).toContainText("acme-org");

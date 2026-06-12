@@ -40,7 +40,7 @@ test.describe("a11y — anchor pages", () => {
         body: "Seeded so axe can scan a populated tickets table.",
       }),
     });
-    await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+    await page.goto(`${YAAOS_URL}/org/acme/tickets`);
     await expect(page.getByTestId("tickets-list")).toContainText("A11y fixture ticket", {
       timeout: 20_000,
     });
@@ -58,7 +58,7 @@ test.describe("a11y — anchor pages", () => {
         body: "Seeded so axe can scan the detail page composites.",
       }),
     });
-    await page.goto(`${YAAOS_URL}/orgs/acme/tickets`);
+    await page.goto(`${YAAOS_URL}/org/acme/tickets`);
     await page.getByText("A11y detail fixture").click({ timeout: 20_000 });
     await expect(page.getByTestId("ticket-detail")).toBeVisible();
     await expectNoViolations(page);
@@ -66,7 +66,7 @@ test.describe("a11y — anchor pages", () => {
 
   test("Coding Agent detail has no WCAG AA violations", async ({ page, request }) => {
     await loginAsOwner(page, request);
-    await page.goto(`${YAAOS_URL}/orgs/acme/settings/coding-agents/claude_code`);
+    await page.goto(`${YAAOS_URL}/org/acme/settings/coding-agents/claude_code`);
     // Wait for the uninstall button to confirm the bespoke UI mounted
     // (not the "not installed" placeholder).
     await expect(page.getByTestId("cc-uninstall-button")).toBeVisible({ timeout: 10_000 });

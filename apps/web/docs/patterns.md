@@ -113,11 +113,11 @@ Terse, bullets, no code snippets, no `Decisions` section, link don't repeat.
 
 - `apiFetch` auto-injects `X-Yaaos-Org-Slug` from `core/api/org-context.ts`. Domain hooks are org-agnostic at the call site.
 - UI role gates go through one primitive in `@core/api/public/membership` (single `Role` + `ROLE_RANK`): `<RequireMembership orgSlug="..." minRole="admin">` for render-gating, `useHasRole(slug, minRole)` / `useMembership(slug)` for boolean checks. Never hand-roll `memberships.find(...)` + a role compare in a component. All of it is a UI hint only — backend `require(action)` is the authority.
-- Every domain page is under `/orgs/$slug/...`. The `/` route probes `/api/auth/me` and redirects.
+- Every domain page is under `/org/$slug/...`. The `/` route probes `/api/auth/me` and redirects.
 
 ## Sidebar nav config
 
-- `core/sidebar/nav-config.ts` defines the `NavConfig` type (`link | group`). Route paths are relative (`/dashboard`); renderer prefixes `/orgs/{slug}`.
+- `core/sidebar/nav-config.ts` defines the `NavConfig` type (`link | group`). Route paths are relative (`/dashboard`); renderer prefixes `/org/{slug}`.
 - `role: "admin"` on a link or group hides it for non-admins; a group disappears when no child survives the filter.
 - Collapse state lives in `localStorage` via `use-collapse-state.ts`, syncs across tabs. A group is expanded only while a child is the active route; navigating away auto-collapses it.
 - Rail-mode groups open a right-anchored Popover. Active items use `bg-accent` only — no layout shift on select.

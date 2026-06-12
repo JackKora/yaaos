@@ -4,9 +4,9 @@
 
 ## Surfaces
 
-- `/orgs/$slug/user/details` — `DetailsPage`. Display name, per-org handles, verified emails, GitHub association.
-- `/orgs/$slug/user/security` — `SecurityPage`. TOTP enrollment + sign-out-all-sessions.
-- `/orgs/$slug/user/notifications` — cross-org notifications (see [domain_notifications](domain_notifications.md)).
+- `/org/$slug/user/details` — `DetailsPage`. Display name, per-org handles, verified emails, GitHub association.
+- `/org/$slug/user/security` — `SecurityPage`. TOTP enrollment + sign-out-all-sessions.
+- `/org/$slug/user/notifications` — cross-org notifications (see [domain_notifications](domain_notifications.md)).
 
 The `$slug` in the path is a frontend routing concern only. Backend routes (`/api/user/*`, `/api/auth/totp/*`) are `USER_SCOPED` and ignore `X-Yaaos-Org-Slug`.
 

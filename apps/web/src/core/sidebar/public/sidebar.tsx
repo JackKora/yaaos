@@ -120,7 +120,7 @@ export function Sidebar() {
     for (const item of NAV.org) {
       if (item.kind !== "group") continue;
       const anyActive = item.children.some((c) =>
-        active.startsWith(slug ? `/orgs/${slug}${c.path}` : c.path),
+        active.startsWith(slug ? `/org/${slug}${c.path}` : c.path),
       );
       if (!anyActive) setCollapsed(item.id, true);
     }
@@ -146,7 +146,7 @@ export function Sidebar() {
   // Org-scoped path or naked path when no org context — keeps legacy
   // routes (`/dashboard` etc.) working.
   const absolutePath = (relativePath: string) =>
-    slug ? `/orgs/${slug}${relativePath}` : relativePath;
+    slug ? `/org/${slug}${relativePath}` : relativePath;
 
   return (
     <aside

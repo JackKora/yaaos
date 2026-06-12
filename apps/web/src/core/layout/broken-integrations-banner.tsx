@@ -16,7 +16,7 @@ export function BrokenIntegrationsBanner() {
   const providers = orgEntry.broken_integrations.map((b) => b.provider).join(", ");
   return (
     <Link
-      to="/orgs/$slug/settings/mcp-proxy"
+      to="/org/$slug/settings/mcp-proxy"
       params={{ slug: currentMembership.slug }}
       className="block bg-red-100 border-b border-red-300 text-red-900 px-4 py-2 text-sm hover:bg-red-200"
       data-testid="broken-integrations-banner"

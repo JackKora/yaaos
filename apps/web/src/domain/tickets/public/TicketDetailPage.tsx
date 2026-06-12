@@ -105,7 +105,7 @@ export function TicketDetailPage() {
 }
 
 function TicketDetailContent() {
-  const { ticketId } = useParams({ from: "/orgs/$slug/tickets/$ticketId" });
+  const { ticketId } = useParams({ from: "/org/$slug/tickets/$ticketId" });
   const { data: ticket } = useTicket(ticketId);
   const { data: runs } = useWorkflowRuns(ticketId);
   const [tab, setTab] = useState<Tab>("findings");

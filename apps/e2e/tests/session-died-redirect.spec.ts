@@ -27,8 +27,8 @@ test.describe("session-died UX", () => {
     await request.post(`${YAAOS_URL}/api/testing/reset`);
 
     // Hit a protected user-scoped page directly (under an org slug — user
-    // pages are nested at /orgs/$slug/user/* now).
-    await page.goto(`${YAAOS_URL}/orgs/acme/user/details`);
+    // pages are nested at /org/$slug/user/* now).
+    await page.goto(`${YAAOS_URL}/org/acme/user/details`);
 
     // The central 401 handler should hard-navigate to /login with both
     // ?reason= and ?next= populated. Wait for the URL to settle.
@@ -39,7 +39,7 @@ test.describe("session-died UX", () => {
     // We never logged in — the 401 came from /api/user/me without a
     // session cookie, mapped to `signed_out`.
     expect(url.searchParams.get("reason")).toBe("signed_out");
-    expect(url.searchParams.get("next")).toBe("/orgs/acme/user/details");
+    expect(url.searchParams.get("next")).toBe("/org/acme/user/details");
 
     // Banner copy renders.
     await expect(page.getByTestId("login-reason-banner")).toHaveText(

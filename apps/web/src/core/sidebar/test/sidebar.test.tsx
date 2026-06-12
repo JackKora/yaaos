@@ -8,7 +8,7 @@ import { server } from "../../../test/msw/server";
 import { Sidebar } from "../public/sidebar";
 
 // useRouterState and Link must be vi.mock'd — they are not HTTP hooks.
-const pathnameMock = vi.fn(() => "/orgs/acme/dashboard");
+const pathnameMock = vi.fn(() => "/org/acme/dashboard");
 
 vi.mock("@tanstack/react-router", () => ({
   useRouterState: (opts?: { select?: (s: { location: { pathname: string } }) => unknown }) => {
@@ -50,7 +50,7 @@ function wrap(node: React.ReactNode) {
 describe("Sidebar", () => {
   beforeEach(() => {
     localStorage.clear();
-    pathnameMock.mockReturnValue("/orgs/acme/dashboard");
+    pathnameMock.mockReturnValue("/org/acme/dashboard");
     // Default handlers — override per test as needed.
     server.use(
       http.get("/api/auth/me", () => HttpResponse.json(userResp("admin"))),
@@ -72,15 +72,15 @@ describe("Sidebar", () => {
   it("renders top-level org-scoped links + the user card when expanded (snapshot-ish)", async () => {
     // Put the user inside a settings sub-route so the group is expanded
     // and the children render in the DOM for testid lookup.
-    pathnameMock.mockReturnValue("/orgs/acme/settings/auth");
+    pathnameMock.mockReturnValue("/org/acme/settings/auth");
     server.use(http.get("/api/auth/me", () => HttpResponse.json(userResp("admin"))));
     render(wrap(<Sidebar />));
     // Sidebar suspends until useCurrentUser resolves; wait for any nav link.
     await waitFor(() =>
-      expect(screen.getByTestId("nav-dashboard")).toHaveAttribute("href", "/orgs/acme/dashboard"),
+      expect(screen.getByTestId("nav-dashboard")).toHaveAttribute("href", "/org/acme/dashboard"),
     );
-    expect(screen.getByTestId("nav-tickets")).toHaveAttribute("href", "/orgs/acme/tickets");
-    expect(screen.getByTestId("nav-lessons")).toHaveAttribute("href", "/orgs/acme/lessons");
+    expect(screen.getByTestId("nav-tickets")).toHaveAttribute("href", "/org/acme/tickets");
+    expect(screen.getByTestId("nav-lessons")).toHaveAttribute("href", "/org/acme/lessons");
     expect(screen.getByTestId("nav-group-org-settings")).toBeInTheDocument();
     // Admin-gated items render once useCurrentUser resolves.
     await waitFor(() => expect(screen.getByTestId("nav-auth")).toBeInTheDocument());
@@ -93,7 +93,7 @@ describe("Sidebar", () => {
   });
 
   it("members see the Org Settings group but only the Members sub-item", async () => {
-    pathnameMock.mockReturnValue("/orgs/acme/settings/members");
+    pathnameMock.mockReturnValue("/org/acme/settings/members");
     server.use(http.get("/api/auth/me", () => HttpResponse.json(userResp("builder"))));
     render(wrap(<Sidebar />));
     // Sidebar suspends until useCurrentUser resolves; wait for any nav link.
@@ -109,7 +109,7 @@ describe("Sidebar", () => {
   });
 
   it("shows admin-gated group items for owners", async () => {
-    pathnameMock.mockReturnValue("/orgs/acme/settings/vcs");
+    pathnameMock.mockReturnValue("/org/acme/settings/vcs");
     server.use(http.get("/api/auth/me", () => HttpResponse.json(userResp("owner"))));
     render(wrap(<Sidebar />));
     await waitFor(() => expect(screen.getByTestId("nav-group-org-settings")).toBeInTheDocument());
@@ -145,7 +145,7 @@ describe("Sidebar", () => {
     );
 
     // Simulate route change to /tickets → effect re-collapses.
-    pathnameMock.mockReturnValue("/orgs/acme/tickets");
+    pathnameMock.mockReturnValue("/org/acme/tickets");
     rerender(wrap(<Sidebar />));
     await waitFor(() =>
       expect(screen.getByTestId("nav-group-org-settings")).toHaveAttribute("data-collapsed"),

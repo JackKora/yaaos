@@ -45,7 +45,7 @@ def _broken_creds_email_body(*, provider: str, org_slug: str) -> str:
     return (
         f"Your {provider} integration in yaaos has stopped working — the most recent "
         "health check failed.\n\n"
-        f"Reconnect at {base}/orgs/{org_slug}/settings/integrations.\n\n"
+        f"Reconnect at {base}/org/{org_slug}/settings/integrations.\n\n"
         "Reviews running while a provider is in this state will still proceed, but "
         f"the agent will receive `broken_creds` errors when it tries to call {provider} "
         "tools.\n"

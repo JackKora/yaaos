@@ -174,7 +174,7 @@ The SPA bakes `VITE_*` values at build time. Set these in the RWX `yaaos` vault:
 | `VITE_DASH0_AUTH_TOKEN` | Browser ingest-only token |
 | `VITE_DASH0_DATASET` | Dash0 dataset name |
 
-The `deploy-prod` RWX task passes these as `--build-arg` values to `flyctl deploy`. See `.rwx/push.yml`.
+The `deploy-production` RWX task passes these as `--build-arg` values to `flyctl deploy`. See `.rwx/push.yml`.
 
 ### CORS
 
@@ -210,13 +210,13 @@ All secrets the CI/deploy pipeline reads from the vault:
 
 | Vault secret | Used by |
 |---|---|
-| `FLY_API_TOKEN` | `deploy-prod` task |
+| `FLY_API_TOKEN` | `deploy-production` task |
 | `DOCKERHUB_USERNAME` | `publish-agent-image` task |
 | `DOCKERHUB_TOKEN` | `publish-agent-image` task |
 | `YAAOS_CLOUDFLARE_INGRESS_SECRET` | must match the Cloudflare Transform Rule and the Fly secret |
-| `VITE_OTEL_COLLECTOR_ENDPOINT` | `deploy-prod` build arg |
-| `VITE_DASH0_AUTH_TOKEN` | `deploy-prod` build arg |
-| `VITE_DASH0_DATASET` | `deploy-prod` build arg |
+| `VITE_OTEL_COLLECTOR_ENDPOINT` | `deploy-production` build arg |
+| `VITE_DASH0_AUTH_TOKEN` | `deploy-production` build arg |
+| `VITE_DASH0_DATASET` | `deploy-production` build arg |
 
 `FLY_API_TOKEN` is the only credential RWX needs to deploy; it is org-scoped (not personal).
 
@@ -237,8 +237,8 @@ Before pushing to `main`, run all CI scripts:
 
 Push to `main` → RWX triggers `push.yml`:
 
-1. `docs-ci`, `backend-ci`, `web-ci`, `agent-ci`, `e2e-ci` run in parallel.
-2. `deploy-prod` fires only when **all five** pass.
+1. `ci-docs`, `ci-backend`, `ci-web`, `ci-agent`, `ci-e2e` run in parallel.
+2. `deploy-production` fires only when **all five** pass **and** the push touched deploy-relevant files — it carries a `filter:` block (`apps/backend/**`, `apps/web/**`, the Python/pnpm workspace manifests, and `fly.production.toml`). An agent-only push (`apps/agent/**`) skips `deploy-production` (its image ships via `publish-agent-image`); a doc-only push skips deployment entirely. The `filter:` list in `.rwx/push.yml` is the canonical source.
 3. `flyctl deploy --remote-only --config fly.production.toml` builds the amd64 image on Fly's remote builder and deploys.
 
 ### Bluegreen cutover

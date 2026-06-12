@@ -58,7 +58,7 @@ async def seed_github_install(
     the rows to (looked up by slug); otherwise the ``DEFAULT_ORG_ID`` stub
     is used. Specs that also log a user in via ``bootstrap_owner`` pass the
     bootstrapped org's slug here so the install lives on the same org as the
-    authenticated user — ``/orgs/<slug>/tickets`` then surfaces webhook-created
+    authenticated user — ``/org/<slug>/tickets`` then surfaces webhook-created
     tickets under the route the user is on.
 
     The platform GitHub App credentials come from ``yaaos_github_app_*`` env

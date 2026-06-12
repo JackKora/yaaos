@@ -5,7 +5,7 @@ import type { ComponentType } from "react";
  *
  * Each first-party coding-agent plugin registers a bespoke React component
  * that renders its settings page. The per-plugin route
- * (`/orgs/$slug/settings/coding-agents/$pluginId`) looks up the component
+ * (`/org/$slug/settings/coding-agents/$pluginId`) looks up the component
  * here at navigation time. Plugins without a registered component fall back
  * to a "settings not available" placeholder.
  *

@@ -17,7 +17,7 @@ import {
 
 /**
  * Org Settings > Coding Agents (list view). Per-plugin settings live at
- * /orgs/$slug/settings/coding-agents/$pluginId (see plugin_registry.ts).
+ * /org/$slug/settings/coding-agents/$pluginId (see plugin_registry.ts).
  */
 export function CodingAgentsSettingsPage() {
   return (
@@ -133,7 +133,7 @@ function InstallCard({
 }) {
   const [confirming, setConfirming] = useState(false);
   const settingsHref = slug
-    ? `/orgs/${slug}/settings/coding-agents/${row.plugin_id}`
+    ? `/org/${slug}/settings/coding-agents/${row.plugin_id}`
     : `/settings/coding-agents/${row.plugin_id}`;
   return (
     <section

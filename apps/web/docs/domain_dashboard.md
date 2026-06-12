@@ -4,7 +4,7 @@
 
 ## Scope
 
-`/orgs/:slug/dashboard`. Queries: `useDashboard()` → `GET /api/tickets/dashboard`; `useAgents(slug)` → `GET /api/orgs/{slug}/agents`. `NotConfiguredBanner` reads `GET /api/orgs/config-status` separately. Owns no data.
+`/org/:slug/dashboard`. Queries: `useDashboard()` → `GET /api/tickets/dashboard`; `useAgents(slug)` → `GET /api/orgs/{slug}/agents`. `NotConfiguredBanner` reads `GET /api/orgs/config-status` separately. Owns no data.
 
 ## Layout
 

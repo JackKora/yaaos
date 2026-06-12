@@ -24,7 +24,7 @@ import {
 } from "./queries";
 
 /**
- * `/orgs/$slug/user/details` — name + per-org handles + verified emails +
+ * `/org/$slug/user/details` — name + per-org handles + verified emails +
  * GitHub association. The GitHub username is written by the "Sign in with
  * GitHub" login flow; this page only displays it (and offers a Clear button).
  */
