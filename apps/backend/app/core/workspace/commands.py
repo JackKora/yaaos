@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 import structlog
 from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import select
 
 from app.core.agent_gateway import (
@@ -170,7 +171,9 @@ class CleanupWorkspace(_LifecycleCommand):
             await close_workspace(ws_id)
         except Exception as exc:
             # inside-span failure: workflow.command.CleanupWorkspace span is active
-            trace.get_current_span().record_exception(exc)
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, f"{type(exc).__name__}: {exc}")
             log.exception("cleanup_workspace.failed", workspace_id=str(ws_id))
             return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
 

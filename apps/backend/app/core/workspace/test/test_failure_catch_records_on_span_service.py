@@ -10,6 +10,7 @@ from uuid import UUID
 
 import pytest
 from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 
 from app.core.workflow import CommandContext
 from app.testing.observability import span_capture
@@ -56,3 +57,7 @@ async def test_workspace_cleanup_failure_records_on_span(db_session) -> None:  #
 
     exception_events = [e for e in target.events if e.name == "exception"]
     assert exception_events, f"expected exception event on span, got: {[e.name for e in target.events]}"
+
+    assert target.status.status_code == StatusCode.ERROR, (
+        f"expected span status ERROR, got: {target.status.status_code}"
+    )
