@@ -204,9 +204,14 @@ def _install_middleware(app: FastAPI) -> None:
 
     _register_auth_failure(app)
 
-    # Unhandled-exception handler — log + return JSON 500.
+    # Unhandled-exception handler — record span exception + log + return JSON 500.
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
+        from opentelemetry import trace as _trace  # noqa: PLC0415
+        from opentelemetry.trace import StatusCode as _SC  # noqa: PLC0415
+
+        _trace.get_current_span().record_exception(exc)
+        _trace.get_current_span().set_status(_SC.ERROR, "internal_server_error")
         logging.getLogger("yaaos").exception("http.unhandled_exception", exc_info=exc)
         return JSONResponse(status_code=500, content={"error": "internal_server_error"})
 

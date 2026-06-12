@@ -423,6 +423,27 @@ Auto-instrumentation covers most paths (HTTP + SQLAlchemy via OTel contrib; back
 
 Don't wrap every domain function — noise hurts more than detail helps.
 
+### Exception visibility — `record_exception` rule
+
+**Any `except` clause that does not re-raise must call `span.record_exception(exc)` + `span.set_status(ERROR, ...)` on the active span before returning.** Without this, OTel sees the span close without status and the error is invisible in traces even though a log line was emitted.
+
+Canonical shape: `span.record_exception(exc)` → `span.set_status(StatusCode.ERROR, str(exc))` → `log.exception(...)`. Reference: `apps/backend/app/core/observability/spawn.py:56`.
+
+Two enforced sites:
+
+- **`_safe_execute` in `core/workflow/service.py`** — wraps every `WorkflowCommand.execute()` in a `workflow.command.{kind}` child span. On exception: `record_exception` + `set_status(ERROR)` on both the child span and the outer `workflow.start_step` span (via the captured outer-span reference). On `Outcome.failure(reason=...)`: `set_status(ERROR, reason)` on both spans, no exception event (none was raised). On success: spans left at default (UNSET) status.
+- **FastAPI catch-all in `core/webserver/app_factory.py`** — the `@app.exception_handler(Exception)` handler calls `trace.get_current_span().record_exception(exc)` + `set_status(ERROR, "internal_server_error")` before logging and returning the 500 JSON. This marks the HTTP request span red in Dash0 so unhandled server errors are visible in traces, not just logs.
+
+Signal-selection order when adding observability to a new catch site:
+
+1. **Attribute** — if the error is expected and queryable (e.g. auth failures with a typed exception), set a span attribute (`span.set_attribute("error.kind", "auth_failure")`).
+2. **Child span** — for a unit of work with its own identity (e.g. `WorkflowCommand.execute`), open a child span and record the error there; propagate status to the outer span.
+3. **Log** — always emit at least a log line (exception log for unexpected errors; warn for expected but notable).
+
+**Grep recipe** to find non-re-raising catches that may be missing span recording: `rg "except Exception|except:" apps/backend/app/`. Review each hit — if it doesn't call `record_exception`, it should (or the exception should be re-raised).
+
+**Test infra** — `app.testing.observability.span_capture()` is the standard context manager for asserting span state in service tests. It installs an `InMemorySpanExporter` with a `SimpleSpanProcessor` on the current global `TracerProvider` and yields the exporter. Call `.get_finished_spans()` after the `with` block. Never import `span_capture` from production code — it lives under `app/testing/` exclusively.
+
 ## ContextVar-bound registries — test isolation model
 
 The three plugin registries (`CodingAgentRegistry`, `VCSRegistry`, `WorkspaceRegistry`) and the process singletons (`RedisPubsub`, `SubscriberRegistry`, email inbox, SSE shutdown event) are all held in `ContextVar`s. Production never calls `bind_*()` — each module holds a module-level default that captures import-time `bootstrap()` registrations. Test isolation is structural: bind a fresh copy per test, no restore needed.

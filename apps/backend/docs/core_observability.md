@@ -45,7 +45,19 @@
 
 **Standard dims on every span + log** — `YaaosDimensionsSpanProcessor` is registered on the `TracerProvider` during `_configure_otel`. Its `on_start` reads the auth contextvars (`org_id_var`, `user_id_var`, `actor_kind_var`, `workflow_execution_id_var`, `command_id_var` from `core/auth/context`) and stamps the non-None values as `yaaos.org_id`, `yaaos.user_id`, `yaaos.actor_kind`, `yaaos.workflow_id`, `yaaos.command_id` on every new span. OTel attributes do not inherit to child spans — `on_start` is the only mechanism that makes dims universal without per-span code. The `_YaaosLogDimsFilter` (stdlib `logging.Filter` added to the root logger by `configure()`) does the same for log records: it sets matching `LogRecord` attributes (`yaaos_org_id`, `yaaos_user_id`, etc.) from contextvars, which the OTel `LoggingHandler._get_attributes` then maps to queryable log attributes in Dash0. Both filters only stamp when the var is set — background spans carry org+actor but no `user_id`; non-workflow spans carry no `workflow_id`/`command_id`.
 
-**`spawn(name, coro)`** — `asyncio.create_task` wrapped with an OTel span (`spawn:{name}`) + error recording. On exception: `span.record_exception(exc)` + `span.set_status(ERROR)` before the `spawn.crashed` log line. Does not re-raise. Task retained in a module-level set to prevent GC mid-flight.
+**`spawn(name, coro)`** — `asyncio.create_task` wrapped with an OTel span (`spawn:{name}`) + error recording. On exception: `span.record_exception(exc)` + `span.set_status(ERROR)` before the `spawn.crashed` log line. Does not re-raise. Task retained in a module-level set to prevent GC mid-flight. This is the canonical shape for non-re-raising exception handlers; `apps/backend/app/core/observability/spawn.py:56` is the reference.
+
+**Span inventory** — manually-emitted spans (auto-instrumented HTTP + SQLAlchemy spans are additional):
+
+| Span name | Emitter | Status set to ERROR when |
+|---|---|---|
+| `spawn:{name}` | `core/observability/spawn.py` | coro raises |
+| `workflow.start_step` | `core/workflow/service.py` | command raises or returns `Outcome.failure` |
+| `workflow.route_workflow` | `core/workflow/service.py` | `outcome_label` is not `"success"` |
+| `workflow.handle_agent_event` | `core/workflow/service.py` | (never set to ERROR currently) |
+| `workflow.command.{kind}` | `core/workflow/service.py` (`_safe_execute`) | command raises (with `exception` event) or returns `Outcome.failure` (no event) |
+
+`workflow.command.{kind}` is the per-command child span inside `_safe_execute`. It nests under the active `workflow.start_step` span. Both receive `StatusCode.ERROR` on any failure outcome; only the exception path adds an `exception` span event. See [`patterns.md § Exception visibility`](patterns.md#exception-visibility--record_exception-rule) for the rule and canonical shape.
 
 **`SlowRequestLogMiddleware`** — emits `http.slow_request` warn for requests ≥ `SLOW_REQUEST_THRESHOLD_MS` (default 500ms). Never throws.
 

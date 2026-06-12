@@ -27,6 +27,7 @@ from uuid import UUID
 
 import structlog
 from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -388,6 +389,10 @@ async def route_workflow(
                 outputs=outputs,
                 traceparent=traceparent,
             )
+            # Propagate failure status to the outer span so the trace shows
+            # the routing span red when it routed a failed step outcome.
+            if outcome_label is not None and outcome_label != "success":
+                span.set_status(StatusCode.ERROR, outcome_label)
     finally:
         workflow_execution_id_var.reset(wf_token)
 
@@ -1395,20 +1400,46 @@ async def _safe_execute(
     inputs: dict[str, Any],
     ctx: CommandContext,
 ) -> Outcome:
-    """Call command.execute(inputs, ctx). Any exception becomes a
-    failure outcome — commands shouldn't raise, but a defensive catch
-    keeps engine state consistent."""
-    try:
-        # Pass raw inputs through; commands are responsible for parsing
-        # their typed inputs from the raw dict via Pydantic if they care.
-        return await command.execute(inputs, ctx)  # type: ignore[arg-type]
-    except Exception as exc:
-        log.exception(
-            "workflow.command.raised",
-            workflow_execution_id=ctx.workflow_execution_id,
-            step_id=ctx.step_id,
-        )
-        return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
+    """Call command.execute(inputs, ctx) inside a `workflow.command.{kind}`
+    child span.
+
+    On exception: records the exception on the child span + marks it ERROR,
+    then propagates ERROR to the caller's active span (workflow.start_step)
+    and returns a failure outcome. Does NOT re-raise — the engine keeps
+    state consistent.
+
+    On failure outcome: marks the child span ERROR with the reason as the
+    status description, then propagates ERROR to the caller's active span.
+    No exception event is added (none was raised).
+
+    On success: returns the outcome with spans left at default (UNSET) status.
+
+    Mirrors the span-error-recording pattern in `core/observability/spawn.py`.
+    """
+    outer_span = trace.get_current_span()
+    kind = command.kind  # type: ignore[attr-defined]
+    with _tracer.start_as_current_span(f"workflow.command.{kind}") as child_span:
+        try:
+            # Pass raw inputs through; commands are responsible for parsing
+            # their typed inputs from the raw dict via Pydantic if they care.
+            outcome = await command.execute(inputs, ctx)  # type: ignore[arg-type]
+        except Exception as exc:
+            child_span.record_exception(exc)
+            child_span.set_status(StatusCode.ERROR, str(exc))
+            outer_span.set_status(StatusCode.ERROR, str(exc))
+            log.exception(
+                "workflow.command.raised",
+                workflow_execution_id=ctx.workflow_execution_id,
+                step_id=ctx.step_id,
+            )
+            return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
+
+        if outcome.kind is OutcomeKind.FAILURE:
+            reason = outcome.failure_reason or "failure"
+            child_span.set_status(StatusCode.ERROR, reason)
+            outer_span.set_status(StatusCode.ERROR, reason)
+
+    return outcome
 
 
 # ── Engine ──────────────────────────────────────────────────────────────
