@@ -112,6 +112,21 @@ All three OTel signals (traces, metrics, logs) share two standard dimensions on 
 - **Base slog logger**: the supervisor calls `slog.SetDefault(slog.Default().With("org_id", ..., "agent_id", ...))` after first exchange so every subsequent `slog.*` call emits both dimensions automatically.
 - **OTLP disabled**: `observability.Init` is a no-op; instruments resolve to no-op SDK providers. Zero overhead.
 
+**Span inventory** — all spans the agent emits via `tracing.StartSpan`. Each is a child of the span in the "Parent" column (or a root if the context carries no parent):
+
+| Span name | Parent | Where |
+|---|---|---|
+| `supervisor.dispatch.<kind>` | backend-injected traceparent | `supervisor.go` `routeCommand` |
+| `workspace.handle.<kind>` | `supervisor.dispatch.<kind>` | `workspace.go` `executeCommand` |
+| `workspace.clone` | `workspace.handle.ProvisionWorkspace` | `realhandler.go` `ProvisionWorkspace` |
+| `workspace.runclaude` | `workspace.handle.InvokeClaudeCode` | `realhandler.go` `RunClaude` |
+| `agent.identity_exchange` | none (fresh root per call) | `supervisor.go` `exchangeIdentity` |
+| `agent.identity_refresh` | none (fresh root per call) | `supervisor.go` `runOneRefreshCycle` |
+| `agent.claim` | none (per HTTP call, NOT per loop iteration) | `supervisor.go` `claimLoop` |
+| `agent.activity_ws.dial` | none (per dial attempt, NOT per message) | `supervisor.go` `dialAndStartWS` |
+
+Grep recipe: `rg -n "tracing.StartSpan" apps/agent/internal/`
+
 Details → [observability.md](observability.md).
 
 ## Error handling — fatal-on-mismatch carve-out

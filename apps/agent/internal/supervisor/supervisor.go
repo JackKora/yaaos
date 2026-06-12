@@ -426,7 +426,11 @@ func (s *Supervisor) dialAndStartWS(ctx context.Context, bearer string) bool {
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	url := s.cfg.ActivityWSURL
+	_, endDial := tracing.StartSpan(dialCtx, "agent.activity_ws.dial",
+		attribute.String("url", url),
+	)
 	conn, err := activity.Dial(dialCtx, url, bearer)
+	endDial(err)
 	if err != nil {
 		recordBackoff(ctx, s.wsBackoff, surfaceWS, err)
 		s.log.Warn("supervisor.activity_ws_dial_failed",
@@ -483,6 +487,10 @@ func (s *Supervisor) wsReconnectLoop(ctx context.Context, bearer string) {
 }
 
 func (s *Supervisor) exchangeIdentity(ctx context.Context) (*protocol.IdentityExchangeResponse, error) {
+	ctx, end := tracing.StartSpan(ctx, "agent.identity_exchange")
+	var err error
+	defer func() { end(err) }()
+
 	// The provider signs the claim; the supervisor owns the HTTP exchange.
 	// Audience is derived from the backend's BaseURL host so the verifier can
 	// reject cross-instance replays. An empty host means BaseURL is misconfigured
@@ -494,20 +502,25 @@ func (s *Supervisor) exchangeIdentity(ctx context.Context) (*protocol.IdentityEx
 		audience = override
 	}
 	if audience == "" {
-		return nil, fmt.Errorf("identity: cannot derive audience: BaseURL %q has no host", s.cfg.BaseURL)
+		err = fmt.Errorf("identity: cannot derive audience: BaseURL %q has no host", s.cfg.BaseURL)
+		return nil, err
 	}
-	payload, err := s.provider.SignClaim(ctx, audience)
+	var payload []byte
+	payload, err = s.provider.SignClaim(ctx, audience)
 	if err != nil {
-		return nil, fmt.Errorf("identity: sign claim: %w", err)
+		err = fmt.Errorf("identity: sign claim: %w", err)
+		return nil, err
 	}
 
 	meta := gatherAgentMetadata()
-	return s.client.ExchangeIdentity(ctx, protocol.IdentityExchangeRequest{
+	var resp *protocol.IdentityExchangeResponse
+	resp, err = s.client.ExchangeIdentity(ctx, protocol.IdentityExchangeRequest{
 		Kind:          s.provider.Kind(),
 		AgentVersion:  s.cfg.Version,
 		AgentMetadata: meta,
 		Payload:       string(payload),
 	})
+	return resp, err
 }
 
 // hostFromURL extracts the host (and optional port) from a URL string.
@@ -547,9 +560,14 @@ type refreshResult struct {
 // is an identity-integrity violation — caller must treat fatal=true as a
 // process-exit signal rather than a retryable error.
 func (s *Supervisor) runOneRefreshCycle(ctx context.Context, currentExpiry time.Time) refreshResult {
+	_, end := tracing.StartSpan(ctx, "agent.identity_refresh")
+	var spanErr error
+	defer func() { end(spanErr) }()
+
 	const retryInterval = 60 * time.Second
 	resp, err := s.exchangeIdentity(ctx)
 	if err != nil {
+		spanErr = err
 		s.log.Warn("supervisor.bearer_refresh_failed", "err", err.Error())
 		return refreshResult{expiresAt: time.Now().Add(retryInterval)}
 	}
@@ -567,6 +585,7 @@ func (s *Supervisor) runOneRefreshCycle(ctx context.Context, currentExpiry time.
 				"returned_agent_id", resp.AgentID,
 				"returned_org_id", resp.OrgID,
 			)
+			spanErr = fmt.Errorf("identity mismatch: agent_id or org_id changed on renewal")
 			return refreshResult{fatal: true}
 		}
 		s.applyAcceptedIdentityChange(resp)
@@ -647,7 +666,9 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 		if ctx.Err() != nil {
 			return
 		}
+		_, endClaim := tracing.StartSpan(ctx, "agent.claim")
 		raw, err := s.client.ClaimCommand(ctx, s.buildClaimRequest())
+		endClaim(err)
 		if err != nil {
 			if err == protocol.ErrNoCommand {
 				s.claimBackoff.Reset()
