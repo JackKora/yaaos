@@ -49,10 +49,12 @@ kill_timeout = "180s"
   YAAOS_GITHUB_APP_SLUG = "yaaos"
   YAAOS_GITHUB_OAUTH_CLIENT_ID = "Ov23liOakRow3PX62StR"
 
-  # Dash0 OTLP ingest endpoint. Not a secret — the URL is public. The matching
-  # `OTEL_EXPORTER_OTLP_HEADERS` (Authorization bearer + Dash0-Dataset) stays
-  # a `fly secret` because the bearer token IS sensitive.
-  OTEL_EXPORTER_OTLP_ENDPOINT = "https://ingress.europe-west4.gcp.dash0.com"
+  # Dash0 OTLP ingest. Endpoint and dataset are non-secret (public URLs /
+  # dataset names). The two bearer tokens — one for the backend, one for the
+  # agent — are sensitive and stay in `fly secrets` as
+  # YAAOS_BACKEND_DASH0_BEARER_TOKEN and YAAOS_AGENT_DASH0_BEARER_TOKEN.
+  YAAOS_DASH0_ENDPOINT = "https://ingress.us-west-2.aws.dash0.com"
+  YAAOS_DASH0_DATASET = "default"
 
   # SMTP non-secret identifiers (SMTP_HOST/PORT/USERNAME/USE_TLS/FROM) remain
   # set in the Fly dashboard env for now; SMTP_PASSWORD stays a secret.

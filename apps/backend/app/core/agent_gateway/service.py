@@ -202,14 +202,20 @@ async def get_command_workflow_execution_id(
 
 
 def _build_config_update() -> ConfigUpdateCommand:
-    """Build a ConfigUpdateCommand from the global defaults."""
+    """Build a ConfigUpdateCommand from the global settings."""
     from uuid import uuid4  # noqa: PLC0415
 
+    from app.core.config import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
     return ConfigUpdateCommand(
         command_id=uuid4(),
         traceparent="",
         config=AgentConfig(
             max_workspaces=DEFAULT_MAX_WORKSPACES,
+            otlp_endpoint=settings.yaaos_dash0_endpoint,
+            otlp_token=settings.yaaos_agent_dash0_bearer_token,
+            otlp_dataset=settings.yaaos_dash0_dataset,
         ),
     )
 

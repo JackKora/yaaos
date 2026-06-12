@@ -100,6 +100,7 @@ The `received` EventKind is non-terminal: it cancels the lease requeue on the ro
 
 ## Vocabulary
 
+- **AgentConfig.otlp_token** — `SecretStr | None` end-to-end in Python. `.get_secret_value()` is called only at the JSON wire-encode boundary via a `field_serializer(when_used="json")` on the field — `str()`, `repr()`, and `model_dump()` (Python mode) all show `**********`. The wire JSON carries the raw token so the agent can pass it to its OTLP exporter.
 - **AgentCommand** — discriminated union: `ProvisionWorkspace | WriteFiles | RefreshWorkspaceAuth | InvokeClaudeCode | CleanupWorkspace`.
 - **AgentEvent** — `progress` or `received` (non-terminal) or `completed_{success|failure|skipped}` (terminal). `received` cancels the lease requeue.
 - **WorkspaceEvent** — `created | ready | exited | destroyed | failed`.

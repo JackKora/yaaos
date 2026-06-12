@@ -68,7 +68,10 @@ class Settings(BaseSettings):
     db_max_overflow: int = 5
     yaaos_worker_health_port: int = 8081
     yaaos_cors_origins: str | None = None  # comma-separated; only honored in non-dev
-    otel_exporter_otlp_endpoint: str | None = None
+    yaaos_dash0_endpoint: str | None = None
+    yaaos_dash0_dataset: str | None = None
+    yaaos_backend_dash0_bearer_token: SecretStr | None = None
+    yaaos_agent_dash0_bearer_token: SecretStr | None = None
     # OTel `service.name` per role. App + worker deploy as separate processes
     # so they get distinct service identities — per OTel semconv, service.name
     # must differ across separately-deployed roles even when they share a code
@@ -291,7 +294,7 @@ class Settings(BaseSettings):
 
     @property
     def otel_enabled(self) -> bool:
-        return bool(self.otel_exporter_otlp_endpoint)
+        return bool(self.yaaos_dash0_endpoint)
 
 
 @cache

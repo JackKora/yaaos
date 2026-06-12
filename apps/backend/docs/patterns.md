@@ -444,6 +444,10 @@ Signal-selection order when adding observability to a new catch site:
 
 **Test infra** — `app.testing.observability.span_capture()` is the standard context manager for asserting span state in service tests. It installs an `InMemorySpanExporter` with a `SimpleSpanProcessor` on the current global `TracerProvider` and yields the exporter. Call `.get_finished_spans()` after the `with` block. Never import `span_capture` from production code — it lives under `app/testing/` exclusively.
 
+### Two bearer tokens — never cross
+
+The backend's own OTLP bearer (`YAAOS_BACKEND_DASH0_BEARER_TOKEN` → `Settings.yaaos_backend_dash0_bearer_token`) and the agent's OTLP bearer (`YAAOS_AGENT_DASH0_BEARER_TOKEN` → `Settings.yaaos_agent_dash0_bearer_token`) serve distinct principals and must never be swapped. Both are `SecretStr | None`; both unwrap only at their respective wire-encode boundaries. The backend bearer is consumed only inside `core/observability._configure_otel`; the agent bearer is consumed only inside `core/agent_gateway._build_config_update` (forwarded to the agent as `AgentConfig.otlp_token`).
+
 ## ContextVar-bound registries — test isolation model
 
 The three plugin registries (`CodingAgentRegistry`, `VCSRegistry`, `WorkspaceRegistry`) and the process singletons (`RedisPubsub`, `SubscriberRegistry`, email inbox, SSE shutdown event) are all held in `ContextVar`s. Production never calls `bind_*()` — each module holds a module-level default that captures import-time `bootstrap()` registrations. Test isolation is structural: bind a fresh copy per test, no restore needed.

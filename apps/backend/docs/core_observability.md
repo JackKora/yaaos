@@ -9,7 +9,7 @@
 
 ## Why / invariants
 
-**OTel always on, exporters optional** — all three providers are always initialized. OTLP/HTTP exporters are attached only when `otel_exporter_otlp_endpoint` is set. Adding a real exporter in prod is a single env-var flip (`OTEL_EXPORTER_OTLP_ENDPOINT` + `OTEL_EXPORTER_OTLP_HEADERS`); no code change or feature flags.
+**OTel always on, exporters optional** — all three providers are always initialized. OTLP/HTTP exporters are attached only when all three of `YAAOS_DASH0_ENDPOINT`, `YAAOS_DASH0_DATASET`, and `YAAOS_BACKEND_DASH0_BEARER_TOKEN` are set. Any missing setting silently skips exporters — providers exist but discard signals. This is a three-way AND gate (not endpoint-only) so a half-configured deploy never silently drops telemetry.
 
 **Metric sources** — the MeterProvider is non-empty from boot:
 - `FastAPIInstrumentor` emits `http.server.duration`, `http.server.active_requests`, and `http.server.response.size` automatically once the global MeterProvider is set (web process only).
@@ -17,7 +17,7 @@
 
 **Health probes are not traced** — `TRACE_EXCLUDED_URLS` (`"api/health"`) is passed to the FastAPI instrumentor (both the global `instrument()` in `_configure_otel` and the fallback `instrument_app()` in `core/webserver`), so `/api/health` produces no HTTP server span. The health DB ping (`core/database.ping()`, used by web `/api/health` and worker `/health`) runs inside `suppress_instrumentation()` so the constant probes emit no SQLAlchemy span either. Fly's machine checker hits health every few seconds; tracing each probe would be pure noise.
 
-**Exporter no-arg construction** — exporters are constructed with NO `endpoint=` / `headers=` kwargs. The SDK reads `OTEL_EXPORTER_OTLP_ENDPOINT` (base URL, e.g. `https://ingress.<region>.aws.dash0.com`) and appends `/v1/{traces,metrics,logs}` per signal; `OTEL_EXPORTER_OTLP_HEADERS` carries the `Authorization: Bearer …,Dash0-Dataset: …` pair. Passing `endpoint=` explicitly skips the per-signal append → bare-base 404, telemetry silently dropped.
+**Explicit exporter construction** — exporters are constructed with explicit `endpoint=f"{YAAOS_DASH0_ENDPOINT}/v1/{signal}"` and `headers={"Authorization": "Bearer …", "Dash0-Dataset": "…"}` kwargs. The app does not rely on `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` env vars for routing or auth. `YAAOS_BACKEND_DASH0_BEARER_TOKEN` is a `SecretStr` — `.get_secret_value()` is called only inside `configure()` before passing the string to `_configure_otel`; it never reaches logs or repr.
 
 **`configure(role=...)` must be called once at boot** — `"app"` from `web.py`, `"worker"` from `core/tasks/runtime.py`. Sets `service.name` accordingly. Idempotent (module-level `_initialized` flag + OTel "already instrumented" guard).
 
