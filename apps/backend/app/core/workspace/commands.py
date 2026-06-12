@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import structlog
+from opentelemetry import trace
 from sqlalchemy import select
 
 from app.core.agent_gateway import (
@@ -168,6 +169,8 @@ class CleanupWorkspace(_LifecycleCommand):
         try:
             await close_workspace(ws_id)
         except Exception as exc:
+            # inside-span failure: workflow.command.CleanupWorkspace span is active
+            trace.get_current_span().record_exception(exc)
             log.exception("cleanup_workspace.failed", workspace_id=str(ws_id))
             return Outcome.failure(reason=f"{type(exc).__name__}: {exc}")
 
