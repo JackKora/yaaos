@@ -236,6 +236,7 @@ def _build_config_update() -> ConfigUpdateCommand:
             otlp_endpoint=settings.yaaos_dash0_endpoint,
             otlp_token=settings.yaaos_agent_dash0_bearer_token,
             otlp_dataset=settings.yaaos_dash0_dataset,
+            environment=settings.environment,
         ),
     )
 

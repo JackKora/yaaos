@@ -107,10 +107,10 @@ All auth tokens flow through `internal/secret.Secret`. `fmt.Sprintf`, `json.Mars
 
 All three OTel signals (traces, metrics, logs) share two standard dimensions on every record produced after identity exchange: `org_id` and `agent_id`. These are set once via `observability.SetStandardDimensions` immediately after the first successful identity exchange and never change for the process lifetime.
 
-- **Resource attributes** (static for the process lifetime): `service.name`, `service.version`, `service.instance.id` = `instance_id` (backend-assigned role-session-name from the STS ARN; stored via `observability.SetInstanceID` after identity exchange, before `BindExporter` runs).
+- **Resource attributes** (per OTel signal): `service.name="agent"`, `service.version` (build-stamped), `service.instance.id` (backend-assigned via identity exchange), and `deployment.environment.name` (arrives via ConfigUpdate from backend `Settings.environment`; absent when ConfigUpdate carries an empty value).
 - **Span / metric attributes** (post-exchange): `org_id`, `agent_id` — stamped on every span automatically by `DimProcessor` (registered in `observability.wireProviders`); per-span code never sets them explicitly. Per-command spans also carry `workspace_id`, `command_id`, `kind`.
 - **Base slog logger**: the supervisor calls `slog.SetDefault(slog.Default().With("org_id", ..., "agent_id", ...))` after first exchange so every subsequent `slog.*` call emits both dimensions automatically.
-- **OTLP disabled**: `observability.Init` is a no-op; instruments resolve to no-op SDK providers. Zero overhead.
+- **Before ConfigUpdate**: SDK uninstalled — all instruments resolve to no-op providers; agent ships no telemetry. ConfigUpdate is the only install trigger. The agent reads no `OTEL_*` env vars.
 
 `DimProcessor` reads the current dim values at `OnStart` time from the module-level dim store. Pre-identity-exchange spans (e.g. `agent.identity_exchange`) emit without `org_id`/`agent_id` — the processor is a no-op while either value is empty.
 

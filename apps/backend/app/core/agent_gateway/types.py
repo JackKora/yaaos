@@ -115,6 +115,8 @@ class AgentConfig(BaseModel):
     max_workspaces is the org/global default cap on concurrent Active workspaces.
     The OTLP fields carry the agent's telemetry export destination;
     otlp_token is treated as a secret and must not be logged.
+    environment is the OTel deployment.environment.name resource attribute,
+    sourced from Settings.environment (required at backend boot).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -122,6 +124,7 @@ class AgentConfig(BaseModel):
     otlp_endpoint: str | None = None
     otlp_token: SecretStr | None = None
     otlp_dataset: str | None = None
+    environment: str | None = None
 
     @field_serializer("otlp_token", when_used="json")
     def _serialize_otlp_token(self, v: SecretStr | None) -> str | None:

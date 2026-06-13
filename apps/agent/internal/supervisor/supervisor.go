@@ -1029,8 +1029,15 @@ func (s *Supervisor) ApplyConfig(cfg command.AgentConfig) {
 		"max_workspaces", cfg.MaxWorkspaces,
 		"otlp_endpoint", cfg.OTLPEndpoint,
 		"otlp_dataset", cfg.OTLPDataset,
+		"environment", cfg.Environment,
 	)
 	// Late-bind the OTLP exporter. When OTLPEndpoint is set, installs the
 	// exporter into the global OTel providers. No-op when endpoint is empty.
-	observability.BindExporter(context.Background(), cfg.OTLPEndpoint, cfg.OTLPToken.Value(), cfg.OTLPDataset)
+	observability.BindExporter(
+		context.Background(),
+		cfg.OTLPEndpoint,
+		cfg.OTLPToken.Value(),
+		cfg.OTLPDataset,
+		cfg.Environment,
+	)
 }

@@ -55,6 +55,26 @@ def test_build_config_update_populates_otlp_fields(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.service
+def test_build_config_update_populates_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_build_config_update carries Settings.environment as AgentConfig.environment,
+    and it appears in the JSON-mode model_dump.
+    """
+    import app.core.agent_gateway.service as svc  # noqa: PLC0415
+    from app.core.config import get_settings  # noqa: PLC0415
+
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+
+    get_settings.cache_clear()
+    try:
+        cmd = svc._build_config_update()
+        json_dump = cmd.config.model_dump(mode="json")
+        assert json_dump["environment"] == "staging"
+        assert cmd.config.environment == "staging"
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.service
 def test_agent_config_otlp_token_redacted_in_logs() -> None:
     """str(), repr(), and model_dump() all redact otlp_token; only
     model_dump(mode='json') exposes the raw value (wire-encode boundary)."""
