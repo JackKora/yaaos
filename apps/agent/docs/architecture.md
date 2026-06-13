@@ -124,7 +124,7 @@ All three OTel signals (traces, metrics, logs) share two standard dimensions on 
 | `workspace.runclaude` | `workspace.handle.InvokeClaudeCode` | `realhandler.go` `RunClaude` | |
 | `agent.identity_exchange` | inherits caller context; root at current call sites | `supervisor.go` `exchangeIdentity` | |
 | `agent.identity_refresh` | inherits caller context; root at current call sites | `supervisor.go` `runOneRefreshCycle` | |
-| `agent.claim` | none (per HTTP call, NOT per loop iteration) | `supervisor.go` `claimLoop` | |
+| `agent.claim` | none (per HTTP call, NOT per loop iteration) | `supervisor.go` `claimLoop` | `ErrNoCommand` (HTTP 204 — no command available) is the normal long-poll outcome; it closes the span with status Unset, not Error |
 | `agent.activity_ws.dial` | none (per dial attempt, NOT per message) | `supervisor.go` `dialAndStartWS` | |
 
 Grep recipe: `rg -n "tracing.StartSpan" apps/agent/internal/`

@@ -668,12 +668,13 @@ func (s *Supervisor) claimLoop(ctx context.Context, workerNum int) {
 		}
 		_, endClaim := tracing.StartSpan(ctx, "agent.claim")
 		raw, err := s.client.ClaimCommand(ctx, s.buildClaimRequest())
+		if err == protocol.ErrNoCommand {
+			endClaim(nil)
+			s.claimBackoff.Reset()
+			continue
+		}
 		endClaim(err)
 		if err != nil {
-			if err == protocol.ErrNoCommand {
-				s.claimBackoff.Reset()
-				continue
-			}
 			if ctx.Err() != nil {
 				return
 			}
