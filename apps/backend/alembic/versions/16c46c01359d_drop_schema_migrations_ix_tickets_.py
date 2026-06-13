@@ -37,7 +37,13 @@ def upgrade() -> None:
        from the model when the idempotency story moved elsewhere; the index
        remained behind.
     """
-    op.drop_table("schema_migrations")
+    # Idempotent: safe on both old DBs (carrying the relics + an unnamed FK)
+    # and fresh DBs built from 0001_baseline (no relics; FK already created
+    # under the canonical name). Per CLAUDE.md "Idempotent migrations" rule.
+    op.execute(sa.text("DROP TABLE IF EXISTS schema_migrations"))
+    op.execute(
+        sa.text("ALTER TABLE mcp_review_tokens DROP CONSTRAINT IF EXISTS mcp_review_tokens_review_id_fkey")
+    )
     op.create_foreign_key(
         "mcp_review_tokens_review_id_fkey",
         "mcp_review_tokens",
@@ -46,11 +52,7 @@ def upgrade() -> None:
         ["id"],
         ondelete="CASCADE",
     )
-    op.drop_index(
-        op.f("ix_tickets_idempotency_key"),
-        table_name="tickets",
-        postgresql_where="(idempotency_key IS NOT NULL)",
-    )
+    op.execute(sa.text("DROP INDEX IF EXISTS ix_tickets_idempotency_key"))
 
 
 def downgrade() -> None:
