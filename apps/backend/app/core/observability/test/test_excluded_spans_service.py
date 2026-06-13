@@ -1,13 +1,14 @@
 """Service test — FastAPIInstrumentor `exclude_spans` suppresses `http send` and
 `http receive` ASGI lifecycle child spans.
 
-Every FastAPI request span previously had two INTERNAL child spans:
+The FastAPI instrumentor's underlying ASGI middleware can emit two INTERNAL
+child spans on every request span — one per ASGI lifecycle event:
   - "<method> <path> http receive"
   - "<method> <path> http send"
 
-These carry no attributes and no children — pure trace-tree noise. The
-`exclude_spans=["send", "receive"]` kwarg (available since OTel-contrib
-0.49b0; pinned at 0.58b0) suppresses them. This test asserts they are absent.
+They carry no attributes and no children. The `exclude_spans=["send",
+"receive"]` kwarg (available since OTel-contrib 0.49b0; pinned at 0.58b0)
+suppresses them. This test asserts they are absent.
 
 Isolation note: the test builds its own minimal FastAPI app and instruments it
 directly via `instrument_app(exclude_spans=...)` so the result is independent
