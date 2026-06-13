@@ -17,6 +17,8 @@
 
 **Health probes are not traced** — `TRACE_EXCLUDED_URLS` (`"api/health"`) is passed to the FastAPI instrumentor (both the global `instrument()` in `_configure_otel` and the fallback `instrument_app()` in `core/webserver`), so `/api/health` produces no HTTP server span. The health DB ping (`core/database.ping()`, used by web `/api/health` and worker `/health`) runs inside `suppress_instrumentation()` so the constant probes emit no SQLAlchemy span either. Fly's machine checker hits health every few seconds; tracing each probe would be pure noise.
 
+**ASGI lifecycle child spans are suppressed** — `TRACE_EXCLUDE_INTERNAL_SPANS` (`("send", "receive")`) is passed as `exclude_spans=` to the FastAPI instrumentor (same two call sites as `TRACE_EXCLUDED_URLS`). Without this, every request span had two empty INTERNAL child spans (`<method> <path> http send` and `<method> <path> http receive`); they carry no attributes and no descendants — pure trace-tree noise. Both constants are exported from `app.core.observability`.
+
 **Exporter no-arg construction** — exporters are constructed with NO `endpoint=` / `headers=` kwargs. The SDK reads `OTEL_EXPORTER_OTLP_ENDPOINT` (base URL, e.g. `https://ingress.<region>.aws.dash0.com`) and appends `/v1/{traces,metrics,logs}` per signal; `OTEL_EXPORTER_OTLP_HEADERS` carries the `Authorization: Bearer …,Dash0-Dataset: …` pair. Passing `endpoint=` explicitly skips the per-signal append → bare-base 404, telemetry silently dropped.
 
 **`configure(role=...)` must be called once at boot** — `"app"` from `web.py`, `"worker"` from `core/tasks/runtime.py`. Sets `service.name` accordingly. Idempotent (module-level `_initialized` flag + OTel "already instrumented" guard).
@@ -57,6 +59,8 @@
 - `spawn(name, coro, *, tracer?)` — fire-and-forget background task: OTel span + exception recording + error log. `tracer=` injection point for tests.
 - `current_traceparent()`, `restore_traceparent_context(tp)`, `with_remote_parent_span(tracer, name, tp)` — wire-protocol trace helpers.
 - `SlowRequestLogMiddleware`, `SLOW_REQUEST_THRESHOLD_MS` — slow-request logging middleware.
+- `TRACE_EXCLUDED_URLS` — comma-delimited path regexes passed as `excluded_urls=` to `FastAPIInstrumentor`; suppresses spans for matching paths (currently `/api/health`).
+- `TRACE_EXCLUDE_INTERNAL_SPANS` — tuple of ASGI span name suffixes passed as `exclude_spans=` to `FastAPIInstrumentor`; suppresses the empty `http send` / `http receive` INTERNAL child spans on every request span.
 - `active_task_count()` — number of in-flight spawned tasks (test helper).
 - `YaaosDimensionsSpanProcessor` — `SpanProcessor` that stamps standard yaaos dims on every span at creation (see § Standard dims below).
 

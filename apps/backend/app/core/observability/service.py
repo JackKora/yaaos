@@ -40,6 +40,13 @@ Role = Literal["app", "worker"]
 # request path, so the bare substring covers the leading-slash form.
 TRACE_EXCLUDED_URLS = "api/health"
 
+# ASGI low-level lifecycle spans the FastAPI instrumentor emits as INTERNAL
+# children of every request span. They carry no attributes (no body size, no
+# status), no descendants — pure trace-tree noise. Pass to `exclude_spans=`
+# on `FastAPIInstrumentor.instrument(...)`. Available since OTel-contrib
+# 0.49b0; the lock pins 0.58b0.
+TRACE_EXCLUDE_INTERNAL_SPANS: tuple[str, ...] = ("send", "receive")
+
 _initialized = False
 
 # Module-level provider references for shutdown — set once by _configure_otel.
@@ -483,7 +490,10 @@ def _configure_otel(
     # Idempotent: already-instrumented raises on a second call, which only
     # matters for tests that reload the module. Swallow that case explicitly.
     try:
-        FastAPIInstrumentor().instrument(excluded_urls=TRACE_EXCLUDED_URLS)
+        FastAPIInstrumentor().instrument(
+            excluded_urls=TRACE_EXCLUDED_URLS,
+            exclude_spans=list(TRACE_EXCLUDE_INTERNAL_SPANS),
+        )
     except Exception:
         pass
     try:
