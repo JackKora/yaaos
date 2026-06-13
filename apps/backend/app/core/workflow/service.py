@@ -212,7 +212,36 @@ async def _start_step_impl(
                     f"WorkflowCommand kind '{step.command_kind}' has category=workspace "
                     f"but does not implement WorkspaceWorkflowCommand.dispatch"
                 )
-            command_id = await command.dispatch(inputs, cmd_ctx, session=s)
+            outer_span = trace.get_current_span()
+            kind = command.kind  # type: ignore[attr-defined]
+            with _tracer.start_as_current_span(f"workflow.command.{kind}") as cmd_span:
+                cmd_span.set_attribute("command.kind", kind)
+                cmd_span.set_attribute("command.category", "workspace")
+                cmd_span.set_attribute("workflow.step_id", step_id)
+                cmd_span.set_attribute("workflow.attempt", attempt)
+                # Rebuild CommandContext with the command span's own traceparent so
+                # downstream dispatch (→ enqueue_command → agent) parents correctly.
+                ws_cmd_ctx = CommandContext(
+                    workflow_execution_id=cmd_ctx.workflow_execution_id,
+                    ticket_id=cmd_ctx.ticket_id,
+                    step_id=cmd_ctx.step_id,
+                    attempt=cmd_ctx.attempt,
+                    traceparent=current_traceparent(),
+                )
+                try:
+                    command_id = await command.dispatch(inputs, ws_cmd_ctx, session=s)
+                except Exception as exc:
+                    cmd_span.record_exception(exc)
+                    cmd_span.set_status(StatusCode.ERROR, str(exc))
+                    outer_span.set_status(StatusCode.ERROR, str(exc))
+                    log.exception(
+                        "workflow.command.workspace_dispatch_raised",
+                        workflow_execution_id=workflow_execution_id,
+                        step_id=step_id,
+                    )
+                    await _enter_terminal_state(s, wfx, WorkflowState.FAILED)
+                    await s.commit()
+                    return
             wfx.pending_agent_command_id = command_id
             wfx.state = WorkflowState.AWAITING_AGENT.value
             _publish_state_changed(s, wfx)
@@ -1419,6 +1448,8 @@ async def _safe_execute(
     outer_span = trace.get_current_span()
     kind = command.kind  # type: ignore[attr-defined]
     with _tracer.start_as_current_span(f"workflow.command.{kind}") as child_span:
+        child_span.set_attribute("command.kind", kind)
+        child_span.set_attribute("command.category", command.category.value)  # type: ignore[attr-defined]
         try:
             # Pass raw inputs through; commands are responsible for parsing
             # their typed inputs from the raw dict via Pydantic if they care.

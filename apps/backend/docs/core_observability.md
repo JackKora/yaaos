@@ -59,9 +59,9 @@
 | `workflow.start_step` | `core/workflow/service.py` | command raises or returns `Outcome.failure` |
 | `workflow.route_workflow` | `core/workflow/service.py` | `outcome_label` is not `"success"` |
 | `workflow.handle_agent_event` | `core/workflow/service.py` | (never set to ERROR currently) |
-| `workflow.command.{kind}` | `core/workflow/service.py` (`_safe_execute`) | command raises (with `exception` event) or returns `Outcome.failure` (no event) |
+| `workflow.command.{kind}` | `core/workflow/service.py` (`_start_step_impl` for Workspace; `_safe_execute` for Local/HITL) | command raises (with `exception` event) or returns `Outcome.failure` (no event) |
 
-`workflow.command.{kind}` is the per-command child span inside `_safe_execute`. It nests under the active `workflow.start_step` span. Both receive `StatusCode.ERROR` on any failure outcome; only the exception path adds an `exception` span event. See [`patterns.md § Exception visibility`](patterns.md#exception-visibility--record_exception-rule) for the rule and canonical shape.
+`workflow.command.{kind}` is the per-command child span opened for every command category at the same tree depth under `workflow.start_step`. For Workspace commands it wraps the `dispatch()` call in `_start_step_impl`; for Local/HITL it wraps `execute()` inside `_safe_execute`. Both receive `StatusCode.ERROR` on any failure outcome; only the exception path adds an `exception` span event. See [`patterns.md § Exception visibility`](patterns.md#exception-visibility--record_exception-rule) for the rule and canonical shape.
 
 **`SlowRequestLogMiddleware`** — emits `http.slow_request` warn for requests ≥ `SLOW_REQUEST_THRESHOLD_MS` (default 500ms). Never throws.
 
