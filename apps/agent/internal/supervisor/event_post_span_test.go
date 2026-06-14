@@ -12,23 +12,25 @@ import (
 	"github.com/yaaos/agent/internal/tracing"
 )
 
-// TestSupervisor_EventPostSpan_StaleClaimIsNotError verifies that a 410
-// response from the command events endpoint (ErrStaleClaim — the documented
-// "backend has already reaped this claim" outcome) closes the "agent.event_post"
-// span with Status.Code = Unset, not Error, and that postTerminalEvent returns nil.
-func TestSupervisor_EventPostSpan_StaleClaimIsNotError(t *testing.T) {
+// TestSupervisor_EventPostSpan_StaleClaimDroppedOutcome verifies that a 200
+// stale_claim_dropped response closes the "agent.event_post" span with
+// Status.Code = Unset and carries command_event.outcome = stale_claim_dropped,
+// and that postTerminalEvent returns nil.
+func TestSupervisor_EventPostSpan_StaleClaimDroppedOutcome(t *testing.T) {
 	exp := tracing.Init(true)
 	defer exp.Reset()
 	t.Cleanup(func() { tracing.Init(false) })
 
 	const cmdID = "cmd-stale-test"
 
-	// httptest.Server that returns 410 Gone for the terminal-event POST.
+	// httptest.Server that returns 200 stale_claim_dropped for the terminal-event POST.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			strings.Contains(r.URL.Path, "/api/v1/commands/") &&
 			strings.HasSuffix(r.URL.Path, "/events") {
-			w.WriteHeader(http.StatusGone)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"command_event_outcome":"stale_claim_dropped"}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -66,7 +68,7 @@ func TestSupervisor_EventPostSpan_StaleClaimIsNotError(t *testing.T) {
 	ctx := t.Context()
 	err := s.postTerminalEvent(ctx, header, event)
 	if err != nil {
-		t.Fatalf("postTerminalEvent returned non-nil error on 410: %v", err)
+		t.Fatalf("postTerminalEvent returned non-nil error on stale_claim_dropped: %v", err)
 	}
 
 	spans := exp.GetSpans()
@@ -85,16 +87,26 @@ func TestSupervisor_EventPostSpan_StaleClaimIsNotError(t *testing.T) {
 		t.Fatalf("no agent.event_post span found; all spans: %v", names)
 	}
 	if len(postIdxs) != 1 {
-		t.Errorf("want exactly 1 agent.event_post span for single 410 attempt, got %d", len(postIdxs))
+		t.Errorf("want exactly 1 agent.event_post span for single attempt, got %d", len(postIdxs))
 	}
 	sp := spans[postIdxs[0]]
 	if got := sp.Status.Code.String(); got != "Unset" {
-		t.Errorf("agent.event_post span Status.Code on 410: want Unset, got %s", got)
+		t.Errorf("agent.event_post span Status.Code on stale_claim_dropped: want Unset, got %s", got)
 	}
 	for _, ev := range sp.Events {
 		if ev.Name == "exception" {
-			t.Errorf("unexpected exception event on agent.event_post span for 410: event=%v", ev)
+			t.Errorf("unexpected exception event on agent.event_post span: event=%v", ev)
 		}
+	}
+	// Assert command_event.outcome attribute is stamped.
+	var outcomeAttr string
+	for _, a := range sp.Attributes {
+		if string(a.Key) == "command_event.outcome" {
+			outcomeAttr = a.Value.AsString()
+		}
+	}
+	if outcomeAttr != "stale_claim_dropped" {
+		t.Errorf("command_event.outcome attribute: want stale_claim_dropped, got %q", outcomeAttr)
 	}
 }
 
@@ -120,7 +132,9 @@ func TestSupervisor_EventPostSpan_TransientErrorThenSuccessRecordsBoth(t *testin
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"command_event_outcome":"event_recorded"}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -179,8 +193,17 @@ func TestSupervisor_EventPostSpan_TransientErrorThenSuccessRecordsBoth(t *testin
 	if got := spans[postIdxs[0]].Status.Code.String(); got != "Error" {
 		t.Errorf("first agent.event_post span (500): want Error, got %s", got)
 	}
-	// Second span: the 200 → should be Unset.
+	// Second span: the 200 → should be Unset with event_recorded outcome.
 	if got := spans[postIdxs[1]].Status.Code.String(); got != "Unset" {
 		t.Errorf("second agent.event_post span (200): want Unset, got %s", got)
+	}
+	var outcomeAttr string
+	for _, a := range spans[postIdxs[1]].Attributes {
+		if string(a.Key) == "command_event.outcome" {
+			outcomeAttr = a.Value.AsString()
+		}
+	}
+	if outcomeAttr != "event_recorded" {
+		t.Errorf("second span command_event.outcome: want event_recorded, got %q", outcomeAttr)
 	}
 }

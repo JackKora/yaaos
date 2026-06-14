@@ -732,14 +732,18 @@ func (s *Supervisor) postReceivedEvent(ctx context.Context, header protocol.Comm
 		Traceparent:     header.Traceparent,
 		CompletionToken: header.CompletionToken,
 	}
-	if err := s.client.PostCommandEvent(ctx, header.CommandID, ev); err != nil {
-		if err != protocol.ErrStaleClaim {
-			s.log.Warn("supervisor.received_event_failed",
-				"command_id", header.CommandID,
-				"err", err.Error(),
-			)
-		}
+	ack, err := s.client.PostCommandEvent(ctx, header.CommandID, ev)
+	if err != nil {
+		s.log.Warn("supervisor.received_event_failed",
+			"command_id", header.CommandID,
+			"err", err.Error(),
+		)
+		return
 	}
+	s.log.Info("supervisor.received_event_posted",
+		"command_id", header.CommandID,
+		"command_event_outcome", ack.Outcome,
+	)
 }
 
 // heartbeatLoop reports liveness + workspace registry snapshot on the
@@ -866,7 +870,7 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 			s.conductor.Publish(header.WorkspaceID, pev)
 			return
 		}
-		if perr := s.client.PostCommandEvent(ctx, header.CommandID, pev); perr != nil {
+		if _, perr := s.client.PostCommandEvent(ctx, header.CommandID, pev); perr != nil {
 			s.log.Warn("supervisor.progress_post_failed",
 				"command_id", header.CommandID, "err", perr.Error())
 		}
@@ -933,31 +937,31 @@ func (s *Supervisor) routeCommand(ctx context.Context, cmd command.Command) {
 }
 
 // postTerminalEvent posts a terminal AgentEvent to the control plane with
-// backoff retry. It stops on success (nil) or ErrStaleClaim (410 Gone —
-// the claim is no longer valid; drop silently). On 401/403 it attempts a
-// fresh identity exchange before retrying so that a bearer expiry during a
-// long-running workspace command does not block the terminal event post
-// indefinitely. Any other error is retried on a per-call backoff ramp (see
-// s.eventPostSteps). Progress events are NOT routed here — they remain
+// backoff retry. It stops on any 200 response (success). On 401/403 it
+// attempts a fresh identity exchange before retrying so that a bearer expiry
+// during a long-running workspace command does not block the terminal event
+// post indefinitely. Any other error is retried on a per-call backoff ramp
+// (see s.eventPostSteps). Progress events are NOT routed here — they remain
 // best-effort single-shot.
 func (s *Supervisor) postTerminalEvent(ctx context.Context, header protocol.CommandHeader, event protocol.AgentEvent) error {
 	eventPostBackoff := backoff.NewWithSteps(s.eventPostSteps)
 	for {
-		_, endPost := tracing.StartSpan(ctx, "agent.event_post",
+		spanCtx, endPost := tracing.StartSpan(ctx, "agent.event_post",
 			attribute.String("command_id", header.CommandID),
 			attribute.String("kind", string(header.Kind)),
 		)
-		err := s.client.PostCommandEvent(ctx, header.CommandID, event)
+		ack, err := s.client.PostCommandEvent(ctx, header.CommandID, event)
 		if err == nil {
-			// Acked — done.
+			// 200 — stamp the outcome attribute and log uniformly.
+			oteltrace.SpanFromContext(spanCtx).SetAttributes(
+				attribute.String("command_event.outcome", ack.Outcome),
+			)
 			endPost(nil)
-			return nil
-		}
-		if err == protocol.ErrStaleClaim {
-			// 410 Gone — the backend no longer holds this claim.
-			// Drop silently; re-delivering would be wrong.
-			endPost(nil)
-			s.log.Info("supervisor.event_stale_claim", "command_id", header.CommandID)
+			s.log.Info("supervisor.event_posted",
+				"command_id", header.CommandID,
+				"kind", string(header.Kind),
+				"command_event_outcome", ack.Outcome,
+			)
 			return nil
 		}
 		// Record the error on this attempt's span before handling auth / retry.
