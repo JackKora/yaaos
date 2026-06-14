@@ -71,8 +71,9 @@ func TestSupervisor_ClaimSpan_ShutdownCancellationIsNotError(t *testing.T) {
 		s.claimLoop(ctx, 0)
 	}()
 
-	// Give the long-poll goroutine time to start and block inside
-	// ClaimCommand, then cancel the context to simulate SIGTERM.
+	// reason: waiting for the long-poll HTTP request to reach the server
+	// before cancelling; real-time delay (OS network I/O) — not durably
+	// blocked in synctest sense.
 	time.AfterFunc(50*time.Millisecond, cancel)
 	<-done
 

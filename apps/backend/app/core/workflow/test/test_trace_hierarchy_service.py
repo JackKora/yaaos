@@ -16,9 +16,9 @@ same trace.
 
 Three tests:
 
-- `test_workflow_command_parents_to_workflow_run` — regression pin for
-  Phase 8 Layer A: each `workflow.command.<Kind>` must be a DIRECT child
-  of `workflow.run.<name>` (same trace_id AND parent_span_id ==
+- `test_workflow_command_parents_to_workflow_run` — regression guard:
+  every `workflow.command.<Kind>` span is a direct child of
+  `workflow.run.<name>` (same trace_id AND parent_span_id ==
   run_span.span_id). Covers both the Local branch and the Workspace branch.
 
 - `test_workflow_trace_hierarchy_after_workspace_command` — Workspace step
@@ -300,13 +300,10 @@ async def test_workflow_trace_hierarchy_pure_local(db_session) -> None:  # type:
 
 
 async def test_workflow_command_parents_to_workflow_run(db_session) -> None:  # type: ignore[no-untyped-def]
-    """Phase 8 Layer A regression pin.
-
-    Every `workflow.command.<Kind>` span must be a DIRECT child of
-    `workflow.run.<name>` — same trace_id AND parent_span_id equal to the
-    run span's span_id.  Phase 7 broke this by dropping the custom
-    `workflow.start_step` span that was the bridge; Phase 8 restores it by
-    opening `workflow.command.<Kind>` via `with_remote_parent_span(wfx.otel_trace_context)`.
+    """Regression guard: every `workflow.command.<Kind>` span is a direct
+    child of `workflow.run.<name>` — same trace_id AND parent_span_id equal
+    to the run span's span_id. The link is made by opening
+    `workflow.command.<Kind>` via `with_remote_parent_span(wfx.otel_trace_context)`.
 
     Covers both Local and Workspace branches because the two call sites
     differ (Local goes through `_safe_execute`; Workspace goes through
@@ -455,8 +452,9 @@ async def test_workflow_command_parents_to_workflow_run(db_session) -> None:  # 
 
 
 async def test_workflow_task_spans_in_workflow_trace(db_session) -> None:  # type: ignore[no-untyped-def]
-    """Layer B end-to-end pin: enqueued `task:workflow.*` messages carry
-    `wfx.otel_trace_context` in their `metadata.traceparent` field.
+    """Outbox-to-task-span traceparent pipe: enqueued `task:workflow.*`
+    messages carry `wfx.otel_trace_context` in their `metadata.traceparent`
+    field.
 
     This proves the pipe that lets `TaskSpanMiddleware.pre_execute` open
     `task:<name>` spans as children of `workflow.run.<name>`. The middleware

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TaskMetadata(BaseModel):
@@ -34,4 +34,7 @@ class TaskMetadata(BaseModel):
     model_config = {"frozen": True}
 
     org_id: UUID | None = None
-    traceparent: str | None = None
+    # W3C traceparent format is exactly 55 chars (`00-<32hex>-<16hex>-<02hex>`);
+    # cap the length so a malformed outbox payload can't waste memory at parse.
+    # `restore_traceparent_context` discards malformed values via the OTel propagator.
+    traceparent: str | None = Field(default=None, max_length=55)

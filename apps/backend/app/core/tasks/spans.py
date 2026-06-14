@@ -19,14 +19,18 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
 from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode, Tracer
+from pydantic import ValidationError
 from taskiq import TaskiqMessage, TaskiqMiddleware
 from taskiq.result import TaskiqResult
 
 from app.core.observability import restore_traceparent_context
 from app.core.tasks.types import TaskMetadata
+
+log = structlog.get_logger(__name__)
 
 _tracer = trace.get_tracer(__name__)
 
@@ -71,7 +75,15 @@ class TaskSpanMiddleware(TaskiqMiddleware):
                     meta = None
                 if meta is not None and meta.traceparent:
                     parent_ctx = restore_traceparent_context(meta.traceparent)
-            except Exception:
+            except (ValidationError, ValueError) as exc:
+                # Malformed metadata or traceparent — fall back to a root
+                # span and surface the parse failure so ops can distinguish
+                # "traceparent absent" from "traceparent malformed."
+                log.warning(
+                    "task_span_middleware.traceparent_parse_failed",
+                    task_name=message.task_name,
+                    err=str(exc),
+                )
                 parent_ctx = None
 
         # `start_span` only creates the span — it does NOT install it as the

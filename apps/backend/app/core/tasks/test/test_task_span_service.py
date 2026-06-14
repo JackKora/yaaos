@@ -206,7 +206,7 @@ async def test_span_created_in_task_body_nests_under_task_span(db_session) -> No
 @pytest.mark.asyncio
 @pytest.mark.service
 async def test_task_span_uses_metadata_traceparent_as_parent(db_session) -> None:  # type: ignore[no-untyped-def]
-    """Layer B regression pin: when `TaskMetadata.traceparent` is present in the
+    """Regression guard: when `TaskMetadata.traceparent` is present in the
     message labels, `TaskSpanMiddleware.pre_execute` opens the `task:<name>` span
     as a child of the encoded remote span — placing it in the producer's trace.
 

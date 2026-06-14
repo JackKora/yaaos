@@ -109,7 +109,7 @@ async def test_enqueue_with_no_contextvar_and_no_metadata_leaves_metadata_empty(
 
 
 def test_task_metadata_traceparent_roundtrip() -> None:
-    """Layer B: TaskMetadata serializes and deserializes traceparent correctly."""
+    """`TaskMetadata` serializes and deserializes traceparent correctly."""
     from app.core.tasks import TaskMetadata  # noqa: PLC0415
 
     tp = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -128,25 +128,20 @@ def test_task_metadata_traceparent_roundtrip() -> None:
 @pytest.mark.asyncio
 @pytest.mark.service
 async def test_enqueue_autofills_traceparent(db_session) -> None:  # type: ignore[no-untyped-def]
-    """Layer B: `enqueue` stamps the current OTel traceparent into the outbox
-    row's metadata when called inside an active span."""
+    """`enqueue` stamps the current OTel traceparent into the outbox row's
+    metadata when called inside an active span."""
     from opentelemetry import trace  # noqa: PLC0415
-    from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: PLC0415
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter  # noqa: PLC0415
 
     from app.core.observability import current_traceparent  # noqa: PLC0415
     from app.core.tasks.models import OutboxEntryRow  # noqa: PLC0415
+    from app.testing.observability import span_capture  # noqa: PLC0415
 
-    # Set up a minimal TracerProvider so current_traceparent() returns a real value.
-    exporter = InMemorySpanExporter()
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(exporter))
-    prev_provider = trace.get_tracer_provider()
-    trace.set_tracer_provider(provider)
-
-    try:
-        tracer = provider.get_tracer("test_autofill_tp")
+    # span_capture() ensures a real TracerProvider is installed globally so
+    # current_traceparent() returns a non-None value inside an active span.
+    # The captured spans themselves aren't inspected here — the assertion is
+    # on the outbox row's metadata.traceparent.
+    with span_capture():
+        tracer = trace.get_tracer("test_autofill_tp")
 
         async def _task_d() -> None:
             return None
@@ -170,5 +165,3 @@ async def test_enqueue_autofills_traceparent(db_session) -> None:  # type: ignor
             assert meta.get("traceparent") == expected_tp, (
                 f"expected traceparent={expected_tp!r}; got {meta.get('traceparent')!r}"
             )
-    finally:
-        trace.set_tracer_provider(prev_provider)

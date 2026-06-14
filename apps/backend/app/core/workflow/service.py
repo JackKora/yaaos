@@ -1454,11 +1454,10 @@ async def _safe_execute(
     """Call command.execute(inputs, ctx) inside a `workflow.command.{kind}`
     child span.
 
-    `traceparent` is the `workflow.run.<name>` span's own traceparent
-    (from `wfx.otel_trace_context`). When provided, the command span opens
-    as a direct child of `workflow.run` via `with_remote_parent_span` —
-    keeping it in the workflow's trace even when the taskiq dequeue context
-    has no active span (different trace).
+    `traceparent`: W3C traceparent string of the target parent span. When
+    provided, the command span opens as a direct child of that span via
+    `with_remote_parent_span`, staying in the caller's trace regardless of
+    the current dequeue context. When None, opens a root span.
 
     On exception: records the exception on the child span + marks it ERROR,
     then propagates ERROR to the caller's active span (the taskiq task span)
