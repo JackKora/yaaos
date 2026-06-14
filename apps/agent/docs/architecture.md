@@ -125,7 +125,7 @@ All three OTel signals (traces, metrics, logs) share two standard dimensions on 
 | `agent.identity_exchange` | inherits caller context; root at current call sites | `supervisor.go` `exchangeIdentity` | |
 | `agent.identity_refresh` | inherits caller context; root at current call sites | `supervisor.go` `runOneRefreshCycle` | |
 | `agent.claim` | none (per HTTP call, NOT per loop iteration) | `supervisor.go` `claimLoop` | `ErrNoCommand` (HTTP 204 — no command available) is the normal long-poll outcome; it closes the span with status Unset, not Error. Context cancellation during graceful shutdown (SIGTERM tearing the long-poll connection) also closes the span with status Unset, not Error |
-| `agent.event_post` | the dispatch span that produced the event (`supervisor.dispatch.<kind>` or `workspace.handle.<kind>` ancestor) | `supervisor.go` `postTerminalEvent` | `command_id`, `kind`, `command_event.outcome` (one of `event_recorded`, `stale_claim_dropped`); one span per HTTP attempt inside the retry loop. The backend always returns 200; the `command_event.outcome` attribute carries the outcome classification (semantic, not HTTP-coded). |
+| `agent.event_post` | the dispatch span that produced the event (`supervisor.dispatch.<kind>` or `workspace.handle.<kind>` ancestor) | `supervisor.go` `postTerminalEvent` | `command_id`, `kind`, `command_event.outcome` (`event_recorded` on 200); one span per HTTP attempt inside the retry loop. HTTP 410 (stale claim) closes the span Unset with no `command_event.outcome` attribute and no retry — the span inventory entry still appears once per attempt. |
 | `agent.activity_ws.dial` | none (per dial attempt, NOT per message) | `supervisor.go` `dialAndStartWS` | |
 
 Grep recipe: `rg -n "tracing.StartSpan" apps/agent/internal/`
@@ -144,7 +144,8 @@ Rationale: an agent instance that silently continues operating under a different
 
 The supervisor runs these goroutines concurrently after identity exchange:
 
-- **N claim workers** (`Config.Concurrency`, default 4) — each runs its own `claimLoop`; they share the `Pool` (mutex-guarded) and the `protocol.Client` (inherently safe).
+- **N claim workers** (`Config.Concurrency`, default 1) — each runs its own `claimLoop`; after claiming and decoding a command, the claim worker increments `inFlightDispatch`, spawns a `dispatch` goroutine for that command, and immediately re-arms for the next claim. They share the `Pool` (mutex-guarded) and the `protocol.Client` (inherently safe). `buildClaimRequest` uses a 1-second short poll when `inFlightDispatch > 0` — preventing a 30-second stall before the goroutine's Pool.Dispatch registers the workspace in the pool.
+- **Dispatch goroutines** (one per claimed command) — own `postReceivedEvent` + `routeCommand` + `postTerminalEvent`; run a `defer recover()` that converts panics to `completed_failure` events; decrement `inFlightDispatch` (via `defer`) after `routeCommand` returns. Not in `Run()`'s WaitGroup; abandoned best-effort on shutdown (backend failsafe owns in-flight recovery).
 - **Heartbeat loop** — fires on `Config.HeartbeatInterval` (default 30 s); reads `Pool.Snapshot()` under the pool's lock.
 - **Bearer refresh loop** — wakes ~1 h before bearer expiry; calls `exchangeIdentity` and `client.SetBearer` (atomic store).
 - **Disk sweep loop** — fires every 5 min; reads `Pool.KnownIDs()` under the pool's lock; calls `os.RemoveAll` for orphan dirs.
