@@ -190,9 +190,9 @@ func TestEventPostRetry_StaleClaimStopsImmediately(t *testing.T) {
 	s.routeCommand(ctx, cmd)
 
 	calls := atomic.LoadInt32(&srv.callCount)
-	// Exactly one attempt — stale_claim_dropped is a success, loop stops.
+	// Exactly one attempt — a 410 stale claim is dropped without retry.
 	if calls != 1 {
-		t.Errorf("want exactly 1 POST attempt on stale_claim_dropped, got %d", calls)
+		t.Errorf("want exactly 1 POST attempt on 410 stale claim, got %d", calls)
 	}
 }
 

@@ -97,9 +97,9 @@ Two outcome attributes coexist — they describe different perspectives:
   - `acked` — backend returned 200.
   - `stale_claim` — backend returned 410 (retired command row); not an error.
   - `network_error` — transient or auth error; the attempt will be retried.
-- `command_event.outcome` (string, **backend perspective** — existing) — set only on 200, carries the backend's classification (e.g. `event_recorded`, `stale_claim_dropped`). Absent on non-200 spans.
+- `command_event.outcome` (string, **backend perspective** — existing) — set only on 200, carries the backend's classification (`event_recorded`). Absent on non-200 spans (a stale claim is a 410 with no ack body, surfaced via `event_post.outcome="stale_claim"`).
 
-Use `event_post.outcome="network_error"` for SRE alerting on transient delivery failures (set a threshold, not alert-on-any). Use `command_event.outcome` for backend-semantic queries (e.g. how often is `stale_claim_dropped` returned).
+Use `event_post.outcome="network_error"` for SRE alerting on transient delivery failures (set a threshold, not alert-on-any). Use `event_post.outcome="stale_claim"` to alert on retired-row drops (zero in steady state — any hit is paging-worthy).
 
 ## Gotchas
 
