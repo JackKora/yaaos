@@ -363,12 +363,12 @@ func TestClaimOutcomeCounterIncrementsByBucket(t *testing.T) {
 		<-done
 	})
 
-	// After driving all four buckets, assert the counter has one increment per
-	// outcome. Each sub-test runs sequentially and increments exactly one bucket
-	// (except that the cancel sub-test might also produce a preceding 204 since
-	// the blocking server doesn't serve 204 — it returns after unblock. The
-	// cancel bucket is driven by blocking + ctx-cancel). Each sub-test drives
-	// exactly one span per bucket path.
+	// After driving all four buckets, assert the counter has at least one
+	// increment per outcome. Each sub-test runs sequentially and drives its own
+	// bucket, but the count per bucket is not strictly deterministic — the cancel
+	// sub-test can also produce a preceding no_command increment (the blocking
+	// server returns only after unblock, so a claim may resolve 204 before the
+	// ctx-cancel lands). Hence the assertion below is `>= 1`, not `== 1`.
 	sums := capture.CounterSums(t, "yaaos.agent.claim.outcome", "outcome")
 	for _, outcome := range []string{"no_command", "error", "cancel", "command"} {
 		if sums[outcome] < 1 {
