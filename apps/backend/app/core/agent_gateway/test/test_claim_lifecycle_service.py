@@ -10,7 +10,7 @@ Verifies:
 
 from __future__ import annotations
 
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid7
 
 import pytest
 from sqlalchemy import select
@@ -41,7 +41,7 @@ async def _make_agent(db_session, *, org_id: UUID | None = None) -> UUID:
 
 def _make_write_cmd(workspace_id: UUID) -> WriteFilesCommand:
     return WriteFilesCommand(
-        command_id=uuid4(),
+        command_id=uuid7(),
         workspace_id=workspace_id,
         traceparent="00-aabb-1122-01",
         files=(WriteFilesEntry(path="hello.txt", content="hello"),),
@@ -50,7 +50,7 @@ def _make_write_cmd(workspace_id: UUID) -> WriteFilesCommand:
 
 def _make_provision_cmd(workspace_id: UUID | None = None) -> ProvisionWorkspaceCommand:
     return ProvisionWorkspaceCommand(
-        command_id=uuid4(),
+        command_id=uuid7(),
         workspace_id=workspace_id or uuid4(),
         traceparent="00-aabb-1122-01",
         repo=RepoRef(

@@ -14,7 +14,7 @@ Verifies:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid7
 
 import pytest
 from sqlalchemy import select, update
@@ -43,7 +43,7 @@ from app.testing.seed import seed_agent
 
 def _make_provision_cmd(workspace_id: UUID | None = None) -> ProvisionWorkspaceCommand:
     return ProvisionWorkspaceCommand(
-        command_id=uuid4(),
+        command_id=uuid7(),
         workspace_id=workspace_id or uuid4(),
         traceparent="00-aabbccdd-1122-01",
         repo=RepoRef(
@@ -61,7 +61,7 @@ def _make_provision_cmd(workspace_id: UUID | None = None) -> ProvisionWorkspaceC
 
 def _make_write_cmd(workspace_id: UUID) -> WriteFilesCommand:
     return WriteFilesCommand(
-        command_id=uuid4(),
+        command_id=uuid7(),
         workspace_id=workspace_id,
         traceparent="00-aabbccdd-1122-01",
         files=(WriteFilesEntry(path="hello.txt", content="hello"),),
@@ -70,7 +70,7 @@ def _make_write_cmd(workspace_id: UUID) -> WriteFilesCommand:
 
 def _make_cleanup_cmd(workspace_id: UUID) -> CleanupWorkspaceCommand:
     return CleanupWorkspaceCommand(
-        command_id=uuid4(),
+        command_id=uuid7(),
         workspace_id=workspace_id,
         traceparent="00-aabbccdd-1122-01",
     )
@@ -206,7 +206,7 @@ async def test_unconfigured_claim_returns_only_config_update(db_session) -> None
     commands in the queue remain pending."""
     org_id = uuid4()
     agent_id = await _make_agent(db_session, org_id=org_id)
-    ws_id = uuid4()
+    ws_id = uuid7()
     cmd = _make_provision_cmd(ws_id)
     await enqueue_command(org_id=org_id, command=cmd, session=db_session)
     await enqueue_config_update_for_agent(agent_id, org_id=org_id, session=db_session)
@@ -574,7 +574,7 @@ def test_command_base_workflow_execution_id_round_trip() -> None:
 
     wfx_id = uuid4()
     cmd = ProvisionWorkspaceCommand(
-        command_id=uuid4(),
+        command_id=uuid7(),
         workspace_id=uuid4(),
         traceparent="00-aabbccdd-1122-01",
         workflow_execution_id=wfx_id,

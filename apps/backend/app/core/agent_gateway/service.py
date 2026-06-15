@@ -106,8 +106,13 @@ async def enqueue_command(
     workspace-row lookup. NULL only for agent-scoped commands that do not
     correlate to a workflow (e.g. `ConfigUpdate`).
 
-    The DB-minted UUIDv7 PK serves as the idempotency key and FIFO sort key.
-    `agent_id` is left NULL at enqueue time; it is stamped by `claim_next`.
+    The caller-supplied command_id becomes the row PK; it serves as the
+    idempotency key and the FIFO sort key (`claim_next` orders by `id`). Producers
+    mint it with `uuid7()` so the PK is time-ordered and claim order matches
+    enqueue order — a random `uuid4` would scramble FIFO delivery. The column's
+    `server_default=text("uuidv7()")` is the fallback for the rare insert that
+    omits `id`. `agent_id` is left NULL at enqueue time; it is stamped by
+    `claim_next`.
 
     Opens an `agent_command.dispatch.{kind}` OTel span covering the full insert.
     `org_id`/`actor_kind`/`workflow_id` are auto-stamped by the
@@ -138,9 +143,8 @@ async def enqueue_command(
             dispatch_tp = current_traceparent()
             if dispatch_tp is not None:
                 command = command.model_copy(update={"traceparent": dispatch_tp})
-            # Override the command_id with the DB-minted UUIDv7 after flush so that
-            # producers stop generating their own UUID4 ids. For now we honour the
-            # caller-supplied id and treat it as the primary key.
+            # The caller-supplied command_id is the row PK and FIFO sort key.
+            # Producers mint it with uuid7() so it is time-ordered (see docstring).
             row = AgentCommandRow(
                 id=command.command_id,
                 org_id=org_id,
@@ -237,13 +241,13 @@ def _build_config_update_dto() -> ConfigUpdateCommand:
     that need to inspect the settings → AgentConfig mapping without going
     through the claim channel.
     """
-    from uuid import uuid4  # noqa: PLC0415
+    from uuid import uuid7  # noqa: PLC0415
 
     from app.core.config import get_settings  # noqa: PLC0415
 
     settings = get_settings()
     return ConfigUpdateCommand(
-        command_id=uuid4(),
+        command_id=uuid7(),
         traceparent="",
         config=AgentConfig(
             max_workspaces=DEFAULT_MAX_WORKSPACES,

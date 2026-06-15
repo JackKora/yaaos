@@ -9,7 +9,7 @@ the backend stamps `command_event.outcome` on the FastAPI request span.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid7
 
 import httpx
 import pytest
@@ -84,7 +84,7 @@ async def test_command_event_stale_claim_returns_410(db_session) -> None:
     `{"error": "stale_claim"}` — matching the workspace-event handler shape."""
     agent_id, org_id, token = await _setup_agent_with_bearer(db_session)
     del agent_id, org_id
-    cmd_id = uuid4()
+    cmd_id = uuid7()
 
     async with _client() as c:
         resp = await c.post(
@@ -107,7 +107,7 @@ async def test_command_event_recorded_returns_200_with_outcome(db_session) -> No
     """A valid event for an existing command returns 200 with
     `command_event_outcome = event_recorded`."""
     agent_id, org_id, token = await _setup_agent_with_bearer(db_session)
-    cmd_id = uuid4()
+    cmd_id = uuid7()
     wfx_id = uuid4()
 
     ws_id = await seed_workspace(
@@ -167,7 +167,7 @@ async def test_command_event_span_carries_outcome_attribute(db_session) -> None:
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # noqa: PLC0415
 
     agent_id, org_id, token = await _setup_agent_with_bearer(db_session)
-    cmd_id = uuid4()
+    cmd_id = uuid7()
     wfx_id = uuid4()
 
     ws_id = await seed_workspace(

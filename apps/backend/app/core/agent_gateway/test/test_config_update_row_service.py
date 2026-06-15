@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import itertools
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid7
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.agent_gateway import bearers, enqueue_command
 from app.core.agent_gateway.models import AgentCommandRow, WorkspaceAgentRow
@@ -86,8 +87,8 @@ async def _make_agent(db_session, *, org_id: UUID | None = None) -> UUID:
 def _make_provision_cmd(org_id: UUID, workspace_id: UUID | None = None) -> ProvisionWorkspaceCommand:
     del org_id  # caller uses separately
     return ProvisionWorkspaceCommand(
-        command_id=uuid4(),
-        workspace_id=workspace_id or uuid4(),
+        command_id=uuid7(),
+        workspace_id=workspace_id or uuid7(),
         traceparent="00-aabbccdd-1122-01",
         repo=RepoRef(
             plugin_id="github",
@@ -307,6 +308,12 @@ async def test_duplicate_enqueue_both_claimed_idempotently(db_session) -> None:
     assert second_token
     assert second.command_id != first.command_id
 
+    # command_id is the agent_commands PK and the FIFO claim sort key
+    # (claim_next orders by id). It must be a time-ordered UUIDv7 so claim order
+    # matches enqueue order; a random uuid4 would scramble FIFO delivery.
+    assert first.command_id.version == 7
+    assert second.command_id.version == 7
+
     await db_session.commit()
 
     async with _client() as c:
@@ -378,3 +385,23 @@ async def test_build_config_update_function_removed(_db_session=None) -> None:
     assert not hasattr(service, "_build_config_update"), (
         "_build_config_update was restored in service.py; it must stay deleted"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.service
+async def test_agent_command_pk_rejects_non_v7_uuid(db_session) -> None:
+    """The ck_agent_commands_id_uuidv7 CHECK rejects an INSERT whose PK is a
+    uuid4 — the authoritative guard for the FIFO sort-key invariant that the
+    semgrep taint rule cannot see across the producer-DTO → enqueue_command hop.
+    A uuid7 PK inserts cleanly."""
+    org = await orgs_repo.insert_org(db_session, slug=f"v7-{uuid4().hex[:6]}")
+
+    db_session.add(AgentCommandRow(id=uuid4(), org_id=org.org_id, command_kind="ProvisionWorkspace"))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+    # A uuid7 PK satisfies the constraint.
+    org = await orgs_repo.insert_org(db_session, slug=f"v7ok-{uuid4().hex[:6]}")
+    db_session.add(AgentCommandRow(id=uuid7(), org_id=org.org_id, command_kind="ProvisionWorkspace"))
+    await db_session.flush()

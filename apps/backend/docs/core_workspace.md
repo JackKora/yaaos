@@ -43,7 +43,7 @@
 
 ## Data owned
 
-- `workspaces` — `(id, org_id, owning_agent_id, provider_id, spec jsonb, status, current_command_id, max_idle_seconds, created_at, activated_at, expires_at, destroyed_at, destroy_attempts, last_destroy_attempt_at, last_destroy_error)`. `owning_agent_id` is `workspace_agents.id` (NOT NULL FK, `ON DELETE RESTRICT`; set at lean row creation). RESTRICT enforces the invariant that a `workspace_agents` row cannot be deleted while any workspace still references it — a workspace never outlives its owning agent. Indexes: `(status, expires_at)`, `(org_id, created_at)`, `owning_agent_id`.
+- `workspaces` — `(id, org_id, owning_agent_id, provider_id, spec jsonb, status, current_command_id, max_idle_seconds, created_at, activated_at, expires_at, destroyed_at, destroy_attempts, last_destroy_attempt_at, last_destroy_error)`. `owning_agent_id` is `workspace_agents.id` (NOT NULL FK, `ON DELETE RESTRICT`; set at lean row creation). RESTRICT enforces the invariant that a `workspace_agents` row cannot be deleted while any workspace still references it — a workspace never outlives its owning agent. Indexes: `(status, expires_at)`, `(org_id, created_at)`, `owning_agent_id`. CHECK `ck_workspaces_id_uuidv7` (`uuid_extract_version(id)=7`): `id` is minted app-side in `ProvisionWorkspace.dispatch` (the agent's lifecycle handle), so it must be a `uuid7()` — the constraint enforces it at the row boundary (added `NOT VALID`, grandfathering pre-guard rows). See [patterns.md § UUID primary keys](patterns.md).
 
 ## Routes
 
